@@ -44,6 +44,25 @@ def freeze_and_wait(account_id: str, trigger: str) -> None:
 
     from bot_supervisor import consume_freeze_resume_marker
 
+    # Un arrêt externe (nssm stop / stop_bot.ps1 -> SIGBREAK/SIGINT, cf. launch.py
+    # _make_stop_handler) est déjà en cours de traitement : un gel rencontré ensuite
+    # (par n'importe quel thread) ne doit pas retenir indéfiniment la fin du process
+    # que l'opérateur a explicitement demandée. Import local pour éviter le cycle
+    # d'import launch -> runtime_guard -> freeze_gate -> launch (même pattern que
+    # runtime_guard.py::pause()).
+    try:
+        from launch import _external_stop_requested
+    except Exception:
+        _external_stop_requested = None
+
+    if _external_stop_requested is not None and _external_stop_requested.is_set():
+        log_info(
+            "[FREEZE]",
+            f"account={account_id} trigger={trigger!r} — arrêt externe déjà demandé, "
+            "gel ignoré (abandon immédiat)",
+        )
+        return
+
     log_info(
         "[FREEZE]",
         f"account={account_id} trigger={trigger!r} — exécution figée, "
@@ -52,6 +71,13 @@ def freeze_and_wait(account_id: str, trigger: str) -> None:
 
     ticks = 0
     while not consume_freeze_resume_marker(account_id):
+        if _external_stop_requested is not None and _external_stop_requested.is_set():
+            log_info(
+                "[FREEZE]",
+                f"account={account_id} trigger={trigger!r} — arrêt externe détecté "
+                "pendant le gel, abandon",
+            )
+            return
         ticks += 1
         if ticks % _DEBUG_REMINDER_EVERY_TICKS == 0:
             log_debug(

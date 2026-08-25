@@ -1,5 +1,5 @@
 {
-    "generated_at":  "2026-08-23T17:12:19Z",
+    "generated_at":  "2026-08-25T08:43:56Z",
     "files":  [
                   {
                       "rel_path":  "launch_all.ps1",
@@ -28,12 +28,12 @@
                   },
                   {
                       "rel_path":  "stop_bot_manual.ps1",
-                      "sha256":  "850ff264594ab84b88b88f6898f56bbda4c5f807d5146bd434bec894f60b924f",
+                      "sha256":  "a394fb7576055686a60c4a080b7ca8b66136b027c254ec9eeaf77d3282ad90b7",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/stop_bot_manual.ps1"
                   },
                   {
                       "rel_path":  "resume_bot_freeze.ps1",
-                      "sha256":  "52c57506c9c120bf2353269a2e77f9da0bc9eace22f36a8086ce956ed1347fd1",
+                      "sha256":  "5cc329e0f350cef2df0fb08f0e5ae20e3e20b6ba72dfd5fc8de7695efe9e4c5f",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/resume_bot_freeze.ps1"
                   },
                   {
@@ -48,7 +48,7 @@
                   },
                   {
                       "rel_path":  "set-up.txt",
-                      "sha256":  "524f04359e285b72e576bcb8863661be059038dd0bdccbb13beca3da0a5d9076",
+                      "sha256":  "64c98fb41f4b7f951297c73c5c6906a1b0efcd9bd7e2d501286be0c1072419c0",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/set-up.txt"
                   },
                   {

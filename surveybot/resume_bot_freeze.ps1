@@ -28,8 +28,8 @@
 # plusieurs fois.
 #
 # Usage :
-#   .\resume_bot_freeze.ps1 -AccountId "ysense_bot_001"
-#   .\resume_bot_freeze.ps1 -AccountId "ysense_bot_001" -PidsDir "D:\surveybot\pids"
+#   .\topsurveys_bot_freeze.ps1 -AccountId "ysense_bot_001"
+#   .\topsurveys_bot_freeze.ps1 -AccountId "ysense_bot_001" -PidsDir "D:\surveybot\pids"
 
 param(
     [Parameter(Mandatory = $true)]
