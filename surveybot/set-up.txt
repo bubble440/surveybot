@@ -214,7 +214,6 @@ powercfg /change hibernate-timeout-ac 0
 # demarre uniquement via launch_all.ps1). Pour un bot PID, completer avec stop_bot.ps1
 # ci-dessous pour reellement arreter le process :
 .\stop_bot_manual.ps1 -AccountId "topsurveys_bot_001"
-.\stop_bot.ps1 -AccountId "topsurveys_bot_001"
 # Le marqueur pose par stop_bot_manual.ps1 est leve automatiquement au prochain
 # demarrage reel du bot (bot_supervisor.clear_manual_stop_marker, appele par main.py).
 

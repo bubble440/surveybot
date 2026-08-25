@@ -49,8 +49,14 @@ $svcName = "$ServicePrefix$AccountId"
 Write-Output "[STOP_MANUAL] bot=$AccountId - nssm stop $svcName"
 try {
     $result = & nssm stop $svcName 2>&1
+    $nssmExitCode = $LASTEXITCODE
     Write-Output "[STOP_MANUAL] NSSM stop $svcName -> $result"
 } catch {
     Write-Warning "[STOP_MANUAL] bot=$AccountId - impossible d'arreter $svcName : $_"
     exit 1
+}
+
+if ($nssmExitCode -ne 0) {
+    Write-Warning "[STOP_MANUAL] bot=$AccountId - ECHEC : nssm stop $svcName a retourne le code $nssmExitCode (pas de service NSSM installe pour ce compte, ou inaccessible). Le marqueur manual_stop a ete pose mais AUCUN arret reel n'a eu lieu. Si ce bot tourne via launch_all.ps1 (process isole, hors NSSM), completer avec : .\stop_bot.ps1 -AccountId `"$AccountId`""
+    exit 2
 }
