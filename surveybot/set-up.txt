@@ -214,8 +214,39 @@ powercfg /change hibernate-timeout-ac 0
 # demarre uniquement via launch_all.ps1). Pour un bot PID, completer avec stop_bot.ps1
 # ci-dessous pour reellement arreter le process :
 .\stop_bot_manual.ps1 -AccountId "topsurveys_bot_001"
+.\stop_bot.ps1 -AccountId "topsurveys_bot_001"
 # Le marqueur pose par stop_bot_manual.ps1 est leve automatiquement au prochain
 # demarrage reel du bot (bot_supervisor.clear_manual_stop_marker, appele par main.py).
+# Voir le statut et le pid d'un bot
+Get-Content C:\surveybot\pids\bot_topsurveys_bot_001.state | ConvertFrom-Json | Select last_heartbeat_ts, pid, last_exit_code, last_exit_reason
+#Tuer la tache definitivement
+taskkill /PID <PID> /T /F
+
+# Avant de reutiliser un profil (profile_dir d'accounts.json) pour un autre bot -
+# necessaire uniquement si plusieurs comptes tournent sur le meme profile_dir a
+# des moments differents. Chrome refuse deux instances simultanees sur le meme
+# user-data-dir : un process precedent qui le tient encore (ou un verrou residuel
+# d'un crash) est la cause probable d'un browser_launch_failed en crash-loop sur
+# le bot suivant. Ne JAMAIS se fier a "je l'ai arrete plus tot" seul - reverifier :
+$profileDir = "C:\surveybot\profiles\bot_003"
+
+# Chrome : le chemin du profil apparait dans sa ligne de commande (--user-data-dir=...)
+Get-CimInstance Win32_Process -Filter "Name='chrome.exe'"|Where-Object { $_.CommandLine -like "*$profileDir*" } |Select-Object ProcessId, CommandLine
+
+# python.exe : ligne de commande identique pour tous les bots (account_id passe par
+# variable d'environnement, pas en argument) - donc pas filtrable par profil
+# directement. Verifier plutot via le .state du compte qui utilisait ce profil
+# jusqu'ici (pid + last_heartbeat_ts recent = process concerne toujours vivant) :
+Get-Content C:\surveybot\pids\bot_<AccountId_precedent>.state -ErrorAction SilentlyContinue | ConvertFrom-Json | Select-Object pid, last_heartbeat_ts
+
+# Verrou physique Chrome (SingletonLock, ...) : peut survivre a un crash sans
+# qu'aucun process ne soit reellement vivant dessus (cf. browser_launch_failed) :
+Get-ChildItem $profileDir -Filter "Singleton*" -Force
+
+# Si verrou present ET aucun chrome.exe/python.exe vivant dessus (les verifs
+# ci-dessus) : verrou residuel d'un crash precedent, a purger avant relance sur
+# ce profil pour eviter un nouveau browser_launch_failed :
+Remove-Item "$profileDir\Singleton*" -Force -ErrorAction SilentlyContinue
 
 # Pour un arret COURT (relance prevue dans les toutes prochaines minutes, avant le
 # prochain tick de wake_scheduler.ps1/check_zombie_bots.ps1) : stop_bot.ps1 seul suffit,
