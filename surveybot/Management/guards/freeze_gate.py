@@ -42,7 +42,11 @@ def freeze_and_wait(account_id: str, trigger: str) -> None:
     if not is_freeze_mode_enabled():
         return
 
-    from bot_supervisor import consume_freeze_resume_marker
+    from bot_supervisor import (
+        consume_freeze_resume_marker,
+        mark_account_frozen,
+        clear_account_frozen_marker,
+    )
 
     # Un arrêt externe (nssm stop / stop_bot.ps1 -> SIGBREAK/SIGINT, cf. launch.py
     # _make_stop_handler) est déjà en cours de traitement : un gel rencontré ensuite
@@ -69,22 +73,32 @@ def freeze_and_wait(account_id: str, trigger: str) -> None:
         "en attente du marqueur de reprise (resume_bot_freeze.ps1)",
     )
 
-    ticks = 0
-    while not consume_freeze_resume_marker(account_id):
-        if _external_stop_requested is not None and _external_stop_requested.is_set():
-            log_info(
-                "[FREEZE]",
-                f"account={account_id} trigger={trigger!r} — arrêt externe détecté "
-                "pendant le gel, abandon",
-            )
-            return
-        ticks += 1
-        if ticks % _DEBUG_REMINDER_EVERY_TICKS == 0:
-            log_debug(
-                "[FREEZE]",
-                f"account={account_id} trigger={trigger!r} — toujours figé "
-                f"({ticks * _POLL_INTERVAL_SEC}s écoulées)",
-            )
-        time.sleep(_POLL_INTERVAL_SEC)
+    # Marqueur local (indépendant de Postgres) signalant qu'une instance de ce
+    # compte est gelée et retient encore des ressources actives (profil Chrome,
+    # session) — consommé par acquire_account_lock_or_exit() (launch.py) pour
+    # empêcher tout nouveau process de collisionner sur ces ressources tant que
+    # celui-ci reste bloqué ici. Toujours levé en sortie (finally), quelle que
+    # soit l'issue (marqueur de reprise consommé ou arrêt externe détecté).
+    mark_account_frozen(account_id)
+    try:
+        ticks = 0
+        while not consume_freeze_resume_marker(account_id):
+            if _external_stop_requested is not None and _external_stop_requested.is_set():
+                log_info(
+                    "[FREEZE]",
+                    f"account={account_id} trigger={trigger!r} — arrêt externe détecté "
+                    "pendant le gel, abandon",
+                )
+                return
+            ticks += 1
+            if ticks % _DEBUG_REMINDER_EVERY_TICKS == 0:
+                log_debug(
+                    "[FREEZE]",
+                    f"account={account_id} trigger={trigger!r} — toujours figé "
+                    f"({ticks * _POLL_INTERVAL_SEC}s écoulées)",
+                )
+            time.sleep(_POLL_INTERVAL_SEC)
 
-    log_info("[FREEZE]", f"account={account_id} trigger={trigger!r} — marqueur détecté, reprise")
+        log_info("[FREEZE]", f"account={account_id} trigger={trigger!r} — marqueur détecté, reprise")
+    finally:
+        clear_account_frozen_marker(account_id)

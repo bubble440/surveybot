@@ -75,6 +75,24 @@ from Cash.payout import _payout_and_check_daily_stop
 
 
 def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 240):
+    # Vérifié AVANT try_acquire_cooldown_slot() (Postgres) : le marqueur local
+    # posé par freeze_and_wait() (Management/guards/freeze_gate.py, via
+    # bot_supervisor.mark_account_frozen()) reste valide indépendamment de la
+    # disponibilité de Postgres — précisément le cas où le slot Postgres peut
+    # expirer (TTL 240s, non renouvelé si touch_heartbeat() échoue) alors que
+    # l'instance gelée est toujours vivante et utilise encore le profil Chrome.
+    # Sans ce contrôle, un nouveau process passe le lock Postgres, collisionne
+    # sur le profil (TargetClosedError), puis son échec dans
+    # launch_driver_or_fail() supprime le fichier PID et relibère le slot
+    # Postgres — ouvrant la voie à une cascade de relances tant que l'instance
+    # gelée n'a pas repris.
+    from bot_supervisor import is_account_frozen
+    if is_account_frozen(account_id):
+        print(f"[FREEZE] Account {account_id} gelé par une autre instance (FREEZE_ON_TRIGGER) → exit")
+        from bot_supervisor import record_exit, EXIT_VOLUNTARY
+        record_exit(account_id, EXIT_VOLUNTARY, "frozen_by_other_instance")
+        sys.exit(0)
+
     ok = try_acquire_cooldown_slot(account_id=account_id, ttl_sec=ttl_sec)
     if not ok:
         print(f"[COOLDOWN] Account {account_id} en cooldown ou déjà actif → exit")

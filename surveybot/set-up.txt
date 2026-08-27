@@ -237,7 +237,7 @@ Get-CimInstance Win32_Process -Filter "Name='chrome.exe'"|Where-Object { $_.Comm
 # variable d'environnement, pas en argument) - donc pas filtrable par profil
 # directement. Verifier plutot via le .state du compte qui utilisait ce profil
 # jusqu'ici (pid + last_heartbeat_ts recent = process concerne toujours vivant) :
-Get-Content C:\surveybot\pids\bot_topsurveys_<AccountId_precedent>.state -ErrorAction SilentlyContinue | ConvertFrom-Json | Select-Object pid, last_heartbeat_ts
+Get-Content C:\surveybot\pids\bot_topsurveys_bot_<AccountId_precedent>.state -ErrorAction SilentlyContinue | ConvertFrom-Json | Select-Object pid, last_heartbeat_ts
 
 # Verrou physique Chrome (SingletonLock, ...) : peut survivre a un crash sans
 # qu'aucun process ne soit reellement vivant dessus (cf. browser_launch_failed) :

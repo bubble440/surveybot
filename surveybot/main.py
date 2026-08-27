@@ -98,6 +98,7 @@ if not is_attach_mode():
     from bot_supervisor import (
         check_and_record_start, record_exit, EXIT_FATAL,
         clear_manual_stop_marker, purge_freeze_resume_marker,
+        is_account_frozen,
     )
     from launch import build_notifier
     # Ce démarrage (nssm start explicite ou redémarrage machine) vaut reprise :
@@ -105,8 +106,15 @@ if not is_attach_mode():
     clear_manual_stop_marker(ACCOUNT_ID)
     # Purge d'un marqueur de reprise du mode gel (FREEZE_ON_TRIGGER) résiduel d'un
     # lancement précédent, AVANT toute boucle de gel — cf. Management/guards/
-    # freeze_gate.py et purge_freeze_resume_marker().
-    purge_freeze_resume_marker(ACCOUNT_ID)
+    # freeze_gate.py et purge_freeze_resume_marker(). Sauté si une autre instance
+    # de ce compte est actuellement gelée (is_account_frozen(), cf.
+    # bot_supervisor.mark_account_frozen()) : ce process sera de toute façon
+    # rejeté plus loin par acquire_account_lock_or_exit() (launch.py), et purger
+    # ici supprimerait sans discernement un marqueur de reprise que l'opérateur
+    # vient de poser (resume_bot_freeze.ps1) pour débloquer l'instance gelée,
+    # avant même que celle-ci ait pu le consommer (poll 5s).
+    if not is_account_frozen(ACCOUNT_ID):
+        purge_freeze_resume_marker(ACCOUNT_ID)
     _should_abort, _restart_count = check_and_record_start(ACCOUNT_ID)
     if _should_abort:
         _abort_msg = (

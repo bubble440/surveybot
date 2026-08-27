@@ -55,6 +55,10 @@ def _freeze_resume_path(account_id: str) -> str:
     return os.path.join(_pids_dir(), f"bot_{account_id}.freeze_resume")
 
 
+def _frozen_path(account_id: str) -> str:
+    return os.path.join(_pids_dir(), f"bot_{account_id}.frozen")
+
+
 # ---------------------------------------------------------------------------
 # Lecture / écriture de l'état JSON
 # ---------------------------------------------------------------------------
@@ -171,6 +175,47 @@ def consume_freeze_resume_marker(account_id: str) -> bool:
     except Exception as e:
         print(f"[SUPERVISOR][WARN] Impossible de supprimer {path}: {e}")
     return False
+
+
+def mark_account_frozen(account_id: str) -> None:
+    """
+    Pose le marqueur local (indépendant de Postgres) signalant qu'une instance de
+    ce compte est actuellement gelée (FREEZE_ON_TRIGGER, cf.
+    Management/guards/freeze_gate.py) et retient encore des ressources actives
+    (profil Chrome, session). Posé juste avant d'entrer dans la boucle de blocage
+    de freeze_and_wait(), levé via clear_account_frozen_marker() dès la sortie de
+    cette boucle (marqueur de reprise consommé ou arrêt externe détecté).
+
+    Consommé par acquire_account_lock_or_exit() (launch.py) : contrairement au
+    slot Postgres (TTL 240s, dépend du heartbeat pour être prolongé), ce marqueur
+    fichier reste valide tant que le process gelé est vivant, indépendamment de la
+    disponibilité de Postgres pendant le gel.
+    """
+    path = _frozen_path(account_id)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(f"{os.getpid()}|{time.time()}")
+    except Exception as e:
+        print(f"[SUPERVISOR][WARN] Impossible de poser le marqueur de gel {path}: {e}")
+
+
+def clear_account_frozen_marker(account_id: str) -> None:
+    """Retire le marqueur posé par mark_account_frozen(), si présent."""
+    path = _frozen_path(account_id)
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+    except Exception as e:
+        print(f"[SUPERVISOR][WARN] Impossible de supprimer {path}: {e}")
+
+
+def is_account_frozen(account_id: str) -> bool:
+    """
+    True si une instance de ce compte est actuellement gelée (marqueur posé par
+    mark_account_frozen(), pas encore levé). Lu par acquire_account_lock_or_exit()
+    avant toute tentative de démarrage — cf. mark_account_frozen() pour le détail.
+    """
+    return os.path.isfile(_frozen_path(account_id))
 
 
 def check_and_record_start(
