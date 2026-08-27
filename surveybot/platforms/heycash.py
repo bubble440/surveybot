@@ -29,13 +29,16 @@ _EMAIL_CONTINUE_BTN_SEL = "button[data-test-id='check-email-continue-button']"
 _PASSWORD_INPUT_SEL = "input[data-test-id='sign-in-password-field-input']"
 _LOGIN_SUBMIT_BTN_SEL = "button[data-test-id='sign-in-submit-button']"
 
-# --- Dashboard : CONFIRMÉ par capture DOM authentifiée. Le widget de
-# sondages HeyCash ("prime-survey"/"prime-featured", classes ps-*) est
-# EXACTEMENT le même composant tiers que celui couvert pour PrimeOpinion
-# (mêmes data-test-id, même popup de qualification, même libellé de skip).
-# Sélecteurs directement réutilisables, sans hypothèse. ---
+# --- Dashboard --------------------------------------------------------
+# CORRECTIF : l'ancien sélecteur "[data-test-id^='ps-survey-']" matchait
+# aussi les éléments internes ps-survey-item-time / ps-survey-rating-wrapper
+# (même préfixe), les faisant apparaître comme de fausses "cartes" dans
+# query_selector_all(). Scope ajouté sur la classe CSS "survey-item",
+# présente uniquement sur le conteneur de carte réel (confirmé DOM :
+# class="list-item heycash-app-survey-tile survey-item"), absente des
+# sous-éléments time/rating et des cartes "Jeux" (class="offer-item").
 _SURVEYS_NAV_SEL = "[data-test-id='surveys-nav']"
-_SURVEY_CARD_SEL = "[data-test-id^='ps-survey-']"
+_SURVEY_CARD_SEL = "div.survey-item[data-test-id^='ps-survey-']"
 _SURVEY_TIME_SEL = "[data-test-id='ps-survey-item-time']"
 _SURVEY_REWARD_AMOUNT_SEL = "[data-test-id='ps-reward-amount']"
 _PS_POPUP_SEL = "[data-test-id='ps-popup-content-wrapper']"
@@ -101,16 +104,13 @@ def _parse_amount(text: str):
 
 def _select_best_heycash_card(page, excluded_uuids: set):
     """
-    Scanne les cartes [data-test-id^='ps-survey-'] visibles, score
-    reward(€, montant bonus inclus via ps-reward-amount)/durée(min, via
-    ps-survey-item-time). L'UUID est lu directement sur l'attribut de la
-    carte elle-même (contrairement à PrimeOpinion, pas de remontée
-    d'ancêtres nécessaire ici — DOM HeyCash plus direct). Exclut les UUID
-    déjà tentés dans cette session de sélection. Retourne (card, uuid) ou
-    None si aucune carte exploitable.
+    Scanne les cartes div.survey-item[data-test-id^='ps-survey-'] visibles,
+    score reward(€)/durée(min). Retourne (card, uuid) ou None si aucune
+    carte exploitable.
     """
     candidates = []
-    for idx, card in enumerate(page.query_selector_all(_SURVEY_CARD_SEL), start=1):
+    raw_matches = page.query_selector_all(_SURVEY_CARD_SEL)
+    for idx, card in enumerate(raw_matches, start=1):
         try:
             if not (card.is_visible() and card.is_enabled()):
                 continue
@@ -132,11 +132,18 @@ def _select_best_heycash_card(page, excluded_uuids: set):
             log_debug(_TAG, f"select_survey() — carte #{idx} exception : {type(e).__name__}")
 
     if not candidates:
+        # Visible sans LOG_LEVEL=DEBUG : si raw_matches=0, le sélecteur/timing
+        # est en cause ; si raw_matches>0 mais 0 candidat, voir le détail par
+        # carte en DEBUG (reward/durée non parsable ou exception).
+        log_info(
+            _TAG,
+            f"select_survey() — 0 candidat(e) valide sur {len(raw_matches)} "
+            "carte(s) brute(s) détectée(s)",
+        )
         return None
     candidates.sort(key=lambda c: c[0], reverse=True)
     _, best_card, best_uuid = candidates[0]
     return best_card, best_uuid
-
 
 def _resolve_preselection_questions(page, api_key: str, session: SurveySession, uuid_) -> str:
     """
@@ -235,16 +242,16 @@ def _resolve_preselection_questions(page, api_key: str, session: SurveySession, 
 
 def _check_balance_and_notify(page, account_id: str) -> None:
     """
-    Lit le solde affiché (data-test-id="user-balance") et, si >= seuil
-    configuré, journalise un événement de notification. Notification
-    UNIQUEMENT (pas de réclamation automatique) — l'envoi Telegram effectif
-    reste à câbler avec le module existant du projet, non identifié dans les
-    fichiers fournis pour ce patch.
+    Lit le solde affiché et, si >= seuil configuré, journalise un événement
+    de notification. CORRECTIF : le widget de solde se peuple après un appel
+    API post-rendu — wait_for_selector (borné) remplace l'ancien
+    query_selector instantané qui échouait systématiquement par course.
     """
     try:
-        balance_el = page.query_selector(_USER_BALANCE_SEL)
-        if not balance_el:
-            log_debug(_TAG, "_check_balance_and_notify() — élément solde introuvable")
+        try:
+            balance_el = page.wait_for_selector(_USER_BALANCE_SEL, state="attached", timeout=8000)
+        except Exception:
+            log_debug(_TAG, "_check_balance_and_notify() — élément solde introuvable après 8s")
             return
         balance = _parse_amount(balance_el.inner_text())
         if balance is None:
@@ -257,7 +264,7 @@ def _check_balance_and_notify(page, account_id: str) -> None:
                 f"_check_balance_and_notify() — seuil atteint (solde={balance}€ >= "
                 f"{_MIN_BALANCE_NOTIFY}€, compte={account_id}) — notification à envoyer",
             )
-            # TODO : câbler ici l'envoi Telegram existant du projet.
+            # TODO : câbler ici notifier.send_telegram(...) avec bot_token/chat_id du projet.
     except Exception as e:
         log_debug(_TAG, f"_check_balance_and_notify() — exception non bloquante : {e}")
 
