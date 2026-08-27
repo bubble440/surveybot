@@ -148,14 +148,25 @@ def _select_best_heycash_card(page, excluded_uuids: set):
 def _resolve_preselection_questions(page, api_key: str, session: SurveySession, uuid_) -> str:
     """
     Boucle bornée de résolution des questions de présélection intermédiaires
-    du popup ps-* (formulaire de qualification) — mécanisme identique à
-    celui déjà en place pour PrimeOpinion (même composant tiers, même DOM
-    confirmé par capture). Retourne "qualified" | "disqualified" | "unresolved".
+    du popup ps-*. CORRECTIF : la vérification de disqualification est
+    désormais faite en tête de boucle, avant get_response_for_question().
+    Cause du bug observé : le popup de disqualification HeyCash
+    ("integration-script-popup") est un overlay distinct du wrapper
+    ps-popup-content-wrapper interrogé par get_response_for_question() —
+    ce dernier restait attaché (juste masqué) et continuait d'être lu comme
+    une question active, produisant une extraction périmée dont l'exécution
+    ciblait des éléments recouverts par l'overlay (clics interceptés en
+    boucle, jamais aboutis). handle_disqualification_and_retry() est
+    réutilisée sans modification.
     """
     last_scan_key = None
     same_scan_count = 0
 
     for _ in range(1, _MAX_PRESELECTION_QUESTIONS + 1):
+        if handle_disqualification_and_retry(page):
+            log_info(_TAG, f"select_survey() — disqualification détectée en présélection (uuid={uuid_})")
+            return "disqualified"
+
         try:
             question, answer, input_type = get_response_for_question(page, api_key, session=session)
         except Exception as e:
@@ -228,8 +239,6 @@ def _resolve_preselection_questions(page, api_key: str, session: SurveySession, 
             time.sleep(1.5)
             continue
 
-        if handle_disqualification_and_retry(page):
-            return "disqualified"
         if click_participer_if_qualified(page):
             return "qualified"
 
