@@ -1,9 +1,9 @@
 # 1 fenêtre Windows Terminal, 1 tab par port, chaque tab exécute tools\attach_tab.ps1
 
 # Usage :
-#   powershell -ExecutionPolicy Bypass -File .\surveybot\run_tabs.ps1 -TargetUrl "https://www.ysense.com" -Platform "ysense"
-#   powershell -ExecutionPolicy Bypass -File .\surveybot\run_tabs.ps1 -TargetUrl "https://www.primeopinion.com" -Platform "primeopinion"
-
+#   powershell -ExecutionPolicy Bypass -File .\run_tabs.ps1 -TargetUrl "https://www.ysense.com" -Platform "ysense"
+#   powershell -ExecutionPolicy Bypass -File .\run_tabs.ps1 -TargetUrl "https://www.primeopinion.com" -Platform "primeopinion"
+#   powershell -ExecutionPolicy Bypass -File .\run_tabs.ps1 -TargetUrl "https://www.heycash.com/fr-fr" -Platform "heycash"
 param(
   # Valeur par défaut inchangée : préserve le comportement TopSurveys existant
   # pour tout appel sans -TargetUrl. Permet de cibler une autre plateforme
