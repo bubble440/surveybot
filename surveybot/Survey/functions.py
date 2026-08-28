@@ -518,6 +518,7 @@ def _resolve_topsurveys_popups(driver, max_attempts: int = _TOPSURVEYS_POPUP_RES
             and "primeopinion.com" not in url
             and "earnstar.com" not in url
             and "heycash.com" not in url
+            and "fivesurveys.com" not in url
         ):
             break
 

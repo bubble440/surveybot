@@ -276,6 +276,28 @@ def _check_balance_and_notify(page, account_id: str) -> None:
             return
         log_debug(_TAG, f"_check_balance_and_notify() — solde courant : {balance}€")
         if balance >= _MIN_BALANCE_NOTIFY:
+            from State.account_state import (
+                has_notified_balance_today,
+                load_state,
+                mark_notified_balance_today,
+                update_state,
+            )
+            from State.daily_target import today_str
+
+            day = today_str()
+            try:
+                already_notified = has_notified_balance_today(load_state(account_id), "heycash", day)
+            except Exception as e:
+                log_debug(_TAG, f"_check_balance_and_notify() — lecture état échouée, fail-open : {e}")
+                already_notified = False
+
+            if already_notified:
+                log_debug(
+                    _TAG,
+                    f"_check_balance_and_notify() — notification ignorée (déjà notifié aujourd'hui, compte={account_id})",
+                )
+                return
+
             log_info(
                 _TAG,
                 f"_check_balance_and_notify() — seuil atteint (solde={balance}€ >= "
@@ -295,6 +317,11 @@ def _check_balance_and_notify(page, account_id: str) -> None:
                 log_debug(_TAG, f"_check_balance_and_notify() — send_telegram() ok={ok}")
             except Exception as e:
                 log_debug(_TAG, f"_check_balance_and_notify() — envoi Telegram échoué (non bloquant) : {e}")
+
+            try:
+                update_state(account_id, lambda st: mark_notified_balance_today(st, "heycash", day))
+            except Exception as e:
+                log_debug(_TAG, f"_check_balance_and_notify() — marquage notifié échoué (non bloquant) : {e}")
     except Exception as e:
         log_debug(_TAG, f"_check_balance_and_notify() — exception non bloquante : {e}")
 

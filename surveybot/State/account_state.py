@@ -259,6 +259,24 @@ def set_platform_cooldown(state: Dict[str, Any], platform_name: str, cooldown_un
     state.setdefault("platforms", {}).setdefault(platform_name, {})["cooldown_until_ts"] = cooldown_until_ts
 
 
+def has_notified_balance_today(state: Dict[str, Any], platform_name: str, day: str) -> bool:
+    """
+    Déduplication des notifications Telegram de solde : une seule clé par
+    plateforme et par jour (state["platforms"][nom]["balance_notified_date"]),
+    pas de clé par type de message (seuil atteint / échec claim / etc.).
+    """
+    platforms = state.get("platforms") or {}
+    sub = platforms.get(platform_name) or {}
+    return sub.get("balance_notified_date") == day
+
+
+def mark_notified_balance_today(state: Dict[str, Any], platform_name: str, day: str) -> None:
+    """
+    Marque la plateforme comme notifiée pour `day` (cf. has_notified_balance_today).
+    """
+    state.setdefault("platforms", {}).setdefault(platform_name, {})["balance_notified_date"] = day
+
+
 # -----------------------------
 # Backend FILE (fallback)
 # -----------------------------

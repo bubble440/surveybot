@@ -52,6 +52,28 @@ def _read_balance_usd(driver) -> Optional[float]:
 
 
 def _notify_manual_withdrawal(account_id: str, balance: float) -> None:
+    from State.account_state import (
+        has_notified_balance_today,
+        load_state,
+        mark_notified_balance_today,
+        update_state,
+    )
+    from State.daily_target import today_str
+
+    day = today_str()
+    try:
+        already_notified = has_notified_balance_today(load_state(account_id), "ysense", day)
+    except Exception as e:
+        log_debug(_TAG, f"_notify_manual_withdrawal() — lecture état échouée, fail-open : {e}")
+        already_notified = False
+
+    if already_notified:
+        log_debug(
+            _TAG,
+            f"_notify_manual_withdrawal() — notification ignorée (déjà notifié aujourd'hui, compte={account_id})",
+        )
+        return
+
     tg_token = os.getenv("telegram_bot_token", "").strip()
     tg_chat = os.getenv("telegram_chat_id", "").strip()
     if not tg_token or not tg_chat:
@@ -66,6 +88,11 @@ def _notify_manual_withdrawal(account_id: str, balance: float) -> None:
         log_info(_TAG, "_notify_manual_withdrawal() — notification Telegram envoyée")
     except Exception:
         pass
+
+    try:
+        update_state(account_id, lambda st: mark_notified_balance_today(st, "ysense", day))
+    except Exception as e:
+        log_debug(_TAG, f"_notify_manual_withdrawal() — marquage notifié échoué (non bloquant) : {e}")
 
 
 def _navigate_to_paypal_eur_reward(driver) -> bool:

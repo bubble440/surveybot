@@ -71,7 +71,43 @@ def _read_modal_balance(driver) -> Tuple[Optional[float], Optional[float]]:
     return _to_float(match.group(1)), _to_float(match.group(2))
 
 
+def _already_notified_today(account_id: str) -> Tuple[bool, str]:
+    """
+    Guard de déduplication partagé entre _notify_threshold_reached() et
+    _notify_claim_failure() : une seule clé "primeopinion" par jour pour les
+    deux (cf. State/account_state.py::has_notified_balance_today), pas une
+    clé par type de message. Fail-open (retourne False) sur toute erreur
+    Postgres/état — mieux vaut un doublon occasionnel qu'un silence complet.
+    """
+    from State.account_state import has_notified_balance_today, load_state
+    from State.daily_target import today_str
+
+    day = today_str()
+    try:
+        return has_notified_balance_today(load_state(account_id), "primeopinion", day), day
+    except Exception as e:
+        log_debug(_TAG, f"_already_notified_today() — lecture état échouée, fail-open : {e}")
+        return False, day
+
+
+def _mark_notified_today(account_id: str, day: str) -> None:
+    from State.account_state import mark_notified_balance_today, update_state
+
+    try:
+        update_state(account_id, lambda st: mark_notified_balance_today(st, "primeopinion", day))
+    except Exception as e:
+        log_debug(_TAG, f"_mark_notified_today() — marquage notifié échoué (non bloquant) : {e}")
+
+
 def _notify_threshold_reached(account_id: str, balance_points: float) -> None:
+    already_notified, day = _already_notified_today(account_id)
+    if already_notified:
+        log_debug(
+            _TAG,
+            f"_notify_threshold_reached() — notification ignorée (déjà notifié aujourd'hui, compte={account_id})",
+        )
+        return
+
     tg_token = os.getenv("telegram_bot_token", "").strip()
     tg_chat = os.getenv("telegram_chat_id", "").strip()
     if not tg_token or not tg_chat:
@@ -88,9 +124,18 @@ def _notify_threshold_reached(account_id: str, balance_points: float) -> None:
         log_info(_TAG, "_notify_threshold_reached() — notification Telegram envoyée")
     except Exception:
         pass
+    _mark_notified_today(account_id, day)
 
 
 def _notify_claim_failure(account_id: str, reason: str) -> None:
+    already_notified, day = _already_notified_today(account_id)
+    if already_notified:
+        log_debug(
+            _TAG,
+            f"_notify_claim_failure() — notification ignorée (déjà notifié aujourd'hui, compte={account_id})",
+        )
+        return
+
     tg_token = os.getenv("telegram_bot_token", "").strip()
     tg_chat = os.getenv("telegram_chat_id", "").strip()
     if not tg_token or not tg_chat:
@@ -100,6 +145,7 @@ def _notify_claim_failure(account_id: str, reason: str) -> None:
         send_telegram(msg, tg_token, tg_chat)
     except Exception:
         pass
+    _mark_notified_today(account_id, day)
 
 
 def _click(driver, el) -> bool:
