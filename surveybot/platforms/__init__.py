@@ -7,7 +7,7 @@ from platforms.base import Platform
 # Plateformes reconnues par get_platform() ci-dessous — servent aussi à valider
 # global_config.PLATFORM_ROTATION au démarrage (cf. validate_platform_rotation()
 # et main.py, hors mode attach).
-KNOWN_PLATFORMS = ("topsurveys", "ysense", "primeopinion", "heycash", "earnstar")
+KNOWN_PLATFORMS = ("topsurveys", "ysense", "primeopinion", "heycash", "earnstar", "fivesurveys")
 
 
 def get_platform(name: str | None = None) -> Platform:
@@ -43,8 +43,12 @@ def get_platform(name: str | None = None) -> Platform:
         from platforms.earnstar import EarnStarPlatform
         return EarnStarPlatform()
 
+    if name == "fivesurveys":
+        from platforms.fivesurveys import FiveSurveysPlatform
+        return FiveSurveysPlatform()
+
     raise ValueError(
-        f"Plateforme inconnue: {name!r}. Valeurs supportées: 'topsurveys', 'ysense', 'primeopinion', 'heycash', 'earnstar'"
+        f"Plateforme inconnue: {name!r}. Valeurs supportées: 'topsurveys', 'ysense', 'primeopinion', 'heycash', 'earnstar', 'fivesurveys'"
     )
 
 

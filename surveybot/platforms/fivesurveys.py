@@ -6,7 +6,6 @@ import time
 from typing import List
 
 from config import is_cta_intercept_only
-from Management.notifier import send_telegram
 from platforms.base import Platform
 from preselection.question_analyzer import (
     click_participer_if_qualified,
@@ -17,12 +16,15 @@ from preselection.response_executor import execute_response
 from State.survey_memory import SurveySession, flush_disqualified, flush_qualified
 from Survey.log_utils import log_info, log_debug
 
-_TAG = "[HEYCASH]"
+_TAG = "[FIVESURVEYS]"
 
 # Landing marketing FR — porte le bouton d'ouverture de la modale d'auth.
-_HOME_URL = "https://www.heycash.com/fr-fr"
+_HOME_URL = "https://www.fivesurveys.com/fr-fr/"
 
 # --- Auth : CONFIRMÉ par capture DOM (flux complet email → mot de passe) ---
+# Le landing porte 3 boutons data-test-id="open-auth-modal-button" (header,
+# section promo, section cta) — scope sur "header" pour cibler celui garanti
+# visible sans scroll, même correctif déjà retenu pour HeyCash.
 _OPEN_AUTH_MODAL_BTN_SEL = "header button[data-test-id='open-auth-modal-button']"
 _MODAL_DIALOG_SEL = "[role='dialog']"
 _EMAIL_INPUT_SEL = "input[data-test-id='check-email-field-input']"
@@ -31,19 +33,20 @@ _PASSWORD_INPUT_SEL = "input[data-test-id='sign-in-password-field-input']"
 _LOGIN_SUBMIT_BTN_SEL = "button[data-test-id='sign-in-submit-button']"
 
 # --- Dashboard --------------------------------------------------------
-# CORRECTIF : l'ancien sélecteur "[data-test-id^='ps-survey-']" matchait
-# aussi les éléments internes ps-survey-item-time / ps-survey-rating-wrapper
-# (même préfixe), les faisant apparaître comme de fausses "cartes" dans
-# query_selector_all(). Scope ajouté sur la classe CSS "survey-item",
-# présente uniquement sur le conteneur de carte réel (confirmé DOM :
-# class="list-item heycash-app-survey-tile survey-item"), absente des
-# sous-éléments time/rating et des cartes "Jeux" (class="offer-item").
+# CONFIRMÉ par capture DOM authentifiée : la carte porte directement
+# class="list-item five-survey-tile survey-item" data-test-id="ps-survey-<uuid>".
+# Même correctif que HeyCash : scope sur la classe "survey-item" en plus du
+# préfixe "ps-survey-", pour exclure les sous-éléments partageant ce préfixe
+# (ps-survey-rating-wrapper) des cartes "Jeux" (class="offer-item").
 _SURVEYS_NAV_SEL = "[data-test-id='surveys-nav']"
 _SURVEY_CARD_SEL = "div.survey-item[data-test-id^='ps-survey-']"
-_SURVEY_TIME_SEL = "[data-test-id='ps-survey-item-time']"
-_SURVEY_REWARD_AMOUNT_SEL = "[data-test-id='ps-reward-amount']"
+_RATING_WRAPPER_SEL = "[data-test-id='ps-survey-rating-wrapper']"
+_RATING_AVERAGE_SEL = ".rating-average"
+# CONFIRMÉ par capture DOM : bouton dédié dans la carte, sans data-test-id
+# propre, distingué par sa classe "take-survey__button" (à la différence de
+# TopSurveys/PrimeOpinion/HeyCash qui cliquent le conteneur de carte entier).
+_TAKE_SURVEY_BUTTON_SEL = "button.take-survey__button"
 _PS_POPUP_SEL = "[data-test-id='ps-popup-content-wrapper']"
-_USER_BALANCE_SEL = "[data-test-id='user-balance']"
 
 # Signal de session authentifiée — CONFIRMÉ (surveys-nav ET user-balance sont
 # tous deux visibles dans les captures du dashboard connecté).
@@ -62,12 +65,7 @@ _MAX_PRESELECTION_QUESTIONS = 30
 _PRESELECTION_STUCK_THRESHOLD = 5
 _MAX_ATTEMPTS = 3
 
-# Seuil de solde (€) déclenchant une notification — pas de réclamation
-# automatique, sur demande explicite : notifier seulement.
-_MIN_BALANCE_NOTIFY = 5.26
-
-_TIME_RE = re.compile(r"(\d+)\s*min", re.IGNORECASE)
-_AMOUNT_RE = re.compile(r"(\d+(?:[.,]\d+)?)")
+_RATING_RE = re.compile(r"(\d+(?:[.,]\d+)?)")
 
 
 def _mask_secret(value: str) -> str:
@@ -77,39 +75,35 @@ def _mask_secret(value: str) -> str:
     return f"len={len(v)} [{v[0]}…{v[-1]}]"
 
 
-def _parse_minutes(text: str):
+def _parse_rating(text: str):
+    """
+    Extrait la note moyenne chiffrée d'une carte (ex: "2.5", "2", "3").
+    Retourne None si absente/illisible — couvre notamment la mention "Nouveau"
+    (sondage sans vote), qui ne contient aucun chiffre.
+    """
     if not text:
         return None
-    match = _TIME_RE.search(text)
+    match = _RATING_RE.search(text)
     if not match:
         return None
     try:
-        value = int(match.group(1))
+        return float(match.group(1).replace(",", "."))
     except ValueError:
         return None
-    return value if value > 0 else None
 
 
-def _parse_amount(text: str):
-    if not text:
-        return None
-    match = _AMOUNT_RE.search(text)
-    if not match:
-        return None
-    try:
-        value = float(match.group(1).replace(",", "."))
-    except ValueError:
-        return None
-    return value if value > 0 else None
-
-
-def _select_best_heycash_card(page, excluded_uuids: set):
+def _select_best_fivesurveys_card(page, excluded_uuids: set):
     """
-    Scanne les cartes div.survey-item[data-test-id^='ps-survey-'] visibles,
-    score reward(€)/durée(min). Retourne (card, uuid) ou None si aucune
-    carte exploitable.
+    Scanne les cartes div.survey-item[data-test-id^='ps-survey-'] visibles.
+    FiveSurveys n'affiche ni récompense ni durée par carte (à la différence du
+    reste de la famille Prime Insights) — seul signal disponible : la note
+    moyenne (ps-survey-rating-wrapper). Retient la carte à la meilleure note ;
+    si aucune carte n'affiche de note chiffrée (mention "Nouveau" partout),
+    retient la première carte de la liste. Retourne (card, uuid) ou None si
+    aucune carte exploitable.
     """
-    candidates = []
+    rated = []
+    unrated = []
     raw_matches = page.query_selector_all(_SURVEY_CARD_SEL)
     for idx, card in enumerate(raw_matches, start=1):
         try:
@@ -119,46 +113,44 @@ def _select_best_heycash_card(page, excluded_uuids: set):
             if uuid_ and uuid_ in excluded_uuids:
                 continue
 
-            time_el = card.query_selector(_SURVEY_TIME_SEL)
-            reward_el = card.query_selector(_SURVEY_REWARD_AMOUNT_SEL)
-            duration = _parse_minutes(time_el.inner_text() if time_el else "")
-            reward = _parse_amount(reward_el.inner_text() if reward_el else "")
-            if reward is None or duration is None:
-                log_debug(_TAG, f"select_survey() — carte #{idx} ignorée (reward/durée non parsable)")
-                continue
+            unrated.append((card, uuid_))
 
-            score = reward / duration
-            candidates.append((score, card, uuid_))
+            wrapper = card.query_selector(_RATING_WRAPPER_SEL)
+            avg_el = wrapper.query_selector(_RATING_AVERAGE_SEL) if wrapper else None
+            rating = _parse_rating(avg_el.inner_text() if avg_el else "")
+            if rating is not None:
+                rated.append((rating, card, uuid_))
         except Exception as e:
             log_debug(_TAG, f"select_survey() — carte #{idx} exception : {type(e).__name__}")
 
-    if not candidates:
-        # Visible sans LOG_LEVEL=DEBUG : si raw_matches=0, le sélecteur/timing
-        # est en cause ; si raw_matches>0 mais 0 candidat, voir le détail par
-        # carte en DEBUG (reward/durée non parsable ou exception).
+    if rated:
+        rated.sort(key=lambda c: c[0], reverse=True)
+        _, best_card, best_uuid = rated[0]
+        return best_card, best_uuid
+
+    if unrated:
         log_info(
             _TAG,
-            f"select_survey() — 0 candidat(e) valide sur {len(raw_matches)} "
-            "carte(s) brute(s) détectée(s)",
+            f"select_survey() — aucune carte notée sur {len(unrated)} carte(s) "
+            "valide(s) : sélection de la première de la liste",
         )
-        return None
-    candidates.sort(key=lambda c: c[0], reverse=True)
-    _, best_card, best_uuid = candidates[0]
-    return best_card, best_uuid
+        best_card, best_uuid = unrated[0]
+        return best_card, best_uuid
+
+    log_info(
+        _TAG,
+        f"select_survey() — 0 candidat(e) valide sur {len(raw_matches)} "
+        "carte(s) brute(s) détectée(s)",
+    )
+    return None
+
 
 def _resolve_preselection_questions(page, api_key: str, session: SurveySession, uuid_) -> str:
     """
     Boucle bornée de résolution des questions de présélection intermédiaires
-    du popup ps-*. CORRECTIF : la vérification de disqualification est
-    désormais faite en tête de boucle, avant get_response_for_question().
-    Cause du bug observé : le popup de disqualification HeyCash
-    ("integration-script-popup") est un overlay distinct du wrapper
-    ps-popup-content-wrapper interrogé par get_response_for_question() —
-    ce dernier restait attaché (juste masqué) et continuait d'être lu comme
-    une question active, produisant une extraction périmée dont l'exécution
-    ciblait des éléments recouverts par l'overlay (clics interceptés en
-    boucle, jamais aboutis). handle_disqualification_and_retry() est
-    réutilisée sans modification.
+    du popup ps-*, entre le clic sur le bouton de participation et la
+    détermination qualifié/disqualifié. Même pattern que HeyCash/PrimeOpinion.
+    Retourne "qualified" | "disqualified" | "unresolved".
     """
     last_scan_key = None
     same_scan_count = 0
@@ -250,62 +242,14 @@ def _resolve_preselection_questions(page, api_key: str, session: SurveySession, 
     return "unresolved"
 
 
-def _check_balance_and_notify(page, account_id: str) -> None:
+class FiveSurveysPlatform(Platform):
     """
-    Lit le solde affiché et, si >= seuil configuré, envoie une notification
-    Telegram. CORRECTIF : le widget de solde se peuple après un appel API
-    post-rendu — wait_for_selector (borné) remplace l'ancien query_selector
-    instantané qui échouait systématiquement par course.
-    Envoi Telegram : mécanisme déjà existant du projet (Management.notifier.
-    send_telegram + variables d'environnement telegram_bot_token/
-    telegram_chat_id), même schéma que Cash/ysense_balance.py::
-    _notify_manual_withdrawal et platforms/earnstar.py::_check_balance_and_notify
-    — pas de canal réinventé, pas de plomberie notify_fn à travers login()/
-    handle_post_survey() (les identifiants Telegram sont globaux au process,
-    pas propres à un appel).
-    """
-    try:
-        try:
-            balance_el = page.wait_for_selector(_USER_BALANCE_SEL, state="attached", timeout=8000)
-        except Exception:
-            log_debug(_TAG, "_check_balance_and_notify() — élément solde introuvable après 8s")
-            return
-        balance = _parse_amount(balance_el.inner_text())
-        if balance is None:
-            log_debug(_TAG, "_check_balance_and_notify() — solde illisible")
-            return
-        log_debug(_TAG, f"_check_balance_and_notify() — solde courant : {balance}€")
-        if balance >= _MIN_BALANCE_NOTIFY:
-            log_info(
-                _TAG,
-                f"_check_balance_and_notify() — seuil atteint (solde={balance}€ >= "
-                f"{_MIN_BALANCE_NOTIFY}€, compte={account_id}) — notification à envoyer",
-            )
-            tg_token = os.getenv("telegram_bot_token", "").strip()
-            tg_chat = os.getenv("telegram_chat_id", "").strip()
-            if not tg_token or not tg_chat:
-                log_debug(_TAG, "_check_balance_and_notify() — credentials Telegram absents, notification ignorée")
-                return
-            msg = (
-                f"[HEYCASH][SOLDE] compte : {account_id} | solde : {balance:.2f}€ "
-                f">= seuil {_MIN_BALANCE_NOTIFY:.2f}€"
-            )
-            try:
-                ok = send_telegram(msg, tg_token, tg_chat)
-                log_debug(_TAG, f"_check_balance_and_notify() — send_telegram() ok={ok}")
-            except Exception as e:
-                log_debug(_TAG, f"_check_balance_and_notify() — envoi Telegram échoué (non bloquant) : {e}")
-    except Exception as e:
-        log_debug(_TAG, f"_check_balance_and_notify() — exception non bloquante : {e}")
-
-
-class HeyCashPlatform(Platform):
-    """
-    Implémentation HeyCash. Auth et dashboard de sondages CONFIRMÉS par
-    capture DOM authentifiée. Le dashboard est le même composant tiers
-    ("prime-survey") que celui utilisé par PrimeOpinion — mêmes data-test-id,
-    même popup de qualification, même libellé de skip — d'où la réutilisation
-    directe des stratégies de sélection/résolution déjà validées.
+    Implémentation FiveSurveys — 5e plateforme de la famille Prime Insights
+    (même infra Vue/ps-*, mêmes conventions data-test-id que TopSurveys/
+    PrimeOpinion/HeyCash). Auth et dashboard CONFIRMÉS par capture DOM.
+    Spécificité : sélection par note moyenne (pas de reward/durée par carte),
+    et clic sur le bouton de participation dédié de la carte plutôt que sur
+    son conteneur entier.
     """
 
     def login(self, driver, config: dict) -> bool:
@@ -380,10 +324,6 @@ class HeyCashPlatform(Platform):
         try:
             page.wait_for_selector(_AUTHENTICATED_SIGNAL_SEL, state="attached", timeout=20000)
             log_info(_TAG, "login() — succès (signal authentifié détecté)")
-            try:
-                _check_balance_and_notify(page, os.getenv("ACCOUNT_ID") or "unknown")
-            except Exception as e:
-                log_debug(_TAG, f"login() — vérification solde post-login échouée (non bloquant) : {e}")
             return True
         except Exception:
             log_info(_TAG, "login() — signal authentifié non détecté après 20s, échec")
@@ -422,7 +362,7 @@ class HeyCashPlatform(Platform):
         excluded_uuids: set = set()
 
         for attempt in range(1, _MAX_ATTEMPTS + 1):
-            best = _select_best_heycash_card(page, excluded_uuids)
+            best = _select_best_fivesurveys_card(page, excluded_uuids)
             if best is None:
                 log_info(_TAG, "select_survey() — aucun survey disponible → cooldown")
                 from Management.guards.runtime_guard import get_guard, StopReason
@@ -440,11 +380,22 @@ class HeyCashPlatform(Platform):
                 )
                 return False
 
+            take_survey_btn = None
             try:
-                card.click()
-                log_debug(_TAG, f"select_survey() — carte cliquée (tentative {attempt}/{_MAX_ATTEMPTS}, uuid={uuid_})")
+                take_survey_btn = card.query_selector(_TAKE_SURVEY_BUTTON_SEL)
+            except Exception:
+                take_survey_btn = None
+
+            if take_survey_btn is None:
+                log_info(_TAG, f"select_survey() — bouton 'Participe au sondage' introuvable sur la carte (uuid={uuid_})")
+                excluded_uuids.add(uuid_ or f"_nobtn_{attempt}")
+                continue
+
+            try:
+                take_survey_btn.click()
+                log_debug(_TAG, f"select_survey() — bouton de participation cliqué (tentative {attempt}/{_MAX_ATTEMPTS}, uuid={uuid_})")
             except Exception as e:
-                log_info(_TAG, f"select_survey() — clic carte échoué (uuid={uuid_}) : {e}")
+                log_info(_TAG, f"select_survey() — clic bouton de participation échoué (uuid={uuid_}) : {e}")
                 excluded_uuids.add(uuid_ or f"_noclick_{attempt}")
                 continue
 
@@ -519,11 +470,6 @@ class HeyCashPlatform(Platform):
 
         log_info(_TAG, "handle_post_survey() — retour sur la liste de sondages détecté")
 
-        try:
-            _check_balance_and_notify(page, account_id)
-        except Exception as e:
-            log_debug(_TAG, f"handle_post_survey() — vérification solde échouée (non bloquant) : {e}")
-
         self.select_survey(page)
         return True
 
@@ -544,10 +490,10 @@ class HeyCashPlatform(Platform):
             return True
 
     def get_platform_name(self) -> str:
-        return "heycash"
+        return "fivesurveys"
 
     def get_home_url(self) -> str:
         return _HOME_URL
 
     def get_domains(self) -> List[str]:
-        return ["heycash.com"]
+        return ["fivesurveys.com"]

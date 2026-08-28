@@ -392,12 +392,88 @@ def _close_topsurveys_survey_result_popup_once(driver) -> bool:
     return True
 
 
+def _handle_ps_offers_platforms_popup(driver):
+    """
+    Gere la popup Prime Insights "Selectionner les appareils" / "Quels sont les
+    appareils que tu possedes ?" ([data-test-id='ps-offers-platforms-popup']),
+    observee bloquant toute la page (masque p-modal-mask, "subtree intercepts
+    pointer events" sur tout clic) sur EarnStar (page d'accueil et liste de
+    sondages) - infrastructure tierce Prime Insights partagee entre les
+    plateformes, donc potentiellement rencontree aussi sur TopSurveys/
+    PrimeOpinion/HeyCash. Fonction additive et independante : guard DOM strict
+    et disjoint des autres handlers de ce fichier, aucune modification de leur
+    logique.
+    Action : coche la case "Desktop"
+    ([data-test-id='ps-offers-platforms-popup-desktop'] input[type='checkbox'])
+    si pas deja cochee, puis clique
+    [data-test-id='ps-offers-platforms-popup-save'] ("Sauvegarder la selection").
+    Valeur de retour (tri-etat, meme convention que
+    _handle_topsurveys_streak_complete_popup) :
+    - True  : popup detectee et fermee (checkbox cochee + sauvegarde cliquee,
+              ou interception CTA_INTERCEPT_ONLY).
+    - False : popup detectee mais fermeture impossible (checkbox ou bouton
+              introuvable/inclickable) - permet a l'appelant de redonner une
+              chance de re-scan plutot que de conclure a tort a "aucun popup
+              connu".
+    - None  : popup non detectee.
+    """
+    try:
+        popup = driver.query_selector("[data-test-id='ps-offers-platforms-popup']")
+        if not popup or not popup.is_visible():
+            return None
+    except Exception as e:
+        if _is_target_closed(e):
+            log_debug("[PS_OFFERS_PLATFORMS_POPUP]", f"page fermee pendant le scan: {e}")
+        return None
+
+    log_info("[PS_OFFERS_PLATFORMS_POPUP]", "popup 'Selectionner les appareils' detectee - fermeture...")
+    _local_pause_before_cta("[PS_OFFERS_PLATFORMS_POPUP] popup detectee")
+
+    try:
+        desktop_wrapper = popup.query_selector("[data-test-id='ps-offers-platforms-popup-desktop']")
+        checkbox = desktop_wrapper.query_selector("input[type='checkbox']") if desktop_wrapper else None
+        save_btn = popup.query_selector("[data-test-id='ps-offers-platforms-popup-save']")
+    except Exception as e:
+        log_info("[PS_OFFERS_PLATFORMS_POPUP]", f"erreur lecture DOM: {e}")
+        return False
+
+    if not checkbox or not save_btn:
+        log_info("[PS_OFFERS_PLATFORMS_POPUP]", "checkbox Desktop ou bouton Sauvegarder introuvable")
+        return False
+
+    try:
+        already_checked = checkbox.is_checked()
+    except Exception:
+        already_checked = False
+
+    try:
+        if is_cta_intercept_only():
+            log_info(
+                "[PS_OFFERS_PLATFORMS_POPUP]",
+                "checkbox Desktop + bouton Sauvegarder trouves - interception OK "
+                "(CTA_INTERCEPT_ONLY actif), pas de clic reel.",
+            )
+        else:
+            if not already_checked:
+                checkbox.click(timeout=3000)
+                log_info("[PS_OFFERS_PLATFORMS_POPUP]", "checkbox Desktop cochee.")
+            save_btn.click(timeout=3000)
+            log_info("[PS_OFFERS_PLATFORMS_POPUP]", "bouton 'Sauvegarder la selection' clique.")
+        time.sleep(1.0)
+    except Exception as e:
+        log_info("[PS_OFFERS_PLATFORMS_POPUP]", f"erreur clic: {e}")
+        return False
+
+    return True
+
+
 def _resolve_topsurveys_popups(driver, max_attempts: int = _TOPSURVEYS_POPUP_RESOLVE_MAX_ATTEMPTS) -> dict:
     """
     Ferme successivement les popups TopSurveys connus (recompense 'Genial', boite
     mystere, resultat de sondage 'Bon travail !'/'Complete', modale de fin de serie
-    quotidienne) pouvant apparaitre superposes au retour sur app.topsurveys.app, dans
-    un ordre non deterministe d'une session a l'autre.
+    quotidienne, popup Prime Insights "Selectionner les appareils") pouvant
+    apparaitre superposes au retour sur app.topsurveys.app, dans un ordre non
+    deterministe d'une session a l'autre.
 
     Re-evalue l'etat de la page apres CHAQUE tentative (reussie ou non) plutot
     qu'un scan+clic unique par type de popup — corrige le blocage observe quand
@@ -418,8 +494,8 @@ def _resolve_topsurveys_popups(driver, max_attempts: int = _TOPSURVEYS_POPUP_RES
     l'appelant, a declencher une seule fois apres stabilisation.
 
     Retourne un dict {"genial_closed", "mystery_box_closed", "bon_travail_closed",
-    "streak_complete_closed", "survey_result_closed"} (bool chacun) indiquant quels
-    types de popup ont ete fermes au moins une fois.
+    "streak_complete_closed", "survey_result_closed", "offers_platforms_closed"}
+    (bool chacun) indiquant quels types de popup ont ete fermes au moins une fois.
     """
     result = {
         "genial_closed": False,
@@ -427,6 +503,7 @@ def _resolve_topsurveys_popups(driver, max_attempts: int = _TOPSURVEYS_POPUP_RES
         "bon_travail_closed": False,
         "streak_complete_closed": False,
         "survey_result_closed": False,
+        "offers_platforms_closed": False,
     }
 
     for attempt in range(1, max_attempts + 1):
@@ -436,13 +513,27 @@ def _resolve_topsurveys_popups(driver, max_attempts: int = _TOPSURVEYS_POPUP_RES
             if _is_target_closed(e):
                 log_debug("[TOPSURVEYS_POPUP_RESOLVE]", f"page fermee pendant re-scan (attempt={attempt}): {e}")
             break
-        if "topsurveys.app" not in url and "primeopinion.com" not in url and "earnstar.com" not in url:
+        if (
+            "topsurveys.app" not in url
+            and "primeopinion.com" not in url
+            and "earnstar.com" not in url
+            and "heycash.com" not in url
+        ):
             break
 
         if _topsurveys_qualification_popup_active(driver):
             log_debug("[TOPSURVEYS_POPUP_RESOLVE]",
                       f"popup de qualification actif - arret re-scan (attempt={attempt})")
             break
+
+        offers_platforms_state = _handle_ps_offers_platforms_popup(driver)
+        if offers_platforms_state is True:
+            result["offers_platforms_closed"] = True
+            continue
+        if offers_platforms_state is False:
+            log_debug("[TOPSURVEYS_POPUP_RESOLVE]",
+                      f"popup 'offres appareils' detectee mais fermeture echouee (attempt={attempt}) - nouveau passage.")
+            continue
 
         if _handle_topsurveys_genial_reward_popup(driver):
             result["genial_closed"] = True
