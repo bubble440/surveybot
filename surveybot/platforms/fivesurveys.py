@@ -40,6 +40,12 @@ _LOGIN_SUBMIT_BTN_SEL = "button[data-test-id='sign-in-submit-button']"
 # préfixe "ps-survey-", pour exclure les sous-éléments partageant ce préfixe
 # (ps-survey-rating-wrapper) des cartes "Jeux" (class="offer-item").
 _SURVEYS_NAV_SEL = "[data-test-id='surveys-nav']"
+# Deux éléments partagent ce data-test-id (nav desktop en haut de page, nav
+# mobile fixe en bas), un seul étant visible selon le mode de rendu actif.
+# Le pseudo-sélecteur Playwright ":visible" restreint la résolution à
+# l'élément effectivement affiché, quel que soit le mode (desktop/mobile) —
+# usage réservé au clic de select_survey(), qui seul attend state="visible".
+_SURVEYS_NAV_VISIBLE_SEL = f"{_SURVEYS_NAV_SEL}:visible"
 _SURVEY_CARD_SEL = "div.survey-item[data-test-id^='ps-survey-']"
 _RATING_WRAPPER_SEL = "[data-test-id='ps-survey-rating-wrapper']"
 _RATING_AVERAGE_SEL = ".rating-average"
@@ -457,7 +463,7 @@ class FiveSurveysPlatform(Platform):
             )
 
         try:
-            tab = page.wait_for_selector(_SURVEYS_NAV_SEL, state="visible", timeout=15000)
+            tab = page.wait_for_selector(_SURVEYS_NAV_VISIBLE_SEL, state="visible", timeout=15000)
             tab.click()
         except Exception as e:
             log_info(_TAG, f"select_survey() — onglet surveys-nav introuvable/inclickable : {e}")
