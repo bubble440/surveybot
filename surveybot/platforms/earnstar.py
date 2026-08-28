@@ -6,6 +6,7 @@ import time
 from typing import List
 
 from config import is_cta_intercept_only
+from Management.notifier import send_telegram
 from platforms.base import Platform
 from preselection.question_analyzer import (
     click_participer_if_qualified,
@@ -125,6 +126,14 @@ def _select_best_earnstar_card(page, excluded_uuids: set):
     candidates = []
     raw_matches = page.query_selector_all(_SURVEY_CARD_ATTR_PREFIX)
     real_cards = 0
+    # Diagnostic bug #2 (cf. spec) : sans capture DOM authentifiée EarnStar ni
+    # log DEBUG par carte disponibles au moment du diagnostic, on enrichit ici
+    # la distinction "élément absent" vs "élément présent mais texte non
+    # parsable" plutôt que de deviner un nouveau sélecteur non vérifié.
+    missing_time_el = 0
+    missing_reward_el = 0
+    time_unparsable = 0
+    reward_unparsable = 0
     for idx, el in enumerate(raw_matches, start=1):
         try:
             tid = el.get_attribute("data-test-id") or ""
@@ -140,10 +149,30 @@ def _select_best_earnstar_card(page, excluded_uuids: set):
 
             time_el = el.query_selector(_SURVEY_TIME_SEL)
             reward_el = el.query_selector(_SURVEY_REWARD_AMOUNT_SEL)
-            duration = _parse_minutes(time_el.inner_text() if time_el else "")
-            reward = _parse_amount(reward_el.inner_text() if reward_el else "")
+            time_text = time_el.inner_text() if time_el else None
+            reward_text = reward_el.inner_text() if reward_el else None
+            duration = _parse_minutes(time_text or "")
+            reward = _parse_amount(reward_text or "")
             if reward is None or duration is None:
-                log_debug(_TAG, f"select_survey() — carte #{idx} ignorée (reward/durée non parsable)")
+                reasons = []
+                if time_el is None:
+                    missing_time_el += 1
+                    reasons.append("time_el absent (_SURVEY_TIME_SEL)")
+                elif duration is None:
+                    time_unparsable += 1
+                    reasons.append(f"time non parsable ({time_text!r})")
+                if reward_el is None:
+                    missing_reward_el += 1
+                    reasons.append("reward_el absent (_SURVEY_REWARD_AMOUNT_SEL)")
+                elif reward is None:
+                    reward_unparsable += 1
+                    reasons.append(f"reward non parsable ({reward_text!r})")
+                raw_sample = ((el.inner_text() or "").strip())[:150]
+                log_debug(
+                    _TAG,
+                    f"select_survey() — carte #{idx} (uuid={uuid_}) ignorée : {'; '.join(reasons)} "
+                    f"| texte brut carte={raw_sample!r}",
+                )
                 continue
 
             score = reward / duration
@@ -162,7 +191,10 @@ def _select_best_earnstar_card(page, excluded_uuids: set):
     if not candidates:
         log_info(
             _TAG,
-            f"select_survey() — 0 candidat(e) valide sur {real_cards} carte(s) réelle(s) détectée(s)",
+            f"select_survey() — 0 candidat(e) valide sur {real_cards} carte(s) réelle(s) : "
+            f"time_absent={missing_time_el} time_illisible={time_unparsable} "
+            f"reward_absent={missing_reward_el} reward_illisible={reward_unparsable} "
+            "(détail par carte en LOG_LEVEL=DEBUG)",
         )
         return None
     candidates.sort(key=lambda c: c[0], reverse=True)
@@ -270,10 +302,16 @@ def _resolve_preselection_questions(page, api_key: str, session: SurveySession, 
 
 def _check_balance_and_notify(page, account_id: str) -> None:
     """
-    Lit le solde affiché et, si >= seuil configuré, journalise un événement de
-    notification. Sélecteur _USER_BALANCE_SEL non confirmé sur EarnStar (cf.
+    Lit le solde affiché et, si >= seuil configuré, envoie une notification
+    Telegram. Sélecteur _USER_BALANCE_SEL non confirmé sur EarnStar (cf.
     en-tête de fichier) : wait_for_selector borné, échec = log debug seul,
     jamais bloquant pour le flux appelant.
+    Envoi Telegram : mécanisme déjà existant du projet (Management.notifier.
+    send_telegram + variables d'environnement telegram_bot_token/
+    telegram_chat_id), même schéma que Cash/ysense_balance.py::
+    _notify_manual_withdrawal — pas de canal réinventé, pas de plomberie
+    notify_fn à travers login()/handle_post_survey() (les identifiants
+    Telegram sont globaux au process, pas propres à un appel).
     """
     try:
         try:
@@ -292,7 +330,20 @@ def _check_balance_and_notify(page, account_id: str) -> None:
                 f"_check_balance_and_notify() — seuil atteint (solde={balance}€ >= "
                 f"{_MIN_BALANCE_NOTIFY}€, compte={account_id}) — notification à envoyer",
             )
-            # TODO : câbler ici notifier.send_telegram(...) avec bot_token/chat_id du projet.
+            tg_token = os.getenv("telegram_bot_token", "").strip()
+            tg_chat = os.getenv("telegram_chat_id", "").strip()
+            if not tg_token or not tg_chat:
+                log_debug(_TAG, "_check_balance_and_notify() — credentials Telegram absents, notification ignorée")
+                return
+            msg = (
+                f"[EARNSTAR][SOLDE] compte : {account_id} | solde : {balance:.2f}€ "
+                f">= seuil {_MIN_BALANCE_NOTIFY:.2f}€"
+            )
+            try:
+                ok = send_telegram(msg, tg_token, tg_chat)
+                log_debug(_TAG, f"_check_balance_and_notify() — send_telegram() ok={ok}")
+            except Exception as e:
+                log_debug(_TAG, f"_check_balance_and_notify() — envoi Telegram échoué (non bloquant) : {e}")
     except Exception as e:
         log_debug(_TAG, f"_check_balance_and_notify() — exception non bloquante : {e}")
 
