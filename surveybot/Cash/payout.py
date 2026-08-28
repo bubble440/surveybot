@@ -414,6 +414,7 @@ def check_and_cashout_if_needed(
     revolut_fullname: str = "",
     revolut_tag: str = "",
     email: str = "",
+    platform=None,
 ):
     """
     - Lit le solde,
@@ -513,29 +514,35 @@ def check_and_cashout_if_needed(
         _notify_cashout_result(account_id, amount, failed_methods=failed_methods, succeeded_method=succeeded_method, email=email)
 
     # 🔐 Mise à jour de l'état — uniquement après confirmation d'un retrait réel
+    # Portée plateforme : mêmes champs journaliers qu'avant, désormais scopés
+    # sous state["platforms"][platform_name] au lieu de la racine — les
+    # fonctions génériques (init_daily_balance_target/record_daily_earning_and_
+    # target) restent inchangées, on leur passe simplement ce sous-dict.
+    platform_name = platform.get_platform_name() if platform else "topsurveys"
     _cashout_result = {"daily_stop": False}
 
     def _apply_gain(st):
         _today = today_str()
-        init_daily_balance_target(st, amount, _today)
+        platform_state = st.setdefault("platforms", {}).setdefault(platform_name, {})
+        init_daily_balance_target(platform_state, amount, _today)
 
-        start = float(st.get("daily_balance_start", {}).get(_today, amount))
-        gained_prev = float(st.get("daily_balance_gained", {}).get(_today, 0.0))
+        start = float(platform_state.get("daily_balance_start", {}).get(_today, amount))
+        gained_prev = float(platform_state.get("daily_balance_gained", {}).get(_today, 0.0))
         gain_avant_retrait = max(0.0, amount - start)
         gain_total = gained_prev + gain_avant_retrait
 
-        st.setdefault("daily_balance_gained", {})[_today] = gain_total
+        platform_state.setdefault("daily_balance_gained", {})[_today] = gain_total
 
         if gain_total >= DAILY_TARGET_EUR:
             _cashout_result["daily_stop"] = True
         else:
             solde_post_retrait = amount - MIN_CASHOUT_EUR
-            st.setdefault("daily_balance_target", {})[_today] = (
+            platform_state.setdefault("daily_balance_target", {})[_today] = (
                 solde_post_retrait + (DAILY_TARGET_EUR - gain_total)
             )
 
         record_daily_earning_and_target(
-            st,
+            platform_state,
             amount_eur=5.0,
             daily_target_eur=DAILY_TARGET_EUR,
             now_ts=int(time.time()),
@@ -555,7 +562,7 @@ def check_and_cashout_if_needed(
 
     return True
 
-def _payout_and_check_daily_stop(driver, account_id: str, email: str = "") -> bool:
+def _payout_and_check_daily_stop(driver, account_id: str, email: str = "", platform=None) -> bool:
     """
     À appeler à chaque retour sur TopSurveys. Vérifie dans l'ordre :
       1) Solde >= 5€  → retrait automatique (best-effort)
@@ -565,6 +572,8 @@ def _payout_and_check_daily_stop(driver, account_id: str, email: str = "") -> bo
     """
     from Management.guards.runtime_guard import StopReason
     from Management.pause_policy import PausePolicy
+
+    platform_name = platform.get_platform_name() if platform else "topsurveys"
 
     # 1) Retrait uniquement si solde >= 5 € (MIN_CASHOUT_EUR) :
     #    le modal TopSurveys ne propose que des options >= 5 €,
@@ -579,6 +588,7 @@ def _payout_and_check_daily_stop(driver, account_id: str, email: str = "") -> bo
             revolut_fullname="",
             revolut_tag="",
             email=email,
+            platform=platform,
         )
     except Exception as e:
         print(f"[PAYOUT][WARN] retour TopSurveys: {e}")
@@ -599,14 +609,17 @@ def _payout_and_check_daily_stop(driver, account_id: str, email: str = "") -> bo
         return False
 
     _today = today_str()
-    update_state(account_id, lambda st: init_daily_balance_target(st, balance, _today))
+    update_state(account_id, lambda st: init_daily_balance_target(
+        st.setdefault("platforms", {}).setdefault(platform_name, {}), balance, _today
+    ))
 
     state = load_state(account_id)
+    platform_state = state.get("platforms", {}).get(platform_name, {})
 
     # Recalcul défensif de la target depuis les champs source de vérité.
     # Évite les faux DAILY_STOP causés par une valeur daily_balance_target corrompue.
-    start = float(state.get("daily_balance_start", {}).get(_today, balance))
-    gained = float(state.get("daily_balance_gained", {}).get(_today, 0.0))
+    start = float(platform_state.get("daily_balance_start", {}).get(_today, balance))
+    gained = float(platform_state.get("daily_balance_gained", {}).get(_today, 0.0))
     target = (start - gained) + DAILY_TARGET_EUR
 
     if balance >= target:

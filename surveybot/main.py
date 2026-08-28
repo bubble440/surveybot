@@ -304,7 +304,7 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str, platform=None)
                         except Exception as _phone_notif_exc:
                             print(f"[ATTACH][PHONE_VERIF] notification échouée: {_phone_notif_exc}")
                         if not _has_phone_screen:
-                            _handle_topsurveys_exclusion_popup(driver, account_id)
+                            _handle_topsurveys_exclusion_popup(driver, account_id, platform=platform)
                             print(f"[ATTACH] Retour TopSurveys détecté step={i} → sortie boucle.")
                             break
                 except Exception as _e:
@@ -468,7 +468,7 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str, platform=None)
             except Exception:
                 pass
 
-            ok = survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_ctx)
+            ok = survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_ctx, platform=platform)
             _ctx.maybe_update_summary()                                           # ← ajouter cette ligne
             print(f"[ATTACH] step={i}/{max_steps} ok={ok} url={_attach_display_url(driver.url)}")
 
@@ -926,7 +926,7 @@ def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config
     max_steps = int(os.getenv("ATTACH_MAX_STEPS", "100"))
     for i in range(1, max_steps + 1):
         try:
-            done = survey_executor.execute_survey_page(page, account_id, api_key, ctx=_ctx)
+            done = survey_executor.execute_survey_page(page, account_id, api_key, ctx=_ctx, platform=platform)
             _ctx.maybe_update_summary()
             print(f"[ATTACH][LOGIN→RES] step={i}/{max_steps} ok={done} url={_attach_display_url(page.url)}")
             if not done and survey_executor._attach_disq_stop_requested:
@@ -1042,7 +1042,7 @@ def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str, p
     max_steps = int(os.getenv("ATTACH_MAX_STEPS", "100"))
     for i in range(1, max_steps + 1):
         try:
-            done = survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_ctx)
+            done = survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_ctx, platform=platform)
             _ctx.maybe_update_summary()
             print(f"[ATTACH][PRESEL->RES] step={i}/{max_steps} ok={done} url={_attach_display_url(driver.url)}")
             if not done and survey_executor._attach_disq_stop_requested:
@@ -1055,6 +1055,62 @@ def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str, p
 
     print("[ATTACH][PRESEL] route terminée.")
 
+def _select_platform_or_exit(account_id: str) -> str:
+    """
+    Sélection de rotation (hors mode attach uniquement) : détermine, pour ce
+    compte, la première plateforme de global_config.PLATFORM_ROTATION (dans
+    l'ordre de la liste) dont le cooldown métier est expiré. Se refait à
+    chaque lancement de process — jamais mise en cache au-delà d'un cycle de
+    process, chaque plateforme ayant son propre cycle de cooldown/objectif
+    journalier indépendant des autres.
+
+    Si aucune plateforme n'est disponible : réarme le cooldown_until_ts
+    RACINE (verrou d'exclusivité — status/cooldown_until_ts au niveau racine
+    ne changent pas de sémantique) sur l'échéance la plus proche parmi les
+    cooldowns métier des plateformes listées (jamais sur epoch), puis termine
+    le process proprement (EXIT_VOLUNTARY). Objectif : éviter qu'un
+    superviseur externe (wake_scheduler côté parc interne, ou tout mécanisme
+    de relance équivalent chez un tiers) ne relance le process en boucle
+    rapprochée tant qu'aucune plateforme n'est réellement prête, ce qui
+    risquerait de déclencher à tort le seuil de crash-loop existant
+    (check_and_record_start).
+    """
+    from global_config import PLATFORM_ROTATION
+    from platforms import validate_platform_rotation
+    from State.account_state import (
+        load_state as _select_load_state,
+        select_first_available_platform,
+        nearest_platform_cooldown_deadline,
+        update_state as _select_update_state,
+    )
+    from Survey.log_utils import log_info
+
+    validate_platform_rotation(PLATFORM_ROTATION)
+
+    state = _select_load_state(account_id)
+    chosen = select_first_available_platform(state, PLATFORM_ROTATION)
+    if chosen is not None:
+        log_info(
+            "[PLATFORM_ROTATION]",
+            f"account_id={account_id} plateforme sélectionnée={chosen!r} "
+            f"(rotation={list(PLATFORM_ROTATION)!r})",
+        )
+        return chosen
+
+    deadline = nearest_platform_cooldown_deadline(state, PLATFORM_ROTATION)
+    _select_update_state(account_id, lambda st: st.__setitem__("cooldown_until_ts", deadline))
+    log_info(
+        "[PLATFORM_ROTATION]",
+        f"account_id={account_id} aucune plateforme disponible parmi "
+        f"{list(PLATFORM_ROTATION)!r} — cooldown racine réarmé sur {deadline!r}, "
+        "arrêt volontaire.",
+    )
+
+    from bot_supervisor import record_exit, EXIT_VOLUNTARY
+    record_exit(account_id, EXIT_VOLUNTARY, "no_platform_available")
+    sys.exit(EXIT_VOLUNTARY)
+
+
 def main():
     # Même garde qu'à l'import du module (cf. plus haut) : en mode attach,
     # l'environnement est déjà entièrement fourni par attach_tab.ps1, donc pas
@@ -1063,7 +1119,28 @@ def main():
         config = load_config()
     else:
         config = {}
-    platform = get_platform()
+
+    # account_id résolu AVANT la sélection de plateforme (hors mode attach) :
+    # la sélection de rotation a besoin de l'état Postgres de CE compte pour
+    # déterminer quelle plateforme est prête (cf. _select_platform_or_exit).
+    account_id = (
+        os.getenv("ACCOUNT_ID")
+        or config.get("account_id")
+    )
+    email = (
+        os.getenv("EMAIL")
+        or config.get("Email")
+    )
+
+    if not account_id:
+        raise RuntimeError("ACCOUNT_ID introuvable")
+
+    if is_attach_mode():
+        # Mode attach : débogage manuel d'une seule plateforme à la fois,
+        # ciblée via l'environnement — comportement inchangé.
+        platform = get_platform()
+    else:
+        platform = get_platform(_select_platform_or_exit(account_id))
 
     print(
         f"[BOOT] RUN_ENV={RUN_ENV} BROWSER_MODE={BROWSER_MODE} attach={is_attach_mode()}",
@@ -1072,18 +1149,6 @@ def main():
 
     # Note : attach est désormais contrôlé uniquement par BROWSER_MODE=attach,
     # indépendamment de RUN_ENV. Pas de garde supplémentaire nécessaire.
-
-    account_id = (
-        os.getenv("ACCOUNT_ID")
-        or config.get("account_id")
-    )
-    email = (
-        os.getenv("EMAIL") 
-        or config.get("Email")
-    )
-
-    if not account_id:
-        raise RuntimeError("ACCOUNT_ID introuvable")
 
     if is_attach_mode():
         # ⚠ ATTACH = LOCAL DEBUG TAKEOVER — Playwright natif (BLOC 1)
@@ -1259,6 +1324,7 @@ def main():
                         account_id=account_id,
                         notify_fn=notify_fn,
                         on_soft_restart=_soft_restart,
+                        platform_name=platform.get_platform_name(),
                     )
                 get_guard().attach_driver(driver)
 

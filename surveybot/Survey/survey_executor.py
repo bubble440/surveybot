@@ -1895,7 +1895,7 @@ def notify_phone_verification_screen(driver, account_id) -> bool:
     return True
 
 
-def execute_survey_page(driver, account_id, api_key, ctx=None):
+def execute_survey_page(driver, account_id, api_key, ctx=None, platform=None):
     """
     Orchestration d'une page de survey : DOM analysis → GPT → dispatch actions.
 
@@ -1958,7 +1958,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
     try:
         _cur = page.url
         if "topsurveys.app" in (_cur or "").lower():
-            if _handle_topsurveys_exclusion_popup(driver, account_id):
+            if _handle_topsurveys_exclusion_popup(driver, account_id, platform=platform):
                 reason = "[TOPSURVEYS_POPUP] Popup traite -> continue boucle takeover"
                 print(reason)
                 _local_pause_before_cta(reason)

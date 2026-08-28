@@ -804,7 +804,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
         # a) Laisser GPT décider de l'action — BLOC 3b (execute_survey_page)
         # Pont BLOC 3a → BLOC 3b : page transmis pour compatibilité Selenium.
         # -------------------------------------------------------------------
-        success = Survey.survey_executor.execute_survey_page(page, account_id, api_key, ctx=_survey_ctx)
+        success = Survey.survey_executor.execute_survey_page(page, account_id, api_key, ctx=_survey_ctx, platform=platform)
 
         if success:
             guard.record_success()

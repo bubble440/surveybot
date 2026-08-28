@@ -118,6 +118,15 @@ def _default_state(account_id: str) -> Dict[str, Any]:
         "daily_balance_target": {},   # ex: {"2026-04-10": 3.50} — objectif de solde courant pour la journée
         "daily_balance_gained": {},   # ex: {"2026-04-10": 1.00} — gain journalier cumulé (survit aux retraits)
         "total_earned": 0.0,
+        # Sous-état par plateforme (rotation multi-plateformes, un même account_id
+        # pouvant tourner sur plusieurs inscriptions distinctes) : chaque clé est un
+        # nom de plateforme (cf. platforms/__init__.py::get_platform), sa valeur
+        # contient au minimum "cooldown_until_ts" (cooldown métier, distinct du
+        # verrou d'exclusivité racine ci-dessus) et les mêmes champs journaliers
+        # que ceux historiquement à la racine. Absent d'un état pré-existant :
+        # normalisé ici via _default_state, jamais de migration Postgres requise.
+        "platforms": {},
+
         # Clé de licence — permet la jointure avec la table licenses pour supervision.
         # Lue depuis _license_config.LICENSE_KEY (embarquée dans le compilé PyInstaller).
         # Vide en mode attach (debug).
@@ -196,6 +205,58 @@ def _normalize_state(st: Dict[str, Any], account_id: str) -> Dict[str, Any]:
         base["ttl_ts"] = _ts_add(STATE_TTL_DAYS * 86400)
 
     return base
+
+
+# -----------------------------
+# Rotation multi-plateformes (cooldown métier par plateforme)
+# -----------------------------
+# Ces fonctions sont pures (dict state en paramètre, comme State/daily_target.py)
+# pour rester composables dans une même transaction update_state() par l'appelant
+# (ex: RuntimeGuard.pause() qui doit aussi toucher le verrou racine dans le même
+# appel). Elles ne lisent/écrivent jamais Postgres elles-mêmes.
+
+def select_first_available_platform(state: Dict[str, Any], rotation) -> "str | None":
+    """
+    Retourne le premier nom de plateforme de `rotation` (dans l'ordre de la
+    liste) dont le cooldown métier (state["platforms"][nom]["cooldown_until_ts"])
+    est expiré. None si aucune plateforme n'est disponible.
+    """
+    now_unix = int(time.time())
+    platforms = state.get("platforms") or {}
+    for name in rotation:
+        sub = platforms.get(name) or {}
+        cooldown = sub.get("cooldown_until_ts", "1970-01-01T00:00:00")
+        if _ts_to_unix(cooldown) < now_unix:
+            return name
+    return None
+
+
+def nearest_platform_cooldown_deadline(state: Dict[str, Any], rotation) -> str:
+    """
+    Échéance la plus proche parmi les cooldowns métier des plateformes de
+    `rotation`. Destinée à réarmer le cooldown_until_ts RACINE (verrou
+    d'exclusivité) quand select_first_available_platform() ne retourne rien,
+    pour éviter qu'un superviseur externe ne relance le process en boucle
+    rapprochée tant qu'aucune plateforme n'est réellement prête.
+    """
+    platforms = state.get("platforms") or {}
+    deadlines = [
+        (platforms.get(name) or {}).get("cooldown_until_ts", "1970-01-01T00:00:00")
+        for name in rotation
+    ]
+    deadlines = [d for d in deadlines if d]
+    if not deadlines:
+        return "1970-01-01T00:00:00"
+    return min(deadlines, key=_ts_to_unix)
+
+
+def set_platform_cooldown(state: Dict[str, Any], platform_name: str, cooldown_until_ts: str) -> None:
+    """
+    Écrit le cooldown métier d'une plateforme donnée (state["platforms"][nom]
+    ["cooldown_until_ts"]), sans jamais toucher au verrou d'exclusivité racine
+    (status/cooldown_until_ts au niveau racine de account_state).
+    """
+    state.setdefault("platforms", {}).setdefault(platform_name, {})["cooldown_until_ts"] = cooldown_until_ts
 
 
 # -----------------------------

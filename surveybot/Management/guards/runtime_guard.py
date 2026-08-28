@@ -9,7 +9,7 @@ import time, os, signal, threading, traceback
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 from enum import Enum
-from State.account_state import load_state, update_state, touch_heartbeat, _ts_add, _ts_to_unix
+from State.account_state import load_state, update_state, touch_heartbeat, _ts_add, _ts_to_unix, set_platform_cooldown
 from State.daily_target import DAILY_TARGET_EUR
 from Management.pause_policy import PausePolicy, resolve_pause_seconds
 from config import is_cta_intercept_only
@@ -57,6 +57,7 @@ class RuntimeGuard:
         self,
         *,
         account_id: str,
+        platform_name: str,
         idle_timeout_sec: int = 120,          # 2 minutes
         restart_cooldown_sec: int = 60,      # 1 minute
         max_errors_in_row: int = 3,
@@ -66,6 +67,10 @@ class RuntimeGuard:
         on_soft_restart: Optional[Callable[[str], None]] = None,
     ):
         self.account_id = account_id
+        # Plateforme couramment sélectionnée pour ce process (cf. main.py::
+        # _select_platform_or_exit) — jamais redéterminée ailleurs : pause()
+        # l'utilise pour scoper le cooldown métier sous state["platforms"][nom].
+        self.platform_name = platform_name
         self.driver = None  # sera injecté après le lancement du navigateur
         self.state = RuntimeState()
         self.idle_timeout_sec = idle_timeout_sec
@@ -427,9 +432,18 @@ class RuntimeGuard:
             )
 
         def _apply_pause(st):
-            st["last_stop_reason"] = reason.value
-            st["cooldown_until_ts"] = _ts_add(pause_sec)
+            # Cooldown métier : propre à self.platform_name, distinct du verrou
+            # d'exclusivité racine (cf. State/account_state.py::
+            # set_platform_cooldown). last_stop_reason suit le même changement
+            # de portée — c'est le même événement métier.
+            set_platform_cooldown(st, self.platform_name, _ts_add(pause_sec))
+            st.setdefault("platforms", {}).setdefault(self.platform_name, {})["last_stop_reason"] = reason.value
+            # Verrou d'exclusivité racine : relâché immédiatement (même
+            # convention que main.py/launch.py sur tout arrêt de process), la
+            # RACINE ne portant plus la durée de la pause métier — celle-ci vit
+            # désormais uniquement sous state["platforms"][self.platform_name].
             st["status"] = "idle"
+            st["cooldown_until_ts"] = "1970-01-01T00:00:00"
 
         # try/finally : SystemExit est garanti même si update_state échoue (Postgres down, etc.)
         try:

@@ -28,7 +28,7 @@ class TopSurveysPlatform(Platform):
 
     def handle_post_survey(self, driver, account_id: str) -> bool:
         from Survey.functions import _handle_topsurveys_exclusion_popup
-        return bool(_handle_topsurveys_exclusion_popup(driver, account_id))
+        return bool(_handle_topsurveys_exclusion_popup(driver, account_id, platform=self))
 
     def is_on_platform(self, driver) -> bool:
         try:

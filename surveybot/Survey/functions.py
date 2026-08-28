@@ -436,7 +436,7 @@ def _resolve_topsurveys_popups(driver, max_attempts: int = _TOPSURVEYS_POPUP_RES
             if _is_target_closed(e):
                 log_debug("[TOPSURVEYS_POPUP_RESOLVE]", f"page fermee pendant re-scan (attempt={attempt}): {e}")
             break
-        if "topsurveys.app" not in url and "primeopinion.com" not in url:
+        if "topsurveys.app" not in url and "primeopinion.com" not in url and "earnstar.com" not in url:
             break
 
         if _topsurveys_qualification_popup_active(driver):
@@ -495,7 +495,7 @@ def _resolve_topsurveys_popups(driver, max_attempts: int = _TOPSURVEYS_POPUP_RES
     return result
 
 
-def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_executor
+def _handle_topsurveys_exclusion_popup(driver, account_id, platform=None) -> bool: #survey_executor
     """
     Gere les popups TopSurveys au retour sur app.topsurveys.app.
 
@@ -538,7 +538,7 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
     # === PRIORITE 1 : Mystery boxes (etaient fermees pendant le re-scan) ===
     if resolved["mystery_box_closed"]:
         try:
-            _payout_and_check_daily_stop(driver, account_id, email="")  # retrait + DAILY STOP
+            _payout_and_check_daily_stop(driver, account_id, email="", platform=platform)  # retrait + DAILY STOP
         except Exception as e:
             print(f"[TOPSURVEYS_POPUP] Erreur payout mystery box: {e}")
         try:
@@ -582,7 +582,7 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
                     print("⚠ Popup disqualification détecté mais fermeture 'Ok' a échoué:", e)
 
                 _close_other_tabs_in_current_session(driver)
-                _payout_and_check_daily_stop(driver, account_id, email="")  # retrait + DAILY STOP
+                _payout_and_check_daily_stop(driver, account_id, email="", platform=platform)  # retrait + DAILY STOP
                 time.sleep(0.7)
                 survey_navigator.go_to_best_value_survey(driver)
                 return True

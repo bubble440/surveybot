@@ -4,22 +4,24 @@ import os
 
 from platforms.base import Platform
 
-# PLATFORM est une variable GLOBAL_CONFIG : en build compilé (Nuitka), elle provient
-# exclusivement de global_config.py, jamais de l'environnement du process (cf. config.py).
-# En dev/attach (global_config.py absent du projet), fallback os.getenv.
-try:
-    from global_config import PLATFORM  # type: ignore
-except ImportError:
-    PLATFORM = os.getenv("PLATFORM", "")
+# Plateformes reconnues par get_platform() ci-dessous — servent aussi à valider
+# global_config.PLATFORM_ROTATION au démarrage (cf. validate_platform_rotation()
+# et main.py, hors mode attach).
+KNOWN_PLATFORMS = ("topsurveys", "ysense", "primeopinion", "heycash", "earnstar")
 
 
 def get_platform(name: str | None = None) -> Platform:
     """
     Retourne l'instance Platform correspondant à `name`.
-    Si name est None, lit la variable PLATFORM (défaut: 'topsurveys').
+    Si name est None (mode attach uniquement — débogage manuel), lit la
+    variable d'environnement PLATFORM pour cibler une plateforme précise
+    (défaut: 'topsurveys'). Hors mode attach, `name` est toujours résolu
+    explicitement par l'appelant (sélection de rotation, cf. main.py) — jamais
+    par une constante globale, PLATFORM_ROTATION ayant remplacé l'ancienne
+    variable PLATFORM (plateforme unique figée à la compilation).
     """
     if name is None:
-        name = (PLATFORM or "topsurveys").strip().lower()
+        name = (os.getenv("PLATFORM", "") or "topsurveys").strip().lower()
 
     if name == "topsurveys":
         from platforms.topsurveys import TopSurveysPlatform
@@ -37,6 +39,25 @@ def get_platform(name: str | None = None) -> Platform:
         from platforms.heycash import HeyCashPlatform
         return HeyCashPlatform()
 
+    if name == "earnstar":
+        from platforms.earnstar import EarnStarPlatform
+        return EarnStarPlatform()
+
     raise ValueError(
-        f"Plateforme inconnue: {name!r}. Valeurs supportées: 'topsurveys', 'ysense', 'primeopinion', 'heycash'"
+        f"Plateforme inconnue: {name!r}. Valeurs supportées: 'topsurveys', 'ysense', 'primeopinion', 'heycash', 'earnstar'"
     )
+
+
+def validate_platform_rotation(rotation) -> None:
+    """
+    Échoue immédiatement et explicitement si `rotation` (typiquement
+    global_config.PLATFORM_ROTATION) contient un nom de plateforme non reconnu
+    par get_platform() — plutôt que de risquer un crash imprévisible plus tard,
+    seulement si la rotation retient justement cette entrée invalide.
+    """
+    unknown = [n for n in rotation if (n or "").strip().lower() not in KNOWN_PLATFORMS]
+    if unknown:
+        raise ValueError(
+            f"PLATFORM_ROTATION contient {len(unknown)} plateforme(s) inconnue(s): {unknown!r}. "
+            f"Valeurs supportées: {list(KNOWN_PLATFORMS)!r}"
+        )

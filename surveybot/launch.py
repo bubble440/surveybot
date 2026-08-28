@@ -375,11 +375,12 @@ def soft_restart(ctx, driver, reason, platform=None):
 
     soft_restart_resume(ctx, driver, platform=platform)
 
-def start_runtime_guard(account_id: str, notify_fn, on_soft_restart):
+def start_runtime_guard(account_id: str, notify_fn, on_soft_restart, platform_name: str):
     state = load_state(account_id)
 
     guard = RuntimeGuard(
         account_id=account_id,
+        platform_name=platform_name,
         idle_timeout_sec=120,
         restart_cooldown_sec=60,
         max_errors_in_row=5,
