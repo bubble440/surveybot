@@ -85,9 +85,9 @@ _MAX_PRESELECTION_QUESTIONS = 30
 _PRESELECTION_STUCK_THRESHOLD = 5
 _MAX_ATTEMPTS = 3
 
-# Seuil de solde (€) déclenchant une notification — pas de réclamation
-# automatique, sur demande explicite : notifier seulement (cf. spec, seuil 5€).
-_MIN_BALANCE_NOTIFY = 5.0
+# Seuil de solde (USD) déclenchant une notification — pas de réclamation
+# automatique, sur demande explicite : notifier seulement (cf. spec, seuil 24.44$).
+_MIN_BALANCE_NOTIFY = 24.44
 
 _TIME_RE = re.compile(r"(\d+)\s*min", re.IGNORECASE)
 _AMOUNT_RE = re.compile(r"(\d+(?:[.,]\d+)?)")

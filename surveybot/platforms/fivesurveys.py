@@ -6,6 +6,7 @@ import time
 from typing import List
 
 from config import is_cta_intercept_only
+from Management.notifier import send_telegram
 from platforms.base import Platform
 from preselection.question_analyzer import (
     click_participer_if_qualified,
@@ -50,7 +51,13 @@ _PS_POPUP_SEL = "[data-test-id='ps-popup-content-wrapper']"
 
 # Signal de session authentifiée — CONFIRMÉ (surveys-nav ET user-balance sont
 # tous deux visibles dans les captures du dashboard connecté).
+_USER_BALANCE_SEL = "[data-test-id='user-balance']"
 _AUTHENTICATED_SIGNAL_SEL = "[data-test-id='surveys-nav'], [data-test-id='user-balance']"
+
+# Seuil de solde (€) déclenchant une notification — pas de réclamation
+# automatique : notifier seulement. Confirmé par la mention "Complète 5
+# sondages et obtiens 3,00€" affichée sur le dashboard.
+_MIN_BALANCE_NOTIFY = 3.0
 
 _DECLINE_LABELS = (
     "Je ne peux pas répondre à cette question",
@@ -66,6 +73,7 @@ _PRESELECTION_STUCK_THRESHOLD = 5
 _MAX_ATTEMPTS = 3
 
 _RATING_RE = re.compile(r"(\d+(?:[.,]\d+)?)")
+_AMOUNT_RE = re.compile(r"(\d+(?:[.,]\d+)?)")
 
 
 def _mask_secret(value: str) -> str:
@@ -90,6 +98,71 @@ def _parse_rating(text: str):
         return float(match.group(1).replace(",", "."))
     except ValueError:
         return None
+
+
+def _parse_amount(text: str):
+    """
+    Extrait un montant décimal générique (ex: "3,00€", "$ 24.44") depuis un
+    texte. Fonction distincte de _parse_rating (même forme de regex, mais
+    domaine différent — solde vs note de carte) : aucune des deux n'est
+    réutilisée pour l'autre usage.
+    """
+    if not text:
+        return None
+    match = _AMOUNT_RE.search(text)
+    if not match:
+        return None
+    try:
+        value = float(match.group(1).replace(",", "."))
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
+def _check_balance_and_notify(page, account_id: str) -> None:
+    """
+    Lit le solde affiché (data-test-id='user-balance', jusqu'ici utilisé
+    uniquement comme composant du signal de session authentifiée, jamais lu
+    pour sa valeur) et, si >= seuil confirmé, envoie une notification
+    Telegram. Même mécanisme que platforms/heycash.py et
+    platforms/earnstar.py::_check_balance_and_notify
+    (Management.notifier.send_telegram + telegram_bot_token/telegram_chat_id
+    déjà en place dans le projet) — pas de canal réinventé. Non bloquant :
+    toute erreur est journalisée, jamais propagée à l'appelant.
+    """
+    try:
+        try:
+            balance_el = page.wait_for_selector(_USER_BALANCE_SEL, state="attached", timeout=8000)
+        except Exception:
+            log_debug(_TAG, "_check_balance_and_notify() — élément solde introuvable après 8s")
+            return
+        balance = _parse_amount(balance_el.inner_text())
+        if balance is None:
+            log_debug(_TAG, "_check_balance_and_notify() — solde illisible")
+            return
+        log_debug(_TAG, f"_check_balance_and_notify() — solde courant : {balance}€")
+        if balance >= _MIN_BALANCE_NOTIFY:
+            log_info(
+                _TAG,
+                f"_check_balance_and_notify() — seuil atteint (solde={balance}€ >= "
+                f"{_MIN_BALANCE_NOTIFY}€, compte={account_id}) — notification à envoyer",
+            )
+            tg_token = os.getenv("telegram_bot_token", "").strip()
+            tg_chat = os.getenv("telegram_chat_id", "").strip()
+            if not tg_token or not tg_chat:
+                log_debug(_TAG, "_check_balance_and_notify() — credentials Telegram absents, notification ignorée")
+                return
+            msg = (
+                f"[FIVESURVEYS][SOLDE] compte : {account_id} | solde : {balance:.2f}€ "
+                f">= seuil {_MIN_BALANCE_NOTIFY:.2f}€"
+            )
+            try:
+                ok = send_telegram(msg, tg_token, tg_chat)
+                log_debug(_TAG, f"_check_balance_and_notify() — send_telegram() ok={ok}")
+            except Exception as e:
+                log_debug(_TAG, f"_check_balance_and_notify() — envoi Telegram échoué (non bloquant) : {e}")
+    except Exception as e:
+        log_debug(_TAG, f"_check_balance_and_notify() — exception non bloquante : {e}")
 
 
 def _select_best_fivesurveys_card(page, excluded_uuids: set):
@@ -324,6 +397,10 @@ class FiveSurveysPlatform(Platform):
         try:
             page.wait_for_selector(_AUTHENTICATED_SIGNAL_SEL, state="attached", timeout=20000)
             log_info(_TAG, "login() — succès (signal authentifié détecté)")
+            try:
+                _check_balance_and_notify(page, os.getenv("ACCOUNT_ID") or "unknown")
+            except Exception as e:
+                log_debug(_TAG, f"login() — vérification solde post-login échouée (non bloquant) : {e}")
             return True
         except Exception:
             log_info(_TAG, "login() — signal authentifié non détecté après 20s, échec")
@@ -469,6 +546,11 @@ class FiveSurveysPlatform(Platform):
             return False
 
         log_info(_TAG, "handle_post_survey() — retour sur la liste de sondages détecté")
+
+        try:
+            _check_balance_and_notify(page, account_id)
+        except Exception as e:
+            log_debug(_TAG, f"handle_post_survey() — vérification solde échouée (non bloquant) : {e}")
 
         self.select_survey(page)
         return True
