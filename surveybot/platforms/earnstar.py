@@ -378,7 +378,12 @@ def _check_balance_and_notify(page, account_id: str) -> None:
                 ok = send_telegram(msg, tg_token, tg_chat)
                 log_debug(_TAG, f"_check_balance_and_notify() — send_telegram() ok={ok}")
             except Exception as e:
+                ok = False
                 log_debug(_TAG, f"_check_balance_and_notify() — envoi Telegram échoué (non bloquant) : {e}")
+
+            if not ok:
+                log_debug(_TAG, "_check_balance_and_notify() — marquage notifié sauté (envoi Telegram échoué)")
+                return
 
             try:
                 update_state(account_id, lambda st: mark_notified_balance_today(st, "earnstar", day))

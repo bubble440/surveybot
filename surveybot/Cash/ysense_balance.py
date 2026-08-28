@@ -84,10 +84,14 @@ def _notify_manual_withdrawal(account_id: str, balance: float) -> None:
         f"solde : ${balance:.2f} — page PayPal EUR atteinte, retrait à faire manuellement."
     )
     try:
-        send_telegram(msg, tg_token, tg_chat)
+        ok = send_telegram(msg, tg_token, tg_chat)
         log_info(_TAG, "_notify_manual_withdrawal() — notification Telegram envoyée")
     except Exception:
-        pass
+        ok = False
+
+    if not ok:
+        log_debug(_TAG, "_notify_manual_withdrawal() — marquage notifié sauté (envoi Telegram échoué)")
+        return
 
     try:
         update_state(account_id, lambda st: mark_notified_balance_today(st, "ysense", day))

@@ -73,11 +73,16 @@ def _read_modal_balance(driver) -> Tuple[Optional[float], Optional[float]]:
 
 def _already_notified_today(account_id: str) -> Tuple[bool, str]:
     """
-    Guard de déduplication partagé entre _notify_threshold_reached() et
-    _notify_claim_failure() : une seule clé "primeopinion" par jour pour les
-    deux (cf. State/account_state.py::has_notified_balance_today), pas une
-    clé par type de message. Fail-open (retourne False) sur toute erreur
-    Postgres/état — mieux vaut un doublon occasionnel qu'un silence complet.
+    Lecture (seule) de l'état de déduplication "primeopinion" pour le jour
+    courant (cf. State/account_state.py::has_notified_balance_today) — une
+    seule clé par plateforme et par jour, pas une clé par type de message.
+    Fail-open (retourne False) sur toute erreur Postgres/état — mieux vaut un
+    doublon occasionnel qu'un silence complet.
+    Appelée UNE SEULE FOIS par check_and_claim_if_needed() (pas depuis
+    _notify_threshold_reached()/_notify_claim_failure(), qui sont de purs
+    envois) : sinon la marque posée par le premier envoi d'un passage
+    étoufferait à tort le second envoi du même passage (ex: seuil franchi
+    PUIS échec de réclamation dans le même appel).
     """
     from State.account_state import has_notified_balance_today, load_state
     from State.daily_target import today_str
@@ -91,6 +96,7 @@ def _already_notified_today(account_id: str) -> Tuple[bool, str]:
 
 
 def _mark_notified_today(account_id: str, day: str) -> None:
+    """Marque "primeopinion" notifié pour `day` — appelée une seule fois par passage, cf. check_and_claim_if_needed()."""
     from State.account_state import mark_notified_balance_today, update_state
 
     try:
@@ -99,20 +105,13 @@ def _mark_notified_today(account_id: str, day: str) -> None:
         log_debug(_TAG, f"_mark_notified_today() — marquage notifié échoué (non bloquant) : {e}")
 
 
-def _notify_threshold_reached(account_id: str, balance_points: float) -> None:
-    already_notified, day = _already_notified_today(account_id)
-    if already_notified:
-        log_debug(
-            _TAG,
-            f"_notify_threshold_reached() — notification ignorée (déjà notifié aujourd'hui, compte={account_id})",
-        )
-        return
-
+def _notify_threshold_reached(account_id: str, balance_points: float) -> bool:
+    """Envoi pur (formatage + Telegram), sans guard de déduplication — porté par l'appelant. Retourne True si l'envoi a réellement réussi."""
     tg_token = os.getenv("telegram_bot_token", "").strip()
     tg_chat = os.getenv("telegram_chat_id", "").strip()
     if not tg_token or not tg_chat:
         log_debug(_TAG, "_notify_threshold_reached() — credentials Telegram absents, notification ignorée")
-        return
+        return False
     msg = (
         f"[PRIMEOPINION][RETRAIT] Seuil franchi — compte : {account_id} | "
         f"solde : {balance_points:.0f} Points — tentative de réclamation Revolut "
@@ -120,32 +119,25 @@ def _notify_threshold_reached(account_id: str, balance_points: float) -> None:
         "(premier passage réel sur PrimeOpinion, à superviser)."
     )
     try:
-        send_telegram(msg, tg_token, tg_chat)
-        log_info(_TAG, "_notify_threshold_reached() — notification Telegram envoyée")
+        ok = bool(send_telegram(msg, tg_token, tg_chat))
     except Exception:
-        pass
-    _mark_notified_today(account_id, day)
+        ok = False
+    if ok:
+        log_info(_TAG, "_notify_threshold_reached() — notification Telegram envoyée")
+    return ok
 
 
-def _notify_claim_failure(account_id: str, reason: str) -> None:
-    already_notified, day = _already_notified_today(account_id)
-    if already_notified:
-        log_debug(
-            _TAG,
-            f"_notify_claim_failure() — notification ignorée (déjà notifié aujourd'hui, compte={account_id})",
-        )
-        return
-
+def _notify_claim_failure(account_id: str, reason: str) -> bool:
+    """Envoi pur (formatage + Telegram), sans guard de déduplication — porté par l'appelant. Retourne True si l'envoi a réellement réussi."""
     tg_token = os.getenv("telegram_bot_token", "").strip()
     tg_chat = os.getenv("telegram_chat_id", "").strip()
     if not tg_token or not tg_chat:
-        return
+        return False
     msg = f"[PRIMEOPINION][RETRAIT][ÉCHEC] compte : {account_id} | raison : {reason}"
     try:
-        send_telegram(msg, tg_token, tg_chat)
+        return bool(send_telegram(msg, tg_token, tg_chat))
     except Exception:
-        pass
-    _mark_notified_today(account_id, day)
+        return False
 
 
 def _click(driver, el) -> bool:
@@ -404,59 +396,84 @@ def check_and_claim_if_needed(
     if balance_before < CASHOUT_THRESHOLD_POINTS:
         return False
 
-    _notify_threshold_reached(account_id, balance_before)
+    # Vérification "déjà notifié aujourd'hui" UNE SEULE FOIS pour tout ce
+    # passage (pas indépendamment dans chaque fonction de notification) :
+    # sinon la marque posée par le premier envoi (seuil franchi) étoufferait
+    # à tort un second envoi légitime du même passage (échec de réclamation
+    # survenant juste après). Le marquage final n'a lieu qu'une fois, en
+    # sortie de fonction, et seulement si au moins un envoi de ce passage a
+    # réellement réussi.
+    already_notified, notify_day = _already_notified_today(account_id)
+    notified_this_pass = False
 
-    if not _open_claim_modal(driver):
-        _notify_claim_failure(account_id, "modal_ouverture_echouee")
-        return False
+    def _notify(send_fn, *args) -> None:
+        nonlocal notified_this_pass
+        if already_notified:
+            log_debug(
+                _TAG,
+                f"check_and_claim_if_needed() — notification ignorée (déjà notifié aujourd'hui, compte={account_id})",
+            )
+            return
+        if send_fn(account_id, *args):
+            notified_this_pass = True
 
-    modal_points, modal_eur = _read_modal_balance(driver)
-    if modal_points is not None:
-        log_debug(
-            _TAG,
-            f"check_and_claim_if_needed() — solde modal : {modal_points:.0f} Points"
-            + (f" (≈ {modal_eur} €)" if modal_eur is not None else ""),
-        )
+    try:
+        _notify(_notify_threshold_reached, balance_before)
 
-    accordion_content = _open_revolut_accordion(driver)
-    if accordion_content is None:
-        _notify_claim_failure(account_id, "accordeon_revolut_introuvable")
-        return False
+        if not _open_claim_modal(driver):
+            _notify(_notify_claim_failure, "modal_ouverture_echouee")
+            return False
 
-    option_card = _find_569_points_option(accordion_content)
-    if option_card is None:
-        log_info(_TAG, "check_and_claim_if_needed() — option 569 Points introuvable dans l'accordéon Revolut")
-        _notify_claim_failure(account_id, "option_569_points_introuvable")
-        return False
+        modal_points, modal_eur = _read_modal_balance(driver)
+        if modal_points is not None:
+            log_debug(
+                _TAG,
+                f"check_and_claim_if_needed() — solde modal : {modal_points:.0f} Points"
+                + (f" (≈ {modal_eur} €)" if modal_eur is not None else ""),
+            )
 
-    if _is_option_locked(option_card):
-        log_info(_TAG, "check_and_claim_if_needed() — option 569 Points encore verrouillée (cadenas détecté), abandon propre")
-        return False
+        accordion_content = _open_revolut_accordion(driver)
+        if accordion_content is None:
+            _notify(_notify_claim_failure, "accordeon_revolut_introuvable")
+            return False
 
-    if not _click(driver, option_card):
-        return False  # CTA_INTERCEPT_ONLY — interception OK, pas de suite
+        option_card = _find_569_points_option(accordion_content)
+        if option_card is None:
+            log_info(_TAG, "check_and_claim_if_needed() — option 569 Points introuvable dans l'accordéon Revolut")
+            _notify(_notify_claim_failure, "option_569_points_introuvable")
+            return False
 
-    time.sleep(1.0)
+        if _is_option_locked(option_card):
+            log_info(_TAG, "check_and_claim_if_needed() — option 569 Points encore verrouillée (cadenas détecté), abandon propre")
+            return False
 
-    if not _click_confirm_reclamation(driver):
-        _notify_claim_failure(account_id, "clic_reclamation_echoue")
-        return False
+        if not _click(driver, option_card):
+            return False  # CTA_INTERCEPT_ONLY — interception OK, pas de suite
 
-    if not _confirm_claim_screen(driver, revolut_fullname, revolut_tag):
-        _notify_claim_failure(account_id, "ecran_confirmation_echoue_ou_non_confirme")
-        return False
+        time.sleep(1.0)
 
-    time.sleep(5)
-    balance_after = _read_points_balance(driver)
-    if balance_after is None or balance_after > balance_before - (CASHOUT_THRESHOLD_POINTS * 0.5):
-        log_info(
-            _TAG,
-            "check_and_claim_if_needed() — solde inchangé après confirmation "
-            f"({balance_after} vs {balance_before:.0f}) — retrait probablement échoué",
-        )
-        _notify_claim_failure(account_id, "solde_inchange_apres_confirmation")
-        return False
+        if not _click_confirm_reclamation(driver):
+            _notify(_notify_claim_failure, "clic_reclamation_echoue")
+            return False
 
-    log_info(_TAG, "check_and_claim_if_needed() — retrait Revolut confirmé (569 Points / 5 €)")
-    _record_gain(account_id)
-    return True
+        if not _confirm_claim_screen(driver, revolut_fullname, revolut_tag):
+            _notify(_notify_claim_failure, "ecran_confirmation_echoue_ou_non_confirme")
+            return False
+
+        time.sleep(5)
+        balance_after = _read_points_balance(driver)
+        if balance_after is None or balance_after > balance_before - (CASHOUT_THRESHOLD_POINTS * 0.5):
+            log_info(
+                _TAG,
+                "check_and_claim_if_needed() — solde inchangé après confirmation "
+                f"({balance_after} vs {balance_before:.0f}) — retrait probablement échoué",
+            )
+            _notify(_notify_claim_failure, "solde_inchange_apres_confirmation")
+            return False
+
+        log_info(_TAG, "check_and_claim_if_needed() — retrait Revolut confirmé (569 Points / 5 €)")
+        _record_gain(account_id)
+        return True
+    finally:
+        if not already_notified and notified_this_pass:
+            _mark_notified_today(account_id, notify_day)
