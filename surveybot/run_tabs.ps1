@@ -5,6 +5,7 @@
 #   powershell -ExecutionPolicy Bypass -File .\run_tabs.ps1 -TargetUrl "https://www.primeopinion.com" -Platform "primeopinion"
 #   powershell -ExecutionPolicy Bypass -File .\run_tabs.ps1 -TargetUrl "https://www.heycash.com/fr-fr" -Platform "heycash"
 #   powershell -ExecutionPolicy Bypass -File .\run_tabs.ps1 -TargetUrl "https://www.earnstar.com/fr-fr/" -Platform "earnstar"
+#   powershell -ExecutionPolicy Bypass -File .\run_tabs.ps1 -TargetUrl "https://www.fivesurveys.com/fr-fr/" -Platform "fivesurveys"
 
 param(
   # Valeur par défaut inchangée : préserve le comportement TopSurveys existant
