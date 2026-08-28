@@ -59,6 +59,19 @@ _SURVEY_UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
 )
 
+# --- Popup promo "Joue et gagne !" : CONFIRMÉ par capture DOM EarnStar
+# authentifiée réelle (accueil ET liste de sondages). Bloque tout clic
+# derrière elle (div.p-modal-mask) — cause confirmée du timeout observé sur
+# le clic de l'onglet surveys-nav ("subtree intercepts pointer events").
+# L'icône croix elle-même n'est qu'un SVG brut portant un hash Vue
+# scoped-style (data-v-af2caffe) non stable d'un build à l'autre — non
+# utilisé comme sélecteur. Le bouton qui l'entoure porte en revanche un
+# data-test-id stable : "close-modal-button". Attention : distinct de
+# "modal-close-button" (autre bouton de fermeture, vu sur la modale d'auth
+# de la page marketing) — ne pas confondre les deux.
+_PLAY_AND_EARN_POPUP_SEL = "[data-test-id='ps-play-and-earn-popup']"
+_PLAY_AND_EARN_CLOSE_BTN_SEL = "[data-test-id='close-modal-button']"
+
 _DECLINE_LABELS = (
     "Je ne peux pas répondre à cette question",
     "Je ne peux pas répondre",
@@ -348,6 +361,75 @@ def _check_balance_and_notify(page, account_id: str) -> None:
         log_debug(_TAG, f"_check_balance_and_notify() — exception non bloquante : {e}")
 
 
+_PS_PLAY_AND_EARN_TAG = "[PS_PLAY_AND_EARN_POPUP]"
+
+
+def _close_ps_play_and_earn_popup(driver):
+    """
+    Ferme la popup promotionnelle Prime Insights "Joue et gagne !"
+    ([data-test-id='ps-play-and-earn-popup']) qui bloque tout clic derrière
+    elle (div.p-modal-mask), observée sur EarnStar en accueil ET en liste de
+    sondages — cause confirmée d'un timeout Playwright sur le clic de
+    l'onglet surveys-nav dans select_survey(). Fonction générique et
+    réutilisable, sans aucune logique propre à une plateforme dans son guard
+    (sélecteurs de l'infrastructure tierce Prime Insights partagée, même
+    convention data-test-id="ps-*" que le reste du widget) : appelable telle
+    quelle depuis n'importe quel module platforms/*.py. Non intégrée au
+    dispatcher partagé Survey.functions._resolve_topsurveys_popups faute de
+    confirmation qu'elle apparaît sur TopSurveys/PrimeOpinion/HeyCash —
+    appelée uniquement depuis earnstar.py pour l'instant.
+
+    Guard DOM strict : conteneur [data-test-id='ps-play-and-earn-popup']
+    visible, contenant le bouton [data-test-id='close-modal-button'] — la
+    classe partagée p-modal-mask seule ne suffit pas à distinguer cette
+    popup des autres partageant la même classe (cf. popup "Sélectionner les
+    appareils", guard distinct).
+
+    Valeur de retour (tri-état, même convention que
+    Survey.functions._handle_topsurveys_streak_complete_popup) :
+    - True  : popup détectée et fermée (bouton cliqué, ou interception
+              CTA_INTERCEPT_ONLY).
+    - False : popup détectée mais fermeture impossible (bouton introuvable
+              ou clic échoué).
+    - None  : popup non détectée.
+    """
+    try:
+        popup = driver.query_selector(_PLAY_AND_EARN_POPUP_SEL)
+        if not popup or not popup.is_visible():
+            return None
+    except Exception as e:
+        log_debug(_PS_PLAY_AND_EARN_TAG, f"exception pendant le scan : {e}")
+        return None
+
+    log_info(_PS_PLAY_AND_EARN_TAG, "popup 'Joue et gagne !' détectée - fermeture...")
+
+    try:
+        close_btn = popup.query_selector(_PLAY_AND_EARN_CLOSE_BTN_SEL)
+    except Exception as e:
+        log_info(_PS_PLAY_AND_EARN_TAG, f"erreur lecture DOM du bouton de fermeture : {e}")
+        return False
+
+    if not close_btn:
+        log_info(_PS_PLAY_AND_EARN_TAG, "bouton de fermeture introuvable")
+        return False
+
+    if is_cta_intercept_only():
+        log_info(
+            _PS_PLAY_AND_EARN_TAG,
+            "bouton de fermeture trouvé - interception OK (CTA_INTERCEPT_ONLY actif), pas de clic réel.",
+        )
+        return True
+
+    try:
+        close_btn.click(timeout=3000)
+        log_debug(_PS_PLAY_AND_EARN_TAG, "bouton de fermeture cliqué.")
+        time.sleep(0.5)
+        return True
+    except Exception as e:
+        log_info(_PS_PLAY_AND_EARN_TAG, f"clic bouton de fermeture échoué : {e}")
+        return False
+
+
 class EarnStarPlatform(Platform):
     """
     Implémentation EarnStar — quatrième plateforme Prime Insights. Auth
@@ -448,6 +530,11 @@ class EarnStarPlatform(Platform):
 
         from Survey.functions import _resolve_topsurveys_popups
         _resolve_topsurveys_popups(driver)
+
+        # Popup promo "Joue et gagne !" — bloque tout clic (masque pleine
+        # page) tant qu'elle n'est pas fermée, y compris celui de l'onglet
+        # surveys-nav ci-dessous (cause confirmée du timeout observé).
+        _close_ps_play_and_earn_popup(page)
 
         api_key = self._resolve_api_key()
         if not api_key:
