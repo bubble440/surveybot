@@ -85,7 +85,9 @@ def _notify_manual_withdrawal(account_id: str, balance: float) -> None:
     )
     try:
         ok = send_telegram(msg, tg_token, tg_chat)
-        log_info(_TAG, "_notify_manual_withdrawal() — notification Telegram envoyée")
+        if ok:
+            log_info(_TAG, "_notify_manual_withdrawal() — notification Telegram envoyée")
+
     except Exception:
         ok = False
 
