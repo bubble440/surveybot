@@ -116,7 +116,7 @@ def _parse_amount(text: str):
         value = float(match.group(1).replace(",", "."))
     except ValueError:
         return None
-    return value if value > 0 else None
+    return value if value >= 0 else None
 
 
 def _check_balance_and_notify(page, account_id: str) -> None:

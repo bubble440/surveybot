@@ -100,7 +100,7 @@ def _parse_amount(text: str):
         value = float(match.group(1).replace(",", "."))
     except ValueError:
         return None
-    return value if value > 0 else None
+    return value if value >= 0 else None
 
 
 def _select_best_heycash_card(page, excluded_uuids: set):

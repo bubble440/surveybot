@@ -166,6 +166,60 @@ def _switch_to_external_tab(driver, platform):
     return None
 
 
+def _adopt_returned_platform_tab_if_needed(driver, platform):
+    """
+    🔎 FIX retour plateforme via onglet distinct (ex. EarnStar) — stratégie nommée
+    distincte, symétrique de _switch_to_external_tab (bascule initiale vers l'onglet
+    externe du sondage tiers) mais pour le chemin retour : si ce retour se produit via
+    l'ouverture d'un nouvel onglet/fenêtre plutôt qu'une navigation en place sur
+    l'onglet suivi jusque-là, la référence `page` de solve_full_survey() reste bloquée
+    sur l'ancien onglet (sondage tiers) — is_on_platform(page) ne peut alors jamais
+    matcher puisqu'il lit l'URL de cette référence obsolète, alors que le retour est
+    bien effectif à l'écran sur un autre onglet du même contexte.
+    Ne ferme AUCUN onglet (contrairement à switch_to_latest_window_and_close_others,
+    non réutilisée ici : besoin différent — simple adoption de référence au retour,
+    pas nettoyage après un clic de sélection de survey) : identifie un onglet
+    plateforme distinct de la page actuellement suivie et retourne sa référence,
+    si trouvé.
+    Retourne la nouvelle Page à adopter, ou None si aucune adoption nécessaire/possible.
+    """
+    try:
+        current_url = (driver.url or "").lower()
+    except Exception:
+        current_url = ""
+    domains = platform.get_domains()
+    if any(d in current_url for d in domains):
+        return None  # page suivie déjà sur la plateforme — rien à adopter
+
+    try:
+        context = driver.context
+    except Exception:
+        return None
+
+    candidates = []
+    for pg in context.pages:
+        if pg is driver:
+            continue
+        try:
+            if pg.is_closed():
+                continue
+            url = (pg.url or "").lower()
+        except Exception:
+            continue
+        if any(d in url for d in domains):
+            candidates.append(pg)
+
+    if not candidates:
+        return None
+
+    new_page = candidates[-1]
+    print(f"🧭 [TAB_RETURN_ADOPT] Onglet plateforme distinct détecté au retour : {new_page.url}")
+    if hasattr(driver, "_page"):
+        driver._page = new_page
+        driver._current_frame = new_page
+    return new_page
+
+
 def count_actionable_elements(driver) -> int:
     """
     Compte rapidement les éléments actionnables visibles sur la page.
@@ -728,6 +782,19 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
                 guard.record_success()
                 guard.signal_strict_survey(f"strict_mid_{reason}")
                 return
+
+        # -------------------------------------------------------------------
+        # TAB_RETURN_ADOPT : re-scan des onglets ouverts avant la vérification
+        # is_on_platform ci-dessous — cf. _adopt_returned_platform_tab_if_needed
+        # (retour post-sondage via un onglet distinct de celui suivi jusque-là).
+        # -------------------------------------------------------------------
+        try:
+            _adopted_page = _adopt_returned_platform_tab_if_needed(page, platform)
+            if _adopted_page is not None:
+                page = _adopted_page
+                _publish_live_page(page)
+        except Exception as e:
+            log_debug("[TAB_RETURN_ADOPT]", f"adoption échouée (non bloquant) : {e}")
 
         # -------------------------------------------------------------------
         # CHECK RETOUR PLATEFORME AVANT execute_survey_page
