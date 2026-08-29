@@ -1813,8 +1813,11 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
                             radio_value = (radio.get_attribute("value") or "").strip()
                             if not radio_value:
                                 continue
+                            radio_name_raw = (radio.get_attribute("name") or "").strip()
+                            if not radio_name_raw:
+                                continue
                             xp = (
-                                f"(//input[@type='radio' and @name={_xpath_literal(row_name)} "
+                                f"(//input[@type='radio' and @name={_xpath_literal(radio_name_raw)} "
                                 f"and @value={_xpath_literal(radio_value)}])[1]"
                             )
 

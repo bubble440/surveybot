@@ -5113,4 +5113,45 @@ Vérification :
   reason=li_selected_class` — sélection complète et correcte malgré l'omission initiale du modèle.
 Statut : patch validé par l'utilisateur en conditions réelles.
 
+### _extract_table_matrix_radio_rows — préserve la casse du name DOM (fallback par valeur)
+Fichier : Survey/dom_extractors_misc.py (construction de `option_xpath_map`, branche fallback
+`@name=.../@value=...` de la boucle par ligne).
+Cas observé : matrice radio HTML classique (InsightExpress/Decipher, `table.grid` avec `thead`
+6 colonnes + 4 lignes `Q154_1..Q154_4`, radios sans `id`, groupés par `name` casse mixte type
+`Q154_4`). La résolution primaire par `option_xpath_map` échouait systématiquement pour les 4
+lignes (`element not found for xpath: (//input[@type='radio' and @name="q154_4" and @value="3"])[1]`),
+alors que le `name` réel dans le DOM est `Q154_4`. Cause : `row_name` (utilisé pour le regroupement
+interne par ligne, `group_key`, `target_id`) est lowercasé via `_norm_lc`, mais cette même variable
+lowercasée était réutilisée telle quelle pour construire le XPath `@name=...` — comparaison XPath
+d'attribut sensible à la casse, donc jamais de match. Le pipeline retombait alors sur le générique
+`radio_main` (`click_radio_by_label`), qui matche un libellé de colonne **page entière** sans scoping
+par ligne ; comme les 4 lignes partagent exactement les 6 mêmes libellés de colonnes, il rapportait
+`apply ok=true` sans jamais garantir la bonne ligne/colonne (1 seule case cochée sur 4 dans le DOM
+réel, mauvaise colonne, faux positif silencieux) — même famille de symptôme que les faux positifs
+`radio_main` déjà documentés ailleurs dans ce fichier, mais cause différente (mismatch de casse
+XPath, pas absence de vérification DOM).
+Patch : dans la branche `else` (pas de `radio_id`), lecture d'un `radio_name_raw` frais depuis
+`radio.get_attribute("name")` (valeur brute, non lowercasée) au moment de construire le XPath,
+au lieu de réutiliser `row_name`. `row_name` (lowercasé) reste inchangé partout ailleurs
+(comparaison same-name, `group_key`, `target_id`, `register_target`) — clés internes, jamais
+exposées au DOM, donc aucune régression possible dessus.
+Patterns couverts :
+- Radios sans `id`, `name` casse mixte (ex. `Q154_4`) partagé par toute la ligne, `value` par
+  colonne (`0..5`) : XPath `@name=...and @value=...` résout désormais directement via
+  `option_xpath_map` (strategy=`target_id`), sans retomber sur le générique `radio_main`.
+Patterns exclus :
+- Radios avec `id` (branche `radio_id`, non touchée par ce patch).
+- Pages où le `name` DOM est déjà tout en minuscules : `radio_name_raw == row_name`, comportement
+  strictement identique à avant patch (non-régression).
+- Aucun CTA touché — règle CTA_INTERCEPT_ONLY non applicable ici.
+Vérification :
+- DOM de référence `20260830_003526_after_dom_analyze` (4 lignes Thaïlande/Japon/Chine/Corée,
+  6 colonnes identiques) : les 4 lignes résolvent désormais `apply ok=true strategy=target_id
+  reason=applied` (plus de fallback `radio_main`), chaque ligne affiche la case réellement
+  demandée cochée, indépendamment des 3 autres lignes partageant les mêmes libellés.
+- **Confirmé en conditions réelles par l'utilisateur** (capture d'écran post-patch) : les 4 lignes
+  de la matrice affichent chacune la bonne colonne cochée, une seule case par ligne, aucune
+  interférence entre lignes.
+Statut : patch validé par l'utilisateur en conditions réelles.
+
 ---

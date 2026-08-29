@@ -1,9 +1,9 @@
 {
-    "generated_at":  "2026-08-25T17:29:23Z",
+    "generated_at":  "2026-08-29T20:45:03Z",
     "files":  [
                   {
                       "rel_path":  "launch_all.ps1",
-                      "sha256":  "21356597e8ac7fdcfef0bf340d8bd0f9725cd437cd87e750cb24f8dd21b7b744",
+                      "sha256":  "5c43c30e3c7e71f0ceb0e6202ff5d649cf473d980a46e5134fd769d3b4ef0f2b",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/launch_all.ps1"
                   },
                   {
@@ -48,7 +48,7 @@
                   },
                   {
                       "rel_path":  "set-up.txt",
-                      "sha256":  "7835402af880d2ec40c08081c674c295c8da157079360d5d552168c4bb428659",
+                      "sha256":  "3c9c187ffdf498bc834387f504e7a8ecb0023fe95044d6858914063f68c96bb9",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/set-up.txt"
                   },
                   {
