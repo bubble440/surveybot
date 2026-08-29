@@ -1129,30 +1129,35 @@ Emplacement : boucle solve_full_survey, après le bloc errorPage/errorpage-wrapp
 avant l'appel à execute_survey_page().
 Guard primaire : `div.survey-error` visible (is_displayed()) dans le DOM courant.
 Guard secondaire (anti faux-positif, validé en prod) : `_has_actionable_q` — présence d'au
-moins un `div.question input[type='radio']` ou `div.question input[type='checkbox']` dans le DOM.
+moins un élément parmi `div.question input[type='radio']`, `div.question input[type='checkbox']`,
+`div.question input[type='text']`, `div.question textarea`, `div.question select` dans le DOM
+(élargi 2026-08-29 : le guard initial radio/checkbox-only donnait un faux-positif sur une page
+avec une question ouverte textarea seule, ex. rappel publicitaire libre Philips — sélecteur repris
+tel quel de la liste d'inputs "actionnables" déjà utilisée ligne ~281 de survey_solver.py).
 - Si `_has_actionable_q` est vrai → le `div.survey-error` visible est un simple message de
-  validation inline (ex. "Veuillez sélectionner au moins 1 réponse(s)") ; la page continue
-  normalement dans le pipeline, pas de log, pas de restart.
+  validation inline (ex. "Veuillez sélectionner au moins 1 réponse(s)", "Veuillez fournir une
+  réponse") ; la page continue normalement dans le pipeline, pas de log, pas de restart.
 - Si `_has_actionable_q` est faux → vraie page d'erreur applicative bloquante :
   détecte et logue URL courante + texte du premier élément (tronqué 200 chars),
   déclenche guard.record_success() + guard.request_survey_restart("decipher_survey_error").
 Patterns exclus :
 - div.errorPage, div.errorpage-wrapper → bloc précédent inchangé
-- Pages Decipher avec questions valides (avec ou sans message de validation inline) →
-  jamais de restart tant qu'un input radio/checkbox exploitable est présent
+- Pages Decipher avec questions valides (choix ou saisie libre, avec ou sans message de
+  validation inline) → jamais de restart tant qu'un input radio/checkbox/text/textarea/select
+  exploitable est présent
 
 ### Détection div.survey-error — main.py (route attach)
 Fichier : main.py
 Emplacement : boucle run_attach_takeover, après le bloc errorPage/errorpage-wrapper,
 avant l'appel à execute_survey_page().
-État : guard DOM identique à l'ancienne version de survey_solver.py — ne dispose PAS encore
-du guard secondaire `_has_actionable_q` validé côté prod. Reste donc sujet au même faux-positif
-(message de validation inline confondu avec une page d'erreur bloquante) tant que le patch n'y
-est pas répliqué.
+État : guard secondaire `_has_actionable_q` répliqué et aligné avec survey_solver.py (route prod)
+— même sélecteur élargi (radio/checkbox/text/textarea/select), même comportement.
 Patterns couverts :
-- Logue via print : [PLATFORM-ERR] step + url + texte (tronqué 200 chars) → break
+- Logue via print : [PLATFORM-ERR] step + url + texte (tronqué 200 chars) → break, uniquement
+  si `_has_actionable_q` est faux.
 Patterns exclus :
-- Identiques à l'ancienne version de la route prod ci-dessus (avant guard secondaire)
+- Identiques à la route prod ci-dessus (div.survey-error avec question exploitable présente
+  ne déclenche jamais le break)
 
 ---
 

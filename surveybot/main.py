@@ -456,7 +456,8 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str, platform=None)
                 ]
                 if _decipher_err_els:
                     _has_actionable_q = driver.query_selector(
-                        "div.question input[type='radio'], div.question input[type='checkbox']"
+                        "div.question input[type='radio'], div.question input[type='checkbox'], "
+                        "div.question input[type='text'], div.question textarea, div.question select"
                     ) is not None
                     if not _has_actionable_q:
                         try:

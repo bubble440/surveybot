@@ -851,7 +851,8 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
             ]
             if _decipher_err_els:
                 _has_actionable_q = page.query_selector(
-                    "div.question input[type='radio'], div.question input[type='checkbox']"
+                    "div.question input[type='radio'], div.question input[type='checkbox'], "
+                    "div.question input[type='text'], div.question textarea, div.question select"
                 ) is not None
                 if not _has_actionable_q:
                     try:
