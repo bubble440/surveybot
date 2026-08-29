@@ -4944,8 +4944,9 @@ Patterns exclus :
 - Options déjà pourvues d'un texte visible dans `.sq-atm1d-legend` (chemin `inner_text()` existant
   inchangé, le repli image-only ne s'active que si `legend` est vide).
 - La vérification `sq_atm1d_widget` (action_dispatcher.py) ne s'active que si `meta.source == "sq-atm1d"`
-  ET itype radio ; tout autre payload retombe inchangé sur le chemin générique `_click_candidate(el,
-  "target")` existant.
+  ; tout autre payload retombe inchangé sur le chemin générique `_click_candidate(el, "target")` existant.
+  [MISE À JOUR 2026-08-29 : initialement restreinte à itype radio, étendue à itype checkbox — cf. entrée
+  ci-dessous "sq_atm1d_widget — extension checkbox".]
 Vérification : rejeu direct de l'extracteur (shim lxml, hors Playwright) contre le snapshot DOM de
 référence du bug (`20260829_103324_after_dom_analyze`) — options extraites correctement (Male/Female/
 Autre), itype=radio confirmé, xpath résolu vers le `<li>` visible (data-uid vérifié) et non plus vers la
@@ -4953,6 +4954,44 @@ table cachée. Non-régression vérifiée sur 2 DOMs synthétiques (radio texte+
 image-only sans role). Confirmé en conditions réelles : `apply ok=true strategy=sq_atm1d_widget
 reason=li_selected_class` puis `apply ok=true strategy=target_id reason=applied`, sélection quasi
 instantanée (plus de double timeout 30s), plus de pause manuelle.
+Statut : patch validé par l'utilisateur en conditions réelles.
+
+### sq_atm1d_widget — extension checkbox (vérification post-clic partagée radio/checkbox)
+Date : 2026-08-29
+Fichier : Survey/action_dispatcher.py (garde de la vérification post-clic dédiée `sq-atm1d`, juste avant
+le `_click_candidate(el, "target")` générique — cf. entrée précédente pour l'introduction de cette
+vérification).
+Bug corrigé : la vérification post-clic dédiée `sq_atm1d_widget` (poll borné à 1s sur la classe
+`sq-atm1d-selected` posée par Decipher sur le `<li>` sélectionné) n'était déclenchée que pour
+`resolved_itype == "radio"`. Sur la variante checkbox du même widget (DOM de référence :
+`20260829_114613_after_dom_analyze`, question `QBRAW02`, 5 options attendues sur 14, dont l'option
+exclusive `b99` "Aucune d'entre elles"), le clic ciblait bien le `<li class="sq-atm1d-button">` visible
+et la sélection était visuellement correcte (bordure active), mais la vérification dédiée était sautée
+faute de correspondre à `itype == "radio"`. L'exécution retombait sur la vérification générique
+(recherche d'un `input` avec id/name résolvable sous l'élément cliqué), qui échoue systématiquement ici
+car les inputs sous le `<li>` visible sont décoratifs (sans id/name — le vrai input nommé, ex.
+`ans183213.0.3`, vit dans la table `.answers.answers-table` cachée en CSS que le widget remplace à
+l'affichage). Cascade en aval : `toluna_runtime_answerrow` (probe AttributeError), puis
+`ipsos_sharky_grid_progressive_checkbox`, `kantar_rowpicker`, `ipsos_sharky_grid_progressive`,
+`vant_picker_column`, `decipher_grid_radio_strict` — toutes génériques, toutes non pertinentes pour ce
+widget, toutes en échec → `apply ok=false reason=no_strategy` pour chaque option ciblée, malgré une
+sélection réelle correcte à l'écran.
+Correction : élargissement du garde de `resolved_itype == "radio"` à
+`resolved_itype in ("radio", "checkbox")`. Aucune duplication de logique — même stratégie nommée
+`sq_atm1d_widget`, même signal DOM (`sq-atm1d-selected`), partagé entre les deux itypes, cohérent avec
+le nettoyage des options exclusives du même widget (bloc `exclusive_options_norm`, quelques centaines de
+lignes plus haut dans action_dispatcher.py) qui traitait déjà `meta.source == "sq-atm1d"` sans condition
+d'itype. Extracteur (dom_extractors_decipher.py, `atm1d_buttons`) non modifié — le bug était uniquement
+dans le garde de la vérification post-clic, pas dans l'extraction.
+Patterns couverts :
+- Widget `sq-atm1d` itype checkbox (en plus du radio déjà couvert), avec ou sans option exclusive.
+Patterns exclus :
+- Payload sans `meta.source == "sq-atm1d"` : chemin générique existant inchangé, quel que soit l'itype.
+Vérification : confirmé en conditions réelles sur le DOM de référence (question `QBRAW02`, 14 options
+dont 1 exclusive) — logs `apply ok=true strategy=sq_atm1d_widget reason=li_selected_class` puis
+`apply ok=true strategy=target_id reason=applied` pour chaque option ciblée (Philips, Babyliss, Gillette
+confirmées sélectionnées à l'écran, Wilkinson-sword correctement non sélectionnée), plus de cascade de
+stratégies génériques, plus d'abandon `no_strategy` sur ce widget en checkbox.
 Statut : patch validé par l'utilisateur en conditions réelles.
 
 ---

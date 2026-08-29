@@ -4254,8 +4254,13 @@ def _apply_by_target_id(
                 # réelle : classe `sq-atm1d-selected` sur le <li> ciblé (cf. <style> inline de
                 # la question : `.sq-atm1d-selected{border-color:...}`).
                 # Guard DOM strict : meta.source == "sq-atm1d" (posé uniquement par l'extracteur
-                # dédié atm1d_buttons) ET itype radio (bug confirmé sur ce cas précis).
-                if (payload.get("meta") or {}).get("source") == "sq-atm1d" and resolved_itype == "radio":
+                # dédié atm1d_buttons). Signal partagé radio/checkbox : Decipher applique la même
+                # classe `sq-atm1d-selected` sur le <li> ciblé quel que soit l'itype (bug confirmé
+                # aussi en checkbox : la vérification générique cherche un input id/name sous le
+                # <li>, n'en trouve pas — décoratif, sans id/name — et enchaîne les stratégies
+                # génériques d'autres plateformes jusqu'à l'abandon, alors que la sélection est
+                # visuellement correcte).
+                if (payload.get("meta") or {}).get("source") == "sq-atm1d" and resolved_itype in ("radio", "checkbox"):
                     _sq_atm1d_clicked = _click_candidate(el, "sq_atm1d_widget")
                     if not _sq_atm1d_clicked:
                         if debug_target:
