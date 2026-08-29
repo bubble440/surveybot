@@ -4890,4 +4890,69 @@ Patterns exclus :
   hors périmètre de ce patch, restent ouverts.
 Statut : patch validé par l'utilisateur.
 
+## PLATEFORME : DECIPHER — WIDGET sq-atm1d IMAGÉ (options pictogrammes, radio)
+
+### _extract_focusvision_answers_list_groups / atm1d_buttons — légende image-only + itype sans role ARIA
+Fichier : Survey/dom_extractors_decipher.py (branche dédiée `atm1d_buttons`, lignes ~537-655)
+Bug corrigé (double, même branche, même DOM de référence) :
+1. La légende d'option n'était lue que via `.inner_text()` sur `.sq-atm1d-legend`. Pour une option
+   image-only (`<span class="sq-atm1d-legend"><img alt="Male"></span>`, aucun nœud texte), `inner_text()`
+   renvoie `""` → `if not legend: continue` supprimait silencieusement l'option. Sur la question de
+   référence (Male/Female en image, Autre en texte), seule "Autre" survivait → `len(options) < 2` →
+   tout le bloc dédié (qui cible pourtant correctement le `<li class="sq-atm1d-button">` **visible** du
+   widget) était abandonné, et l'extraction retombait sur la branche générique `by_name` plus bas dans le
+   même fichier, laquelle cible la table `.answers.answers-table` **cachée en CSS** (le widget la
+   remplace entièrement à l'affichage). Conséquence en aval (Survey/action_dispatcher.py, `_click_candidate`
+   sur ce xpath caché) : 2 méthodes de clic (natif, hover) timeoutent chacune 30s sur un élément jamais
+   visible, avant une cascade de stratégies génériques non pertinentes (kantar_rowpicker,
+   ipsos_sharky_grid_progressive, vant_picker_column, decipher_grid_radio_strict) qui échouent toutes →
+   `apply ok=false reason=no_strategy` → pause manuelle, alors que l'option finit par apparaître
+   sélectionnée à l'écran (état réel non reflété par le rapport de stratégie).
+2. La détection radio/checkbox (`itype_atm1d`) ne vérifiait qu'un `role="radiogroup"`/`role="radio"`
+   porté par le `<ul class="sq-atm1d-buttons">` ou le `<li>` du widget. Sur ce DOM, aucun des deux ne
+   porte de `role` — c'est le `div.question` englobant qui porte `role="radiogroup"` (+ classe `radio`),
+   exactement le même discriminant déjà utilisé pour repérer `q_containers` en tête de cette fonction.
+   Sans correctif, la correction du point 1 aurait fait basculer une question radio (1 réponse) en
+   checkbox (`max_select = len(options)` = 3) — régression plus grave que le bug initial.
+Correction :
+1. Repli image-only sur `.sq-atm1d-legend img` : lecture `alt` puis `title` puis nom de fichier `src`
+   (regex `\.[a-zA-Z0-9]{2,5}$` retirée), déclenché uniquement quand `legend` reste vide après
+   `inner_text()` ET qu'une `<img>` est présente dans `.sq-atm1d-legend` — repli déjà utilisé mot pour
+   mot ailleurs dans le même fichier pour un cas identique (branche générique `by_name`, lignes ~890-906),
+   simplement porté dans cette branche dédiée.
+2. Repli itype : si les vérifications de `role` internes au widget n'ont pas tranché (itype_atm1d resté à
+   la valeur par défaut `"checkbox"`), lecture du `role` et de la classe `radio` du `div.question`
+   englobant (`q`) ; ne s'active que dans ce cas, ne modifie aucun des deux checks existants.
+Diagnostic ajouté : nouvelle vérification post-clic scopée `meta.source == "sq-atm1d"` + itype radio
+(Survey/action_dispatcher.py, juste avant le `_click_candidate(el, "target")` générique) — la vérification
+générique plus bas (`.checked` sur l'input décoratif du widget, jamais synchronisé de façon fiable par le
+site) donnait un faux échec malgré une sélection visuellement bien appliquée. Nouvelle vérification :
+poll borné à 1s sur la classe `sq-atm1d-selected` que Decipher applique lui-même au `<li>` sélectionné
+(cf. `<style>` inline de la question : `.sq-atm1d-selected{border-color:#0b97c3 !important;...}`).
+Log : `[TARGET] apply ok=true strategy=sq_atm1d_widget reason=li_selected_class`.
+Patterns couverts :
+- Widget `sq-atm1d` avec au moins une option dont `.sq-atm1d-legend` ne contient qu'une `<img>` (pas de
+  texte visible), quel que soit l'itype (radio/checkbox).
+- Widget `sq-atm1d` dont ni le `<ul class="sq-atm1d-buttons">` ni le `<li class="sq-atm1d-button">` ne
+  portent de `role` ARIA, mais dont le `div.question` englobant porte `role="radiogroup"` et/ou la classe
+  `radio`.
+Patterns exclus :
+- Widget `sq-atm1d` avec `role` déjà présent sur le `<ul>`/`<li>` (chemin existant inchangé, vérifié par
+  rejeu sur DOM synthétique : itype résolu identique avant/après patch).
+- Widget `sq-atm1d` checkbox sans aucun `role` ni classe `radio` sur le `div.question` (reste `checkbox`,
+  vérifié par rejeu sur DOM synthétique — le repli itype ne bascule pas à tort).
+- Options déjà pourvues d'un texte visible dans `.sq-atm1d-legend` (chemin `inner_text()` existant
+  inchangé, le repli image-only ne s'active que si `legend` est vide).
+- La vérification `sq_atm1d_widget` (action_dispatcher.py) ne s'active que si `meta.source == "sq-atm1d"`
+  ET itype radio ; tout autre payload retombe inchangé sur le chemin générique `_click_candidate(el,
+  "target")` existant.
+Vérification : rejeu direct de l'extracteur (shim lxml, hors Playwright) contre le snapshot DOM de
+référence du bug (`20260829_103324_after_dom_analyze`) — options extraites correctement (Male/Female/
+Autre), itype=radio confirmé, xpath résolu vers le `<li>` visible (data-uid vérifié) et non plus vers la
+table cachée. Non-régression vérifiée sur 2 DOMs synthétiques (radio texte+role déjà correct ; checkbox
+image-only sans role). Confirmé en conditions réelles : `apply ok=true strategy=sq_atm1d_widget
+reason=li_selected_class` puis `apply ok=true strategy=target_id reason=applied`, sélection quasi
+instantanée (plus de double timeout 30s), plus de pause manuelle.
+Statut : patch validé par l'utilisateur en conditions réelles.
+
 ---

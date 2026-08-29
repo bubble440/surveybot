@@ -567,6 +567,21 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                 elif (atm1d_buttons[0].get_attribute("role") or "").strip().lower() == "radio":
                     itype_atm1d = "radio"
 
+            # Fallback : certaines instances sq-atm1d ne portent aucun role ARIA sur le
+            # <ul>/<li> du widget lui-même. Le role="radiogroup" du div.question englobant
+            # N'EST PAS un discriminant fiable ici : confirmé présent à l'identique sur une
+            # question radio (Q1 sexe) ET sur une question checkbox multi-sélection (marques,
+            # "sélectionnez toutes les marques..."), donc écarté. Signal fiable retenu : le
+            # type natif de l'input du widget lui-même (radio/checkbox), même principe déjà
+            # utilisé pour cette distinction dans la branche générique de cette fonction
+            # (inps[0].get_attribute("type")). Guard DOM strict : ne s'active que si les
+            # vérifications internes au widget ci-dessus n'ont pas déjà tranché pour "radio".
+            if itype_atm1d == "checkbox":
+                _first_btn_input = atm1d_buttons[0].query_selector("input[type='radio'], input[type='checkbox']")
+                if _first_btn_input is not None:
+                    if (_first_btn_input.get_attribute("type") or "").strip().lower() == "radio":
+                        itype_atm1d = "radio"
+
             options: list[str] = []
             option_xpath_map: dict[str, str] = {}
             exclusive_options_norm: list[str] = []
@@ -581,6 +596,23 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                 _le = btn.query_selector(".sq-atm1d-legend")
                 if _le is not None:
                     legend = (_le.inner_text() or "").strip()
+                if not legend and _le is not None:
+                    # Fallback image-only (ex: pictogrammes Male/Female sans texte visible
+                    # dans .sq-atm1d-legend) : même repli déjà utilisé pour ce cas précis
+                    # dans la branche générique answers-list plus bas dans ce fichier
+                    # (alt/title/nom de fichier), reporté ici pour ce widget dédié.
+                    _img_le = _le.query_selector("img")
+                    if _img_le is not None:
+                        for _attr in ("alt", "title"):
+                            _v = (_img_le.get_attribute(_attr) or "").strip()
+                            if _v:
+                                legend = re.sub(r"\.[a-zA-Z0-9]{2,5}$", "", _v).strip()
+                                break
+                        if not legend:
+                            _src_v = (_img_le.get_attribute("src") or "").strip()
+                            if _src_v:
+                                _fname = _src_v.rsplit("/", 1)[-1]
+                                legend = re.sub(r"\.[a-zA-Z0-9]{2,5}$", "", _fname).strip()
                 if not legend:
                     continue
 

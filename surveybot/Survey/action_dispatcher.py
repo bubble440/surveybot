@@ -4244,6 +4244,45 @@ def _apply_by_target_id(
                             log_debug("[TARGET_DEBUG]", f"ipsos_sharky_categorical_click_images_checkbox: not checked after force value='{value}'")
                         return False
 
+                # --- Decipher sq-atm1d (widget imagé avec table de secours answers-table
+                # cachée en CSS) : `el` cible désormais le <li class="sq-atm1d-button"> visible
+                # du widget (cf. dom_extractors_decipher.py, atm1d_buttons), donc le clic natif
+                # aboutit quasi immédiatement. La vérification générique plus bas (`.checked`
+                # sur l'input décoratif du widget, jamais synchronisé de façon fiable par le
+                # site) donnait un faux échec malgré une sélection visuellement bien appliquée.
+                # On vérifie ici le signal DOM que Decipher applique lui-même sur sélection
+                # réelle : classe `sq-atm1d-selected` sur le <li> ciblé (cf. <style> inline de
+                # la question : `.sq-atm1d-selected{border-color:...}`).
+                # Guard DOM strict : meta.source == "sq-atm1d" (posé uniquement par l'extracteur
+                # dédié atm1d_buttons) ET itype radio (bug confirmé sur ce cas précis).
+                if (payload.get("meta") or {}).get("source") == "sq-atm1d" and resolved_itype == "radio":
+                    _sq_atm1d_clicked = _click_candidate(el, "sq_atm1d_widget")
+                    if not _sq_atm1d_clicked:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"sq_atm1d_widget: click failed value='{value}' xpath='{xp}'")
+                        return False
+
+                    _sq_atm1d_end = time.time() + 1.0
+                    _sq_atm1d_selected = False
+                    while time.time() < _sq_atm1d_end:
+                        try:
+                            if el.evaluate("""(_el) => {
+                                const li = _el.closest ? _el.closest('li.sq-atm1d-button') : null;
+                                return !!(li && li.classList.contains('sq-atm1d-selected'));
+                            }"""):
+                                _sq_atm1d_selected = True
+                                break
+                        except Exception:
+                            pass
+                        time.sleep(0.05)
+
+                    if _sq_atm1d_selected:
+                        log_info("[TARGET]", "apply ok=true strategy=sq_atm1d_widget reason=li_selected_class")
+                        return True
+                    if debug_target:
+                        log_debug("[TARGET_DEBUG]", f"sq_atm1d_widget: no sq-atm1d-selected class after click value='{value}' xpath='{xp}'")
+                    return False
+
                 _click_candidate(el, "target")
 
                 _maybe_advance_mx_vertical_carousel_after_answer()
