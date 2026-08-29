@@ -23,6 +23,82 @@ def _env_truthy(name: str, default: str = "0") -> bool:
     v = (os.getenv(name, default) or "").strip().lower()
     return v in ("1", "true", "yes", "on")
 
+def _apply_atm1d_trap_ground_truth(actions: list, qid_meta: dict) -> list:
+    """Widget sq-atm1d Decipher (trap de rappel visuel imagé, ex: "quelles images
+    contiennent un arbre ?") : la page embarque en clair (script inline `jsexport`,
+    cf. dom_extractors_decipher.py::_extract_atm1d_trap_correct_labels) la liste des
+    options correctes/incorrectes ("cs:trapCorrect"), fiable à 100% — contrairement au
+    modèle qui ne voit qu'un label opaque dérivé du nom de fichier image et peut en
+    omettre une (aucune reformulation de prompt ne corrige cela). Quand cette vérité-
+    terrain est disponible (meta.trap_correct_norm posé par l'extracteur, couverture
+    complète garantie), on remplace les actions du modèle pour ce bloc précis par la
+    sélection déterministe issue du DOM, au lieu de dépendre de sa réponse.
+
+    Guard strict, additif : ne touche que les blocs checkbox dont le target enregistré
+    porte meta.source == "sq-atm1d" ET un trap_correct_norm non vide ; tout autre bloc
+    (checkbox générique compris) traverse cette fonction inchangé.
+    """
+    if not isinstance(qid_meta, dict) or not qid_meta:
+        return actions
+
+    from Survey.dom_registry import get_target
+
+    kept_actions = list(actions or [])
+    overridden_qids: list[str] = []
+
+    for qid, meta in qid_meta.items():
+        if not isinstance(meta, dict):
+            continue
+        if (meta.get("itype") or "").strip().lower() != "checkbox":
+            continue
+        target_id = (meta.get("target_id") or "").strip()
+        if not target_id:
+            continue
+        try:
+            registry_data = get_target(target_id) or {}
+        except Exception:
+            registry_data = {}
+        reg_meta = registry_data.get("meta") if isinstance(registry_data, dict) else None
+        if not isinstance(reg_meta, dict) or reg_meta.get("source") != "sq-atm1d":
+            continue
+        trap_correct_norm = reg_meta.get("trap_correct_norm")
+        if not isinstance(trap_correct_norm, dict) or not trap_correct_norm:
+            continue
+
+        correct_values = [ln for ln, ok in trap_correct_norm.items() if ok]
+        if not correct_values:
+            continue
+
+        question_text = str(meta.get("question") or "")
+        new_actions = [
+            {
+                "qid": qid,
+                "target_id": target_id,
+                "value": v,
+                "itype": "checkbox",
+                "context": question_text,
+                "matrix_row_label": None,
+                "matrix_col_label": None,
+                "cardsort_card_label": None,
+                "cardsort_bucket_labels": None,
+                "raw": f"[atm1d_trap_ground_truth] {qid} //// {target_id} //// {v} //// checkbox //// {question_text}",
+            }
+            for v in correct_values
+        ]
+
+        qid_upper = qid.strip().upper()
+        kept_actions = [
+            a for a in kept_actions
+            if not (isinstance(a, dict) and (a.get("qid") or "").strip().upper() == qid_upper)
+        ]
+        kept_actions.extend(new_actions)
+        overridden_qids.append(qid)
+
+    if overridden_qids:
+        log_info("[ATM1D_TRAP]", f"ground-truth override applied qids={overridden_qids}")
+
+    return kept_actions
+
 PAUSE_BEFORE_CTA = 1.0  # pause après le dispatch des réponses, avant le clic CTA (laisser le DOM se stabiliser)
 
 def _local_pause_before_cta(reason: str = "") -> None:
@@ -1607,6 +1683,48 @@ def _handle_pin_verification(driver):
     return True
 
 
+_DECIPHER_CARDRATING_MATRIX_AUTONAV_TIMEOUT = 3  # secondes, attente bornée d'auto-navigation
+
+
+def _decipher_cardrating_matrix_all_rows_answered(driver, question_blocks: list[dict]) -> bool:
+    """
+    Garde-fou strict : widget Decipher/FocusVision `sq-cardrating` utilisé en mode matrice
+    (plusieurs lignes d'UNE question présentées comme cartes successives du widget, mais
+    extraites côté DOM via le chemin générique answers-list en groupes radio distincts —
+    `context.focusvision_answers_list=True` — car `_extract_decipher_cardrating_blocks`
+    produit des cartes non labellisées sur ce DOM et est écarté par
+    `_prune_cardrating_unlabeled_blocks_favor_row_groups`, cf. BOT_EVOLUTION_MEMORY.md).
+
+    Ne s'active que si TOUTES les cartes du widget ont disparu du DOM (plus aucun
+    `li.sq-cardrating-card` restant), signal du widget lui-même confirmant que toutes les
+    lignes ont reçu une réponse — jamais sur une réponse partielle. Ne préjuge pas d'une
+    navigation réelle : sert uniquement de garde d'entrée pour l'appelant, qui doit ensuite
+    vérifier lui-même si la page a effectivement changé.
+    """
+    has_matrix_group_block = any(
+        isinstance(b, dict)
+        and isinstance(b.get("context"), dict)
+        and b["context"].get("focusvision_answers_list") is True
+        and str(b["context"].get("group_key") or "").startswith("radio:name:")
+        for b in (question_blocks or [])
+    )
+    if not has_matrix_group_block:
+        return False
+
+    try:
+        remaining = driver.evaluate(
+            "() => { "
+            "var w = document.querySelector('div.sq-cardrating-widget[data-uid]'); "
+            "if (!w) return -1; "
+            "return w.querySelectorAll('ul.sq-cardrating-cards li.sq-cardrating-card').length; "
+            "}"
+        )
+    except Exception:
+        return False
+
+    return remaining == 0
+
+
 def _should_skip_post_actions_navigation(
     driver,
     question_blocks: list[dict],
@@ -1748,6 +1866,32 @@ def _should_skip_post_actions_navigation(
             break
         except Exception:
             continue
+
+    if before_url is not None and _decipher_cardrating_matrix_all_rows_answered(driver, question_blocks):
+        log_debug(
+            "[DECIPHER_CARDRATING_MATRIX_AUTONAV]",
+            "toutes les lignes du widget sq-cardrating répondues → attente bornée d'une auto-navigation",
+        )
+        try:
+            import Management.redirect_watcher as _rw_cardrating
+            changed = _rw_cardrating.wait_for_navigation_or_dom_change(
+                driver,
+                before_url=before_url,
+                before_sig=before_sig,
+                timeout=_DECIPHER_CARDRATING_MATRIX_AUTONAV_TIMEOUT,
+            )
+        except Exception:
+            changed = None
+        if changed and changed.changed:
+            log_info(
+                "[DECIPHER_CARDRATING_MATRIX_AUTONAV]",
+                "navigation auto détectée après dernière ligne du widget → skip CTA",
+            )
+            return True
+        log_info(
+            "[DECIPHER_CARDRATING_MATRIX_AUTONAV]",
+            "pas de navigation auto détectée dans le budget → flux CTA normal",
+        )
 
     try:
         if page.query_selector_all("#cardSortContainer button.answer-button"):
@@ -2235,6 +2379,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None, platform=None):
         # batch_response_parser est hors-périmètre — pas de driver param, fonctions pures
         actions = batch_response_parser.parse_batch_response(raw_text, constraints=qid_constraints, qid_meta=qid_meta)
         actions = batch_response_parser.sanitize_actions(actions, qid_meta=qid_meta)
+        actions = _apply_atm1d_trap_ground_truth(actions, qid_meta)
 
         try:
             _pre_dispatch_url = page.url

@@ -12,6 +12,7 @@ pour identifier et extraire les questions/options de manière fiable.
 
 from __future__ import annotations
 from typing import List, Dict, Any, Set
+import json
 import os
 import re
 from config import RUN_ENV
@@ -99,6 +100,105 @@ def _logical_answers_list_group_name(raw_name: str, all_raw_names: Set[str]) -> 
             if sibling_count >= 2:
                 return base
     return name
+
+
+# ================================================================================
+# DECIPHER sq-atm1d — vérité-terrain embarquée (trap de rappel visuel imagé)
+#
+# Widget `sq-atm1d` d'un type précis (ex: "Laquelle de ces images contient un
+# arbre ?") : chaque option n'est représentée dans le DOM visible que par une
+# image sans alt/title, donc le texte transmis au modèle n'est qu'un label
+# opaque dérivé du nom de fichier. La page embarque cependant, dans un script
+# inline `var jsexport = {...}` associé au widget (hors du sous-arbre
+# `div.question`, posé en sibling par Decipher), une clé `cs:trapCorrect`
+# ("Y"/"N") par option, indexée sur le même `label` que l'attribut
+# `data-label` du `<li class="sq-atm1d-button">` DOM. Fonctions strictement
+# additives : n'affectent aucun extracteur existant, ne sont utilisées que si
+# le guard DOM (uid du widget confirmé dans le script + "cs:trapCorrect"
+# présent) valide intégralement. Voir BOT_EVOLUTION_MEMORY.md.
+# ================================================================================
+
+def _extract_balanced_json_object(text: str, start_marker: str) -> str | None:
+    """Retourne le literal JSON `{...}` qui suit `start_marker` dans `text`,
+    en comptant les accolades (en ignorant celles à l'intérieur de chaînes)."""
+    idx = text.find(start_marker)
+    if idx == -1:
+        return None
+    brace_start = text.find("{", idx)
+    if brace_start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(brace_start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[brace_start:i + 1]
+    return None
+
+
+def _extract_atm1d_trap_correct_labels(q) -> Dict[str, str]:
+    """Retourne {data-label: "Y"|"N"} depuis le `jsexport` inline du widget
+    sq-atm1d courant, ou {} si absent/non exploitable (fail-safe, aucune
+    exception ne remonte). Guard : le script candidat doit contenir
+    "cs:trapCorrect" ET son "uid" JSON doit correspondre au data-uid du
+    widget DOM (`.sq-atm1d-widget[data-uid]`) — corrélation stricte,
+    n'utilise jamais le premier script venu.
+    """
+    try:
+        widget_el = q.query_selector(".sq-atm1d-widget[data-uid]")
+        widget_uid = (widget_el.get_attribute("data-uid") or "").strip() if widget_el is not None else ""
+        if not widget_uid:
+            return {}
+
+        scripts = q.query_selector_all("xpath=following::script")
+        for sc in scripts:
+            try:
+                txt = sc.inner_text() or sc.text_content() or ""
+            except Exception:
+                continue
+            if "cs:trapCorrect" not in txt or "jsexport" not in txt:
+                continue
+            obj_text = _extract_balanced_json_object(txt, "jsexport")
+            if not obj_text:
+                continue
+            try:
+                data = json.loads(obj_text)
+            except Exception:
+                continue
+            if str(data.get("uid") or "").strip() != widget_uid:
+                continue
+
+            rows = data.get("rows")
+            if not isinstance(rows, list):
+                return {}
+            label_to_flag: Dict[str, str] = {}
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                lbl = str(row.get("label") or "").strip()
+                flag = row.get("cs:trapCorrect")
+                if lbl and flag in ("Y", "N"):
+                    label_to_flag[lbl] = flag
+            return label_to_flag
+    except Exception:
+        return {}
+    return {}
+
 
 def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | None) -> list[dict]:
     """
@@ -621,6 +721,12 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             exclusive_options_norm: list[str] = []
             question_id = (q.get_attribute("id") or "").strip()
 
+            # Vérité-terrain embarquée (widget trap imagé) : {data-label: "Y"/"N"},
+            # {} si absente. Purement additif — n'affecte aucune variable ci-dessus/
+            # ci-dessous ; consommée seulement en aval, une fois la boucle terminée.
+            atm1d_trap_correct_by_label = _extract_atm1d_trap_correct_labels(q)
+            atm1d_trap_correct_norm: dict[str, bool] = {}
+
             for btn in atm1d_buttons:
                 data_label = (btn.get_attribute("data-label") or "").strip()
                 if not data_label:
@@ -672,6 +778,22 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                 if _norm_lc(data_label) == "none":
                     exclusive_options_norm.append(legend_norm)
 
+                # Recopie additive de la vérité-terrain (si présente) sur la même clé
+                # legend_norm que option_xpath_map, sans rien changer au calcul ci-dessus.
+                if atm1d_trap_correct_by_label and data_label in atm1d_trap_correct_by_label:
+                    atm1d_trap_correct_norm[legend_norm] = atm1d_trap_correct_by_label[data_label] == "Y"
+
+            # Guard de cohérence : la vérité-terrain n'est exploitée que si elle couvre
+            # strictement TOUTES les options retenues (aucune option orpheline) — sinon on
+            # l'ignore intégralement (fallback silencieux vers le comportement existant,
+            # piloté par le modèle, inchangé).
+            if atm1d_trap_correct_norm and len(atm1d_trap_correct_norm) != len(options):
+                log_debug(
+                    "[DECIPHER_ATM1D]",
+                    f"trap ground-truth coverage incomplete ({len(atm1d_trap_correct_norm)}/{len(options)}) — ignored",
+                )
+                atm1d_trap_correct_norm = {}
+
             if len(options) >= 2:
                 group_key = f"{itype_atm1d}:atm1d"
                 max_sel = 1 if itype_atm1d == "radio" else len(options)
@@ -691,6 +813,12 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                         "meta": {
                             "source": "sq-atm1d",
                             "exclusive_options_norm": exclusive_options_norm,
+                            # Scopé checkbox uniquement (cf. bug rapporté : omission modèle
+                            # sur multi-sélection) — laissé vide sur radio, comportement
+                            # inchangé pour cet itype.
+                            "trap_correct_norm": (
+                                atm1d_trap_correct_norm if itype_atm1d == "checkbox" else {}
+                            ),
                         },
                     },
                 )

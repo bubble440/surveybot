@@ -4783,6 +4783,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     blocks = _prune_focusvision_auxiliary_openended_singles(blocks)
     blocks = _prune_trailing_open_inline_singles(blocks)
     blocks = _prune_cardrating_focusvision_blocks(blocks)
+    blocks = _prune_cardrating_unlabeled_blocks_favor_row_groups(blocks)
 
     for block in blocks or []:
         if not isinstance(block, dict):
@@ -5417,5 +5418,105 @@ def _prune_cardrating_focusvision_blocks(blocks: List[Dict[str, Any]]) -> List[D
                         f"drop focusvision QA-view block group_key={gk!r}",
                     )
                     continue
+        pruned.append(b)
+    return pruned
+
+
+def _prune_cardrating_unlabeled_blocks_favor_row_groups(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Supprime les blocs _extract_decipher_cardrating_blocks d'un widget quand AUCUNE de ses
+    cartes n'a pu recevoir de cardrating_card_label (carte a texte brut affiche a l'ecran,
+    ex. "LCI", non couverte par la derivation actuelle limitee a l'alt/title d'une image —
+    cf. _extract_decipher_cardrating_blocks) ET que la branche group-by-row de
+    _extract_focusvision_answers_list_groups a produit, pour le meme intitule de question
+    de base, des blocs distincts deja correctement libelles (suffixe "[label]").
+
+    Additif et complementaire a _prune_cardrating_focusvision_blocks (qui couvre le cas
+    inverse observe a l'origine : vue QA fusionnee en un seul bloc image-only inutilisable,
+    cardrating deja labellise correctement par carte via card_label). Ici c'est l'oppose :
+    cardrating totalement non labellise pour le widget entier (guard strict — un seul label
+    non vide parmi les cartes du widget desactive cette fonction pour ne jamais toucher les
+    widgets ou la labellisation par image fonctionne deja), et les blocs group-by-row (deja
+    distincts par ligne, deja bien libelles) sont la seule source actionnable restante pour
+    ce widget -> on garde ceux-la, on jette les blocs cardrating redondants et non identifiables.
+
+    Guard (strict, scope par widget) :
+    - Pour un cardrating_widget_uid donne, tous ses blocs ont
+      context.cardrating_card_label == "" (aucun label partiel).
+    - Le "question" de ces blocs (identique pour tous, cf. base_question dans
+      _extract_decipher_cardrating_blocks quand card_label est vide) sert de base_question.
+    - Au moins 2 blocs context.focusvision_answers_list=True dont le "question" ==
+      "{base_question} [{x}]" (prefixe/suffixe strict) existent -> correlation par intitule
+      de question exact, aucune autre convention d'identifiant partagee entre les deux
+      extracteurs n'etant disponible sur ce DOM (cf. BOT_EVOLUTION_MEMORY.md).
+
+    Comparaison en forme Unicode NFC (import local, sans toucher _norm_lc partage) :
+    observe en usage reel que le h1.question-text lu par _extract_decipher_cardrating_blocks
+    peut renvoyer un caractere accentue decompose (ex. 'A' + accent combinant U+0300) alors
+    que le .question-text lu par _extract_focusvision_answers_list_groups renvoie la forme
+    precomposee (U+00C0) pour le meme texte affiche a l'ecran — une comparaison naive de
+    chaines echoue silencieusement sans normalisation Unicode prealable.
+    """
+    import unicodedata
+
+    def _norm_lc_nfc(s: str) -> str:
+        return unicodedata.normalize("NFC", _norm_lc(s))
+
+    cardrating_by_widget: dict[str, list[dict]] = {}
+    for b in (blocks or []):
+        if not isinstance(b, dict):
+            continue
+        ctx = (b.get("context") or {}) if isinstance(b.get("context"), dict) else {}
+        if ctx.get("decipher_cardrating") is True:
+            uid = (ctx.get("cardrating_widget_uid") or "").strip()
+            if uid:
+                cardrating_by_widget.setdefault(uid, []).append(b)
+
+    base_question_by_widget: dict[str, str] = {}
+    for uid, wblocks in cardrating_by_widget.items():
+        if len(wblocks) < 2:
+            continue
+        if any((w.get("context") or {}).get("cardrating_card_label") for w in wblocks):
+            continue
+        base_q = _norm_lc_nfc((wblocks[0].get("question") or "").strip())
+        if not base_q:
+            continue
+        if any(_norm_lc_nfc((w.get("question") or "").strip()) != base_q for w in wblocks):
+            continue
+        base_question_by_widget[uid] = base_q
+
+    if not base_question_by_widget:
+        return blocks
+
+    row_match_counts: dict[str, int] = {}
+    for b in (blocks or []):
+        if not isinstance(b, dict):
+            continue
+        ctx = (b.get("context") or {}) if isinstance(b.get("context"), dict) else {}
+        if ctx.get("focusvision_answers_list") is not True:
+            continue
+        q = _norm_lc_nfc((b.get("question") or "").strip())
+        for uid, base_q in base_question_by_widget.items():
+            if q.startswith(f"{base_q} [") and q.endswith("]"):
+                row_match_counts[uid] = row_match_counts.get(uid, 0) + 1
+
+    widgets_to_drop = {uid for uid, cnt in row_match_counts.items() if cnt >= 2}
+    if not widgets_to_drop:
+        return blocks
+
+    pruned: list[dict] = []
+    for b in (blocks or []):
+        if not isinstance(b, dict):
+            pruned.append(b)
+            continue
+        ctx = (b.get("context") or {}) if isinstance(b.get("context"), dict) else {}
+        if ctx.get("decipher_cardrating") is True:
+            uid = (ctx.get("cardrating_widget_uid") or "").strip()
+            if uid in widgets_to_drop:
+                log_debug(
+                    "[DOM_CARDRATING_PRUNE_UNLABELED]",
+                    f"drop unlabeled cardrating block widget_uid={uid!r} question={b.get('question')!r}",
+                )
+                continue
         pruned.append(b)
     return pruned

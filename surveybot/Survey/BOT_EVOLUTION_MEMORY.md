@@ -5043,4 +5043,74 @@ et DOM QBRAW02 checkbox+instruction (`20260829_114613_after_dom_analyze`) : ques
 fusionnée inchangées, repli non déclenché (non-régression confirmée).
 Statut : patch validé par l'utilisateur en conditions réelles.
 
+### sq-atm1d checkbox imagé — vérité-terrain embarquée (`cs:trapCorrect`) au lieu de la sélection du modèle
+Date : 2026-08-29
+Fichiers :
+- Survey/dom_extractors_decipher.py — nouvelles fonctions module-level `_extract_balanced_json_object()`
+  et `_extract_atm1d_trap_correct_labels(q)`, plus hooks additifs dans le bloc `atm1d_buttons` de
+  `_extract_focusvision_answers_list_groups` (aucune ligne existante de ce bloc modifiée).
+- Survey/survey_executor.py — nouvelle fonction `_apply_atm1d_trap_ground_truth(actions, qid_meta)`,
+  appelée juste après `batch_response_parser.sanitize_actions(...)` et avant
+  `action_dispatcher.execute_actions_plan(...)` dans `execute_survey_page`.
+Bug corrigé : sur un widget `sq-atm1d` checkbox de type "trap" imagé (ex: question `QTRAP` "Laquelle de
+ces images contient un arbre ?", DOM de référence `20260829_165923_after_dom_analyze` /
+`20260829_190856_after_dom_analyze`), chaque option n'est représentée dans le DOM visible que par une
+image sans alt/title — le texte transmis au modèle n'est donc qu'un label opaque dérivé du nom de fichier
+(`b6`, `b5`, `nb1`, ...). Confirmé en conditions réelles : le modèle a répondu `b6|b5|b1|b3|b7` (5 valeurs)
+en omettant `b2` et `b8`, alors que la consigne demande de cocher *toutes* les images pertinentes — omission
+structurelle, non corrigible par reformulation de prompt (le modèle ne voit jamais le contenu visuel réel).
+Cause racine : la page embarque, dans un `<script>` sibling de `div.question` (hors de son sous-arbre),
+un objet `var jsexport = {...}` contenant un tableau `rows` avec, par option, une clé `cs:trapCorrect`
+("Y"/"N") indexée sur le même `label` que l'attribut `data-label` du `<li class="sq-atm1d-button">` DOM —
+vérité-terrain Decipher elle-même, jamais lue par aucun extracteur.
+Correction :
+1. `_extract_balanced_json_object(text, start_marker)` : extrait le literal JSON `{...}` qui suit
+   `start_marker` en comptant les accolades (chaînes ignorées), fonction utilitaire générique autonome.
+2. `_extract_atm1d_trap_correct_labels(q)` : lit `.sq-atm1d-widget[data-uid]` du widget courant, cherche
+   via `q.query_selector_all("xpath=following::script")` un script contenant à la fois `"jsexport"` et
+   `"cs:trapCorrect"`, extrait l'objet JSON, et n'accepte le résultat QUE si `data["uid"]` correspond
+   exactement au `data-uid` du widget DOM (corrélation stricte, jamais le premier script venu). Retourne
+   `{data-label: "Y"|"N"}` ou `{}` (fail-safe total, aucune exception ne remonte).
+3. Dans le bloc `atm1d_buttons` (boucle existante inchangée) : recopie additive de cette vérité-terrain sur
+   la clé `legend_norm` déjà produite par la boucle (une ligne ajoutée après
+   `option_xpath_map[legend_norm] = xp`, aucune variable existante altérée). Garde de cohérence après la
+   boucle : la vérité-terrain n'est retenue que si elle couvre STRICTEMENT toutes les options du bloc
+   (`len(trap_correct_norm) == len(options)`), sinon réinitialisée à `{}` (repli silencieux vers le
+   comportement piloté par le modèle, inchangé). Stockée dans `meta.trap_correct_norm`, scopée
+   `itype_atm1d == "checkbox"` uniquement (le bug ne concerne que le multi-select ; laissée vide sur radio).
+4. `_apply_atm1d_trap_ground_truth()` (survey_executor.py) : pour chaque bloc checkbox dont le target
+   enregistré porte `meta.source == "sq-atm1d"` ET un `trap_correct_norm` non vide, remplace intégralement
+   les actions produites par le modèle pour ce `qid` par le set déterministe issu du DOM (une action
+   `{qid, target_id, value=legend_norm, itype="checkbox", context=question, raw=...}` par option correcte),
+   au lieu de dépendre de sa réponse. Tout autre bloc (checkbox générique compris, ou sq-atm1d sans
+   couverture complète) traverse la fonction sans aucune altération.
+Log ajouté : `[ATM1D_TRAP] ground-truth override applied qids=[...]` (log_info, 1 ligne, uniquement quand
+l'override s'applique réellement) ; `[DECIPHER_ATM1D] trap ground-truth coverage incomplete (...) — ignored`
+(log_debug, cas de repli).
+Patterns couverts :
+- Widget `sq-atm1d` checkbox dont un script sibling contient `var jsexport` avec `cs:trapCorrect` pour
+  CHAQUE option retenue, et dont le `uid` JSON correspond au `data-uid` du widget DOM.
+Patterns exclus :
+- Widget `sq-atm1d` radio (bug rapporté uniquement sur checkbox) : `trap_correct_norm` toujours vide en
+  sortie, comportement inchangé.
+- `cs:trapCorrect` absent, script introuvable/non corrélé (`uid` différent), ou couverture partielle :
+  override jamais déclenché, comportement 100% inchangé (modèle pilote la sélection comme avant ce patch).
+- Tout bloc checkbox dont `meta.source != "sq-atm1d"` : `_apply_atm1d_trap_ground_truth` ne touche jamais
+  ses actions.
+- CTA non touché par ce patch (aucune modification de la logique de clic Suivant/Submit) — règle
+  CTA_INTERCEPT_ONLY non applicable ici.
+Vérification :
+- Extraction réelle (Playwright, DOM de référence `20260829_165923_after_dom_analyze`) : `target_id`,
+  `options`, `option_xpath_map`, `max_select` identiques bit-à-bit à l'extraction pré-patch (non-régression
+  confirmée) ; `meta.trap_correct_norm` correctement peuplé (7×Y : b6,b5,b1,b3,b7,b2,b8 — 2×N : nb1,nb4).
+- Override testé unitairement avec réponse modèle incomplète simulée (omission b1/b2/b3) : remplacé par le
+  set complet et exact des 7 bonnes images.
+- Non-régression testée sur un bloc checkbox générique (hors sq-atm1d) : actions du modèle traversent la
+  fonction totalement inchangées.
+- **Confirmé en conditions réelles** (`20260829_190856_after_dom_analyze`) : le modèle a répondu
+  `b6|b5|b1|b3|b7` (omission de `b2` et `b8`, bug reproduit) ; log `[ATM1D_TRAP] ground-truth override
+  applied qids=['Q1']` ; les 7 clics `b6,b5,b1,b3,b7,b2,b8` tous `apply ok=true strategy=sq_atm1d_widget
+  reason=li_selected_class` — sélection complète et correcte malgré l'omission initiale du modèle.
+Statut : patch validé par l'utilisateur en conditions réelles.
+
 ---
