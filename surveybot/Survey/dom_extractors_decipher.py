@@ -36,6 +36,7 @@ except ImportError:
 # ================================================================================
 
 _DECIPHER_TEMPLATE_MARKER_RE = re.compile(r"\{@[^}]*@\}")
+_ZERO_WIDTH_CHARS_RE = re.compile("[​‌‍﻿]")
 
 
 def _clean_decipher_template_markers(text: str) -> str:
@@ -45,6 +46,12 @@ def _clean_decipher_template_markers(text: str) -> str:
         return raw
     cleaned = _DECIPHER_TEMPLATE_MARKER_RE.sub("", raw)
     return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _strip_zero_width(text: str) -> str:
+    """Retire les caractères invisibles zero-width (space/non-joiner/joiner, BOM)
+    qui peuvent rendre un texte visuellement vide non détectable par un simple strip()."""
+    return _ZERO_WIDTH_CHARS_RE.sub("", text or "").strip()
 
 
 def _has_inline_display_none(el) -> bool:
@@ -556,6 +563,33 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             question_atm1d = f"{question} {instruction_atm1d}".strip() if instruction_atm1d else question
             if instruction_atm1d:
                 log_debug("[DECIPHER_ATM1D]", f"instruction merged: {instruction_atm1d[:80]!r}")
+
+            # Repli DOM strict : certains widgets sq-atm1d (questions de rappel/exposition
+            # publicitaire) portent un h1.question-text ne contenant qu'un caractère
+            # invisible (zero-width) et un h2.instruction-text vide — question_atm1d reste
+            # alors visuellement vide alors qu'un intitulé est bien affiché au répondant,
+            # porté par un bloc `.comment` frère placé juste avant `div.question` (hors de
+            # celui-ci). Guard strict : ne s'active que si question_atm1d est vide une fois
+            # les caractères invisibles retirés — n'impacte aucun cas où le widget porte déjà
+            # un texte natif exploitable.
+            if not _strip_zero_width(question_atm1d):
+                _comment_texts: list[str] = []
+                try:
+                    _preceding_comments = q.query_selector_all(
+                        "xpath=preceding-sibling::div[contains(concat(' ',normalize-space(@class),' '),' comment ')][position()<=3]"
+                    )
+                except Exception:
+                    _preceding_comments = []
+                for _cel in _preceding_comments:
+                    _ctxt = _strip_zero_width(_cel.inner_text() or "")
+                    if _ctxt:
+                        _comment_texts.append(_ctxt)
+                if _comment_texts:
+                    question_atm1d = " ".join(_comment_texts)
+                    log_debug(
+                        "[DECIPHER_ATM1D]",
+                        f"question fallback from preceding .comment sibling(s): {question_atm1d[:120]!r}",
+                    )
 
             # Deduce itype from role="radiogroup" on the ul, or role="radio" on the li.
             itype_atm1d = "checkbox"

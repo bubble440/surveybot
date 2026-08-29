@@ -4999,4 +4999,48 @@ confirmées sélectionnées à l'écran, Wilkinson-sword correctement non sélec
 stratégies génériques, plus d'abandon `no_strategy` sur ce widget en checkbox.
 Statut : patch validé par l'utilisateur en conditions réelles.
 
+### atm1d_buttons — repli texte de question depuis un bloc `.comment` frère (widget rappel publicitaire, h1.question-text zero-width)
+Date : 2026-08-29
+Fichier : Survey/dom_extractors_decipher.py (bloc `atm1d_buttons` de
+`_extract_focusvision_answers_list_groups`, construction de la variable locale `question_atm1d` — cf.
+entrées précédentes pour l'introduction de cette variable).
+Bug corrigé : sur une question de rappel/exposition publicitaire (widget `sq-atm1d` en radiogroup,
+DOM de référence `20260829_143237_after_dom_analyze`, question `QADREC_ad4`), `h1.question-text` ne
+contient qu'un caractère invisible zero-width (`‌`) et `h2.instruction-text` est vide — `question`
+puis `question_atm1d` restent donc visuellement vides après un simple `.strip()` (qui ne retire pas les
+caractères zero-width). Le texte réellement visible pour le répondant ("Avez-vous vu cette publicité
+auparavant ?") est porté par un `<div class="html comment ...">` frère (`h1.comment-text`), placé juste
+avant `div.question...sq-atm1d` mais hors de son périmètre — jamais lu par cet extracteur. Conséquence :
+le prompt envoyé au modèle contenait une question vide (`contexte: ‌`), empêchant la règle système
+dédiée aux questions de rappel publicitaire (déclenchée sur mots-clés du texte de question) de
+s'appliquer ; le modèle retombait sur un choix par défaut positif ("Oui, absolument") au lieu du refus
+attendu ("Non, certainement pas").
+Correction : nouveau helper module-level `_strip_zero_width()` (retire `​`/`‌`/`‍`/`﻿`
+avant test de vacuité). Dans le bloc `atm1d_buttons`, repli scopé : si `question_atm1d` est vide une fois
+les caractères invisibles retirés, lecture des `div` frères précédents portant la classe `comment`
+(xpath `preceding-sibling::div[...][position()<=3]`, borné à 3 pour rester "juste avant"), concaténation
+du texte visible (nettoyé des mêmes caractères invisibles) de ceux qui en ont. `question_atm1d` reste la
+seule variable modifiée (locale à ce bloc) — la variable partagée `question` et les autres branches
+d'extraction de la même fonction sont inchangées.
+Log debug ajouté : `[DECIPHER_ATM1D] question fallback from preceding .comment sibling(s): ...`.
+Patterns couverts :
+- Widget `sq-atm1d` dont `h1.question-text` est vide ou ne contient qu'un/des caractère(s) zero-width
+  ET `h2.instruction-text` vide, avec un ou plusieurs `div.comment` frères précédant immédiatement
+  `div.question` (texte d'intitulé et/ou bloc média vidéo/image/texte sans texte propre).
+Patterns exclus :
+- Widget `sq-atm1d` avec `h1.question-text` déjà exploitable (chemin existant inchangé, non-régression
+  vérifiée par rejeu — cf. Vérification).
+- Aucun `div.comment` frère trouvé, ou tous vides : `question_atm1d` reste tel quel (vide), comportement
+  inchangé (pas de nouvelle exception, pas de valeur fabriquée).
+- Stratégie de clic/vérification `sq_atm1d_widget` (action_dispatcher.py) : non modifiée, l'échec observé
+  en amont de ce patch (`no sq-atm1d-selected class after click`) a eu lieu sur la mauvaise valeur produite
+  par ce bug ; à surveiller sur un prochain run réel une fois la bonne valeur ciblée, mais aucun bug
+  distinct confirmé à ce stade dans action_dispatcher.py.
+Vérification : rejeu direct de l'extracteur (shim lxml, hors Playwright) sur 3 DOMs — DOM du bug
+(`20260829_143237_after_dom_analyze`) : question récupérée = "Avez-vous vu cette publicité auparavant ?",
+options/itype(radio)/max_select(1) corrects ; DOM Male/Female/Autre (`20260829_103324_after_dom_analyze`)
+et DOM QBRAW02 checkbox+instruction (`20260829_114613_after_dom_analyze`) : question native/instruction
+fusionnée inchangées, repli non déclenché (non-régression confirmée).
+Statut : patch validé par l'utilisateur en conditions réelles.
+
 ---

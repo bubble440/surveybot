@@ -2398,6 +2398,24 @@ def _apply_by_target_id(
                 # 1) lookup direct
                 xp = opt_map.get(v_norm) or (opt_map.get(v_fold) if v_fold else None)
 
+                # 1.5) lookup exact sur formes repliées (accents + style d'apostrophe
+                # normalisés des DEUX côtés). Confirmé sur DOM de référence (widget Decipher
+                # sq-cardrating, ans183415) : la même échelle mélange apostrophe droite
+                # ("Pas d'accord") et typographique ("D'accord", "Entièrement d'accord") —
+                # les clés d'option_xpath_map gardent l'apostrophe DOM telle quelle
+                # (_norm_lc ne la replie pas), donc si la valeur reçue utilise l'autre
+                # style, l'étape 1 rate. Sans cette passe dédiée, le repli sous-chaîne de
+                # l'étape 2 peut alors matcher un candidat plus court AVANT d'atteindre le
+                # candidat correct selon l'ordre d'itération du dict (ex: "D'accord" étant
+                # une sous-chaîne repliée de "Entièrement d'accord"). Additive : ne s'active
+                # que si l'étape 1 a déjà échoué, et n'accepte qu'une égalité EXACTE sur la
+                # forme repliée — jamais moins précis que le substring de l'étape 2.
+                if not xp and v_fold:
+                    for k, x in opt_map.items():
+                        if k and _fold_norm_lc(k) == v_fold:
+                            xp = x
+                            break
+
                 # 2) lookup fuzzy (avec et sans accents)
                 if not xp:
                     for k, x in opt_map.items():
@@ -3127,6 +3145,121 @@ def _apply_by_target_id(
                     if debug_target:
                         log_debug("[TARGET_DEBUG]", f"element not found for xpath={xp} ({type(ex).__name__}: {_short_exc(ex)})")
                     return False
+
+                # --- Decipher sq-cardrating (widget carte en carrousel avec échelle
+                # d'accord, une carte affichée à la fois, boutons de réponse partagés et
+                # réutilisés à chaque étape ; chaque étape = une question individuelle
+                # avec sa propre valeur attendue) ---
+                # L'extraction answers-list group-by-row construit `xp` vers l'input caché
+                # de la vue QA (`sq-cardrating-qa-view`, explicitement documentée "shown only
+                # when QA Codes are turned on", donc jamais visible pour l'utilisateur final),
+                # avec un ancêtre .clickableCell qui existe dans le DOM mais reste invisible
+                # en permanence : `el` ci-dessus est résolu (fallback non-visible de
+                # _find_best_visible) mais tout clic natif/ActionChains dessus time out à
+                # 30s chacun, puis la cascade de repli générique (kantar_rowpicker,
+                # ipsos_sharky_grid_progressive, vant_picker_column...) échoue aussi, conçue
+                # pour d'autres structures de grille.
+                # Distinct de solve_decipher_cardrating_rows (une seule valeur appliquée à
+                # TOUTES les rows d'une grille en une passe) : ici chaque row/carte a sa
+                # propre valeur, résolue individuellement via ce target_id.
+                # Guard DOM strict : id de l'input résolu par `xp` de la forme
+                # ans<uid>.<col>.<row> ET widget .sq-cardrating-widget[data-uid=uid] présent
+                # sur la page — <col> n'est PAS réutilisé (insensible à un éventuel mauvais
+                # choix de colonne par le lookup fuzzy amont sur option_xpath_map, ex.
+                # "D'accord" étant une sous-chaîne de "Entièrement d'accord") : on ne clique
+                # jamais la colonne déduite de l'id caché, uniquement le bouton visible du
+                # widget dont le texte correspond exactement à la valeur demandée.
+                if resolved_itype == "radio":
+                    _cr_id_match = re.search(r"ans(\d+)\.(\d+)\.(\d+)", xp)
+                    if _cr_id_match:
+                        _cr_uid, _cr_row = _cr_id_match.group(1), _cr_id_match.group(3)
+                        # Contexte de frame actif, même convention que _find_best_visible/
+                        # _verify_ctx ailleurs dans cette fonction (driver interroge toujours
+                        # le document racine, indépendamment de driver._current_frame).
+                        _cr_ctx = getattr(driver, "_current_frame", driver)
+                        _cr_widget = None
+                        try:
+                            _cr_widget = _cr_ctx.query_selector(f".sq-cardrating-widget[data-uid='{_cr_uid}']")
+                        except Exception:
+                            _cr_widget = None
+
+                        if _cr_widget is not None:
+                            # Idempotence : une des options de cette row (colonne quelconque)
+                            # est-elle déjà cochée sur l'input caché correspondant ?
+                            _cr_already = False
+                            try:
+                                _cr_row_re = re.compile(rf"^ans{re.escape(_cr_uid)}\.\d+\.{re.escape(_cr_row)}$")
+                                for _cr_inp in _cr_ctx.query_selector_all(f"input[type='radio'][id^='ans{_cr_uid}.']"):
+                                    try:
+                                        _cr_iid = (_cr_inp.get_attribute("id") or "").strip()
+                                        if _cr_row_re.match(_cr_iid) and _cr_inp.is_checked():
+                                            _cr_already = True
+                                            break
+                                    except Exception:
+                                        continue
+                            except Exception:
+                                _cr_already = False
+
+                            if _cr_already:
+                                log_info("[TARGET]", f"apply ok=true strategy=decipher_cardrating_button reason=already_selected value='{value}'")
+                                return True
+
+                            # Résolution du bouton par correspondance EXACTE de texte (jamais
+                            # de sous-chaîne : "D'accord" est une sous-chaîne de "Entièrement
+                            # d'accord", donc tout matching non-exact reproduirait le même
+                            # décalage d'un cran que le lookup fuzzy amont sur option_xpath_map).
+                            _cr_btn = None
+                            try:
+                                for _cr_cand in _cr_widget.query_selector_all(".sq-cardrating-buttons .sq-cardrating-button"):
+                                    try:
+                                        _cr_content = _cr_cand.query_selector(".sq-cardrating-content") or _cr_cand
+                                        _cr_txt = (_cr_content.inner_text() or "").strip()
+                                    except Exception:
+                                        continue
+                                    _cr_k_norm, _cr_k_fold = _norm_lc(_cr_txt), _fold_norm_lc(_cr_txt)
+                                    if (v_norm and v_norm == _cr_k_norm) or (v_fold and v_fold == _cr_k_fold):
+                                        _cr_btn = _cr_cand
+                                        break
+                            except Exception:
+                                _cr_btn = None
+
+                            if _cr_btn is None:
+                                if debug_target:
+                                    log_debug("[TARGET_DEBUG]", f"decipher_cardrating_button: button_not_found value='{value}' uid={_cr_uid} row={_cr_row}")
+                                return False
+
+                            # Widget "une carte à la fois" : ne cliquer que si cette row est
+                            # bien la carte courante (data-position='0'), sinon le clic
+                            # s'appliquerait à une autre row que celle demandée.
+                            _cr_card = None
+                            try:
+                                _cr_card = _cr_widget.query_selector(f"li.sq-cardrating-card[data-index='{_cr_row}']")
+                            except Exception:
+                                _cr_card = None
+                            _cr_position = (_cr_card.get_attribute("data-position") or "").strip() if _cr_card is not None else None
+                            if _cr_card is None or _cr_position != "0":
+                                if debug_target:
+                                    log_debug("[TARGET_DEBUG]", f"decipher_cardrating_button: not_current_card value='{value}' uid={_cr_uid} row={_cr_row} position={_cr_position!r}")
+                                return False
+
+                            if (_cr_btn.get_attribute("data-clickable") or "").strip().lower() == "false":
+                                if debug_target:
+                                    log_debug("[TARGET_DEBUG]", f"decipher_cardrating_button: button_not_clickable value='{value}' uid={_cr_uid} row={_cr_row}")
+                                return False
+
+                            _cr_col = (_cr_btn.get_attribute("data-index") or "").strip()
+                            if not _click_candidate(_cr_btn, "decipher_cardrating_button"):
+                                if debug_target:
+                                    log_debug("[TARGET_DEBUG]", f"decipher_cardrating_button: click failed value='{value}' uid={_cr_uid} row={_cr_row}")
+                                return False
+
+                            _cr_verified = bool(_cr_col) and _wait_checked(f"ans{_cr_uid}.{_cr_col}.{_cr_row}", None, timeout_s=1.0)
+                            if _cr_verified:
+                                log_info("[TARGET]", f"apply ok=true strategy=decipher_cardrating_button reason=clicked value='{value}'")
+                                return True
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"decipher_cardrating_button: clicked but not verified value='{value}' uid={_cr_uid} row={_cr_row} col={_cr_col!r}")
+                            return False
 
                 # --- Askia Ranking Isotope (adcRanking jQuery plugin) ---
                 # Guard DOM strict : flag askia_ranking_isotope posé par l'extracteur.
