@@ -204,7 +204,7 @@ powercfg /change hibernate-timeout-ac 0
 #############################################
 
 # Pour lancer un bot a l'arret (ou tous les comptes) :
-.\launch_all.ps1 -AccountId "topsurveys_bot_001"
+.\launch_all.ps1 -AccountId "bot_001"
 .\launch_all.ps1
 
 # Pour stopper un bot DURABLEMENT (maintenance, intervention operateur, ...) :
@@ -213,12 +213,12 @@ powercfg /change hibernate-timeout-ac 0
 # appel est un no-op silencieux si aucun service NSSM n'existe pour ce compte (bot
 # demarre uniquement via launch_all.ps1). Pour un bot PID, completer avec stop_bot.ps1
 # ci-dessous pour reellement arreter le process :
-.\stop_bot_manual.ps1 -AccountId "topsurveys_bot_001"
-.\stop_bot.ps1 -AccountId "topsurveys_bot_001"
+.\stop_bot_manual.ps1 -AccountId "bot_001"
+.\stop_bot.ps1 -AccountId "bot_001"
 # Le marqueur pose par stop_bot_manual.ps1 est leve automatiquement au prochain
 # demarrage reel du bot (bot_supervisor.clear_manual_stop_marker, appele par main.py).
 # Voir le statut et le pid d'un bot
-Get-Content C:\surveybot\pids\bot_topsurveys_bot_001.state | ConvertFrom-Json | Select last_heartbeat_ts, pid, last_exit_code, last_exit_reason
+Get-Content C:\surveybot\pids\bot_bot_001.state | ConvertFrom-Json | Select last_heartbeat_ts, pid, last_exit_code, last_exit_reason
 #Tuer la tache definitivement
 taskkill /PID <PID> /T /F
 
@@ -237,7 +237,7 @@ Get-CimInstance Win32_Process -Filter "Name='chrome.exe'"|Where-Object { $_.Comm
 # variable d'environnement, pas en argument) - donc pas filtrable par profil
 # directement. Verifier plutot via le .state du compte qui utilisait ce profil
 # jusqu'ici (pid + last_heartbeat_ts recent = process concerne toujours vivant) :
-Get-Content C:\surveybot\pids\bot_topsurveys_bot_<AccountId_precedent>.state -ErrorAction SilentlyContinue | ConvertFrom-Json | Select-Object pid, last_heartbeat_ts
+Get-Content C:\surveybot\pids\bot_bot_<AccountId_precedent>.state -ErrorAction SilentlyContinue | ConvertFrom-Json | Select-Object pid, last_heartbeat_ts
 
 # Verrou physique Chrome (SingletonLock, ...) : peut survivre a un crash sans
 # qu'aucun process ne soit reellement vivant dessus (cf. browser_launch_failed) :
@@ -251,7 +251,7 @@ Remove-Item "$profileDir\Singleton*" -Force -ErrorAction SilentlyContinue
 # Pour un arret COURT (relance prevue dans les toutes prochaines minutes, avant le
 # prochain tick de wake_scheduler.ps1/check_zombie_bots.ps1) : stop_bot.ps1 seul suffit,
 # sans poser de marqueur durable.
-.\stop_bot.ps1 -AccountId "topsurveys_bot_001"
+.\stop_bot.ps1 -AccountId "bot_001"
 
 # Pour voir le statut (bot PID) :
 Get-ChildItem C:\surveybot\pids -Filter "bot_*.pid"
@@ -264,17 +264,17 @@ Get-ScheduledTask -TaskName "SurveyBot_*" | Get-ScheduledTaskInfo | Select-Objec
 #############################################
 
 # Pour lancer un bot a l'arret, executer la commande ci-dessous:
-nssm start surveybot_topsurveys_bot_001
+nssm start surveybot_bot_001
 
 # Pour stopper un bot DURABLEMENT via NSSM - meme remarque que ci-dessus sur
 # stop_bot_manual.ps1 (marqueur + `nssm stop`, celui-ci fonctionne tant que le
 # service existe) :
-.\stop_bot_manual.ps1 -AccountId "topsurveys_bot_001"
+.\stop_bot_manual.ps1 -AccountId "bot_001"
 
 # nssm stop reste valide pour un arret COURT dont vous savez qu'il sera suivi d'un
 # nssm start dans les toutes prochaines minutes (avant le prochain tick de
 # wake_scheduler.ps1) - sinon toujours preferer stop_bot_manual.ps1 ci-dessus.
-nssm stop surveybot_topsurveys_bot_001
+nssm stop surveybot_bot_001
 
 # Pour voir le statut
-nssm status surveybot_topsurveys_bot_001
+nssm status surveybot_bot_001

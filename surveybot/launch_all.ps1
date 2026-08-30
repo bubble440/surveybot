@@ -34,7 +34,7 @@
 #
 # Usage :
 #   .\launch_all.ps1                                  # tous les comptes de accounts.json
-#   .\launch_all.ps1 -AccountId "topsurveys_bot_001"   # un seul compte
+#   .\launch_all.ps1 -AccountId "bot_001"   # un seul compte
 #
 # Prerequis :
 #   - accounts.json dans le meme dossier que ce script (C:\surveybot\, la racine).

@@ -408,7 +408,7 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
   commande d'enregistrement de la tâche, pas dans leur contenu).
 - **Validé en conditions réelles (28/07/2026)** : `Start-ScheduledTask` →
   `LastTaskResult = 0`, log `wake_scheduler_task.log` désormais généré,
-  `nssm start surveybot_topsurveys_bot_001` déclenché, service repassé à
+  `nssm start surveybot_bot_001` déclenché, service repassé à
   `SERVICE_RUNNING`.
 - **Point de vigilance** : toute machine déjà provisionnée AVANT ce correctif
   a ses tâches planifiées enregistrées avec l'ancienne action (sans
@@ -531,7 +531,7 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
 ## 17. Arrêt manuel opérateur relancé par `wake_scheduler.ps1` — corrigé, non validé en conditions réelles
 
-- **Problème observé (08/08/2026)** : plusieurs `nssm stop surveybot_topsurveys_bot_003`
+- **Problème observé (08/08/2026)** : plusieurs `nssm stop surveybot_bot_003`
   répétés par l'opérateur ne maintenaient pas le bot arrêté durablement — quelques
   minutes plus tard, le heartbeat local montrait un bot de nouveau actif (âge 31 s).
 - **Cause racine** : `launch.py::_make_stop_handler` (§3, `_make_stop_handler`) traite

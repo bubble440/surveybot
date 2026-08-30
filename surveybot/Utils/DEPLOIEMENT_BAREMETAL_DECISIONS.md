@@ -792,7 +792,7 @@ simplement rejoint via CDP.
 
 **1. `navigator.webdriver` — confirmé `True` en prod avant patch, `False` après.**
 Log `[LAUNCH][PW][DIAG] navigator.webdriver=True (mode=launch_persistent_context)` obtenu sur un
-run prod réel (bot_topsurveys_bot_001, 24/07/2026 15:15) avant patch. Après ajout de
+run prod réel (bot_bot_001, 24/07/2026 15:15) avant patch. Après ajout de
 `--disable-blink-features=AutomationControlled` aux `chrome_args` du chemin prod, un second run
 réel (15:34) confirme `navigator.webdriver=False`. Log de diagnostic (`page.evaluate("()
 => navigator.webdriver")` juste après la création du contexte, `log_info`) conservé en place —

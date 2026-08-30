@@ -22,8 +22,8 @@
 # voir stop_bot.ps1 (mecanisme distinct, base sur CTRL_BREAK_EVENT cible via PID).
 #
 # Usage :
-#   .\stop_bot_manual.ps1 -AccountId "topsurveys_bot_001"
-#   .\stop_bot_manual.ps1 -AccountId "topsurveys_bot_001" -PidsDir "D:\surveybot\pids"
+#   .\stop_bot_manual.ps1 -AccountId "bot_001"
+#   .\stop_bot_manual.ps1 -AccountId "bot_001" -PidsDir "D:\surveybot\pids"
 
 param(
     [Parameter(Mandatory = $true)]

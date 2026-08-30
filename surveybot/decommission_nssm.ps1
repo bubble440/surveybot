@@ -21,7 +21,7 @@
 # Usage :
 #   .\decommission_nssm.ps1                 # dry-run : liste les services concernes
 #   .\decommission_nssm.ps1 -Execute         # arret + suppression reels (admin requis)
-#   .\decommission_nssm.ps1 -Execute -AccountId "topsurveys_bot_001"   # un seul compte
+#   .\decommission_nssm.ps1 -Execute -AccountId "bot_001"   # un seul compte
 
 param(
     [string]$InstallDir = "C:\surveybot",

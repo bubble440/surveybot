@@ -19,7 +19,7 @@ Usage :
 Exemple de fichier d'entrée valide (une seule entrée) :
     [
       {
-        "ACCOUNT_ID": "topsurveys_bot_300",
+        "ACCOUNT_ID": "bot_300",
         "EMAIL": "user@example.com",
         "PASSWORD": "s3cr3t",
         "PROXY_URL": "185.134.194.152:12323",
