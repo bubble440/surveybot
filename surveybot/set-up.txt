@@ -228,7 +228,7 @@ taskkill /PID <PID> /T /F
 # user-data-dir : un process precedent qui le tient encore (ou un verrou residuel
 # d'un crash) est la cause probable d'un browser_launch_failed en crash-loop sur
 # le bot suivant. Ne JAMAIS se fier a "je l'ai arrete plus tot" seul - reverifier :
-$profileDir = "C:\surveybot\profiles\bot_003"
+$profileDir = "C:\surveybot\profiles\bot_001"
 
 # Chrome : le chemin du profil apparait dans sa ligne de commande (--user-data-dir=...)
 Get-CimInstance Win32_Process -Filter "Name='chrome.exe'"|Where-Object { $_.CommandLine -like "*$profileDir*" } |Select-Object ProcessId, CommandLine

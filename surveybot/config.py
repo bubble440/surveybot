@@ -128,7 +128,7 @@ def is_freeze_mode_enabled() -> bool:
     l'environnement dans tous les modes, jamais depuis global_config.
     Défaut désactivé : comportement strictement inchangé si absent.
     """
-    return _env_truthy("FREEZE_ON_TRIGGER", "1")
+    return _env_truthy("FREEZE_ON_TRIGGER", "0")
 
 
 def should_run_guard_monitor() -> bool:

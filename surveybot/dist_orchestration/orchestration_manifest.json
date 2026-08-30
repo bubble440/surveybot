@@ -1,9 +1,9 @@
 {
-    "generated_at":  "2026-08-29T20:45:03Z",
+    "generated_at":  "2026-08-30T12:25:20Z",
     "files":  [
                   {
                       "rel_path":  "launch_all.ps1",
-                      "sha256":  "5c43c30e3c7e71f0ceb0e6202ff5d649cf473d980a46e5134fd769d3b4ef0f2b",
+                      "sha256":  "c16dfb933166c3915bbdb9386fdb3aa7ac96e9bbf30d8fc7db3299dba0a5c29b",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/launch_all.ps1"
                   },
                   {
@@ -28,17 +28,17 @@
                   },
                   {
                       "rel_path":  "stop_bot_manual.ps1",
-                      "sha256":  "a394fb7576055686a60c4a080b7ca8b66136b027c254ec9eeaf77d3282ad90b7",
+                      "sha256":  "2c7b078be43dec763ff6809016364beb040f88f8d6b043e417e5872048572956",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/stop_bot_manual.ps1"
                   },
                   {
                       "rel_path":  "resume_bot_freeze.ps1",
-                      "sha256":  "5cc329e0f350cef2df0fb08f0e5ae20e3e20b6ba72dfd5fc8de7695efe9e4c5f",
+                      "sha256":  "64362397dd0ba76e150f24dd507da3a940a2cee10dce4054843638a53e3b0d77",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/resume_bot_freeze.ps1"
                   },
                   {
                       "rel_path":  "decommission_nssm.ps1",
-                      "sha256":  "b87520a3ff27012c3b80260e0bc222d07c4ee7d4bbd0e86f1e73858d15fe6938",
+                      "sha256":  "251c1eb8fe295510858b236d7a8f8633b5982e561d0368ebb8426a9bf9ed0449",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/decommission_nssm.ps1"
                   },
                   {
@@ -48,7 +48,7 @@
                   },
                   {
                       "rel_path":  "set-up.txt",
-                      "sha256":  "3c9c187ffdf498bc834387f504e7a8ecb0023fe95044d6858914063f68c96bb9",
+                      "sha256":  "ac92bce015a6e885af8e5ec956f9a55cc81554b032a71bf41fe299e801a7fbfd",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/set-up.txt"
                   },
                   {

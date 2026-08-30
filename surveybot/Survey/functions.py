@@ -467,13 +467,86 @@ def _handle_ps_offers_platforms_popup(driver):
     return True
 
 
+def _handle_heycash_level_up_popup(driver):
+    """
+    Gere la modale de felicitations HeyCash 'Niveau superieur !' (passage de niveau
+    du programme de fidelite, avec credit d'un bonus), pouvant apparaitre de facon
+    intermittente juste apres le login ou au retour sur le listing de sondages (ex.
+    apres completion d'un sondage). Fonction additive et independante : guard DOM
+    strict et disjoint des autres handlers de ce fichier, aucune modification de
+    leur logique. Partagee via _resolve_topsurveys_popups entre les plateformes
+    Prime Insights (TopSurveys, PrimeOpinion, EarnStar, HeyCash, FiveSurveys), mais
+    guard scope au DOM confirme sur HeyCash - ne suppose pas de structure identique
+    sur les autres plateformes de la meme famille.
+    Guard strict : conteneur [data-test-id='user_level_modal'] visible, contenant le
+    bouton [data-test-id='congrats-level-button'] visible (recherche du bouton
+    scopee au conteneur, pas de scan page entiere - evite toute collision avec le
+    bouton de fermeture generique [data-test-id='close-modal-button'], partage par
+    d'autres modales du meme composant generique p-modal-container/p-modal-layout,
+    et volontairement non utilise ici comme mecanisme de fermeture).
+    Le DOM peut en theorie contenir plusieurs occurrences du conteneur (meme
+    convention defensive que _handle_topsurveys_streak_complete_popup) - toutes les
+    instances candidates sont essayees jusqu'a la premiere qui accepte le clic.
+    Budget : 1 scan de detection (toutes instances), 1 tentative de clic par
+    instance candidate.
+
+    Valeur de retour (tri-etat, meme convention que
+    _handle_topsurveys_streak_complete_popup) :
+    - True  : popup detectee et fermee (au moins une instance).
+    - False : popup detectee mais aucune instance candidate n'a pu etre fermee
+              (toutes interceptees) - permet a l'appelant de redonner une chance de
+              re-scan plutot que de conclure a tort a "aucun popup connu".
+    - None  : popup non detectee.
+    """
+    try:
+        candidates = []
+        for container in driver.query_selector_all("[data-test-id='user_level_modal']"):
+            try:
+                if not container.is_visible():
+                    continue
+                btn = container.query_selector("button[data-test-id='congrats-level-button']")
+                if btn and btn.is_visible():
+                    candidates.append(btn)
+            except Exception:
+                continue
+    except Exception as e:
+        if _is_target_closed(e):
+            log_debug("[HEYCASH_LEVEL_UP_POPUP]", f"page fermee pendant le scan: {e}")
+        return None
+
+    if not candidates:
+        return None
+
+    log_info("[HEYCASH_LEVEL_UP_POPUP]",
+             f"modale 'Niveau superieur !' detectee ({len(candidates)} instance(s)) - fermeture...")
+    _local_pause_before_cta("[HEYCASH_LEVEL_UP_POPUP] modale detectee")
+
+    if is_cta_intercept_only():
+        log_info("[HEYCASH_LEVEL_UP_POPUP]",
+                  "bouton 'Continue a gagner de l'argent' trouve - interception OK (CTA_INTERCEPT_ONLY actif)")
+        return True
+
+    for btn in candidates:
+        try:
+            btn.click(timeout=3000)
+            log_info("[HEYCASH_LEVEL_UP_POPUP]", "bouton 'Continue a gagner de l'argent' clique.")
+            time.sleep(1.0)
+            return True
+        except Exception as e:
+            log_debug("[HEYCASH_LEVEL_UP_POPUP]", f"instance obstruee, tentative instance suivante: {e}")
+            continue
+
+    log_info("[HEYCASH_LEVEL_UP_POPUP]", "erreur clic: toutes les instances candidates sont obstruees.")
+    return False
+
+
 def _resolve_topsurveys_popups(driver, max_attempts: int = _TOPSURVEYS_POPUP_RESOLVE_MAX_ATTEMPTS) -> dict:
     """
     Ferme successivement les popups TopSurveys connus (recompense 'Genial', boite
     mystere, resultat de sondage 'Bon travail !'/'Complete', modale de fin de serie
-    quotidienne, popup Prime Insights "Selectionner les appareils") pouvant
-    apparaitre superposes au retour sur app.topsurveys.app, dans un ordre non
-    deterministe d'une session a l'autre.
+    quotidienne, popup Prime Insights "Selectionner les appareils", modale HeyCash
+    'Niveau superieur !') pouvant apparaitre superposes au retour sur
+    app.topsurveys.app, dans un ordre non deterministe d'une session a l'autre.
 
     Re-evalue l'etat de la page apres CHAQUE tentative (reussie ou non) plutot
     qu'un scan+clic unique par type de popup — corrige le blocage observe quand
@@ -494,8 +567,9 @@ def _resolve_topsurveys_popups(driver, max_attempts: int = _TOPSURVEYS_POPUP_RES
     l'appelant, a declencher une seule fois apres stabilisation.
 
     Retourne un dict {"genial_closed", "mystery_box_closed", "bon_travail_closed",
-    "streak_complete_closed", "survey_result_closed", "offers_platforms_closed"}
-    (bool chacun) indiquant quels types de popup ont ete fermes au moins une fois.
+    "streak_complete_closed", "survey_result_closed", "offers_platforms_closed",
+    "heycash_level_up_closed"} (bool chacun) indiquant quels types de popup ont ete
+    fermes au moins une fois.
     """
     result = {
         "genial_closed": False,
@@ -504,6 +578,7 @@ def _resolve_topsurveys_popups(driver, max_attempts: int = _TOPSURVEYS_POPUP_RES
         "streak_complete_closed": False,
         "survey_result_closed": False,
         "offers_platforms_closed": False,
+        "heycash_level_up_closed": False,
     }
 
     for attempt in range(1, max_attempts + 1):
@@ -570,12 +645,25 @@ def _resolve_topsurveys_popups(driver, max_attempts: int = _TOPSURVEYS_POPUP_RES
             result["survey_result_closed"] = True
             continue
 
+        level_up_state = _handle_heycash_level_up_popup(driver)
+        if level_up_state is True:
+            result["heycash_level_up_closed"] = True
+            continue
+
         if streak_state is False:
             # Detecte mais ni son propre clic ni le popup sous-jacent n'ont debloque
             # l'etat a ce passage - nouveau passage de re-scan dans le budget existant
             # plutot que de sortir a tort comme si aucun popup connu n'etait present.
             log_debug("[TOPSURVEYS_POPUP_RESOLVE]",
                       f"streak_complete detecte mais clic echoue, popup de resultat non ferme (attempt={attempt}) - nouveau passage.")
+            continue
+
+        if level_up_state is False:
+            # Meme logique que streak_state False ci-dessus : detectee mais clic
+            # echoue (toutes instances obstruees) - nouveau passage de re-scan dans
+            # le budget existant plutot que de conclure a tort a "etat stable".
+            log_debug("[TOPSURVEYS_POPUP_RESOLVE]",
+                      f"modale HeyCash 'Niveau superieur' detectee mais clic echoue (attempt={attempt}) - nouveau passage.")
             continue
 
         # Aucun popup connu detecte a ce passage -> etat stable, fin de boucle.
