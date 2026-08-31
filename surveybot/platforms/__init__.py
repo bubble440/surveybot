@@ -65,3 +65,19 @@ def validate_platform_rotation(rotation) -> None:
             f"PLATFORM_ROTATION contient {len(unknown)} plateforme(s) inconnue(s): {unknown!r}. "
             f"Valeurs supportées: {list(KNOWN_PLATFORMS)!r}"
         )
+
+
+def validate_platform_daily_targets(rotation, targets: dict) -> None:
+    """
+    Échoue immédiatement et explicitement si une plateforme de `rotation`
+    (typiquement global_config.PLATFORM_ROTATION) n'a pas d'entrée dans
+    `targets` (typiquement global_config.PLATFORM_DAILY_TARGET) — même patron
+    que validate_platform_rotation() : jamais de repli implicite sur une
+    cible journalière non configurée.
+    """
+    missing = [n for n in rotation if (n or "").strip().lower() not in targets]
+    if missing:
+        raise ValueError(
+            f"PLATFORM_DAILY_TARGET ne définit pas d'objectif pour {len(missing)} "
+            f"plateforme(s) de PLATFORM_ROTATION: {missing!r}."
+        )

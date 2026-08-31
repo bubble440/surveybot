@@ -168,6 +168,9 @@ def check_balance_and_notify_if_needed(driver, account_id: str) -> None:
 
     log_info(_TAG, f"check_balance_and_notify_if_needed() — solde détecté : ${balance:.2f}")
 
+    from Cash.daily_stop import check_and_stop_if_daily_target_reached
+    check_and_stop_if_daily_target_reached(account_id, "ysense", balance)
+
     if balance < CASHOUT_THRESHOLD_USD:
         return
 

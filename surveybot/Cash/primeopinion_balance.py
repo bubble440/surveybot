@@ -339,25 +339,18 @@ def _confirm_claim_screen(driver, revolut_fullname: str = "", revolut_tag: str =
 
 def _record_gain(account_id: str) -> None:
     """
-    Alimente le même système de gain journalier que TopSurveys — State.daily_target
-    (record_daily_earning_and_target) + Management.guards.runtime_guard
-    (get_guard().record_earning) — même unité €, aucune réinvention d'un
-    système d'unités Points pour le daily target : conversion actée
-    uniquement au point d'enregistrement (569 Points → 5,0 €).
+    Alimente Management.guards.runtime_guard (get_guard().record_earning) —
+    métrique/cache distincte de l'objectif journalier. L'objectif journalier
+    lui-même (en Points, cf. global_config.PLATFORM_DAILY_TARGET["primeopinion"])
+    est porté par check_and_stop_if_daily_target_reached(), appelé dans
+    check_and_claim_if_needed() sur le solde lu à chaque passage — pas ici,
+    indépendamment du succès d'une réclamation, comme pour les autres
+    plateformes. (Ancien appel à record_daily_earning_and_target() retiré :
+    il opérait par erreur sur le state RACINE au lieu de
+    state["platforms"]["primeopinion"].)
     """
-    from State.account_state import update_state
-    from State.daily_target import DAILY_TARGET_EUR, record_daily_earning_and_target
     from Management.guards.runtime_guard import get_guard
 
-    def _apply_gain(st):
-        record_daily_earning_and_target(
-            st,
-            amount_eur=CASHOUT_AMOUNT_EUR,
-            daily_target_eur=DAILY_TARGET_EUR,
-            now_ts=int(time.time()),
-        )
-
-    update_state(account_id, _apply_gain)
     get_guard().record_earning(CASHOUT_AMOUNT_EUR)
     log_info(_TAG, f"_record_gain() — gain enregistré : {CASHOUT_AMOUNT_EUR:.2f} € (compte {account_id})")
 
@@ -373,11 +366,13 @@ def check_and_claim_if_needed(
     À appeler après login() et à chaque retour effectif sur PrimeOpinion
     (handle_post_survey()), à l'image de check_and_cashout_if_needed
     (Cash/payout.py, TopSurveys) / check_balance_and_notify_if_needed
-    (Cash/ysense_balance.py, ySense). Lit le solde en Points ; si >=
-    CASHOUT_THRESHOLD_POINTS, notifie puis tente la réclamation Revolut (569
-    Points / 5 €) en respectant CTA_INTERCEPT_ONLY à chaque clic, et
-    n'enregistre le gain journalier que si le solde a effectivement baissé
-    après confirmation.
+    (Cash/ysense_balance.py, ySense). Lit le solde en Points et déclenche
+    l'objectif journalier (check_and_stop_if_daily_target_reached) dès sa
+    lecture, indépendamment du seuil de réclamation ci-dessous ; si le solde
+    >= CASHOUT_THRESHOLD_POINTS, notifie puis tente la réclamation Revolut
+    (569 Points / 5 €) en respectant CTA_INTERCEPT_ONLY à chaque clic, et
+    n'enregistre le gain (record_earning, cache runtime) que si le solde a
+    effectivement baissé après confirmation.
     Non bloquant : toute erreur est loggée, jamais propagée à l'appelant.
     Retourne True si un retrait a été confirmé réussi, False sinon.
     """
@@ -392,6 +387,9 @@ def check_and_claim_if_needed(
         return False
 
     log_info(_TAG, f"check_and_claim_if_needed() — solde détecté : {balance_before:.0f} Points")
+
+    from Cash.daily_stop import check_and_stop_if_daily_target_reached
+    check_and_stop_if_daily_target_reached(account_id, "primeopinion", balance_before)
 
     if balance_before < CASHOUT_THRESHOLD_POINTS:
         return False

@@ -1076,8 +1076,8 @@ def _select_platform_or_exit(account_id: str) -> str:
     risquerait de déclencher à tort le seuil de crash-loop existant
     (check_and_record_start).
     """
-    from global_config import PLATFORM_ROTATION
-    from platforms import validate_platform_rotation
+    from global_config import PLATFORM_ROTATION, PLATFORM_DAILY_TARGET
+    from platforms import validate_platform_rotation, validate_platform_daily_targets
     from State.account_state import (
         load_state as _select_load_state,
         select_first_available_platform,
@@ -1087,6 +1087,7 @@ def _select_platform_or_exit(account_id: str) -> str:
     from Survey.log_utils import log_info
 
     validate_platform_rotation(PLATFORM_ROTATION)
+    validate_platform_daily_targets(PLATFORM_ROTATION, PLATFORM_DAILY_TARGET)
 
     state = _select_load_state(account_id)
     chosen = select_first_available_platform(state, PLATFORM_ROTATION)

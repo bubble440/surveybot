@@ -572,6 +572,7 @@ def _payout_and_check_daily_stop(driver, account_id: str, email: str = "", platf
     """
     from Management.guards.runtime_guard import StopReason
     from Management.pause_policy import PausePolicy
+    from global_config import PLATFORM_DAILY_TARGET
 
     platform_name = platform.get_platform_name() if platform else "topsurveys"
 
@@ -620,7 +621,7 @@ def _payout_and_check_daily_stop(driver, account_id: str, email: str = "", platf
     # Évite les faux DAILY_STOP causés par une valeur daily_balance_target corrompue.
     start = float(platform_state.get("daily_balance_start", {}).get(_today, balance))
     gained = float(platform_state.get("daily_balance_gained", {}).get(_today, 0.0))
-    target = (start - gained) + DAILY_TARGET_EUR
+    target = (start - gained) + PLATFORM_DAILY_TARGET["topsurveys"]
 
     if balance >= target:
         print(f"[DAILY_STOP] solde {balance:.2f}€ >= objectif {target:.2f}€ → arrêt journalier")

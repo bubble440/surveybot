@@ -5,7 +5,7 @@ import time
 from typing import Any, Dict, Optional
 from State.account_state import _now, _ts_to_unix
 
-DAILY_TARGET_EUR = 1.0
+DAILY_TARGET_EUR = 0.5
 
 
 def today_str() -> str:

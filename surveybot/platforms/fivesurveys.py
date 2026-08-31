@@ -147,6 +147,10 @@ def _check_balance_and_notify(page, account_id: str) -> None:
             log_debug(_TAG, "_check_balance_and_notify() — solde illisible")
             return
         log_debug(_TAG, f"_check_balance_and_notify() — solde courant : {balance}€")
+
+        from Cash.daily_stop import check_and_stop_if_daily_target_reached
+        check_and_stop_if_daily_target_reached(account_id, "fivesurveys", balance)
+
         if balance >= _MIN_BALANCE_NOTIFY:
             from State.account_state import (
                 has_notified_balance_today,
