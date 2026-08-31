@@ -46,3 +46,4 @@ dist_nuitka_dev/
 ./tools/attach_tab.ps1
 dist_zip/
 dist_orchestration/
+surveybot/Utils/plan_diagnostic_cisnet_fingerprint.md
