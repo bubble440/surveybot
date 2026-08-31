@@ -62,9 +62,11 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# Nombre de cycles de lancement passes conserves en historique de logs, au-dela
-# du cycle courant (bot_$id.log.1 = cycle precedent, ... .10 = plus ancien
-# conserve). Permet l'analyse retrospective de comportements intermittents.
+# Nombre de runs conserves dans le fichier de log cumulatif par bot (run
+# courant inclus), au-dela duquel le contenu des runs les plus anciens est
+# purge - voir le marqueur "[NOUVEAU RUN]" ecrit par Start-Bot, qui delimite
+# chaque run dans ce fichier unique. Permet l'analyse retrospective de
+# comportements intermittents sans croissance illimitee du fichier.
 $LOG_HISTORY_CYCLES = 10
 
 # Garde-fou boucle : abandon si accounts.json est anormalement grand (meme convention
@@ -153,15 +155,20 @@ public static class SurveyBotIsolatedLauncher
     private const uint GENERIC_WRITE = 0x40000000;
     private const uint FILE_SHARE_READ = 0x00000001;
     private const uint FILE_SHARE_WRITE = 0x00000002;
-    // Sans ce flag, la rotation (Move-Item vers .log.1 dans Start-Bot) echoue avec
-    // ERROR_SHARING_VIOLATION tant que ce handle (herite par le process bot pour
-    // stdout/stderr) reste ouvert - meme apres un kill force, l'OS met un instant a le
-    // liberer. Move-Item echouait alors silencieusement (catch + WARN dans Start-Bot)
-    // et le CreateFile suivant (CREATE_ALWAYS) tronquait le log de la session precedente
-    // au lieu de la roter. FILE_SHARE_DELETE autorise le rename pendant que ce handle
-    // est encore ouvert, qui est precisement ce que la rotation suppose deja pouvoir faire.
+    // Sans ce flag, la purge/reecriture du fichier de log (Set-Content dans
+    // Start-Bot, quand $LOG_HISTORY_CYCLES runs sont deja presents) echouerait
+    // avec ERROR_SHARING_VIOLATION tant qu'un handle herite d'un process bot
+    // precedent reste ouvert - meme apres un kill force, l'OS met un instant a
+    // le liberer. FILE_SHARE_DELETE autorise le rename/rewrite pendant que ce
+    // handle est encore ouvert.
     private const uint FILE_SHARE_DELETE = 0x00000004;
-    private const uint CREATE_ALWAYS = 2;
+    // FILE_APPEND_DATA seul (sans GENERIC_WRITE) garantit que chaque ecriture
+    // du process bot atterrit en fin de fichier, quelle que soit la position du
+    // pointeur - c'est ce qui permet d'ecrire a la suite du marqueur
+    // "[NOUVEAU RUN]" pose par Start-Bot dans le fichier de log cumulatif, sans
+    // jamais ecraser l'historique des runs precedents.
+    private const uint FILE_APPEND_DATA = 0x00000004;
+    private const uint OPEN_ALWAYS = 4;
     private const uint FILE_ATTRIBUTE_NORMAL = 0x80;
     private const uint STARTF_USESTDHANDLES = 0x00000100;
     private const uint CREATE_NO_WINDOW = 0x08000000;
@@ -189,8 +196,8 @@ public static class SurveyBotIsolatedLauncher
         };
 
         IntPtr logHandle = CreateFile(
-            logPath, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            ref fileSa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, IntPtr.Zero);
+            logPath, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            ref fileSa, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, IntPtr.Zero);
 
         if (logHandle == new IntPtr(-1))
             throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateFile(log) a echoue : " + logPath);
@@ -347,28 +354,41 @@ function Start-Bot {
     }
     $logFile = Join-Path $botLogDir "bot_$id.log"
 
-    # Rotation : conserve un historique borne de $LOG_HISTORY_CYCLES cycles de
-    # lancement passes (bot_$id.log.1 = precedent, ... .N = plus ancien), au-dela
-    # du cycle courant. Chaque decalage est independant : une interruption en
-    # plein cycle perd au pire un cran d'historique, sans etat intermediaire
-    # casse ni croissance illimitee (le plus ancien est ecrase a chaque tour).
-    for ($i = $LOG_HISTORY_CYCLES - 1; $i -ge 1; $i--) {
-        $src = "$logFile.$i"
-        $dst = "$logFile.$($i + 1)"
-        if (Test-Path $src) {
-            try {
-                Move-Item -Path $src -Destination $dst -Force
-            } catch {
-                Write-Log "WARN $id - rotation log echouee ($src -> $dst) : $_"
+    # Fichier unique et cumulatif (remplace l'ancienne rotation bot_$id.log.1
+    # .. .log.$LOG_HISTORY_CYCLES par Move-Item, trop fragile en pratique -
+    # ERROR_SHARING_VIOLATION si un handle herite tarde a se liberer, cf. note
+    # FILE_SHARE_DELETE dans SurveyBotIsolatedLauncher). Chaque run est delimite
+    # par un marqueur explicite ; au-dela de $LOG_HISTORY_CYCLES runs conserves,
+    # le contenu des runs les plus anciens est purge pour borner la taille du
+    # fichier.
+    $runMarkerPattern = '^===== \[NOUVEAU RUN\] '
+    if (Test-Path $logFile) {
+        try {
+            $existingLines = @(Get-Content -Path $logFile -Encoding UTF8 -ErrorAction Stop)
+        } catch {
+            $existingLines = @()
+            Write-Log "WARN $id - lecture historique log echouee (purge ignoree ce cycle) : $_"
+        }
+        if ($existingLines.Count -gt 0) {
+            $markerIdx = @(for ($j = 0; $j -lt $existingLines.Count; $j++) {
+                if ($existingLines[$j] -match $runMarkerPattern) { $j }
+            })
+            if ($markerIdx.Count -ge $LOG_HISTORY_CYCLES) {
+                # Garde les (LOG_HISTORY_CYCLES - 1) runs les plus recents ; le
+                # run courant, ajoute juste apres, complete a LOG_HISTORY_CYCLES.
+                $cutAt = $markerIdx[$markerIdx.Count - ($LOG_HISTORY_CYCLES - 1)]
+                try {
+                    Set-Content -Path $logFile -Value $existingLines[$cutAt..($existingLines.Count - 1)] -Encoding UTF8 -ErrorAction Stop
+                } catch {
+                    Write-Log "WARN $id - purge historique log echouee : $_"
+                }
             }
         }
     }
     try {
-        if (Test-Path $logFile) {
-            Move-Item -Path $logFile -Destination "$logFile.1" -Force
-        }
+        Add-Content -Path $logFile -Value "===== [NOUVEAU RUN] $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') =====" -Encoding UTF8 -ErrorAction Stop
     } catch {
-        Write-Log "WARN $id - rotation log echouee : $_"
+        Write-Log "WARN $id - ecriture marqueur nouveau run echouee : $_"
     }
 
     # Cree le process bot isole dans son propre groupe de processus console

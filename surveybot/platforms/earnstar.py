@@ -671,22 +671,20 @@ class EarnStarPlatform(Platform):
         if not self.is_on_platform(page):
             return False
 
+        # Retour confirmé sur le domaine earnstar.com (is_on_platform ci-dessus) : suffisant
+        # pour déclencher l'enchaînement présélection, même hors liste de sondages (ex.
+        # /select-reward — cf. BUG select-reward, log bot_001.log). La présence de
+        # surveys-nav + carte ne sert plus qu'à préciser le log, plus à conditionner le retour.
         try:
             page.wait_for_selector(_SURVEYS_NAV_SEL, state="attached", timeout=5000)
-        except Exception:
-            return False
-
-        try:
             page.wait_for_selector(_SURVEY_CARD_ATTR_PREFIX, state="attached", timeout=8000)
+            log_info(_TAG, "handle_post_survey() — retour sur la liste de sondages détecté")
         except Exception:
-            log_debug(
+            log_info(
                 _TAG,
-                "handle_post_survey() — surveys-nav présent mais aucune carte détectée, "
-                "retour listing non confirmé",
+                "handle_post_survey() — retour plateforme confirmé (domaine earnstar.com) "
+                "hors liste de sondages (ex. /select-reward) — enchaînement présélection quand même",
             )
-            return False
-
-        log_info(_TAG, "handle_post_survey() — retour sur la liste de sondages détecté")
 
         try:
             _check_balance_and_notify(page, account_id)

@@ -8,8 +8,9 @@
 # rotation ni purge jusqu'ici -> croissance illimitee.
 #
 # HORS PERIMETRE (volontairement non touche) : les logs PAR BOT
-# ($LogDir\<account_id>\bot_<account_id>.log[.N]), qui ont deja leur propre
-# mecanisme de rotation par cycles (LOG_HISTORY_CYCLES, cf. launch_all.ps1).
+# ($LogDir\<account_id>\bot_<account_id>.log), fichier unique et cumulatif qui
+# a deja son propre mecanisme de purge par marqueur de run
+# (LOG_HISTORY_CYCLES, cf. launch_all.ps1::Start-Bot).
 # Ce script ne descend jamais dans les sous-dossiers de $LogDir (scan non
 # recursif) : ces logs par bot vivent dans des sous-dossiers, jamais a plat
 # dans $LogDir, donc structurellement hors de portee de ce scan - aucune
