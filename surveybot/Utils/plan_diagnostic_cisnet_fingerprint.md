@@ -75,38 +75,38 @@ réelle actuelle est donc déjà dans les logs prod existants.
   régression → `webdriver` reste un suspect actif ; corriger aussi la doc qui le
   donne à tort comme résolu.
 
-## Résultat du test prioritaire — obtenu
+## Résultat du test prioritaire — obtenu, confond proxy/IP levé
 
 **Qualifié à PQ2**, sur 3 plateformes différentes (PureScreener, dkr1,
-surveysmyopinion), avec : chemin PROD (`launch_browser_playwright()`),
-`navigator.webdriver=False` confirmé, profil Chrome vierge, **aucun proxy**
-(IP directe de la machine), clic et navigation 100% humains.
+surveysmyopinion), puis, après ~5 tentatives, sur **Prescreener** — la
+plateforme avec le taux de disqualification prod le plus élevé — avec :
+chemin PROD (`launch_browser_playwright()`), `navigator.webdriver=False`
+confirmé, **le même proxy que la prod** (`188.126.3.247:12323`, IP à
+l'historique de disqualification très élevé), clic et navigation 100% humains.
 
-**Ce que ça confirme** : puisque `webdriver` était déjà écarté (identique dans
-tous les modes comparés) et que le profil vierge donne le même résultat qu'un
-profil ancien, la variable qui reste et qui a changé ici par rapport aux runs
+**Ce que ça confirme, maintenant sans réserve majeure** : `webdriver` était
+déjà écarté (identique dans tous les modes comparés), le profil (neuf/ancien)
+ne change rien, et la réputation IP/proxy est désormais tenue **constante**
+(même proxy flagué que les runs bot réels) entre les deux conditions
+comparées. La seule variable qui reste et qui a changé par rapport aux runs
 bot habituels est l'**interaction humaine** (mouvement de souris, timing,
-précision du clic) — cohérent avec l'hypothèse de départ.
+précision du clic). Note en faveur de cette lecture plutôt que d'un artefact
+de vélocité : répéter des tentatives rapprochées sur une IP déjà mal notée
+aggraverait normalement un score de détection basé sur la vélocité, pas
+l'inverse — la qualification obtenue malgré ce contexte défavorable pointe
+donc vers l'interaction elle-même plutôt que vers un compteur remis à zéro.
 
-**Ce que ça NE confirme PAS encore, à garder en tête avant de conclure à 100%** :
-ce test s'est fait **sans proxy** (IP directe), alors que les runs bot prod
-utilisent systématiquement un proxy ISP dédié. La variable "réputation
-IP/proxy" n'était donc pas isolée ici — elle diffère aussi entre ce test et un
-run bot réel, en plus de l'interaction. Tant qu'un test équivalent n'a pas été
-refait avec le **même proxy** qu'un run bot réel + clic humain, on ne peut pas
-exclure formellement que l'absence de proxy (plutôt que l'interaction) explique
-la qualification obtenue ici.
+**Nuance à garder, cohérente avec l'objectif produit (80-90% stable, pas
+100%)** : il a fallu ~5 tentatives avant de passer, pas une réussite
+immédiate. L'interaction humaine donne un avantage déterminant mais pas une
+garantie absolue — probablement un scoring cumulatif/probabiliste côté
+anti-fraude, pas un simple binaire webdriver/pas-webdriver.
 
-**Décision à prendre** : soit (a) refaire ce test précis avec un proxy
-fonctionnel pour fermer complètement la boucle avant d'investir dans du
-mouvement de souris synthétique, soit (b) considérer que le signal est déjà
-assez fort pour prioriser directement le chantier "rendre l'interaction du bot
-plus humaine", et traiter le proxy comme une vérification a posteriori plutôt
-qu'un préalable bloquant. Le fait que la disqualification touche *toutes* les
-plateformes d'accueil de façon uniforme (établi plus haut) reste un indice
-supplémentaire en faveur de l'interaction plutôt que du proxy (un problème de
-réputation IP serait plausiblement plus variable selon la plateforme/le
-routeur touché, une détection comportementale beaucoup plus uniforme).
+**Conclusion opérationnelle** : prioriser le chantier "rendre l'interaction
+du bot plus humaine" (mouvement de souris synthétique, timing, variabilité)
+plutôt que de continuer à chercher du côté du launch (`webdriver`, viewport)
+ou du proxy — ces deux pistes sont maintenant raisonnablement écartées comme
+causes principales.
 
 ## Deux mécanismes distincts à ne pas conflater
 

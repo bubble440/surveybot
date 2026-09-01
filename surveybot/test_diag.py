@@ -4,7 +4,7 @@ os.environ["CHROME_PROFILE_DIR"] = r"C:\surveybot\profiles\test_diag"
 
 # Recommandé : même proxy qu'un run prod récent, pour éliminer la réputation IP
 # comme variable parasite (cf. _parse_proxy_env — lit config OU l'environnement)
-os.environ["PROXY_URL"]  = ""
+os.environ["PROXY_URL"]  = "188.126.3.247:12323"
 os.environ["PROXY_USER"] = "14a9c246242fe"
 os.environ["PROXY_PASS"] = "605e436f75"
 
