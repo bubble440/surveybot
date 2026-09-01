@@ -1763,6 +1763,25 @@ def _apply_by_target_id(
                             pass
                         time.sleep(0.1)
 
+                # Préambule mouvement de souris synthétique (Survey/synthetic_cursor.py) avant
+                # le clic qui détermine réellement la réponse (_mousedown_rps_option). rps-select
+                # (Toluna/SurveyRouter) ne passe jamais par _click_candidate (dispatch dédié
+                # ci-dessus) : résolution de nœud distincte et redondante avec celle interne à
+                # _mousedown_rps_option, nécessaire pour ne pas modifier son corps. Best-effort,
+                # jamais un remplacement : le résultat n'altère pas l'appel existant ci-dessous.
+                if payload.get("rps_select"):
+                    try:
+                        from Survey.synthetic_cursor import move_and_click
+                        _rps_cands = driver.query_selector_all(xp)
+                        _rps_node = _rps_cands[0] if _rps_cands else None
+                        if _rps_node is not None:
+                            _syn_ok = move_and_click(driver, _rps_node)
+                            if debug_target:
+                                log_debug("[DOM_RPS_SELECT]", f"synthetic_cursor preamble ok={_syn_ok} before option click")
+                    except Exception as _syn_exc:
+                        if debug_target:
+                            log_debug("[DOM_RPS_SELECT]", f"synthetic_cursor preamble exception={_short_exc(_syn_exc)}")
+
                 clicked = _mousedown_rps_option(xp)
                 if clicked:
                     log_debug("[DOM_RPS_SELECT]", f"select_rps ok: target_id='{target_id}' value='{value}'")
@@ -2853,6 +2872,28 @@ def _apply_by_target_id(
                             _overlay_dismiss_outcome = f"exception={_short_exc(_overlay_exc)}"
                         if debug_target:
                             log_debug("[TARGET_DEBUG]", f"_click_candidate: overlay-dismiss {_overlay_dismiss_outcome} before {label!r}")
+
+                    # Préambule mouvement de souris synthétique (Survey/synthetic_cursor.py),
+                    # uniquement pour les blocs issus des extracteurs de pré-qualification
+                    # routeur/screener tiers identifiés comme point de disqualification bot
+                    # (cf. Utils/plan_diagnostic_cisnet_fingerprint.md). Best-effort, jamais un
+                    # remplacement : le résultat n'est jamais utilisé pour altérer la cascade
+                    # ci-dessous, qui s'exécute normalement dans tous les cas (succès ou échec).
+                    # Aucune des 4 méthodes ni le cache _cm_cache ne sont modifiés par ce bloc.
+                    if _first == 1 and (
+                        payload.get("cloudresearch_sentry")
+                        or payload.get("prodege_prescreener_radio")
+                        or payload.get("researchnow_autoscreener_radio")
+                        or payload.get("datadiggers_icontrol_radio")
+                    ):
+                        try:
+                            from Survey.synthetic_cursor import move_and_click
+                            _syn_ok = move_and_click(driver, node)
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"_click_candidate: synthetic_cursor preamble ok={_syn_ok} before {label!r}")
+                        except Exception as _syn_exc:
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"_click_candidate: synthetic_cursor preamble exception={_short_exc(_syn_exc)} before {label!r}")
 
                     # 1) click webdriver standard
                     if _first <= 1:

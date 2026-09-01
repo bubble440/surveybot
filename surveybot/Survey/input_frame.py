@@ -18,6 +18,7 @@ Dépendances:
 
 import unicodedata
 import re
+from urllib.parse import urlsplit
 
 from Survey.log_utils import log_debug
 
@@ -154,6 +155,38 @@ def _is_cmp_consent_element(el) -> bool:
     return False
 
 
+# Domaines de routeurs/screeners tiers connus pour disqualifier quasi-systématiquement
+# les runs bot à l'étape PQ2 (aucun mouvement de souris humain avant clic) — cf.
+# Utils/plan_diagnostic_cisnet_fingerprint.md. Constante éditable manuellement au fil du
+# temps (ajout de domaines ou sous-domaines au cas par cas). Match par défaut sur le
+# domaine principal (TLD+SLD) : un hostname est concerné s'il est identique à une entrée
+# ou s'il s'agit d'un de ses sous-domaines (ex: "screener.purespectrum.com" matche
+# "purespectrum.com"). Distincte de _DISQ_CALLBACK_PATTERNS (Survey/survey_executor.py) :
+# cette dernière fait du matching de sous-chaîne sur un src d'iframe pour détecter un
+# callback de disqualification, usage et granularité différents, ne pas fusionner.
+KNOWN_ROUTER_SCREENER_DOMAINS = (
+    "samplicio.us",
+    "ssisurveys.com",
+    "researchnow.com",
+    "purespectrum.com",
+    "prsrvy.com",
+    "insights-today.com",
+)
+
+
+def _on_known_router_screener_domain(driver) -> bool:
+    try:
+        host = (urlsplit(driver.url or "").hostname or "").lower()
+    except Exception:
+        return False
+    if not host:
+        return False
+    for domain in KNOWN_ROUTER_SCREENER_DOMAINS:
+        if host == domain or host.endswith("." + domain):
+            return True
+    return False
+
+
 def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int = 2, **_kwargs) -> bool:
     """
     Clique un CTA (Suivant / Continuer / Next / Continue / Start...) en scannant
@@ -246,6 +279,30 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                         driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
                     except Exception:
                         pass
+
+                    # Préambule mouvement de souris synthétique (Survey/synthetic_cursor.py),
+                    # uniquement sur les domaines de routeurs/screeners tiers connus
+                    # (KNOWN_ROUTER_SCREENER_DOMAINS ci-dessus) — cf. bug PQ2. Best-effort,
+                    # jamais un remplacement : ne change ni la recherche/priorité des
+                    # libellés ci-dessus, ni la cascade JS/natif ci-dessous, qui s'exécute
+                    # normalement dans tous les cas. move_and_click presse/relâche réellement
+                    # le bouton : sous CTA_INTERCEPT_ONLY, on saute l'appel plutôt que de
+                    # produire nous-mêmes un clic réel non maîtrisé.
+                    if _on_known_router_screener_domain(driver):
+                        try:
+                            from Survey.cta_handler import _cta_intercept_enabled
+                            _intercept_on = _cta_intercept_enabled()
+                        except Exception:
+                            _intercept_on = False
+                        if _intercept_on:
+                            log_debug("[CTA_STRONG]", f"CTA_INTERCEPT_ONLY actif — synthetic_cursor preamble sauté avant {t!r}")
+                        else:
+                            try:
+                                from Survey.synthetic_cursor import move_and_click
+                                _syn_ok = move_and_click(driver, el)
+                                log_debug("[CTA_STRONG]", f"synthetic_cursor preamble ok={_syn_ok} before {t!r}")
+                            except Exception as _syn_exc:
+                                log_debug("[CTA_STRONG]", f"synthetic_cursor preamble exception={_syn_exc!r} before {t!r}")
 
                     # click robuste (JS)
                     try:
