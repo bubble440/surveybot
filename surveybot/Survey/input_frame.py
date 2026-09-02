@@ -285,9 +285,12 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                     # (KNOWN_ROUTER_SCREENER_DOMAINS ci-dessus) — cf. bug PQ2. Best-effort,
                     # jamais un remplacement : ne change ni la recherche/priorité des
                     # libellés ci-dessus, ni la cascade JS/natif ci-dessous, qui s'exécute
-                    # normalement dans tous les cas. move_and_click presse/relâche réellement
-                    # le bouton : sous CTA_INTERCEPT_ONLY, on saute l'appel plutôt que de
-                    # produire nous-mêmes un clic réel non maîtrisé.
+                    # normalement dans tous les cas. move_only (jamais move_and_click) : le
+                    # clic réel doit rester porté exclusivement par la cascade ci-dessous,
+                    # sinon la cible reçoit 2 clics réels indépendants (double soumission/saut
+                    # de page possible). move_only ne presse jamais le bouton, mais reste
+                    # soumis à CTA_INTERCEPT_ONLY par prudence (aucune interaction navigateur
+                    # sur la cible pendant l'interception).
                     if _on_known_router_screener_domain(driver):
                         try:
                             from Survey.cta_handler import _cta_intercept_enabled
@@ -298,8 +301,8 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                             log_debug("[CTA_STRONG]", f"CTA_INTERCEPT_ONLY actif — synthetic_cursor preamble sauté avant {t!r}")
                         else:
                             try:
-                                from Survey.synthetic_cursor import move_and_click
-                                _syn_ok = move_and_click(driver, el)
+                                from Survey.synthetic_cursor import move_only
+                                _syn_ok = move_only(driver, el)
                                 log_debug("[CTA_STRONG]", f"synthetic_cursor preamble ok={_syn_ok} before {t!r}")
                             except Exception as _syn_exc:
                                 log_debug("[CTA_STRONG]", f"synthetic_cursor preamble exception={_syn_exc!r} before {t!r}")

@@ -1,14 +1,19 @@
 """
 synthetic_cursor.py - Primitive bas niveau de déplacement de souris synthétique + clic.
 
-Fournit move_and_click(page, target) : déplace le curseur depuis sa dernière position
-connue sur `page` jusqu'à un point (borné, légèrement décalé) dans la zone de `target`,
-en suivant une trajectoire courbe (Bézier cubique) à timing non-uniforme, puis presse et
-relâche le bouton de souris avec une tenue variable.
+Fournit :
+- move_and_click(page, target) : déplace le curseur depuis sa dernière position connue
+  sur `page` jusqu'à un point (borné, légèrement décalé) dans la zone de `target`, en
+  suivant une trajectoire courbe (Bézier cubique) à timing non-uniforme, puis presse et
+  relâche le bouton de souris avec une tenue variable. Usage autonome (le clic réel est
+  entièrement porté par cette fonction).
+- move_only(page, target) : strictement le même déplacement, sans jamais presser ni
+  relâcher aucun bouton. Destinée aux points d'appel qui préfixent une cascade de clic
+  déjà existante ailleurs dans le pipeline (ex: _click_candidate) — cette cascade reste
+  la seule à produire le clic réel, évitant un double clic sur la cible.
 
 Module isolé, sans aucune connaissance des extracteurs/plateformes/flags de screener,
-et sans aucun appel vers le reste du pipeline. Non câblé pour l'instant : livrable
-autonome, destiné à être appelé depuis un patch séparé à des points d'interaction précis.
+et sans aucun appel vers le reste du pipeline.
 
 État : la dernière position connue du curseur est portée directement sur l'objet Page
 Playwright (attribut privé, cf. le même principe déjà utilisé dans le projet pour
@@ -81,6 +86,35 @@ def move_and_click(page, target, *, button: str = "left") -> bool:
         return True
     except Exception as exc:
         log_debug(_TAG, f"échec move_and_click, abandon propre : {exc}")
+        return False
+
+
+def move_only(page, target) -> bool:
+    """
+    Déplace le curseur synthétique jusqu'à `target` (Locator ou ElementHandle
+    Playwright), mêmes garanties que move_and_click (trajectoire, timing, mise à jour
+    de l'état de position, dégradation propre) mais ne presse ni ne relâche jamais
+    aucun bouton de souris. Retourne True en cas de succès, False en cas de
+    dégradation propre - ne lève jamais d'exception.
+
+    Destinée aux points d'appel qui préfixent une cascade de clic déjà existante
+    ailleurs dans le pipeline : cette cascade reste la seule à produire le clic réel.
+    """
+    try:
+        box = target.bounding_box()
+        if not box or box.get("width", 0) <= 0 or box.get("height", 0) <= 0:
+            log_debug(_TAG, f"cible non exploitable (bounding box vide/absente) : {box}")
+            return False
+
+        start = _current_position(page)
+        end = _pick_arrival_point(box)
+        _run_move(page, start, end)
+        _set_current_position(page, end)
+        log_debug(_TAG, f"move_only ok start=({start[0]:.0f},{start[1]:.0f}) "
+                         f"end=({end[0]:.0f},{end[1]:.0f})")
+        return True
+    except Exception as exc:
+        log_debug(_TAG, f"échec move_only, abandon propre : {exc}")
         return False
 
 

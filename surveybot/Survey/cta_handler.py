@@ -2382,6 +2382,18 @@ def try_click_navigation_cta(driver) -> bool:
 
     candidates.sort(key=lambda x: x[0], reverse=True)
 
+    # Préambule mouvement de souris synthétique (Survey/synthetic_cursor.py), uniquement
+    # sur les domaines de routeurs/screeners tiers connus (KNOWN_ROUTER_SCREENER_DOMAINS,
+    # Survey/input_frame.py — réutilisée telle quelle, pas de duplication). Import local,
+    # même précédent que _dismiss_blocking_overlays plus haut dans cette fonction.
+    try:
+        from Survey.input_frame import _on_known_router_screener_domain
+        from Survey.synthetic_cursor import move_only
+        _on_router_domain = _on_known_router_screener_domain(driver)
+    except Exception:
+        _on_router_domain = False
+        move_only = None
+
     tried = 0
     for score, el in candidates[:6]:
         if score < MIN_NAV_CTA_SCORE:
@@ -2394,6 +2406,38 @@ f"CTA_FOUND candidate score={score}",
             )
             el.evaluate("(el) => el.scrollIntoView({block:\'center\'})")
             tried += 1
+
+            # Best-effort, jamais un remplacement : ne modifie ni le scoring/sélection
+            # ci-dessus, ni _click_with_intercept/_press_click_release ci-dessous, appelés
+            # normalement dans tous les cas (succès ou échec de ce bloc). _dismiss_blocking_
+            # overlays est ré-appelée ici (déjà présente en tête de fonction, mais
+            # potentiellement obsolète à ce point après les branches par provider) pour
+            # écarter un overlay fixe AVANT tout mouvement de souris — cf. incident documenté
+            # PureSpectrum/CookieYes dans _press_click_release (is_purespectrum_next_button) :
+            # un mouvement de souris synthétique non précédé de ce nettoyage peut atterrir sur
+            # button.cky-btn-revisit (position:fixed) au lieu du CTA visé. move_only (jamais
+            # move_and_click) : le clic réel doit rester porté exclusivement par
+            # _click_with_intercept ci-dessous, sinon la cible reçoit 2 clics réels
+            # indépendants (double soumission/saut de page possible). move_only ne presse
+            # jamais le bouton, mais reste soumis à CTA_INTERCEPT_ONLY par prudence (aucune
+            # interaction navigateur sur la cible pendant l'interception).
+            if _on_router_domain and move_only is not None:
+                try:
+                    _dismissed_overlays = _dismiss_blocking_overlays(driver)
+                except Exception as _overlay_exc:
+                    log_debug("[CTA_NAV]", f"pre-move overlay-dismiss exception={_overlay_exc!r} candidate score={score}")
+                else:
+                    log_debug("[CTA_NAV]", f"pre-move overlay-dismiss dismissed={_dismissed_overlays} candidate score={score}")
+
+                if _cta_intercept_enabled():
+                    _nav_log("[CTA_NAV]", f"CTA_INTERCEPT_ONLY actif — synthetic_cursor preamble sauté candidate score={score}", driver)
+                else:
+                    try:
+                        _syn_ok = move_only(driver, el)
+                        log_debug("[CTA_NAV]", f"synthetic_cursor preamble ok={_syn_ok} candidate score={score}")
+                    except Exception as _syn_exc:
+                        log_debug("[CTA_NAV]", f"synthetic_cursor preamble exception={_syn_exc!r} candidate score={score}")
+
             clicked = _click_with_intercept(driver, el)
             _nav_log("[CTA_NAV]", f"CTA_CLICKED candidate score={score} PROGRESSED={str(bool(clicked)).lower()}", driver)
             if clicked:
