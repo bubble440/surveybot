@@ -1772,18 +1772,18 @@ def _apply_by_target_id(
                 # move_only (jamais move_and_click) : le clic réel doit rester porté
                 # exclusivement par _mousedown_rps_option ci-dessous, sinon la cible reçoit 2
                 # clics réels indépendants.
-                if payload.get("rps_select"):
-                    try:
-                        from Survey.synthetic_cursor import move_only
-                        _rps_cands = driver.query_selector_all(xp)
-                        _rps_node = _rps_cands[0] if _rps_cands else None
-                        if _rps_node is not None:
-                            _syn_ok = move_only(driver, _rps_node)
-                            if debug_target:
-                                log_debug("[DOM_RPS_SELECT]", f"synthetic_cursor preamble ok={_syn_ok} before option click")
-                    except Exception as _syn_exc:
-                        if debug_target:
-                            log_debug("[DOM_RPS_SELECT]", f"synthetic_cursor preamble exception={_short_exc(_syn_exc)}")
+                #if payload.get("rps_select"):
+                #    try:
+                #        from Survey.synthetic_cursor import move_only
+                #        _rps_cands = driver.query_selector_all(xp)
+                #        _rps_node = _rps_cands[0] if _rps_cands else None
+                #        if _rps_node is not None:
+                #            _syn_ok = move_only(driver, _rps_node)
+                #            if debug_target:
+                #                log_debug("[DOM_RPS_SELECT]", f"synthetic_cursor preamble ok={_syn_ok} before option click")
+                #    except Exception as _syn_exc:
+                #        if debug_target:
+                #            log_debug("[DOM_RPS_SELECT]", f"synthetic_cursor preamble exception={_short_exc(_syn_exc)}")
 
                 clicked = _mousedown_rps_option(xp)
                 if clicked:
@@ -2887,20 +2887,20 @@ def _apply_by_target_id(
                     # exclusivement par la cascade ci-dessous, sinon la cible reçoit 2 clics
                     # réels indépendants (annule une checkbox, peut viser une option voisine
                     # dans une liste dense avant le clic bien ciblé de la cascade).
-                    if _first == 1 and (
-                        payload.get("cloudresearch_sentry")
-                        or payload.get("prodege_prescreener_radio")
-                        or payload.get("researchnow_autoscreener_radio")
-                        or payload.get("datadiggers_icontrol_radio")
-                    ):
-                        try:
-                            from Survey.synthetic_cursor import move_only
-                            _syn_ok = move_only(driver, node)
-                            if debug_target:
-                                log_debug("[TARGET_DEBUG]", f"_click_candidate: synthetic_cursor preamble ok={_syn_ok} before {label!r}")
-                        except Exception as _syn_exc:
-                            if debug_target:
-                                log_debug("[TARGET_DEBUG]", f"_click_candidate: synthetic_cursor preamble exception={_short_exc(_syn_exc)} before {label!r}")
+                    #if _first == 1 and (
+                    #    payload.get("cloudresearch_sentry")
+                    #    or payload.get("prodege_prescreener_radio")
+                    #    or payload.get("researchnow_autoscreener_radio")
+                    #    or payload.get("datadiggers_icontrol_radio")
+                    #):
+                    #    try:
+                    #        from Survey.synthetic_cursor import move_only
+                    #        _syn_ok = move_only(driver, node)
+                    #        if debug_target:
+                    #            log_debug("[TARGET_DEBUG]", f"_click_candidate: synthetic_cursor preamble ok={_syn_ok} before {label!r}")
+                    #    except Exception as _syn_exc:
+                    #        if debug_target:
+                    #            log_debug("[TARGET_DEBUG]", f"_click_candidate: synthetic_cursor preamble exception={_short_exc(_syn_exc)} before {label!r}")
 
                     # 1) click webdriver standard
                     if _first <= 1:

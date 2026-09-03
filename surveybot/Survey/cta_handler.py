@@ -41,6 +41,13 @@ CTA_SYNONYMS = {
 CTA_INTERCEPT_ENV_VAR = "CTA_INTERCEPT_ONLY"
 MIN_NAV_CTA_SCORE = 1
 
+# Interrupteur A/B dédié au préambule synthetic_cursor de try_click_navigation_cta
+# UNIQUEMENT (boucle de candidats scorés, juste avant _click_with_intercept) — ne
+# concerne pas les préambules équivalents de action_dispatcher.py (_click_candidate,
+# rps_select), volontairement non touchés. Absent/valeur par défaut : préambule actif,
+# comportement identique à avant l'ajout de cette variable.
+CTA_NAV_SYNTHETIC_CURSOR_DISABLE_ENV_VAR = "CTA_NAV_SYNTHETIC_CURSOR_DISABLE"
+
 PAUSE_AFTER_CTA_CLICK = 1.0  # pause post-clic CTA, laisse le DOM réagir avant de rendre la main (absorbe latence proxy)
 
 
@@ -97,6 +104,16 @@ def _is_visible(driver, el) -> bool:
 def _cta_intercept_enabled() -> bool:
     """Retourne True si le mode interception CTA est activé via variable d'environnement."""
     raw = (os.getenv(CTA_INTERCEPT_ENV_VAR, "") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _cta_nav_synthetic_cursor_disabled() -> bool:
+    """
+    Retourne True si le préambule synthetic_cursor de try_click_navigation_cta est
+    désactivé via CTA_NAV_SYNTHETIC_CURSOR_DISABLE_ENV_VAR. Absente/valeur par défaut
+    -> False (préambule actif, comportement identique à avant cette variable).
+    """
+    raw = (os.getenv(CTA_NAV_SYNTHETIC_CURSOR_DISABLE_ENV_VAR, "") or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 
@@ -2393,6 +2410,10 @@ def try_click_navigation_cta(driver) -> bool:
     except Exception:
         _on_router_domain = False
         move_only = None
+    # Interrupteur A/B (CTA_NAV_SYNTHETIC_CURSOR_DISABLE_ENV_VAR) : évalué une seule fois,
+    # comme _on_router_domain ci-dessus — n'affecte que l'appel à move_only plus bas, rien
+    # d'autre dans cette fonction.
+    _syn_cursor_disabled_by_env = _cta_nav_synthetic_cursor_disabled()
 
     tried = 0
     for score, el in candidates[:6]:
@@ -2420,7 +2441,9 @@ f"CTA_FOUND candidate score={score}",
             # _click_with_intercept ci-dessous, sinon la cible reçoit 2 clics réels
             # indépendants (double soumission/saut de page possible). move_only ne presse
             # jamais le bouton, mais reste soumis à CTA_INTERCEPT_ONLY par prudence (aucune
-            # interaction navigateur sur la cible pendant l'interception).
+            # interaction navigateur sur la cible pendant l'interception). L'interrupteur A/B
+            # CTA_NAV_SYNTHETIC_CURSOR_DISABLE ne saute QUE l'appel à move_only ci-dessous —
+            # _dismiss_blocking_overlays reste appelée dans tous les cas, comme demandé.
             if _on_router_domain and move_only is not None:
                 try:
                     _dismissed_overlays = _dismiss_blocking_overlays(driver)
@@ -2429,9 +2452,19 @@ f"CTA_FOUND candidate score={score}",
                 else:
                     log_debug("[CTA_NAV]", f"pre-move overlay-dismiss dismissed={_dismissed_overlays} candidate score={score}")
 
-                if _cta_intercept_enabled():
+                # État retenu explicitement loggé à chaque tentative (niveau info, non
+                # conditionné par LOG_LEVEL) pour rendre un run de test auditable après
+                # coup sans ambiguïté entre les 3 états possibles.
+                if _syn_cursor_disabled_by_env:
+                    _nav_log(
+                        "[CTA_NAV]",
+                        f"synthetic_cursor preamble DISABLED (env {CTA_NAV_SYNTHETIC_CURSOR_DISABLE_ENV_VAR}) candidate score={score}",
+                        driver,
+                    )
+                elif _cta_intercept_enabled():
                     _nav_log("[CTA_NAV]", f"CTA_INTERCEPT_ONLY actif — synthetic_cursor preamble sauté candidate score={score}", driver)
                 else:
+                    _nav_log("[CTA_NAV]", f"synthetic_cursor preamble ACTIVE candidate score={score}", driver)
                     try:
                         _syn_ok = move_only(driver, el)
                         log_debug("[CTA_NAV]", f"synthetic_cursor preamble ok={_syn_ok} candidate score={score}")
