@@ -2112,6 +2112,42 @@ def try_click_navigation_cta(driver) -> bool:
     except Exception:
         pass
 
+    # --- QuestionPro : bouton de soumission de page réel #SurveySubmitButtonElement ---
+    # DOM observé (snapshot 20260903_220855, form#runForm, qp_sectionDisplayScript) :
+    #   <button id="SurveySubmitButtonElement" role="button" ...>Suivant</button>
+    # id généré par le framework QuestionPro (stable, indépendant de la langue/libellé —
+    # co-présent avec d'autres marqueurs QuestionPro sur la page, ex. input
+    # name="qproSurvey", qp_sectionDisplayScript). Juste à côté, un second bouton distinct
+    # d'action de sauvegarde différée (ex. name="SAVE_AND_CONTINUE", class contenant
+    # "btn-save-later" — libellé/id/name/classes variables selon les providers) partage
+    # plusieurs signaux positifs du scoring générique ("continuer" dans le texte, "continue"
+    # dans le name) sans être filtré par aucun mot-clé d'exclusion existant. De plus, le vrai
+    # bouton porte une classe "has-back" (signale la présence d'un bouton précédent adjacent,
+    # PAS un bouton "retour" lui-même) qui matche à tort le mot entier "back" du filtre
+    # anti-retour générique (frontière de mot sur le tiret) et l'exclut donc AVANT même le
+    # scoring. Cibler ce bouton directement via son id structurel, avant la boucle générique
+    # de candidats, évite les deux problèmes sans toucher au scoring ni aux filtres existants.
+    try:
+        qp_submit_btns = _ctx.query_selector_all("#SurveySubmitButtonElement")
+        for btn in qp_submit_btns:
+            try:
+                if not btn.is_visible() or not btn.is_enabled():
+                    continue
+                if (btn.get_attribute("aria-disabled") or "").lower() == "true":
+                    continue
+                _nav_log("[CTA_NAV]", "CTA_FOUND provider_hint=questionpro button=SurveySubmitButtonElement", driver)
+                btn.evaluate("(el) => el.scrollIntoView({block:'center'})")
+                clicked = _click_with_intercept(driver, btn)
+                _nav_log("[CTA_NAV]", f"CTA_CLICKED provider_hint=questionpro PROGRESSED={str(bool(clicked)).lower()}", driver)
+                if _cta_intercept_enabled() and clicked:
+                    _nav_log("[CTA_NAV]", "INTERCEPT_OK provider_hint=questionpro", driver)
+                if clicked:
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+
     candidates = []
 
     # --- Encuesta: coexistence d'un CTA intra-question et du vrai CTA footer ---
@@ -2313,8 +2349,17 @@ def try_click_navigation_cta(driver) -> bool:
             # en Unicode) donc "back" dans "background" n'a pas de frontière après "back" (suivi
             # de "g"), tandis qu'un vrai texte/attribut "back"/"retour"/"précédent" isolé par
             # espace, tiret ou début/fin de chaîne reste détecté normalement.
+            # Exception ciblée "has-<mot>" (lookbehind négatif) : un tiret est aussi une
+            # frontière \b valide, donc un token composé comme "has-back" (convention CSS
+            # répandue signifiant "cet élément/son conteneur A un bouton précédent adjacent",
+            # PAS "cet élément EST un bouton retour" — même famille que has-error/has-icon/
+            # has-warning) matchait à tort \bback\b (confirmé : bouton réel
+            # #SurveySubmitButtonElement, class="btn btn-submit has-back", DOM QuestionPro
+            # snapshot 20260903_220855). On ignore donc uniquement les occurrences directement
+            # précédées de "has-" ; toute autre occurrence du même mot (isolée, ou composée
+            # sans ce préfixe, ex. "btn-back"/"go-back") reste détectée normalement.
             bad = ("refuser", "disagree", "quitter", "quit", "exit", "annuler", "cancel", "fermer", "close", "retour", "précédent", "precedent", "previous", "back")
-            if any(re.search(rf"\b{re.escape(b)}\b", signature) for b in bad):
+            if any(re.search(rf"(?<!has-)\b{re.escape(b)}\b", signature) for b in bad):
                 _diag_mark("bad_keyword_match")
                 continue
 
