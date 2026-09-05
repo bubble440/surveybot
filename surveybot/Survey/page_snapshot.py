@@ -96,6 +96,9 @@ def _dump_frames_best_effort(driver, folder: Path) -> List[Dict[str, Any]]:
             if not ok:
                 continue
 
+            # Récupère la Frame courante que le shim vient de sélectionner.
+            # Pour chain==[] (main): _current_frame == _page (Page Playwright).
+            # Pour chain==[i]: _current_frame == Frame Playwright de l'iframe.
             current_frame = getattr(driver, "_current_frame", driver)
 
             try:
@@ -212,6 +215,11 @@ def dump_page_snapshot(
     except Exception:
         pass
 
+    # Contexte de frame réellement sélectionné pour l'analyse de la question
+    # (même résolution que analyze_dom : _select_best_frame_chain +
+    # switch_to_frame_chain, dom_frame_selector.py / frame_utils.py — non
+    # modifiés ici). Sur une page sans frameset, best_chain == [] et
+    # snapshot_ctx reste `page` : capture strictement inchangée.
     snapshot_ctx = page
     try:
         from Survey.dom_frame_selector import _select_best_frame_chain
@@ -224,6 +232,7 @@ def dump_page_snapshot(
     except Exception:
         snapshot_ctx = page
 
+    # Meta
     try:
         url = page.url
     except Exception:
@@ -266,12 +275,14 @@ def dump_page_snapshot(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
+    # DOM outerHTML
     try:
         outer = snapshot_ctx.evaluate("() => document.documentElement.outerHTML") or ""
     except Exception:
         outer = ""
     (folder / "dom_outer.html").write_text(outer, encoding="utf-8", errors="ignore")
 
+    # DOM body
     try:
         body_outer = snapshot_ctx.evaluate("() => document.body ? document.body.outerHTML : ''") or ""
     except Exception:
@@ -284,12 +295,14 @@ def dump_page_snapshot(
         except Exception:
             pass
 
+    # page_source
     try:
         src = snapshot_ctx.content() or ""
     except Exception:
         src = ""
     (folder / "page_source.html").write_text(src, encoding="utf-8", errors="ignore")
 
+    # Texte visible
     try:
         body_text = page.evaluate("() => (document.body && (document.body.innerText || '')) || ''") or ""
     except Exception:
@@ -299,11 +312,13 @@ def dump_page_snapshot(
     except Exception:
         pass
 
+    # Screenshot viewport
     try:
         page.screenshot(path=str(folder / "viewport.png"))
     except Exception:
         pass
 
+    # MHTML via CDP natif Playwright
     try:
         cdp_session = page.context.new_cdp_session(page)
         res = cdp_session.send("Page.captureSnapshot", {"format": "mhtml"})
@@ -314,6 +329,7 @@ def dump_page_snapshot(
     except Exception as e:
         (folder / "mhtml_error.txt").write_text(repr(e), encoding="utf-8")
 
+    # Dump frames
     try:
         frames = _dump_frames_best_effort(driver, folder)
     except Exception:
@@ -367,7 +383,8 @@ def snapshot_if_enabled(driver, *, reason: str, question_blocks: Any = None) -> 
     # À ce moment du flux, survey_executor a déjà importé action_dispatcher et
     # l'analyse DOM est terminée. On installe donc ici le hook passif d'action
     # avant le futur execute_actions_plan(), sans modifier son comportement.
-    _install_action_observer()
+    if _phase1a_enabled():
+        _install_action_observer()
 
     v = (os.getenv("SURVEY_SNAPSHOT", "1") or "").strip().lower()
     if v in ("1", "true", "all", "on", "yes"):
@@ -401,8 +418,18 @@ def snapshot_if_enabled(driver, *, reason: str, question_blocks: Any = None) -> 
 # leurs valeurs de retour ni leur stratégie : analyze_dom() puis execute_actions_plan().
 # Ils sont idempotents et toute erreur d'observabilité est absorbée. L'objectif de 1A
 # est uniquement de constater/capturer les incohérences, jamais de retry ni de réparer.
+#
+# Local/attach est activé par défaut. En prod, le pipeline est désactivé par défaut pour
+# ne pas ajouter de captures lourdes ni de latence au parc réel. Un test prod explicite
+# reste possible avec SURVEY_OBSERVABILITY=1.
 
 _LAST_EXTRACTED_BLOCKS: dict[int, Any] = {}
+
+
+def _phase1a_enabled() -> bool:
+    default = "0" if RUN_ENV == "prod" else "1"
+    value = (os.getenv("SURVEY_OBSERVABILITY", default) or "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
 
 
 def _install_extraction_observer() -> None:
@@ -482,4 +509,5 @@ def _install_action_observer() -> None:
 
 # survey_executor importe page_snapshot avant son appel à analyze_dom(). Le hook
 # extraction est donc installé immédiatement et reste transparent pour tout appelant.
-_install_extraction_observer()
+if _phase1a_enabled():
+    _install_extraction_observer()
