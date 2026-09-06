@@ -179,6 +179,56 @@ def _has_unfilled_required_inputs(driver) -> bool:
         return False
 
 
+def _qp_interactive_mode_active(driver) -> bool:
+    """
+    QuestionPro "Interactive" : toutes les sections de l'enquête sont rendues dans un
+    seul DOM/une seule page ; le passage d'une section à la suivante est déclenché
+    côté client dès qu'une question est renseignée, sans navigation d'URL ni rechargement.
+
+    Lecture seule, aucun effet de bord. Gate DOM strict :
+    `div.survey-inside-wrapper.has-interactive-mode` présent.
+    """
+    page = driver
+    try:
+        return bool(page.query_selector_all("div.survey-inside-wrapper.has-interactive-mode"))
+    except Exception:
+        return False
+
+
+def _qp_visible_validation_errors(driver, limit: int = 5) -> list[str]:
+    """
+    QuestionPro (mode Interactive) : remonte les messages d'erreur de validation
+    actuellement visibles à l'écran (`span[id^='errorSpan_'][role='alert']`, hors
+    classes 'hidden'/'d-none', texte non vide). Lecture seule, aucun effet de bord —
+    sert uniquement à confirmer explicitement (via log) qu'une page vient d'être
+    acceptée sans erreur, plutôt que de le supposer silencieusement.
+
+    Gate DOM strict : ne s'exécute que si `_qp_interactive_mode_active(driver)`.
+    """
+    if not _qp_interactive_mode_active(driver):
+        return []
+    page = driver
+    try:
+        errors = page.evaluate(
+            r"""(limit) => {
+                var spans = Array.from(document.querySelectorAll("span[id^='errorSpan_'][role='alert']"));
+                var out = [];
+                for (var i = 0; i < spans.length && out.length < limit; i++) {
+                    var el = spans[i];
+                    var cls = el.className || '';
+                    if (cls.indexOf('hidden') !== -1 || cls.indexOf('d-none') !== -1) continue;
+                    var txt = (el.innerText || el.textContent || '').trim();
+                    if (txt) out.push(txt);
+                }
+                return out;
+            }""",
+            limit,
+        )
+        return [str(e) for e in (errors or [])]
+    except Exception:
+        return []
+
+
 def _detect_rate_rank_image_eval_dom(driver) -> tuple[bool, str]:
     """
     Détecte un pattern DOM de type "image/product evaluation" (rate & rank).
@@ -2391,6 +2441,18 @@ def execute_survey_page(driver, account_id, api_key, ctx=None, platform=None):
         # action_dispatcher est hors-périmètre → passer driver (= shim)
         result = action_dispatcher.execute_actions_plan(driver, actions, stop_on_navigation=True)
 
+        # QuestionPro Interactive : confirmer explicitement (log) l'absence d'erreur de
+        # validation visible plutôt que de la supposer silencieusement (cf. BOT_EVOLUTION_MEMORY.md).
+        try:
+            _qp_validation_errors = _qp_visible_validation_errors(driver)
+            if _qp_validation_errors:
+                log_info(
+                    "[QP_INTERACTIVE_VALIDATION]",
+                    f"erreur(s) de validation visible(s) après application des réponses: {_qp_validation_errors}",
+                )
+        except Exception:
+            pass
+
         if ctx is not None:
             try:
                 for action in (actions or []):
@@ -2458,6 +2520,21 @@ def execute_survey_page(driver, account_id, api_key, ctx=None, platform=None):
                                     "[CTA_NAV_STABILIZE]",
                                     "dom_stable_timeout après navigation DOM-only (5.0s) — poursuite du flux",
                                 )
+                    elif _qp_interactive_mode_active(driver):
+                        # QuestionPro Interactive : la progression de section / soumission
+                        # finale ne doit pas être simplement supposée — confirmer explicitement
+                        # (log) quand ni URL ni DOM n'ont changé sous le budget de 10s.
+                        log_info(
+                            "[QP_INTERACTIVE_SUBMIT]",
+                            "clic CTA effectué mais aucune navigation/mutation DOM détectée sous 10s — "
+                            "progression de section ou soumission finale non confirmée",
+                        )
+                elif _qp_interactive_mode_active(driver):
+                    log_info(
+                        "[QP_INTERACTIVE_SUBMIT]",
+                        "toutes les questions visibles semblent répondues mais aucun bouton de "
+                        "navigation/soumission n'a été trouvé/cliqué",
+                    )
             except Exception:
                 pass
 

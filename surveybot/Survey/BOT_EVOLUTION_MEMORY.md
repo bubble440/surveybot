@@ -4200,6 +4200,188 @@ Statut : patch valide (confirme par l'utilisateur en conditions reelles).
 
 ---
 
+## PLATEFORME : QUESTIONPRO
+
+### try_click_navigation_cta — bouton de soumission de page réel #SurveySubmitButtonElement (bypass collision de scoring avec save-and-continue-later + faux positif filtre "back")
+
+Fichier : Survey/cta_handler.py (nouveau bloc dédié, inséré avant la boucle générique de collecte/scoring de candidats CTA de `try_click_navigation_cta`).
+
+Cas observé : page QuestionPro (form `qproSurvey`, script `qp_sectionDisplayScript`), question radio unique avec deux boutons adjacents dans `.survey-submit-wrapper` : le vrai bouton de soumission `#SurveySubmitButtonElement` (role="button", texte/aria-label "Suivant", classes `btn btn-submit has-back`) et, juste à côté, un bouton distinct de sauvegarde différée `name="SAVE_AND_CONTINUE"` (classes `btn btn-save-later`, texte/aria-label "Enregistrer et continuer plus tard"). Le clic de navigation aboutissait à tort sur ce second bouton.
+
+Double cause identifiée dans le chemin générique (aucun handler provider dédié n'existait pour ce DOM avant ce patch) :
+- Le bouton "Enregistrer et continuer plus tard" partage plusieurs signaux positifs du scoring générique avec le vrai bouton "Suivant" (texte contient "continuer", `name` contient la sous-chaîne "continue"), sans qu'aucun mot-clé d'exclusion existant ne le distingue d'une vraie progression de page — collision de score potentiellement égal ou supérieur au vrai CTA.
+- Le vrai bouton `#SurveySubmitButtonElement` porte une classe `has-back` (signale la présence d'un bouton précédent adjacent, pas un bouton "retour" lui-même) qui matche à tort le mot entier "back" du filtre anti-retour générique (`\bback\b` — frontière de mot sur le tiret de "has-back"), l'excluant donc AVANT même le scoring.
+
+Patch : ciblage direct du vrai bouton via son id structurel `#SurveySubmitButtonElement` (stable, généré par le framework QuestionPro, indépendant de la langue/libellé), dans un bloc dédié placé avant la boucle générique — court-circuite les deux problèmes ci-dessus sans toucher au scoring générique ni à la liste `bad` du filtre anti-retour (aucune régression possible sur les autres providers).
+
+Patterns couverts :
+- Pages QuestionPro où `#SurveySubmitButtonElement` est visible/actif, y compris quand un bouton `SAVE_AND_CONTINUE`/`btn-save-later` adjacent est présent.
+
+Patterns exclus :
+- Filtre générique `bad` (mot entier "back") non modifié — reste inchangé pour tous les autres providers, y compris le cas "background" déjà documenté (cf. MODULE TRANSVERSAL CTA_NAV_BAD_KEYWORD_SUBSTRING_FALSE_POSITIVE plus haut dans ce fichier). Le cas "has-back" n'est pas corrigé au niveau du filtre lui-même — seulement contourné structurellement pour ce provider.
+- Scoring générique de `try_click_navigation_cta` non modifié — la collision "continuer"/"continue" avec un bouton save-and-continue-later reste possible sur tout autre provider présentant ce même motif (non couvert par ce patch, scopé à QuestionPro).
+
+Vérification : patch confirmé fonctionnel par l'utilisateur.
+
+Statut : patch validé.
+
+---
+
+### _extract_questionpro_matrix_spreadsheet_row_blocks / _extract_questionpro_constant_sum_row_blocks — grilles multi-lignes (5 champs numériques fusionnés en 1 seul bloc par dédoublonnage)
+
+Fichier : Survey/dom_extractors_misc.py (deux nouvelles fonctions), enregistrées dans
+Survey/dom_analyzer.py (`_analyze_dom_current_context`, étape "0h-bis-2a-quater", juste
+après le bloc mrIWeb GRID/NUM, avant `_extract_label_radio_list_blocks`), avec `return`
+immédiat sur la somme des deux si des blocs sont produits.
+
+Cas observé : page QuestionPro avec deux questions consécutives composées chacune de 5
+champs numériques par ligne (scénarios "LE PLUS BAS / FAIBLE / MOYEN / ÉLEVÉ / LE PLUS
+ÉLEVÉ"). Deux widgets QuestionPro distincts, deux causes distinctes, même symptôme final :
+
+1. `div.answer-container.matrix-spreadsheet-question` (`table.parent-table`, un
+   `input[type="number"]` par `<tr>`) : chaque ligne porte son propre
+   `<label for="t_...">`, mais ce label contient le texte générique de l'en-tête de
+   colonne (ex: "Taux de croissance attendu du chiffre d'affaires (%)"), strictement
+   identique pour les 5 lignes — le vrai libellé distinctif est un `<span
+   class="question-text-span">`/`div.control-label` **sibling** du `<td>` de saisie
+   (pas ancêtre), donc jamais atteint par `_find_associated_label`. dom_analyzer.py
+   (~ligne 3747, bloc `label[for=id]` priorité text/textarea) captait ce label
+   générique avant tout recours au conteneur.
+2. `div.answer-container.constant-sum-question` (répartition d'un pourcentage,
+   `div.loop-wrapper[role="listitem"]` par ligne, aucun `<label for=...>` associé au
+   champ) : la résolution retombait sur `_nearest_question_container`
+   (dom_question_extractor.py) qui remonte jusqu'au conteneur englobant TOUTES les
+   lignes (seul ancêtre dont la classe contient "question" — le `loop-wrapper` de
+   chaque ligne n'a pas ce mot-clé), puis `_extract_question_from_container`
+   concaténait les 5 libellés de ligne + la ligne "Total" en un seul texte.
+
+Dans les deux cas, `_dedupe_question_blocks` fusionnait ensuite les 5 blocs sur une
+signature de question identique/quasi identique, n'en conservant qu'un seul.
+
+Correction (additive, aucune modification de `_nearest_question_container`,
+`_extract_question_from_container`, de la boucle générique text/textarea de
+dom_analyzer.py, ni de `_dedupe_question_blocks`) : un bloc `single`/itype="number" par
+ligne pour chaque widget, `question` = texte partagé (en-tête de colonne pour la
+matrice / question globale du `div.question-container` précédent pour le constant-sum)
+concaténé au libellé de ligne réel (rend le texte de question unique par bloc → aucune
+collision de signature de dédup, aucun besoin de scoper `_dedup_signature`).
+`context.row_label` porte le libellé brut ; flags payload/context distincts
+`qp_matrix_spreadsheet_row=True` / `qp_constant_sum_row=True`. Payload registry
+(xpath/alt_xpaths/tag/name/id) identique au pattern `mriweb_grid_num_row` déjà validé →
+dispatch fill number sans changement dispatcher (`fill_text_input` générique, détection
+`[NUM] champ numérique détecté` confirmée).
+
+Guard DOM strict (additif) :
+- Matrice : `div.answer-container.matrix-spreadsheet-question` présent ET
+  `table.parent-table` à l'intérieur ET au moins une ligne avec `td[role='cell']
+  .control-label` + `td[role='listitem'] input[type='number']`.
+- Constant-sum : `div.answer-container.constant-sum-question` présent ET au moins une
+  ligne `div.loop-wrapper[role='listitem']` avec `div.answer-options .control-label` +
+  `div.input-wrapper input`. La ligne "Total" (lecture seule, `span.form-input`, pas de
+  `<input>`) est exclue naturellement, sans traitement spécifique du texte "Total".
+
+Patterns couverts :
+- Grilles QuestionPro `matrix-spreadsheet-question` à ≥1 ligne, chaque ligne son propre
+  `input[type=number]` + libellé de ligne sibling du `<td>` de saisie.
+- Questions QuestionPro `constant-sum-question` à ≥1 ligne de saisie + une ligne "Total"
+  lecture seule optionnelle.
+- Validé en conditions réelles (snapshot `20260905_021438_after_dom_analyze`) : 10
+  blocs distincts extraits (5+5), GPT a répondu 10 valeurs numériques distinctes
+  (Q1..Q10), les 10 champs remplis avec succès (`[TARGET] apply ok=true
+  strategy=text_input reason=applied` ×10, `[NUM] champ numérique détecté` sur chaque
+  champ).
+Patterns exclus :
+- Toute autre variante de `matrix-spreadsheet-question` sans `input[type='number']` par
+  ligne (ex: options radio) → 0 ligne valide, aucun bloc produit, chemin générique
+  inchangé pour ce conteneur.
+- Toute autre variante de `constant-sum-question` sans input texte par ligne dans
+  `div.input-wrapper` → 0 ligne valide, aucun bloc produit, chemin générique inchangé.
+- Aucun autre type de question sur la même page (non observé dans ce cas : le
+  `<form>` ne contenait que ces deux widgets) — comme les autres extracteurs "page
+  spéciale" de ce fichier, un `return` est effectué dès qu'au moins un bloc est produit
+  par ces deux fonctions, court-circuitant le reste du pipeline pour cette page.
+
+Statut : patch validé (confirmé fonctionnel par l'utilisateur en conditions réelles).
+
+---
+
+### _qp_interactive_mode_active / _qp_visible_validation_errors — confirmation explicite (log) de la validation de page et de la progression/soumission en mode "Interactive"
+
+Fichier : Survey/survey_executor.py (deux nouvelles fonctions, lecture seule, aucun
+effet de bord), appelées depuis `execute_survey_page` :
+- `_qp_visible_validation_errors` juste après `action_dispatcher.execute_actions_plan(...)`
+  (avant l'enregistrement du contexte `ctx`).
+- `_qp_interactive_mode_active` en complément (nouvelles branches `elif`, additives)
+  dans le bloc CTA existant, juste après `clicked = input_handler.try_click_navigation_cta_any_context(driver)`.
+
+Cas observé : enquête QuestionPro en mode "Interactive" (`div.survey-inside-wrapper
+.has-interactive-mode`, script `interactiveSurvey.js`/`InteractiveMode.init(...)`) —
+toutes les sections de l'enquête sont rendues dans un seul DOM/une seule page, le
+passage d'une section à la suivante étant déclenché côté client dès qu'une question
+est renseignée, sans navigation d'URL. Le comportement fonctionnait en pratique
+(confirmé sur snapshot `20260905_021918_after_dom_analyze`, 17 blocs radio/checkbox
+extraits et remplis avec succès), mais uniquement parce que le passage côté client se
+produit avant que l'action suivante ne soit tentée — rien ne le garantissait ni ne le
+confirmait explicitement côté code :
+- Ni `execute_actions_plan` ni `execute_action` (action_dispatcher.py) ne vérifient
+  l'état de validation de la page après application d'une réponse.
+- `try_click_navigation_cta`/`try_click_navigation_cta_any_context` (cta_handler.py)
+  existent déjà mais aucun log n'explicitait le résultat quand le clic CTA final
+  n'aboutissait à aucun changement d'URL/DOM détecté (`redirect_watcher
+  .wait_for_navigation_or_dom_change` revient `None`/falsy) : le code poursuivait
+  silencieusement, la soumission finale réelle du formulaire n'étant alors jamais
+  confirmée explicitement (simplement supposée).
+
+Correction (additive, aucune modification de `execute_actions_plan`, `execute_action`,
+`try_click_navigation_cta`/`try_click_navigation_cta_any_context`, ni de la stratégie
+de clic CTA existante — aucun nouveau clic ajouté, donc CTA_INTERCEPT_ONLY non
+applicable ici) :
+1. `_qp_interactive_mode_active(driver)` : détection en lecture seule du mode
+   Interactive (gate DOM strict `div.survey-inside-wrapper.has-interactive-mode`).
+2. `_qp_visible_validation_errors(driver)` : remonte les `span[id^='errorSpan_']
+   [role='alert']` actuellement visibles (hors classes `hidden`/`d-none`, texte non
+   vide) — pattern d'erreur QuestionPro déjà observé (`errorSpan_<id>` par
+   question/ligne, masqué par défaut). Scopé à `_qp_interactive_mode_active`. Si des
+   erreurs sont trouvées après application des réponses → `log_info
+   [QP_INTERACTIVE_VALIDATION]` avec le(s) texte(s) d'erreur.
+3. Dans le bloc CTA existant : si `clicked=True` mais `changed` est falsy (aucune
+   navigation/mutation DOM détectée sous 10s) ET mode Interactive actif → `log_info
+   [QP_INTERACTIVE_SUBMIT]` explicitant que la progression de section ou la
+   soumission finale n'est pas confirmée. Si `clicked=False` (aucun bouton
+   trouvé/cliqué) ET mode Interactive actif → `log_info [QP_INTERACTIVE_SUBMIT]`
+   distinct (toutes les questions visibles semblent répondues mais aucun clic
+   n'a eu lieu).
+
+Vérification : test Playwright headless sur le snapshot réel — `
+_qp_interactive_mode_active` détecte correctement le mode (`True`) ;
+`_qp_visible_validation_errors` retourne `[]` sur le DOM de référence (aucun faux
+positif) et détecte correctement un `errorSpan` rendu visible artificiellement pour le
+test ; retourne `[]` dès que la classe `has-interactive-mode` est absente (scope
+respecté, aucun impact sur les autres modes QuestionPro ni sur les autres providers).
+
+Patterns couverts :
+- Enquêtes QuestionPro en mode Interactive (`div.survey-inside-wrapper
+  .has-interactive-mode`) : diagnostic explicite (logs) de la validation de page et de
+  la confirmation de progression/soumission finale, sans changement de comportement
+  fonctionnel (pur ajout de visibilité — aucune nouvelle action, aucun nouveau clic,
+  aucune boucle de retry).
+Patterns exclus :
+- Pages QuestionPro sans `has-interactive-mode` (mode "grille statique" déjà couvert
+  par le patch CTA `#SurveySubmitButtonElement` ci-dessus) — `_qp_interactive_mode_active`
+  retourne `False`, les deux nouvelles fonctions n'ont alors aucun effet (retour `[]`
+  immédiat / branches `elif` jamais atteintes).
+- Tout autre provider — gate DOM strict sur `div.survey-inside-wrapper
+  .has-interactive-mode`, absent partout ailleurs.
+- Aucune nouvelle logique de retry/abandon/nouveau clic CTA n'a été ajoutée : ce patch
+  est un diagnostic en lecture seule ; un renforcement du comportement (retry,
+  abandon contrôlé, nouveau clic explicite) nécessiterait une validation explicite
+  séparée.
+
+Statut : patch validé (vérifié sur DOM de référence réel, comportement non modifié
+pour les autres modes/providers).
+
+---
+
 ## PLATEFORME : DECIPHER/FOCUSVISION — ANSWERS-LIST GENERIQUE (GROUPEMENT PAR NAME) : LIMITE DE SELECTION ("SELECTIONNE JUSQU'A N...") NON PRISE EN COMPTE
 
 Signature DOM : `div.question[role='radiogroup'] / div.question.checkbox / div.question.radio`

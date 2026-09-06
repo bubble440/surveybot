@@ -156,6 +156,8 @@ try:
         _extract_image_labelledby_choice_checkbox_blocks,
         _extract_studystream_contenteditable_open_text_blocks,
         _extract_mriweb_grid_num_row_blocks,
+        _extract_questionpro_matrix_spreadsheet_row_blocks,
+        _extract_questionpro_constant_sum_row_blocks,
         _extract_qdtech_qdradio_icon_choice_blocks,
         _extract_qdtech_qdcheckbox_icon_choice_blocks,
     )
@@ -289,6 +291,8 @@ except ImportError:
         _extract_image_labelledby_choice_checkbox_blocks,
         _extract_studystream_contenteditable_open_text_blocks,
         _extract_mriweb_grid_num_row_blocks,
+        _extract_questionpro_matrix_spreadsheet_row_blocks,
+        _extract_questionpro_constant_sum_row_blocks,
         _extract_qdtech_qdradio_icon_choice_blocks,
         _extract_qdtech_qdcheckbox_icon_choice_blocks,
     )
@@ -1608,6 +1612,20 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         mriweb_grid_num_blocks = _extract_mriweb_grid_num_row_blocks(driver, frame_chain)
         if mriweb_grid_num_blocks:
             return mriweb_grid_num_blocks
+    except Exception:
+        pass
+
+    # --- 0h-bis-2a-quater) QuestionPro grilles multi-lignes (matrix-spreadsheet / constant-sum) ---
+    # Objectif: éviter la collision de dédoublonnage sur ces grilles QuestionPro à
+    # plusieurs lignes numériques dont le libellé associé au champ (label[for] générique
+    # partagé, ou conteneur générique remonté trop haut) ne distingue pas les lignes
+    # entre elles (voir BOT_EVOLUTION_MEMORY.md).
+    try:
+        qp_matrix_blocks = _extract_questionpro_matrix_spreadsheet_row_blocks(driver, frame_chain)
+        qp_constant_sum_blocks = _extract_questionpro_constant_sum_row_blocks(driver, frame_chain)
+        qp_multi_row_blocks = qp_matrix_blocks + qp_constant_sum_blocks
+        if qp_multi_row_blocks:
+            return qp_multi_row_blocks
     except Exception:
         pass
 

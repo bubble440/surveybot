@@ -13965,6 +13965,317 @@ def _extract_mriweb_grid_num_row_blocks(driver, frame_chain: list[int] | None) -
 
 
 # ================================================================================
+# QUESTIONPRO — GRILLES MULTI-LIGNES (matrix-spreadsheet-question / constant-sum-question)
+# ================================================================================
+# Signature DOM commune : `div.answer-container.matrix-spreadsheet-question` (table
+# `table.parent-table` à une colonne, un `<tr>` par ligne, chacun avec son propre
+# `input[type='number']`) ou `div.answer-container.constant-sum-question` (répartition
+# d'un pourcentage, un `div.loop-wrapper[role='listitem']` par ligne, chacun avec son
+# propre `input` texte numérique — la dernière ligne "Total" n'a pas d'input, lecture
+# seule). Dans les deux cas, le libellé associé au champ (via `<label for=id>` pour la
+# matrice, ou absent pour le constant-sum) ne distingue pas les lignes entre elles :
+# soit il est identique pour les 5 champs (matrice : le `<label for=...>` de chaque
+# ligne porte le texte de l'en-tête de colonne, pas le libellé de ligne), soit la
+# résolution générique via `_nearest_question_container` remonte jusqu'au conteneur
+# englobant toutes les lignes et concatène tous les libellés de ligne (constant-sum :
+# aucun ancêtre plus proche ne porte de mot-clé "question" dans sa classe). Dans les
+# deux cas, `_dedupe_question_blocks` fusionne alors les 5 champs sur une signature de
+# question quasi identique ou strictement identique, ne conservant qu'un seul bloc.
+# Voir BOT_EVOLUTION_MEMORY.md.
+
+def _extract_questionpro_matrix_spreadsheet_row_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    QuestionPro : grille "matrix-spreadsheet-question" à une colonne de saisie
+    (`table.parent-table`), un `input[type='number']` par ligne (`tr`), le libellé de
+    ligne étant porté par `td[role='cell'] .control-label` (sibling du `td` de saisie,
+    pas ancêtre) — jamais par le `<label for=...>` associé au champ, qui porte le texte
+    générique de l'en-tête de colonne, identique pour les 5 lignes.
+
+    Gate DOM strict (additif) :
+    - `div.answer-container.matrix-spreadsheet-question` présent
+    - `table.parent-table` à l'intérieur
+    - au moins une ligne avec `td[role='cell'] .control-label` + `td[role='listitem']
+      input[type='number']`
+
+    Ne couvre pas :
+    - Toute autre variante de `matrix-spreadsheet-question` sans `input[type='number']`
+      par ligne (ex: options radio) — 0 ligne valide, aucun bloc produit, chemin
+      générique inchangé pour ce conteneur.
+
+    Produit un bloc `single`/itype="number" distinct PAR LIGNE, `question` = en-tête de
+    colonne (`thead .control-label`, générique) concaténé au libellé de ligne (unique).
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.query_selector_all(
+            "div.answer-container.matrix-spreadsheet-question"
+        )
+    except Exception:
+        return blocks
+    if not containers:
+        return blocks
+
+    for qc in containers[:10]:
+        try:
+            try:
+                table = qc.query_selector("table.parent-table")
+            except Exception:
+                table = None
+            if table is None:
+                continue
+
+            column_header = ""
+            try:
+                head_el = table.query_selector("thead .control-label")
+                if head_el is not None:
+                    column_header = _norm(head_el.get_attribute("textContent") or head_el.inner_text() or "")
+            except Exception:
+                pass
+
+            try:
+                rows = table.query_selector_all("tbody tr")
+            except Exception:
+                rows = []
+
+            row_count = 0
+            for tr in rows[:50]:
+                try:
+                    label_el = tr.query_selector("td[role='cell'] .control-label")
+                    if label_el is None:
+                        continue
+                    row_label = _norm(label_el.get_attribute("textContent") or label_el.inner_text() or "")
+                    if not row_label:
+                        continue
+
+                    inp = tr.query_selector("td[role='listitem'] input[type='number']")
+                    if inp is None:
+                        continue
+
+                    inp_id = (inp.get_attribute("id") or "").strip()
+                    inp_name = (inp.get_attribute("name") or "").strip()
+                    if not inp_id and not inp_name:
+                        continue
+
+                    if column_header and _norm_lc(column_header) != _norm_lc(row_label):
+                        block_question = f"{column_header} — {row_label}"
+                    else:
+                        block_question = row_label
+
+                    row_key = f"qp_matrix_spreadsheet:{inp_id or inp_name}"
+                    target_id = make_target_id("single", row_key, block_question)
+
+                    try:
+                        xpath = _best_xpath_for_element(driver, inp)
+                    except Exception:
+                        xpath = f"//*[@id={_xpath_literal(inp_id)}]" if inp_id else f"//input[@name={_xpath_literal(inp_name)}]"
+
+                    alt_xpaths: list[str] = []
+                    if inp_id:
+                        alt_xpaths.append(f"//*[@id={_xpath_literal(inp_id)}]")
+                    if inp_name:
+                        alt_xpaths.append(f"//input[@name={_xpath_literal(inp_name)}]")
+                    alt_xpaths = [x for x in dict.fromkeys(alt_xpaths) if x and x != xpath][:4]
+
+                    registry_payload: dict = {
+                        "kind": "single",
+                        "itype": "number",
+                        "question": block_question,
+                        "xpath": xpath,
+                        "alt_xpaths": alt_xpaths,
+                        "tag": "input",
+                        "name": inp_name,
+                        "id": inp_id,
+                        "frame_chain": frame_chain,
+                        "qp_matrix_spreadsheet_row": True,
+                    }
+                    block_ctx: dict = {
+                        "kind": "single",
+                        "tag": "input",
+                        "name": inp_name,
+                        "id": inp_id,
+                        "row_label": row_label,
+                        "qp_matrix_spreadsheet_row": True,
+                    }
+
+                    register_target(target_id, registry_payload)
+
+                    blocks.append(
+                        {
+                            "question": block_question,
+                            "itype": "number",
+                            "options": [],
+                            "max_select": 1,
+                            "min_select": 1,
+                            "target_id": target_id,
+                            "context": block_ctx,
+                        }
+                    )
+                    row_count += 1
+                except Exception:
+                    continue
+
+            if row_count:
+                log_debug(
+                    "[DOM_QP_MATRIX_SPREADSHEET]",
+                    f"blocks_extracted={row_count} column_header={column_header[:60]!r}",
+                )
+        except Exception:
+            continue
+
+    if blocks:
+        log_info("[DOM_QP_MATRIX_SPREADSHEET]", f"blocks_extracted={len(blocks)}")
+    return blocks
+
+
+def _extract_questionpro_constant_sum_row_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    QuestionPro : question "constant-sum-question" (répartition d'un pourcentage sur
+    plusieurs catégories, somme devant faire 100), un `input` texte numérique par ligne
+    (`div.loop-wrapper[role='listitem']`), le libellé de ligne porté par
+    `div.answer-options .control-label`. Aucun `<label for=...>` n'est associé au champ
+    sur ce widget : la résolution générique retombe donc sur `_nearest_question_container`,
+    qui remonte jusqu'au conteneur englobant TOUTES les lignes (aucun ancêtre plus proche
+    ne porte de mot-clé "question" dans sa classe) — `_extract_question_from_container`
+    produit alors une longue concaténation des 5 libellés de ligne + la ligne "Total".
+
+    Gate DOM strict (additif) :
+    - `div.answer-container.constant-sum-question` présent
+    - au moins une ligne `div.loop-wrapper[role='listitem']` avec
+      `div.answer-options .control-label` + `div.input-wrapper input`
+
+    Ne couvre pas :
+    - La ligne "Total" (`div.loop-wrapper` sans `div.input-wrapper input` — lecture
+      seule, `span.form-input`) : exclue naturellement, aucun bloc produit pour elle.
+    - Toute autre variante de `constant-sum-question` sans input texte par ligne — 0
+      ligne valide, aucun bloc produit, chemin générique inchangé pour ce conteneur.
+
+    Produit un bloc `single`/itype="number" distinct PAR LIGNE, `question` = texte de
+    question global (sibling `div.question-container` précédent) concaténé au libellé
+    de ligne (unique).
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.query_selector_all(
+            "div.answer-container.constant-sum-question"
+        )
+    except Exception:
+        return blocks
+    if not containers:
+        return blocks
+
+    for qc in containers[:10]:
+        try:
+            shared_question = ""
+            try:
+                qtext_nodes = qc.query_selector_all(
+                    "xpath=preceding-sibling::div[contains(@class,'question-container')][1]"
+                    "//span[contains(@class,'question-text-span')]"
+                )
+                if qtext_nodes:
+                    shared_question = _norm(qtext_nodes[0].get_attribute("textContent") or qtext_nodes[0].inner_text() or "")
+            except Exception:
+                pass
+
+            try:
+                rows = qc.query_selector_all("div.loop-wrapper[role='listitem']")
+            except Exception:
+                rows = []
+
+            row_count = 0
+            for row in rows[:50]:
+                try:
+                    label_el = row.query_selector("div.answer-options .control-label")
+                    if label_el is None:
+                        continue
+                    row_label = _norm(label_el.get_attribute("textContent") or label_el.inner_text() or "")
+                    if not row_label:
+                        continue
+
+                    inp = row.query_selector("div.input-wrapper input")
+                    if inp is None:
+                        continue
+
+                    inp_id = (inp.get_attribute("id") or "").strip()
+                    inp_name = (inp.get_attribute("name") or "").strip()
+                    if not inp_id and not inp_name:
+                        continue
+
+                    if shared_question and _norm_lc(shared_question) != _norm_lc(row_label):
+                        block_question = f"{shared_question} — {row_label}"
+                    else:
+                        block_question = row_label
+
+                    row_key = f"qp_constant_sum:{inp_id or inp_name}"
+                    target_id = make_target_id("single", row_key, block_question)
+
+                    try:
+                        xpath = _best_xpath_for_element(driver, inp)
+                    except Exception:
+                        xpath = f"//*[@id={_xpath_literal(inp_id)}]" if inp_id else f"//input[@name={_xpath_literal(inp_name)}]"
+
+                    alt_xpaths: list[str] = []
+                    if inp_id:
+                        alt_xpaths.append(f"//*[@id={_xpath_literal(inp_id)}]")
+                    if inp_name:
+                        alt_xpaths.append(f"//input[@name={_xpath_literal(inp_name)}]")
+                    alt_xpaths = [x for x in dict.fromkeys(alt_xpaths) if x and x != xpath][:4]
+
+                    registry_payload: dict = {
+                        "kind": "single",
+                        "itype": "number",
+                        "question": block_question,
+                        "xpath": xpath,
+                        "alt_xpaths": alt_xpaths,
+                        "tag": "input",
+                        "name": inp_name,
+                        "id": inp_id,
+                        "frame_chain": frame_chain,
+                        "qp_constant_sum_row": True,
+                    }
+                    block_ctx: dict = {
+                        "kind": "single",
+                        "tag": "input",
+                        "name": inp_name,
+                        "id": inp_id,
+                        "row_label": row_label,
+                        "qp_constant_sum_row": True,
+                    }
+
+                    register_target(target_id, registry_payload)
+
+                    blocks.append(
+                        {
+                            "question": block_question,
+                            "itype": "number",
+                            "options": [],
+                            "max_select": 1,
+                            "min_select": 1,
+                            "target_id": target_id,
+                            "context": block_ctx,
+                        }
+                    )
+                    row_count += 1
+                except Exception:
+                    continue
+
+            if row_count:
+                log_debug(
+                    "[DOM_QP_CONSTANT_SUM]",
+                    f"blocks_extracted={row_count} shared_question={shared_question[:60]!r}",
+                )
+        except Exception:
+            continue
+
+    if blocks:
+        log_info("[DOM_QP_CONSTANT_SUM]", f"blocks_extracted={len(blocks)}")
+    return blocks
+
+
+# ================================================================================
 # QDTECH / KUAIJUECE — RADIO ICONE SANS INPUT NATIF (qd-radio)
 # ================================================================================
 
