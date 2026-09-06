@@ -33,6 +33,5 @@ dist_nuitka/
 .nuitka_cache
 .nuitka_cache/
 dist_nuitka_dev/
-./tools/attach_tab.ps1
 dist_zip/
 dist_orchestration/
