@@ -1,13 +1,12 @@
 # question_analyzer.py
 from openai import OpenAI
 from bs4 import BeautifulSoup
-import time, re, unicodedata
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
+import os, time, re, unicodedata
 from preselection.question_validation import detect_disqualification_reason
 from Survey.log_utils import log_debug, log_info
+from config import is_cta_intercept_only
+
+
 
 ASSISTANT_SYSTEM_PROMPT = (
     # Identité de base
@@ -119,6 +118,31 @@ def _is_negative_exclusive_option(option_text):
     return any(sub in norm for sub in _NEGATIVE_EXCLUSIVE_SUBSTRINGS)
 
 
+# Contextes sémantiques où une option exclusive négative peut être la réponse correcte
+# selon le persona du bot (ex : sans enfants, sans voiture de fonction).
+# Chaque tuple regroupe les tokens d'une même catégorie.
+# À étendre si de nouveaux contextes "persona-négatif" sont identifiés.
+_EXCLUSIVE_ALLOWED_CONTEXTS = (
+    # Questions sur les enfants / situation parentale
+    ("enfant", "enfants", "children", "child", "kids", "naissance", "fils", "fille"),
+    # Questions sur les véhicules de fonction
+    ("véhicule de fonction", "voiture de société", "company car", "fleet"),
+)
+
+
+def _question_allows_exclusive(question_text: str) -> bool:
+    """
+    Retourne True si la question appartient à un contexte où l'option exclusive
+    négative est la réponse correcte selon le persona (ex : 'Je n'ai pas d'enfants').
+    Dans ce cas, le pré-filtrage est désactivé pour laisser le prompt GPT décider.
+    """
+    norm = _normalize_text(question_text)
+    for tokens in _EXCLUSIVE_ALLOWED_CONTEXTS:
+        if any(t in norm for t in tokens):
+            return True
+    return False
+
+
 def _should_force_non_for_hardware_question(question_text, options):
     normalized_question = _normalize_text(question_text)
     has_hardware_token = any(token in normalized_question for token in _HARDWARE_TOKENS)
@@ -131,17 +155,17 @@ def _should_force_non_for_hardware_question(question_text, options):
 
 
 def extract_popup_html(driver):
+    page = driver
     try:
-        popup = WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "[data-test-id='ps-popup-content-wrapper']")
-            )
+        popup = page.wait_for_selector(
+            "[data-test-id='ps-popup-content-wrapper']",
+            state="attached",
+            timeout=5_000,
         )
-        html = driver.execute_script("return arguments[0].outerHTML", popup)
-        return html
+        return popup.evaluate("(el) => el.outerHTML")
     except Exception as e:
         print("❌ Aucun popup détecté, retour au DOM complet. Détail:", e)
-        return driver.execute_script("return document.documentElement.outerHTML")
+        return page.evaluate("() => document.documentElement.outerHTML")
 
 
 def extract_question_text(html):
@@ -219,18 +243,17 @@ def detect_input_type(html):
 
 def extract_popup_text_with_js(driver):
     """
-    Utilise JavaScript via Selenium pour extraire le texte visible du popup.
+    Utilise JavaScript pour extraire le texte visible du popup.
     Plus robuste que BeautifulSoup.
     """
+    page = driver
     try:
-        popup_element = WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "div[class*='common-container']")
-            )
+        popup_element = page.wait_for_selector(
+            "div[class*='common-container']",
+            state="attached",
+            timeout=5_000,
         )
-
-        js_code = """
-            const popup = arguments[0];
+        return popup_element.evaluate("""(popup) => {
             const walker = document.createTreeWalker(popup, NodeFilter.SHOW_TEXT, null, false);
             const texts = [];
             while (walker.nextNode()) {
@@ -238,10 +261,7 @@ def extract_popup_text_with_js(driver):
                 if (text.length > 4) texts.push(text);
             }
             return [...new Set(texts)];
-        """
-        result = driver.execute_script(js_code, popup_element)
-
-        return result
+        }""")
     except Exception as e:
         print("❌ JS DOM extraction échouée :", e)
         return []
@@ -253,19 +273,15 @@ def extract_options_js(driver):
     Cible les éléments contenant 'p-radio-text' dans leur class.
     """
     try:
-        js_code = """
-        return Array.from(document.querySelectorAll("label span"))
-            .filter(span => 
-                span.className.includes("p-radio-text") ||
-                span.className.includes("p-checkbox-text")
-            )
-            .map(span => span.innerText.trim())
-            .filter(text => text.length > 0);
-        """
-
-        options = driver.execute_script(js_code)
-        print(f"extract_options_js : {options}")
-        # Pas de choix → souvent page de blocage ou de consentement non mappée
+        options = driver.evaluate("""() =>
+            Array.from(document.querySelectorAll("label span"))
+                .filter(span =>
+                    span.className.includes("p-radio-text") ||
+                    span.className.includes("p-checkbox-text")
+                )
+                .map(span => span.innerText.trim())
+                .filter(text => text.length > 0)
+        """)
         if not options:
             print("⏭️ Aucun choix détecté — pas d'action sur cette page. source: reponse_executor.py")
             return False
@@ -280,29 +296,33 @@ def extract_select_options_js(driver):
     Retourne les textes visibles des <option> (on ignore les placeholders/disabled).
     """
     try:
-        js = """
-        return Array.from(document.querySelectorAll('select option'))
-            .filter(o => !o.disabled && (o.value || '').trim() !== '' && (o.innerText||'').trim().length > 0)
-            .map(o => (o.innerText || o.textContent).trim());
-        """
-        opts = driver.execute_script(js)
-        if opts is not None:
-            print(f"extract_select_options_js : {opts}")
-        # dédoublonne en conservant l'ordre
+        opts = driver.evaluate("""() =>
+            Array.from(document.querySelectorAll('select option'))
+                .filter(o => !o.disabled && (o.value || '').trim() !== '' && (o.innerText||'').trim().length > 0)
+                .map(o => (o.innerText || o.textContent).trim())
+        """)
         return list(dict.fromkeys(opts))
     except Exception as e:
         print("💥 JS select options échouée :", e)
         return []
 
 
-def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
-    # Pré-filtrage : retirer les options exclusives négatives avant envoi à GPT
+def reformulate_prompt_for_gpt(question_text, options, itype="radio", *, avoid_options=None):
+    # Pré-filtrage conditionnel : on retire les options exclusives négatives sauf si
+    # la question appartient à un contexte où elles sont la bonne réponse selon le
+    # persona (ex : "Je n'ai pas d'enfants"). Dans ce cas, on laisse passer toutes
+    # les options et le prompt GPT spécialisé prend la décision.
     filtered_options = options
     if options:
-        filtered_options = [o for o in options if not _is_negative_exclusive_option(o)]
-        removed = [o for o in options if _is_negative_exclusive_option(o)]
-        if removed:
-            log_debug("preselection", f"[PRE-FILTRAGE GPT] Options exclusives négatives retirées : {removed}")
+        if _question_allows_exclusive(question_text):
+            # Contexte whitelist : toutes les options conservées, GPT décide
+            filtered_options = options
+            log_debug("preselection", "[PRE-FILTRAGE GPT] Contexte exclusif autorisé — options conservées telles quelles.")
+        else:
+            filtered_options = [o for o in options if not _is_negative_exclusive_option(o)]
+            removed = [o for o in options if _is_negative_exclusive_option(o)]
+            if removed:
+                log_debug("preselection", f"[PRE-FILTRAGE GPT] Options exclusives négatives retirées : {removed}")
 
     base_rules = (
         "Ne renvoie jamais la question ni d'explications. "
@@ -336,27 +356,38 @@ def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
 
     )
 
+    avoid_section = ""
+    if avoid_options:
+        avoid_section = (
+            "ATTENTION — OPTIONS À ÉVITER IMPÉRATIVEMENT : les options suivantes ont déjà été choisies "
+            "lors de tentatives précédentes et ont conduit à une disqualification. "
+            f"Ne les choisis SOUS AUCUN PRÉTEXTE : {', '.join(repr(o) for o in avoid_options)}\n"
+            "Choisis obligatoirement une option différente parmi celles disponibles.\n\n"
+        )
+
     if filtered_options and itype == "checkbox":
         return (
             f"Question: {question_text}\n"
             f"{base_rules}"
+            f"{avoid_section}"
             f"Options: {', '.join(filtered_options)}\n"
-            "Réponds UNIQUEMENT avec le ou les libellés exacts, séparés par ‘ | ‘. "
-            "Pour une checkbox non exclusive, préfère plusieurs choix plutôt qu’un seul."
+            "Réponds UNIQUEMENT avec le ou les libellés exacts, séparés par ' | '. "
+            "Pour une checkbox non exclusive, préfère plusieurs choix plutôt qu'un seul."
             "Pour les questions à choix multiples (checkbox) :"
             "- Par défaut, sélectionne plusieurs options cohérentes avec le profil, pas une seule."
-            "- Sauf si la question implique clairement une réponse exclusive ou un nombre limité évident (ex: année de naissance, âge exact, nombre exact, situation familiale exclusive, réponse négative exclusive, ‘aucune de ces propositions’, ‘je n’ai pas d’enfants’, ‘je préfère ne pas le dire’, ‘aucun’, ‘autre’)."
-            "- Par défaut, renvoie entre 5 et 7 options plausibles et variées parmi celles proposées, sauf si une exception exclusive s’applique."
-            "- Si la liste contient moins de 5 options, choisis uniquement l’option la plus plausible parmi celles non-disqualifiantes. Ne tente pas d’atteindre 5 à 7 dans ce cas."
-            "- Ne combine jamais une option exclusive avec d’autres."
-            "- Si la question concerne les enfants, le foyer parental, ou l’année de naissance d’enfants : si une option exclusive négative est disponible (‘je n’ai pas d’enfants’, ‘sans enfants’, ‘aucun enfant’, ‘none’, ‘no children’ ou équivalent), choisis-la uniquement. Sinon, ignore cette règle et sélectionne des réponses cohérentes parmi les options proposées."
-            "- Si plusieurs réponses sont renvoyées, utilise exactement le séparateur ‘ | ‘ entre les libellés."
+            "- Sauf si la question implique clairement une réponse exclusive ou un nombre limité évident (ex: année de naissance, âge exact, nombre exact, situation familiale exclusive, réponse négative exclusive, 'aucune de ces propositions', 'je n'ai pas d'enfants', 'je préfère ne pas le dire', 'aucun', 'autre')."
+            "- Par défaut, renvoie entre 5 et 7 options plausibles et variées parmi celles proposées, sauf si une exception exclusive s'applique."
+            "- Si la liste contient moins de 5 options, choisis uniquement l'option la plus plausible parmi celles non-disqualifiantes. Ne tente pas d'atteindre 5 à 7 dans ce cas."
+            "- Ne combine jamais une option exclusive avec d'autres."
+            "- Si la question concerne les enfants, le foyer parental, ou l'année de naissance d'enfants : si une option exclusive négative est disponible ('je n'ai pas d'enfants', 'sans enfants', 'aucun enfant', 'none', 'no children' ou équivalent), choisis-la uniquement. Sinon, ignore cette règle et sélectionne des réponses cohérentes parmi les options proposées."
+            "- Si plusieurs réponses sont renvoyées, utilise exactement le séparateur ' | ' entre les libellés."
         )
 
     if filtered_options:
         return (
             f"Question: {question_text}\n"
             f"{base_rules}"
+            f"{avoid_section}"
             f"Options: {', '.join(filtered_options)}\n"
             "Choisis exactement une des options ci-dessus. "
             "Réponds UNIQUEMENT par le libellé de l'option."
@@ -366,6 +397,7 @@ def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
         return (
             f"Question: {question_text}\n"
             f"{base_rules}"
+            f"{avoid_section}"
             "Réponds UNIQUEMENT par un entier brut (chiffres seuls, sans symbole monétaire, "
             "sans espace, sans texte). Exemple de format attendu : 150000"
         )
@@ -373,6 +405,7 @@ def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
     return (
         f"Question: {question_text}\n"
         f"{base_rules}"
+        f"{avoid_section}"
         "Réponds par une valeur courte et réaliste. Une seule valeur."
     )
 
@@ -396,14 +429,11 @@ def ask_assistant(prompt_text, api_key, *, question=None, options=None):
 
     return cleaned
 
-def get_response_for_question(driver, api_key):
+def get_response_for_question(driver, api_key, *, session=None):
     import preselection.question_validation
 
     try:
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.TAG_NAME, "body"))
-        )
-
+        # Pas d'attente Selenium — extract_popup_html gère son propre timeout Playwright
         html = extract_popup_html(driver)
         input_type = detect_input_type(html)
         js_texts = extract_popup_text_with_js(driver)
@@ -431,19 +461,62 @@ def get_response_for_question(driver, api_key):
             extract_select_options_js(driver) or []
         )
 
+        # Dérive la clé question + initialise survey_key sur la première question
+        _mem_qk = None
+        if session is not None and options:
+            try:
+                from State.survey_memory import make_key
+                _mem_qk = make_key(question, options)
+                session.set_survey_key_if_first(_mem_qk)
+            except Exception as _ke:
+                log_debug("preselection", f"[SURVEY_MEMORY] key error: {_ke}")
+
         if _should_force_non_for_hardware_question(question, options):
             log_debug(
                 "preselection",
                 "Interception hardware détectée avant OpenAI: réponse forcée sur 'Non'.",
             )
+            if _mem_qk is not None:
+                try:
+                    session.record_choice(_mem_qk, ["Non"])
+                except Exception:
+                    pass
             return question, "Non", input_type
 
-        prompt = reformulate_prompt_for_gpt(question, options, input_type)
+        # Lecture mémoire : bypass GPT ou injection d'options à éviter
+        avoid_options = []
+        if _mem_qk is not None and session.survey_key:
+            try:
+                from State.survey_memory import read_guidance
+                guidance = read_guidance(session.survey_key, _mem_qk, session.current_page_index)
+                if guidance.use_options:
+                    if input_type == "checkbox":
+                        response = " | ".join(guidance.use_options)
+                    else:
+                        response = guidance.use_options[0] if guidance.use_options else None
+                    if response:
+                        session.record_choice(_mem_qk, guidance.use_options)
+                        log_info("[PRESELECTION]", f"[MEM] Bypass GPT → {response}")
+                        print(f"🧠 Réponse mémoire : {response}")
+                        return question, response, input_type
+                avoid_options = guidance.avoid_options
+            except Exception as _ge:
+                log_debug("preselection", f"[SURVEY_MEMORY] guidance error: {_ge}")
+
+        prompt = reformulate_prompt_for_gpt(question, options, input_type, avoid_options=avoid_options)
         log_debug("preselection", f"[ITYPE DÉTECTÉ] {input_type}")
-        log_debug("preselection", f"[PROMPT→GPT]\n{prompt}")
+        log_debug("preselection", f"[PROMPT→GPT] Q: {question!r} | Options: {options}")
 
         response = ask_assistant(prompt, api_key, question=question, options=options)
         print(f"🤖 Réponse proposée : {response}")
+
+        # Enregistre le choix dans la session locale
+        if _mem_qk is not None:
+            try:
+                chosen = [r.strip() for r in response.split(" | ")] if " | " in response else [response]
+                session.record_choice(_mem_qk, chosen)
+            except Exception:
+                pass
 
         return question, response, input_type
 
@@ -453,26 +526,22 @@ def get_response_for_question(driver, api_key):
 
 
 def click_participer_if_present(driver):
+    page = driver
     try:
-        # On attend jusqu'à 7 secondes qu'un bouton "Participer" soit visible
-        wait = WebDriverWait(driver, 7)
-        participer_btn = wait.until(
-            EC.element_to_be_clickable(
-                (By.CSS_SELECTOR, 'button[data-test-id="ps-common-actions-button"]')
-            )
+        participer_btn = page.wait_for_selector(
+            'button[data-test-id="ps-common-actions-button"]',
+            state="visible",
+            timeout=7_000,
         )
-        if participer_btn:
-            print(
-                "🚨 Aucun choix détecté : tentative de clic sur le bouton 'Participer'..."
-            )
-            driver.execute_script(
-                "arguments[0].scrollIntoView({block: 'center'});", participer_btn
-            )
-            driver.execute_script("arguments[0].click();", participer_btn)
-            print("✅ Bouton 'Participer' cliqué avec succès.")
-            from Management.redirect_watcher import wait_for_page_load
-            wait_for_page_load(driver, timeout=30)
-            return True
+        print("🚨 Aucun choix détecté : tentative de clic sur le bouton 'Participer'...")
+        participer_btn.evaluate("(el) => el.scrollIntoView({block: 'center'})")
+        page.evaluate("(el) => el.click()", participer_btn)
+        print("✅ Bouton 'Participer' cliqué avec succès.")
+        try:
+            page.wait_for_load_state("load", timeout=30_000)
+        except Exception:
+            pass
+        return True
     except Exception as e:
         print("❌ Aucun bouton 'Participer' détecté ou erreur :", e)
     return False
@@ -481,53 +550,58 @@ def click_participer_if_present(driver):
 def click_participer_if_qualified(driver):
     import Management.redirect_watcher
 
+    page = driver
     try:
         # 1. Vérifie le message de qualification
-        page_text = driver.execute_script(
-            """
-            return Array.from(document.querySelectorAll("span, div, p"))
+        page_text = page.evaluate("""() =>
+            Array.from(document.querySelectorAll("span, div, p"))
                 .map(e => e.innerText.trim())
                 .filter(t => t.length > 5)
                 .join(" ")
-        """
-        )
-        if re.search(r"tu\s+t.es\s+qualifi", page_text.lower()):
+        """)
+        if re.search(r"tu\s+t.es\s+qualifi", (page_text or "").lower()):
             # 1b. Attendre que le bouton Participer soit réellement visible dans le DOM
-            # (le message de qualification peut apparaître avant que le bouton soit rendu)
-            wait = WebDriverWait(driver, 30)
-            btn = wait.until(
-                EC.visibility_of_element_located(
-                    (By.CSS_SELECTOR, 'button[data-test-id="ps-common-actions-button"]')
-                )
+            btn = page.wait_for_selector(
+                'button[data-test-id="ps-common-actions-button"]',
+                state="visible",
+                timeout=30_000,
             )
-            # S'assurer également que le bouton est cliquable (pas disabled)
-            wait.until(
-                EC.element_to_be_clickable(
-                    (By.CSS_SELECTOR, 'button[data-test-id="ps-common-actions-button"]')
-                )
+            # S'assurer que le bouton n'est pas disabled
+            page.wait_for_function(
+                '(el) => !el.disabled',
+                arg=btn,
+                timeout=10_000,
             )
 
             # 2. Scroll vers le bouton
-            driver.execute_script(
-                "arguments[0].scrollIntoView({block: 'center'});", btn
-            )
+            btn.evaluate("(el) => el.scrollIntoView({block: 'center'})")
             time.sleep(0.5)
 
-            # 3. Vrai clic utilisateur simulé
-            # --- IMPORTANT: snapshot des handles AVANT le clic ---
-            base_handles = set(driver.window_handles)
+            # 3. Snapshot des pages AVANT le clic (objets Page Playwright — cohérent avec redirect_watcher migré)
+            base_handles = set(page.context.pages)
 
-            ActionChains(driver).move_to_element(btn).click().perform()
-            print("🖱️ Clic ActionChains simulé sur 'Participer'.")
+            # CTA_INTERCEPT_ONLY : interception sans navigation (tests/non-régression)
+            if is_cta_intercept_only():
+                print("🛑 CTA_INTERCEPT_ONLY=1 — bouton 'Participer' trouvé, interception OK sans clic.")
+                return False
 
+            # Clic natif Playwright (isTrusted=true), avec force=True pour bypasser
+            # l'overlay (.popup-content / .popup-container) qui intercepte les
+            # pointer-events et provoquait un TimeoutError 30s avec le clic natif
+            # standard. force=True saute le contrôle d'actionabilité (hit-test) sans
+            # recourir à un dispatch JS non fiable (isTrusted=false), qui est un
+            # signal détectable et peut perturber le traitement CDP du popup ouvert.
+            btn.click(force=True, timeout=10_000)
+            print("🖱️ Clic natif (force=True) sur 'Participer' (overlay bypass).")
+
+            # Pont BLOC 2 → redirect_watcher (hors périmètre, attend un objet shim/driver)
             switched = Management.redirect_watcher.switch_to_latest_window_and_close_others(
                 driver,
                 base_handles=base_handles,
                 timeout=12,
-                prefer_external=True
+                prefer_external=True,
             )
             print(f"🪟 Switch + close anciens onglets = {switched}")
-            # petite pause pour laisser le survey peindre son DOM
             time.sleep(0.5)
             return True
         else:
@@ -547,13 +621,15 @@ def handle_disqualification_and_retry(driver):
     Retourne True si disqualification détectée (même si le clic 'Ok' échoue),
     pour forcer un restart cohérent.
     """
+    page = driver
     page_text = ""
     try:
-        page_text = driver.find_element(By.TAG_NAME, "body").text or ""
+        page_text = page.evaluate(
+            "() => document.body ? (document.body.innerText || '') : ''"
+        ) or ""
     except Exception:
-        # fallback ultime (moins propre mais évite un faux négatif)
         try:
-            page_text = driver.page_source or ""
+            page_text = page.content() or ""
         except Exception:
             page_text = ""
 
@@ -563,17 +639,14 @@ def handle_disqualification_and_retry(driver):
 
     print(f"❌ Disqualification détectée (reason={dq_reason}). Tentative de fermeture du popup.")
     try:
-        ok_btn = WebDriverWait(driver, 5).until(
-            EC.element_to_be_clickable((By.XPATH, "//button[span[contains(.,'Ok')]]"))
+        ok_btn = page.wait_for_selector(
+            "xpath=//button[span[contains(.,'Ok')]]",
+            state="visible",
+            timeout=5_000,
         )
-        try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", ok_btn)
-        except Exception:
-            pass
-        driver.execute_script("arguments[0].click();", ok_btn)
+        ok_btn.evaluate("(el) => el.scrollIntoView({block:'center'})")
+        ok_btn.click()
         return True
     except Exception as e:
-        # Important : on renvoie True quand même (signal détecté),
-        # sinon tu auras des états “popup fermé mais pas restart / pas relance”.
         print(f"⚠️ Disqualification détectée mais clic 'Ok' impossible: {e}")
         return True

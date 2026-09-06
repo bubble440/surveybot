@@ -1,26 +1,19 @@
-# Python
 __pycache__/
 *.pyc
 *.pyo
 
-# Virtual env
 .venv/
 venv/
 .venv-wsl
 
-# IDE / OS
 .vscode/
 .DS_Store
 
-# Logs / runtime
 *.log
 logs/
 tmp/
-
-# Docker leftovers
 *.pid
 
-# snapshots / debug captures
 snapshots
 snapshots/
 debug_*.html
@@ -31,3 +24,25 @@ surveybot/nul
 
 surveybot/tools/attach_tab
 surveybot/tools/attach_tab.ps1
+
+surveybot/preselection/_license_config.py
+surveybot/_license_config.py
+
+dist/
+build/
+*.spec
+global_config.py
+accounts.json
+manifest.json
+receiver_config.json
+dist_nuitka/
+*.dist/
+*.build/
+*.onefile-build/
+*.pyd
+.nuitka_cache
+.nuitka_cache/
+dist_nuitka_dev/
+./tools/attach_tab.ps1
+dist_zip/
+dist_orchestration/

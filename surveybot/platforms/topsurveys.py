@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import os
 from typing import List
 
 from platforms.base import Platform
+
+
 
 
 class TopSurveysPlatform(Platform):
@@ -13,7 +16,9 @@ class TopSurveysPlatform(Platform):
 
     def login(self, driver, config: dict) -> bool:
         from preselection.auth_handler import login
-        login(driver, config.get("Email", ""), config.get("Password", ""))
+        email = os.getenv("EMAIL") or config.get("Email", "")
+        password = os.getenv("PASSWORD") or config.get("Password", "")
+        login(driver, email, password)
         return True
 
     def select_survey(self, driver) -> bool:
@@ -23,11 +28,11 @@ class TopSurveysPlatform(Platform):
 
     def handle_post_survey(self, driver, account_id: str) -> bool:
         from Survey.functions import _handle_topsurveys_exclusion_popup
-        return bool(_handle_topsurveys_exclusion_popup(driver, account_id))
+        return bool(_handle_topsurveys_exclusion_popup(driver, account_id, platform=self))
 
     def is_on_platform(self, driver) -> bool:
         try:
-            url = (driver.current_url or "").lower()
+            url = (driver.url or "").lower()
             return any(d in url for d in self.get_domains())
         except Exception:
             return False

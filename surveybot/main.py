@@ -1,23 +1,146 @@
+import sys, os
+
+# ── Mode CLI --query-cooldown (invoqué par wake_scheduler.ps1) ───────────────
+# Point d'entrée dédié : sortie JSON du statut cooldown par compte, sans aucune
+# initialisation bot (ni load_config, ni check_license, ni navigateur, ni lock).
+# account_state.load_state() n'a besoin que de global_config et _license_config,
+# tous deux compilés dans le binaire Nuitka — aucune dépendance externe requise.
+if len(sys.argv) >= 2 and sys.argv[1] == "--query-cooldown":
+    import json as _json, time as _time
+    from State.account_state import load_state as _load_state, _ts_to_unix
+    _now = int(_time.time())
+    _results = []
+    for _aid in sys.argv[2:]:
+        try:
+            _st = _load_state(_aid)
+            _cu = _st.get("cooldown_until_ts", "1970-01-01T00:00:00")
+            _results.append({
+                "account_id": _aid,
+                "cooldown_until_ts": _cu,
+                "is_expired": _ts_to_unix(_cu) < _now,
+            })
+        except Exception as _e:
+            _results.append({"account_id": _aid, "error": str(_e), "is_expired": False})
+    print(_json.dumps(_results))
+    sys.exit(0)
+
+# ── Mode CLI --selftest-tz (diagnostic embarquement tzdata / Nuitka) ─────────
+# Point d'entrée dédié : vérifie que ZoneInfo("Europe/Paris") se résout dans CE
+# binaire, sans navigateur/licence/lock/Postgres. Ajouté le 24/07/2026 suite au
+# diagnostic tzdata absent de requirements.txt et de nuitka_build_release.ps1
+# (voir Utils/DEPLOIEMENT_BAREMETAL_DECISIONS.md section 4) — conservé en
+# permanence comme mode de diagnostic réutilisable après tout changement de
+# dépendances liées aux fuseaux horaires.
+if len(sys.argv) >= 2 and sys.argv[1] == "--selftest-tz":
+    from Management.pause_policy import PausePolicy, resolve_pause_seconds
+    try:
+        secs = resolve_pause_seconds(PausePolicy.DAILY_RESET)
+        print(f"TZ_SELFTEST_OK seconds_until_midnight_europe_paris={secs}")
+        sys.exit(0)
+    except Exception as e:
+        print(f"TZ_SELFTEST_FAIL {type(e).__name__}: {e}")
+        sys.exit(1)
+
 print("BOOT: container démarré.", flush=True)
-import os
-IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
-import sys, json, time, traceback
-from urllib.parse import urlparse
+# ── Diagnostic attach : snapshot Email/Password au tout premier instant du
+# process, avant le moindre import pouvant toucher os.environ (load_config,
+# global_config, ...). Permet de trancher si les valeurs injectées par
+# attach_tab.ps1 sont déjà absentes ici (problème en amont : session/ps1) ou
+# si elles disparaissent plus tard (problème d'initialisation Python). Gaté
+# sur BROWSER_MODE=attach uniquement — jamais de mot de passe en clair.
+if os.getenv("BROWSER_MODE", "").strip().lower() == "attach":
+    from Survey.log_utils import log_debug as _diag_log_debug
+    _diag_email0 = os.getenv("Email", "")
+    _diag_pwd0 = os.getenv("Password", "")
+    _diag_log_debug(
+        "[DIAG_ENV]",
+        f"entrée process (avant tout import) : "
+        f"Email={'present' if _diag_email0 else 'ABSENT'} (len={len(_diag_email0)}), "
+        f"Password={'present' if _diag_pwd0 else 'ABSENT'} (len={len(_diag_pwd0)})",
+    )
+    del _diag_email0, _diag_pwd0
+
+# ⚠ Doit s'exécuter AVANT tout import qui lit une constante d'environnement au
+# niveau module (config.py: RUN_ENV/BROWSER_MODE, State/account_state.py via
+# launch.py: DATABASE_URL/STATE_BACKEND/STATE_TABLE, license_guard.py appelé
+# ci-dessous). Réinjecte la config globale dans os.environ sans écraser une
+# valeur déjà présente (accounts.json, script de lancement, secrets Fly.io).
 from preselection.config_loader import load_config
-from launch import start_heartbeat_thread, acquire_account_lock_or_exit, mark_bot_running
-from launch import install_sigterm_handler, start_runtime_guard, launch_driver_or_fail, init_session_and_enter_surveys, install_sigusr1_handler, restore_session_cookies
-from launch import start_hot_reload_thread, run_main_loop, build_notifier, soft_restart, start_debug_http_server
-from platforms import get_platform
-from Management.guards.runtime_guard import get_guard
-from config import is_attach_mode, RUN_ENV, RUN_MODE, BROWSER_MODE, is_prod_like, should_run_guard_monitor, should_run_heartbeat, should_run_hot_reload, log_config_summary
 
-if IS_LOCAL:
+# En mode attach, toutes les variables d'environnement nécessaires sont déjà
+# injectées par le script de lancement PowerShell (attach_tab.ps1) avant
+# l'exécution de ce script : le chargement du fichier de configuration prod
+# (receiver_config.json, secrets) est donc inutile et est sauté. On détecte
+# le mode attach directement via la variable d'environnement BROWSER_MODE,
+# sans importer config.py (pas encore garanti chargeable à ce stade).
+if os.getenv("BROWSER_MODE", "").strip().lower() != "attach":
+    load_config()
+
+from config import is_attach_mode, RUN_ENV, BROWSER_MODE, is_prod_like, should_run_guard_monitor, should_run_heartbeat, log_config_summary
+
+if is_attach_mode():
     ACCOUNT_ID = "local_debug"
 else:
     ACCOUNT_ID = os.getenv("ACCOUNT_ID")
     if not ACCOUNT_ID:
-        raise RuntimeError("ACCOUNT_ID manquant en environnement non-local")
+        raise RuntimeError("ACCOUNT_ID manquant en prod (BROWSER_MODE != attach)")
+
+# Vérification du seuil de redémarrages automatiques (crash-loop) placée AVANT
+# check_license_or_exit() ci-dessous : check_license_or_exit() peut sys.exit()
+# très tôt (Postgres injoignable, licence désactivée, quota atteint) et ces
+# arrêts précoces doivent être comptés comme n'importe quel autre crash, sinon
+# seul NSSM (AppExit Default -> Restart) pilote la boucle de redémarrage sans
+# jamais déclencher EXIT_FATAL. Ne pas dupliquer cet appel plus bas dans main() :
+# une 2e lecture dans le même run verrait le sentinel EXIT_CRASH que la 1re
+# vient d'écrire et fausserait le compteur.
+if not is_attach_mode():
+    from bot_supervisor import (
+        check_and_record_start, record_exit, EXIT_FATAL,
+        clear_manual_stop_marker, purge_freeze_resume_marker,
+        is_account_frozen,
+    )
+    from launch import build_notifier
+    # Ce démarrage (nssm start explicite ou redémarrage machine) vaut reprise :
+    # lève le marqueur posé par stop_bot_manual.ps1, voir clear_manual_stop_marker().
+    clear_manual_stop_marker(ACCOUNT_ID)
+    # Purge d'un marqueur de reprise du mode gel (FREEZE_ON_TRIGGER) résiduel d'un
+    # lancement précédent, AVANT toute boucle de gel — cf. Management/guards/
+    # freeze_gate.py et purge_freeze_resume_marker(). Sauté si une autre instance
+    # de ce compte est actuellement gelée (is_account_frozen(), cf.
+    # bot_supervisor.mark_account_frozen()) : ce process sera de toute façon
+    # rejeté plus loin par acquire_account_lock_or_exit() (launch.py), et purger
+    # ici supprimerait sans discernement un marqueur de reprise que l'opérateur
+    # vient de poser (resume_bot_freeze.ps1) pour débloquer l'instance gelée,
+    # avant même que celle-ci ait pu le consommer (poll 5s).
+    if not is_account_frozen(ACCOUNT_ID):
+        purge_freeze_resume_marker(ACCOUNT_ID)
+    _should_abort, _restart_count = check_and_record_start(ACCOUNT_ID)
+    if _should_abort:
+        _abort_msg = (
+            f"🚨 BOT {ACCOUNT_ID} : seuil de redémarrages automatiques dépassé "
+            f"({_restart_count} redémarrages en fenêtre courte). "
+            "Arrêt FATAL — vérifier le proxy, le compte ou la plateforme."
+        )
+        print(_abort_msg)
+        try:
+            build_notifier(None)(_abort_msg)
+        except Exception:
+            pass
+        record_exit(ACCOUNT_ID, EXIT_FATAL, "restart_threshold_exceeded")
+        sys.exit(EXIT_FATAL)
+
+from preselection.license_guard import check_license_or_exit
+if not is_attach_mode():
+    check_license_or_exit()
+
+import sys, json, time, traceback
+from urllib.parse import urlparse
+from launch import start_heartbeat_thread, acquire_account_lock_or_exit, mark_bot_running
+from launch import install_sigterm_handler, install_sigint_handler, start_runtime_guard, launch_driver_or_fail, init_session_and_enter_surveys, install_sigusr1_handler
+from launch import run_main_loop, build_notifier, soft_restart, start_debug_http_server, setup_logging
+from platforms import get_platform
+from Management.guards.runtime_guard import get_guard
 
 # 1) stdout en line-buffering si dispo (Python 3.7+)
 if hasattr(sys.stdout, "reconfigure"):
@@ -26,52 +149,7 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-def _attach_tab_score(driver) -> tuple[int, int]:
-    """Score simple: nb d'éléments actionnables + taille texte."""
-    try:
-        actionable = driver.execute_script("""
-            try {
-              const sel = "input,select,textarea,button,[role='button'],[role='radio'],[role='checkbox'],label[for]";
-              return document.querySelectorAll(sel).length || 0;
-            } catch(e) { return 0; }
-        """)
-    except Exception:
-        actionable = 0
 
-    try:
-        text_len = driver.execute_script("""
-            try { return (document.body && (document.body.innerText||'').length) || 0; }
-            catch(e) { return 0; }
-        """)
-    except Exception:
-        text_len = 0
-
-    return int(actionable), int(text_len)
-
-def _attach_select_best_tab(driver) -> None:
-    """
-    Selenium ne sait pas 'prendre l'onglet actif' de Chrome de façon fiable.
-    Donc: on parcourt tous les onglets et on choisit celui qui ressemble le plus
-    à une page testable (beaucoup d'inputs/texte).
-    """
-    best = None  # (score_tuple, handle, url)
-    for h in list(getattr(driver, "window_handles", []) or []):
-        try:
-            driver.switch_to.window(h)
-            url = driver.current_url or ""
-            score = _attach_tab_score(driver)
-            if (best is None) or (score > best[0]):
-                best = (score, h, url)
-        except Exception:
-            continue
-
-    if best:
-        score, h, url = best
-        try:
-            driver.switch_to.window(h)
-        except Exception:
-            pass
-        print(f"[ATTACH] Tab sélectionné score={score} url={_attach_display_url(url)}")
 
 def _attach_is_user_web_url(url: str) -> bool:
     u = (url or "").strip().lower()
@@ -140,7 +218,7 @@ def _attach_pick_ui_active_tab(driver, handles):
             continue
 
         try:
-            url = driver.current_url or ""
+            url = driver.url or ""
         except Exception:
             url = ""
 
@@ -176,211 +254,8 @@ def _attach_pick_ui_active_tab(driver, handles):
 
     return None
 
-def _attach_select_tab(driver, *, exclude_url_pred=None) -> None:
-    """
-    Sélection d'onglet en mode attach (LOCAL).
 
-    Objectif: comportement prédictible (pas de pseudo "focus" Selenium).
-
-    Priorités (dans l'ordre):
-    1) ATTACH_TAB_URL_CONTAINS           => 1er onglet dont l'URL contient le substring
-    2) ATTACH_TAB_TITLE_CONTAINS         => 1er onglet dont document.title contient le substring (case-insensitive)
-    3) ATTACH_TAB_DOM_CONTAINS           => 1er onglet dont body.innerText contient le substring (case-insensitive, tronqué)
-    4) ATTACH_TAB_SELECTOR:
-        - "pick" / "prompt": affiche la liste + demande un index (LOCAL only)
-        - "current": no-op (on garde l'onglet courant du driver, si http(s))
-        - "last"/"newest": dernier onglet http(s)
-        - "best": ancien scoring (inputs + texte)
-        - "<index>": index numérique dans window_handles
-    Fallback final: last_web (dernier http(s)).
-    """
-    url_contains = (os.getenv("ATTACH_TAB_URL_CONTAINS") or "").strip()
-    if _attach__is_disabled_token(url_contains):
-        url_contains = ""
-
-    title_contains = (os.getenv("ATTACH_TAB_TITLE_CONTAINS") or "").strip()
-    if _attach__is_disabled_token(title_contains):
-        title_contains = ""
-
-    dom_contains = (os.getenv("ATTACH_TAB_DOM_CONTAINS") or "").strip()
-    if _attach__is_disabled_token(dom_contains):
-        dom_contains = ""
-
-    mode = (os.getenv("ATTACH_TAB_SELECTOR", "current") or "current").strip().lower()
-
-    handles = list(getattr(driver, "window_handles", []) or [])
-    if not handles:
-        return
-
-    def _is_candidate(u: str) -> bool:
-        return _attach_is_user_web_url(u) and not (exclude_url_pred and exclude_url_pred(u))
-
-    def _switch(i: int) -> bool:
-        try:
-            h = handles[i]
-            driver.switch_to.window(h)
-            return True
-        except Exception:
-            return False
-
-    def _safe_url() -> str:
-        try:
-            return driver.current_url or ""
-        except Exception:
-            return ""
-
-    def _safe_title() -> str:
-        try:
-            return driver.title or ""
-        except Exception:
-            return ""
-
-    def _safe_body_text_prefix(max_chars: int = 8000) -> str:
-        try:
-            return (
-                driver.execute_script(
-                    "return (document.body && (document.body.innerText||'')) ? "
-                    "(document.body.innerText||'').slice(0, arguments[0]) : '';",
-                    int(max_chars),
-                )
-                or ""
-            )
-        except Exception:
-            return ""
-
-    def _pick_last_web() -> bool:
-        last_web = None  # (idx, url)
-        for i in range(len(handles)):
-            if not _switch(i):
-                continue
-            u = _safe_url()
-            if _is_candidate(u):
-                last_web = (i, u)
-        if last_web is not None:
-            i, _ = last_web
-            _switch(i)
-            print(f"[ATTACH] Tab=last_web idx={i} url={_attach_display_url(_safe_url())}")
-            return True
-        return False
-
-    # 1) URL contains (prioritaire)
-    if url_contains:
-        for i in range(len(handles)):
-            if not _switch(i):
-                continue
-            u = _safe_url()
-            if _is_candidate(u) and (url_contains in u):
-                print(f"[ATTACH] Tab=url_contains idx={i} url={_attach_display_url(u)}")
-                return
-        print(f"[ATTACH] Tab=url_contains NOT FOUND ({url_contains})")
-
-    # 2) Title contains (utile quand plusieurs onglets ont la même URL mais titres différents)
-    if title_contains:
-        needle = title_contains.lower()
-        for i in range(len(handles)):
-            if not _switch(i):
-                continue
-            u = _safe_url()
-            if not _is_candidate(u):
-                continue
-            t = _safe_title().strip().lower()
-            if needle and (needle in t):
-                print(f"[ATTACH] Tab=title_contains idx={i} title={_safe_title()!r} url={_attach_display_url(u)}")
-                return
-        print(f"[ATTACH] Tab=title_contains NOT FOUND ({title_contains})")
-
-    # 3) DOM contains (solution robuste pour 3 onglets avec EXACTEMENT la même URL)
-    if dom_contains:
-        needle = dom_contains.lower()
-        for i in range(len(handles)):
-            if not _switch(i):
-                continue
-            u = _safe_url()
-            if not _is_candidate(u):
-                continue
-            txt = _safe_body_text_prefix(8000).lower()
-            if needle and (needle in txt):
-                print(f"[ATTACH] Tab=dom_contains idx={i} url={_attach_display_url(u)}")
-                return
-        print(f"[ATTACH] Tab=dom_contains NOT FOUND ({dom_contains})")
-
-    # 4) Mode selector
-    if mode in ("pick", "prompt", "menu"):
-        if not IS_LOCAL:
-            # attach est déja interdit en prod, mais on garde une safety net
-            print("[ATTACH] Tab=pick ignored (non-local)")
-        else:
-            web_handles = []  # mapping: display_index -> real handles[] index
-            for i in range(len(handles)):
-                if not _switch(i):
-                    continue
-                u = _safe_url()
-                if _is_candidate(u):
-                    web_handles.append((i, u, _safe_title().strip().replace("\n", " "), _attach_tab_score(driver)))
-            print("[ATTACH] Tabs disponibles (idx | score=(actionables,text) | title | url):")
-            for d, (i, u, t, sc) in enumerate(web_handles):
-                print(f"[ATTACH]  {d:02d} | score={sc} | title={t[:80]!r} | url={_attach_display_url(u)}")
-
-            choice = (input("[ATTACH] Choisis l'index d'onglet à utiliser: ") or "").strip()
-            if choice.isdigit():
-                didx = int(choice)
-                if 0 <= didx < len(web_handles):
-                    idx = web_handles[didx][0]
-                    _switch(idx)
-                    u = _safe_url()
-                    if _is_candidate(u):
-                        print(f"[ATTACH] Tab=pick didx={didx} idx={idx} url={_attach_display_url(u)}")
-                        return
-                    print(f"[ATTACH] Tab=pick didx={didx} idx={idx} non-web url={_attach_display_url(u)} -> fallback last_web")
-                else:
-                    print(f"[ATTACH] Tab=pick out-of-range={didx!r} -> fallback last_web")
-            else:
-                print(f"[ATTACH] Tab=pick invalid={choice!r} -> fallback last_web")
-
-            if _pick_last_web():
-                return
-
-    if mode in ("current", "active", "focused"):
-        # No-op prédictible: on ne tente PAS de deviner le focus UI.
-        u = _safe_url()
-        if _is_candidate(u):
-            print(f"[ATTACH] Tab=current(no-op) url={_attach_display_url(u)}")
-            return
-        # si on est tombé sur chrome://tab-search etc., on fallback
-        if _pick_last_web():
-            return
-        return
-
-    if mode in ("last", "newest"):
-        if _pick_last_web():
-            return
-        # fallback brut
-        _switch(len(handles) - 1)
-        print(f"[ATTACH] Tab=last idx={len(handles)-1} url={_attach_display_url(_safe_url())}")
-        return
-
-    if mode == "best":
-        _attach_select_best_tab(driver)
-        return
-
-    if mode.isdigit():
-        idx = int(mode)
-        idx = max(0, min(idx, len(handles) - 1))
-        _switch(idx)
-        u = _safe_url()
-        if _is_candidate(u):
-            print(f"[ATTACH] Tab=index idx={idx} url={_attach_display_url(u)}")
-            return
-        print(f"[ATTACH] Tab=index idx={idx} non-web url={_attach_display_url(u)} -> fallback last_web")
-        if _pick_last_web():
-            return
-        return
-
-    # Fallback final
-    if _pick_last_web():
-        return
-
-def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
+def run_attach_takeover(driver, *, api_key: str, account_id: str, platform=None) -> None:
     """
     Mode takeover: on n'ouvre AUCUNE URL, on n'exécute PAS la présélection TopSurveys.
     On agit uniquement sur la page courante (celle que tu as ouverte à la main).
@@ -395,13 +270,14 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
     _ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
     survey_solver._current_survey_ctx = _ctx
 
-    _attach_select_tab(driver, exclude_url_pred=lambda u: "topsurveys.app" in (u or "").lower())
     driver._survey_account_id = account_id
 
     from Survey.functions import _handle_topsurveys_exclusion_popup
 
+    _is_topsurveys = platform is None or platform.get_platform_name() == "topsurveys"
+
     max_steps = int(os.getenv("ATTACH_MAX_STEPS", "100"))
-    print(f"[ATTACH] takeover loop start (max_steps={max_steps}) url={_attach_display_url(getattr(driver,'current_url',''))}")
+    print(f"[ATTACH] takeover loop start (max_steps={max_steps}) url={_attach_display_url(getattr(driver,'url',''))}")
     for i in range(1, max_steps + 1):
         try:
             # Préqualification Cint/QPS : passer directement au sondage si disponible
@@ -410,23 +286,49 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
                 time.sleep(2.0)
                 continue
 
-            # === RETOUR TOPSURVEYS ? ===            
-            try:
-                _cur_url = (driver.current_url or "").lower()
-                if "topsurveys.app" in _cur_url:
-                    # Écran "Courte pause" (vérification téléphone/PIN) : laisser
-                    # execute_survey_page() le traiter via ses handlers dédiés.
-                    _has_phone_screen = bool(driver.execute_script(
-                        "return !!document.querySelector('div.phone-verification-container');"
-                    ))
-                    if not _has_phone_screen:
-                        _handle_topsurveys_exclusion_popup(driver, account_id)
-                        print(f"[ATTACH] Retour TopSurveys détecté step={i} → sortie boucle.")
-                        break
-            except Exception as _e:
-                print(f"[ATTACH][TOPSURVEYS_CHECK] erreur: {_e}")
-                break
-
+            if _is_topsurveys:
+                # === RETOUR TOPSURVEYS ? === (chemin existant — inchangé)
+                try:
+                    _cur_url = (driver.url or "").lower()
+                    if "topsurveys.app" in _cur_url:
+                        # Écran "Courte pause" (vérification téléphone/PIN) : laisser
+                        # execute_survey_page() le traiter via ses handlers dédiés.
+                        _has_phone_screen = bool(driver.evaluate("() => !!document.querySelector(\'div.phone-verification-container\')"))
+                        # Notification opérateur (une seule fois par occurrence,
+                        # dédupliquée dans notify_phone_verification_screen) si le
+                        # sous-écran détecté est bien la demande de numéro de
+                        # téléphone (critère DOM précis, distinct du gate ci-dessus
+                        # qui reste inchangé pour couvrir aussi l'écran PIN).
+                        try:
+                            survey_executor.notify_phone_verification_screen(driver, account_id)
+                        except Exception as _phone_notif_exc:
+                            print(f"[ATTACH][PHONE_VERIF] notification échouée: {_phone_notif_exc}")
+                        if not _has_phone_screen:
+                            _handle_topsurveys_exclusion_popup(driver, account_id, platform=platform)
+                            print(f"[ATTACH] Retour TopSurveys détecté step={i} → sortie boucle.")
+                            break
+                except Exception as _e:
+                    print(f"[ATTACH][TOPSURVEYS_CHECK] erreur: {_e}")
+                    break
+            else:
+                # Non implémenté pour cette plateforme (ex: ySense) : on ignore ce check
+                # ponctuellement plutôt que d'interrompre toute la boucle de résolution,
+                # qui doit continuer à fonctionner sur la page courante indépendamment
+                # de la disponibilité de ce hook.
+                try:
+                    if platform.is_on_platform(driver):
+                        if platform.handle_post_survey(driver, account_id):
+                            print(
+                                f"[ATTACH] Retour plateforme ({platform.get_platform_name()}) "
+                                f"détecté step={i} → sortie boucle."
+                            )
+                            break
+                except NotImplementedError:
+                    pass
+                except Exception as _e:
+                    print(f"[ATTACH][PLATFORM_CHECK] erreur: {_e}")
+                    break
+                
             # === STRICT GUARD CHECK ===
             # Détecte les pages non supportées (image_evaluation, drag_drop, etc.)
             is_strict, reason = difficulty_guard.detect_strict_survey(driver)
@@ -441,6 +343,21 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
                     captcha_behavior = get_captcha_behavior()
 
                     if captcha_behavior == "auto_2captcha":
+                        if not difficulty_guard.is_real_recaptcha_present(driver):
+                            print("[ATTACH][CAPTCHA] Pas de reCAPTCHA Google (iframe/sitekey) détecté → tentative CAPTCHA image-texte (normal_captcha)")
+                            try:
+                                from captcha.normal_captcha import handle_captcha as handle_normal_captcha
+                                normal_handled = handle_normal_captcha(driver)
+                            except Exception as e:
+                                print(f"[ATTACH][CAPTCHA] Erreur inattendue normal_captcha: {e}")
+                                normal_handled = False
+                            if normal_handled:
+                                print("[ATTACH][CAPTCHA] ✅ CAPTCHA image-texte traité — reprise de la boucle")
+                                continue
+                            else:
+                                print("[ATTACH][CAPTCHA] ❌ Aucun CAPTCHA image-texte trouvé/résolu → abandon du survey")
+                                break
+
                         print("[ATTACH][CAPTCHA] reCAPTCHA détecté → tentative 2Captcha...")
                         try:
                             from captcha.recaptcha_handler import solve_recaptcha_v2_auto
@@ -466,16 +383,11 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
                                     # Sleep fixe insuffisant — Decipher peut prendre 3-8s
                                     # pour soumettre le formulaire et charger la page suivante.
                                     # On attend le changement d'URL plutôt qu'un délai arbitraire.
-                                    _url_before = driver.current_url
-                                    from selenium.webdriver.support.ui import WebDriverWait
+                                    _url_before = driver.url
                                     try:
-                                        WebDriverWait(driver, 10).until(
-                                            lambda d: d.current_url != _url_before
-                                        )
-                                        print(f"[ATTACH][CAPTCHA] ✅ URL changée → {driver.current_url[:60]}")
+                                        driver.wait_for_url(lambda url: url != _url_before, timeout=10000)
+                                        print(f"[ATTACH][CAPTCHA] ✅ URL changée → {driver.url[:60]}")
                                     except Exception:
-                                        # Pas de changement d'URL dans les 10s — on continue quand même
-                                        # (certaines plateformes rechargent la même URL sans captcha)
                                         print("[ATTACH][CAPTCHA] ⚠️ URL inchangée après 10s — on continue")
                                     time.sleep(0.5)  # micro-pause DOM post-navigation
                                 else:
@@ -489,7 +401,7 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
 
                     elif captcha_behavior == "pause":
                         # LOCAL interactif : pause manuelle (anti-boucle sur même URL)
-                        captcha_url = driver.current_url or ""
+                        captcha_url = driver.url or ""
                         last_captcha_url = getattr(driver, "_last_captcha_pause_url", None)
                         if last_captcha_url == captcha_url:
                             print("[ATTACH][CAPTCHA] Déjà traité sur cette URL → continue")
@@ -524,16 +436,14 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
 
             # --- Détection page d'erreur applicative (Toluna: div.errorPage, Confirmit: div.errorpage-wrapper) ---
             try:
-                from selenium.webdriver.common.by import By
-                _error_els = driver.find_elements(
-                    By.XPATH,
-                    "//*["
+                _error_els = driver.query_selector_all(
+                    "xpath=//*["
                     "contains(concat(' ', normalize-space(@class), ' '), ' errorPage ') or "
                     "contains(concat(' ', normalize-space(@class), ' '), ' errorpage-wrapper ')"
-                    "]",
+                    "]"
                 )
                 if _error_els:
-                    print(f"[PLATFORM-ERR] Page d'erreur applicative détectée (class~='errorpage') step={i} url={_attach_display_url(driver.current_url)} → sortie boucle.")
+                    print(f"[PLATFORM-ERR] Page d'erreur applicative détectée (class~='errorpage') step={i} url={_attach_display_url(driver.url)} → sortie boucle.")
                     break
             except Exception:
                 pass
@@ -541,27 +451,36 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
             # --- Détection page d'erreur applicative Decipher/YourSurveyNow (div.survey-error visible) ---
             try:
                 _decipher_err_els = [
-                    el for el in driver.find_elements(By.CSS_SELECTOR, "div.survey-error")
-                    if el.is_displayed()
+                    el for el in driver.query_selector_all("div.survey-error")
+                    if el.is_visible()
                 ]
                 if _decipher_err_els:
-                    try:
-                        _derr_txt = (_decipher_err_els[0].text or "").strip()[:200]
-                    except Exception:
-                        _derr_txt = ""
-                    print(f"[PLATFORM-ERR] Page d'erreur Decipher (div.survey-error) step={i} url={_attach_display_url(driver.current_url)} texte={_derr_txt!r} → sortie boucle.")
-                    break
+                    _has_actionable_q = driver.query_selector(
+                        "div.question input[type='radio'], div.question input[type='checkbox'], "
+                        "div.question input[type='text'], div.question textarea, div.question select"
+                    ) is not None
+                    if not _has_actionable_q:
+                        try:
+                            _derr_txt = (_decipher_err_els[0].inner_text() or "").strip()[:200]
+                        except Exception:
+                            _derr_txt = ""
+                        print(f"[PLATFORM-ERR] Page d'erreur Decipher (div.survey-error) step={i} url={_attach_display_url(driver.url)} texte={_derr_txt!r} → sortie boucle.")
+                        break
             except Exception:
                 pass
 
-            ok = survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_ctx)
+            ok = survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_ctx, platform=platform)
             _ctx.maybe_update_summary()                                           # ← ajouter cette ligne
-            print(f"[ATTACH] step={i}/{max_steps} ok={ok} url={_attach_display_url(driver.current_url)}")
+            print(f"[ATTACH] step={i}/{max_steps} ok={ok} url={_attach_display_url(driver.url)}")
+
+            if not ok and survey_executor._attach_disq_stop_requested:
+                print(f"[ATTACH][DISQ] Page de disqualification détectée → arrêt immédiat boucle step={i}.")
+                break
 
             if not ok:
                 try:
-                    _is_isd_gate = bool(driver.execute_script(
-                        """
+                    _is_isd_gate = bool(driver.evaluate(
+                        """() => {
                         const isVisible = (el) => {
                           if (!el) return false;
                           const s = window.getComputedStyle(el);
@@ -573,7 +492,7 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
                         if (!isdRoot) return false;
                         const video = isdRoot.querySelector('video');
                         return !!(video && isVisible(video));
-                        """
+                        }"""
                     ))
                 except Exception:
                     _is_isd_gate = False
@@ -581,6 +500,22 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
                     print(f"[ATTACH][VIDEO_GATE] Page vidéo ISD non résolvable détectée step={i} → sortie boucle.")
                     break
         except Exception as e:
+            # Diagnostic additif : ne change pas le comportement (le break reste
+            # inconditionnel) — capture la stack trace complète et l'état des
+            # threads actifs pour identifier, à la prochaine occurrence, l'appel
+            # Playwright précis en cause et un éventuel accès concurrent au même
+            # driver/page depuis un autre thread (API sync Playwright non thread-safe).
+            import traceback as _traceback, threading as _threading
+            from Survey.log_utils import log_debug as _log_debug
+            _other_threads = [
+                t.name for t in _threading.enumerate()
+                if t is not _threading.current_thread()
+            ]
+            _log_debug(
+                "[ATTACH][ERROR_TRACE]",
+                f"step={i} thread={_threading.current_thread().name} "
+                f"other_active_threads={_other_threads}\n{_traceback.format_exc()}",
+            )
             print(f"[ATTACH][ERROR] step={i} {type(e).__name__}: {e}")
             break
 
@@ -591,57 +526,529 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
 
 
 def _get_attach_route() -> str:
-    if os.getenv("ATTACH_ROUTE_PROMPT") != "1":
-        return "resolution"
+    """
+    Résolution de la route attach, par ordre de priorité :
+      1) ATTACH_ROUTE env var (valeur persistante : "preselection" | "resolution" | "login")
+         → définie par l'utilisateur dans le script de lancement, jamais redemandée.
+      2) ATTACH_ROUTE_PROMPT=1 → prompt interactif dans le terminal.
+         Le choix est écrit dans ATTACH_ROUTE via os.environ pour que les relances
+         dans le même processus héritent de la valeur sans redemander.
+      3) Défaut silencieux : "resolution".
+    """
+    # Priorité 1 : valeur déjà fixée (env de lancement ou prompt précédent)
+    fixed = (os.getenv("ATTACH_ROUTE") or "").strip().lower()
+    if fixed in {"preselection", "resolution", "login"}:
+        return fixed
 
-    print("[ATTACH] Choisis la route de takeover :")
-    print("  1) preselection")
-    print("  2) resolution")
-    choice = (input("Choix [1/2, défaut=2]: ") or "").strip().lower()
+    # Priorité 2 : prompt interactif si demandé
+    if os.getenv("ATTACH_ROUTE_PROMPT") == "1":
+        print("[ATTACH] Choisis la route de takeover :")
+        print("  1) preselection  (popup déjà affiché)")
+        print("  2) resolution    (déjà sur la page survey)")
+        print("  3) login         (login + sélection survey complète — BLOC 1 natif Playwright)")
+        choice = (input("Choix [1/2/3, défaut=2]: ") or "").strip().lower()
 
-    if choice in {"1", "preselection"}:
-        return "preselection"
+        if choice in {"1", "preselection"}:
+            route = "preselection"
+        elif choice in {"3", "login"}:
+            route = "login"
+        else:
+            if choice not in {"", "2", "resolution"}:
+                print(f"[ATTACH] choix invalide={choice!r} -> fallback resolution")
+            route = "resolution"
 
-    if choice not in {"", "2", "resolution"}:
-        print(f"[ATTACH] choix invalide={choice!r} -> fallback resolution")
+        # Mémoriser dans l'env du processus pour les relances dans la même session
+        os.environ["ATTACH_ROUTE"] = route
+        print(f"[ATTACH] route={route!r} mémorisée (ATTACH_ROUTE). Modifier la var env pour changer.")
+        return route
+
+    # Priorité 3 : défaut silencieux
     return "resolution"
 
 
-def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str) -> None:
-    """Attach takeover dédié au popup de présélection TopSurveys déjà affiché."""
+
+def _attach_select_tab_pw(context, *, exclude_url_pred=None):
+    """
+    Sélection d'onglet en mode attach Playwright natif.
+    Retourne la Page sélectionnée (Playwright native, pas un shim).
+    Même logique de priorité que _attach_select_tab mais sans API Selenium.
+    """
+    url_contains = (os.getenv("ATTACH_TAB_URL_CONTAINS") or "").strip()
+    if _attach__is_disabled_token(url_contains):
+        url_contains = ""
+
+    title_contains = (os.getenv("ATTACH_TAB_TITLE_CONTAINS") or "").strip()
+    if _attach__is_disabled_token(title_contains):
+        title_contains = ""
+
+    dom_contains = (os.getenv("ATTACH_TAB_DOM_CONTAINS") or "").strip()
+    if _attach__is_disabled_token(dom_contains):
+        dom_contains = ""
+
+    mode = (os.getenv("ATTACH_TAB_SELECTOR", "current") or "current").strip().lower()
+
+    pages = context.pages
+    if not pages:
+        return context.new_page()
+
+    def _is_candidate(p) -> bool:
+        u = (p.url or "").lower()
+        if not (u.startswith("http://") or u.startswith("https://")):
+            return False
+        return not (exclude_url_pred and exclude_url_pred(p.url))
+
+    def _safe_body_text(p, max_chars: int = 8000) -> str:
+        try:
+            return (
+                p.evaluate(
+                    f"() => (document.body && document.body.innerText || '').slice(0, {max_chars})"
+                ) or ""
+            )
+        except Exception:
+            return ""
+
+    def _score(p) -> tuple:
+        try:
+            actionable = p.evaluate(
+                "() => { try { return document.querySelectorAll("
+                "\"input,select,textarea,button,[role='button'],[role='radio'],[role='checkbox'],label[for]\""
+                ").length || 0; } catch(e) { return 0; } }"
+            ) or 0
+        except Exception:
+            actionable = 0
+        try:
+            text_len = p.evaluate(
+                "() => { try { return (document.body && (document.body.innerText||'').length) || 0; } catch(e) { return 0; } }"
+            ) or 0
+        except Exception:
+            text_len = 0
+        return int(actionable), int(text_len)
+
+    def _last_web():
+        for p in reversed(pages):
+            if _is_candidate(p):
+                print(f"[ATTACH_PW] Tab=last_web url={_attach_display_url(p.url)}")
+                return p
+        return None
+
+    def _is_page_ready(p) -> bool:
+        try:
+            return p.evaluate("() => document.readyState") == "complete"
+        except Exception:
+            return False
+
+    def _last_web_ready(timeout_s: float = 2.0, poll_s: float = 0.15):
+        """
+        Variante additive de _last_web() : parmi les onglets candidats (mêmes
+        critères que _is_candidate), ne retient que ceux dont document.readyState
+        vaut "complete" au moment de la lecture, avec budget borné pour laisser le
+        temps à un onglet encore en chaîne de redirection (ex: panel -> domaine
+        racine -> page survey finale) de se stabiliser plutôt que d'être retenu sur
+        une URL transitoire qui satisfait _is_candidate sans porter le contenu réel.
+
+        Cause confirmée (attach CDP fraîche, route=resolution) : _last_web() lit
+        p.url en direct sans vérifier l'état de chargement ; un onglet encore en
+        transit peut transitoirement passer le filtre URL de _is_candidate et être
+        choisi à la place de l'onglet réellement affiché et chargé. _last_web()
+        elle-même n'est pas modifiée ; cette variante est appelée à la place aux
+        points d'appel concernés par ce bug.
+        """
+        import time as _time_lw
+
+        deadline = _time_lw.time() + max(0.0, timeout_s)
+        last_seen = None
+        while _time_lw.time() < deadline:
+            for p in reversed(pages):
+                if not _is_candidate(p):
+                    continue
+                last_seen = last_seen or p
+                if _is_page_ready(p):
+                    print(f"[ATTACH_PW] Tab=last_web_ready url={_attach_display_url(p.url)}")
+                    return p
+            _time_lw.sleep(poll_s)
+        if last_seen is not None:
+            print(
+                f"[ATTACH_PW] Tab=last_web_ready timeout={timeout_s}s "
+                f"fallback last_seen url={_attach_display_url(last_seen.url)}"
+            )
+        return last_seen
+
+    # 1) URL contains
+    if url_contains:
+        for p in pages:
+            if _is_candidate(p) and url_contains in (p.url or ""):
+                print(f"[ATTACH_PW] Tab=url_contains url={_attach_display_url(p.url)}")
+                return p
+        print(f"[ATTACH_PW] Tab=url_contains NOT FOUND ({url_contains})")
+
+    # 2) Title contains
+    if title_contains:
+        needle = title_contains.lower()
+        for p in pages:
+            if _is_candidate(p) and needle in (p.title() or "").lower():
+                print(f"[ATTACH_PW] Tab=title_contains url={_attach_display_url(p.url)}")
+                return p
+        print(f"[ATTACH_PW] Tab=title_contains NOT FOUND ({title_contains})")
+
+    # 3) DOM contains
+    if dom_contains:
+        needle = dom_contains.lower()
+        for p in pages:
+            if not _is_candidate(p):
+                continue
+            if needle in _safe_body_text(p).lower():
+                print(f"[ATTACH_PW] Tab=dom_contains url={_attach_display_url(p.url)}")
+                return p
+        print(f"[ATTACH_PW] Tab=dom_contains NOT FOUND ({dom_contains})")
+
+    candidates = [p for p in pages if _is_candidate(p)]
+
+    # 4a) pick/prompt
+    if mode in ("pick", "prompt", "menu") and is_attach_mode():
+        print("[ATTACH_PW] Tabs disponibles:")
+        for i, p in enumerate(candidates):
+            print(f"  {i:02d} | {p.url}")
+        choice = (input("[ATTACH_PW] Index: ") or "").strip()
+        if choice.isdigit():
+            idx = int(choice)
+            if 0 <= idx < len(candidates):
+                print(f"[ATTACH_PW] Tab=pick idx={idx} url={_attach_display_url(candidates[idx].url)}")
+                return candidates[idx]
+        lw = _last_web_ready()
+        if lw:
+            return lw
+
+    # 4b) current / active
+    if mode in ("current", "active", "focused"):
+        if candidates:
+            print(f"[ATTACH_PW] Tab=current url={_attach_display_url(candidates[0].url)}")
+            return candidates[0]
+        lw = _last_web()
+        if lw:
+            return lw
+        return pages[0]
+
+    # 4c) last / newest
+    if mode in ("last", "newest"):
+        lw = _last_web()
+        if lw:
+            return lw
+        print(f"[ATTACH_PW] Tab=last idx={len(pages)-1} url={_attach_display_url(pages[-1].url)}")
+        return pages[-1]
+
+    # 4d) best (score)
+    if mode == "best":
+        best_page, best_score = None, (0, 0)
+        for p in pages:
+            if not _is_candidate(p):
+                continue
+            sc = _score(p)
+            if sc > best_score:
+                best_score, best_page = sc, p
+        if best_page:
+            print(f"[ATTACH_PW] Tab=best score={best_score} url={_attach_display_url(best_page.url)}")
+            return best_page
+
+    # 4e) index numérique
+    if mode.isdigit():
+        idx = max(0, min(int(mode), len(candidates) - 1))
+        if candidates:
+            print(f"[ATTACH_PW] Tab=index idx={idx} url={_attach_display_url(candidates[idx].url)}")
+            return candidates[idx]
+
+    # Fallback final
+    lw = _last_web_ready()
+    if lw:
+        return lw
+    print("[ATTACH_PW] Tab=pages[0] (fallback absolu)")
+    return pages[0]
+
+
+def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config: dict, platform=None) -> None:
+    """
+    Route 'login' (BLOC 1 natif Playwright) :
+      1. Login si page de connexion détectée (auth_handler.login — natif Playwright ;
+         ou platform.login() pour une plateforme configurée autre que TopSurveys)
+      2. Navigation + sélection du survey (survey_navigator — natif Playwright ;
+         ou platform.select_survey())
+      3. Pont BLOC 1 → BLOC 2 : wrap page native en shim
+      4. Résolution présélection + survey (BLOC 2/3 via shim)
+    """
+    import time as _time
     import Survey.survey_executor as survey_executor
     import Survey.survey_solver as survey_solver
     from Survey.survey_context import SurveyContext
-    from preselection.survey_handler import run_attach_preselection_takeover as run_preselection_takeover
+    from preselection.auth_handler import handle_proxy_error_page_if_needed
+
+    handle_proxy_error_page_if_needed(page)
+
+    _is_topsurveys = platform is None or platform.get_platform_name() == "topsurveys"
+
+    if _is_topsurveys:
+        # Chemin TopSurveys existant — inchangé.
+        from preselection.auth_handler import LOGIN_PAGE_SELECTORS
+        from preselection.auth_handler import login as _do_login
+        from preselection.survey_navigator import go_to_best_value_survey
+
+        # Login si page de connexion détectée
+        try:
+            _on_login = any(page.query_selector(sel) for sel in LOGIN_PAGE_SELECTORS)
+        except Exception:
+            _on_login = False
+
+        if _on_login:
+            print("[ATTACH][LOGIN] Page de connexion détectée → login")
+            _do_login(
+                page,
+                os.getenv("EMAIL") or config.get("Email", ""),
+                os.getenv("PASSWORD") or config.get("Password", ""),
+            )
+            _time.sleep(2)
+
+        # Sélection du survey (navigue vers l'onglet Sondages, choisit la meilleure carte)
+        go_to_best_value_survey(page)
+    else:
+        # Stratégie additive : plateforme configurée != TopSurveys → routage via
+        # l'interface Platform (login/select_survey), déjà implémentée pour ySense.
+        print(
+            f"[ATTACH][LOGIN] plateforme={platform.get_platform_name()} — "
+            "routage via Platform.login()/select_survey()"
+        )
+
+        # Diagnostic : snapshot juste avant construction de _login_config, à
+        # comparer avec le log [DIAG_ENV] émis en tout début de process (cf.
+        # haut de main.py). Si ce snapshot est déjà vide alors que celui de
+        # l'entrée du process ne l'était pas, la disparition se situe entre les
+        # deux — sinon la valeur était déjà absente à l'entrée du process
+        # (problème en amont : ps1 / session). Mot de passe jamais en clair.
+        from Survey.log_utils import log_debug as _diag_log_debug2
+        _diag_email1 = os.getenv("Email", "")
+        _diag_pwd1 = os.getenv("Password", "")
+        _diag_log_debug2(
+            "[DIAG_ENV]",
+            f"juste avant construction _login_config : "
+            f"Email={'present' if _diag_email1 else 'ABSENT'} (len={len(_diag_email1)}), "
+            f"Password={'present' if _diag_pwd1 else 'ABSENT'} (len={len(_diag_pwd1)})",
+        )
+        del _diag_email1, _diag_pwd1
+
+        _login_config = {
+            "Email": os.getenv("Email") or config.get("Email", ""),
+            "Password": os.getenv("Password") or config.get("Password", ""),
+        }
+        try:
+            _session_expired = platform.is_session_expired(page)
+        except Exception:
+            _session_expired = True
+
+        if _session_expired:
+            print("[ATTACH][LOGIN] session absente/expirée → platform.login()")
+            platform.login(page, _login_config)
+            _time.sleep(2)
+
+        try:
+            _base_handles = set(page.context.pages)
+        except Exception:
+            _base_handles = set()
+
+        _survey_selected = platform.select_survey(page)
+
+        if _survey_selected:
+            # Comme sur TopSurveys, le clic sur le survey ouvre un nouvel onglet
+            # qui doit recevoir le focus — mais l'onglet plateforme (ex.
+            # ysense.com) reste ouvert, et sans switch explicite c'est lui qui
+            # garde le focus réel : l'analyse DOM/résolution plus bas
+            # s'exécuterait alors dessus au lieu du survey, produisant une
+            # extraction faussée. Réutilisation de switch_to_latest_window_and_
+            # close_others (déjà validée pour ce même problème côté TopSurveys)
+            # puis resynchronisation de `page` sur l'onglet réellement actif —
+            # cette fonction fait le switch en interne sans retourner la
+            # nouvelle Page (cf. _resync_live_page).
+            try:
+                import Management.redirect_watcher as redirect_watcher
+                from preselection.survey_handler import _resync_live_page
+
+                redirect_watcher.switch_to_latest_window_and_close_others(
+                    page,
+                    base_handles=_base_handles,
+                    timeout=12,
+                    prefer_external=True,
+                    platform_domains=platform.get_domains(),
+                )
+                page = _resync_live_page(page)
+                redirect_watcher.wait_for_final_redirection(page, max_wait=30)
+            except Exception as _switch_e:
+                print(f"[ATTACH][LOGIN][WARN] Erreur lors du switch d'onglet après sélection survey : {_switch_e}")
+
+        # Repli propre : le pont BLOC 1 → BLOC 2 ci-dessous délègue, pour
+        # TopSurveys, au moteur de présélection popup spécifique
+        # (preselection.survey_handler), sans équivalent implémenté pour les
+        # autres plateformes. Pour ces dernières (ex. ySense), le clic sur le
+        # survey mène directement aux questions, sans étape de présélection —
+        # on saute donc uniquement cette étape (cf. `if _is_topsurveys` plus
+        # bas) plutôt que d'arrêter tout le flux ici.
+        print(
+            f"[ATTACH][LOGIN] plateforme={platform.get_platform_name()} — survey "
+            "sélectionné, pas de moteur de présélection générique → étape sautée, "
+            "passage direct à la résolution."
+        )
+
+    # ── Pont BLOC 1 → BLOC 2 ─────────────────────────────────────────────────
+    # Le popup de présélection est désormais ouvert (TopSurveys) ou inexistant
+    # sur cette plateforme (cf. ci-dessus). On enveloppe la Page native dans le
+    # shim pour que survey_handler (BLOC 2) puisse consommer l'API façon Selenium.
+    page._survey_account_id = account_id
 
     _ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
     survey_solver._current_survey_ctx = _ctx
 
-    _attach_select_tab(driver)
+    if _is_topsurveys:
+        max_rounds = int(os.getenv("ATTACH_PRESELECTION_MAX_ROUNDS", "15"))
+        transition_timeout_s = int(os.getenv("ATTACH_PRESELECTION_TRANSITION_TIMEOUT_S", "45"))
+
+        from preselection.survey_handler import run_attach_preselection_takeover as _run_presel
+        ok, reason = _run_presel(
+            page,
+            api_key,
+            max_rounds=max_rounds,
+            transition_timeout_s=transition_timeout_s,
+            ctx=_ctx,
+        )
+
+        if not ok:
+            print(f"[ATTACH][LOGIN] abandon présélection: reason={reason}")
+            return
+
+        print("[ATTACH][LOGIN] présélection terminée → résolution survey")
+    else:
+        # Pas de moteur de présélection générique : la plateforme (ex. ySense)
+        # a déjà mené au survey via platform.select_survey() ci-dessus.
+        print(f"[ATTACH][LOGIN] plateforme={platform.get_platform_name()} — pas de présélection → résolution survey")
+    max_steps = int(os.getenv("ATTACH_MAX_STEPS", "100"))
+    for i in range(1, max_steps + 1):
+        try:
+            done = survey_executor.execute_survey_page(page, account_id, api_key, ctx=_ctx, platform=platform)
+            _ctx.maybe_update_summary()
+            print(f"[ATTACH][LOGIN→RES] step={i}/{max_steps} ok={done} url={_attach_display_url(page.url)}")
+            if not done and survey_executor._attach_disq_stop_requested:
+                print(f"[ATTACH][LOGIN→RES][DISQ] Page de disqualification détectée → arrêt immédiat boucle step={i}.")
+                break
+        except Exception as e:
+            print(f"[ATTACH][LOGIN→RES][ERROR] step={i} {type(e).__name__}: {e}")
+            break
+        _time.sleep(0.6)
+
+    print("[ATTACH][LOGIN] route terminée.")
+
+
+def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str, platform=None) -> None:
+    """
+    Attach takeover route 'preselection' :
+      - TopSurveys : popup de présélection déjà affiché → résolution du popup
+        (preselection.survey_handler), puis bascule en résolution survey.
+      - Autres plateformes sans popup de présélection (ex. ySense) : la page
+        courante est déjà la liste de surveys (ouverte manuellement avant de
+        lancer le mode attach sur cette route) — on clique directement le
+        meilleur survey via platform.select_survey(), puis on bascule en
+        résolution survey.
+    """
+    _is_topsurveys = platform is None or platform.get_platform_name() == "topsurveys"
+
+    import Survey.survey_executor as survey_executor
+    import Survey.survey_solver as survey_solver
+    from Survey.survey_context import SurveyContext
+
+    _ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
+    survey_solver._current_survey_ctx = _ctx
+
     driver._survey_account_id = account_id
 
-    max_rounds = int(os.getenv("ATTACH_PRESELECTION_MAX_ROUNDS", "15"))
-    transition_timeout_s = int(os.getenv("ATTACH_PRESELECTION_TRANSITION_TIMEOUT_S", "45"))
-    ok, reason = run_preselection_takeover(
-        driver,
-        api_key,
-        max_rounds=max_rounds,
-        transition_timeout_s=transition_timeout_s,
-        ctx=_ctx,
-    )
+    if _is_topsurveys:
+        from preselection.survey_handler import run_attach_preselection_takeover as run_preselection_takeover
 
-    if not ok:
-        print(f"[ATTACH][PRESEL] abandon contrôlé: reason={reason}")
-        return
+        max_rounds = int(os.getenv("ATTACH_PRESELECTION_MAX_ROUNDS", "15"))
+        transition_timeout_s = int(os.getenv("ATTACH_PRESELECTION_TRANSITION_TIMEOUT_S", "45"))
+        ok, reason = run_preselection_takeover(
+            driver,
+            api_key,
+            max_rounds=max_rounds,
+            transition_timeout_s=transition_timeout_s,
+            ctx=_ctx,
+        )
 
-    print("[ATTACH][PRESEL] présélection terminée -> bascule en résolution survey")
+        if not ok:
+            print(f"[ATTACH][PRESEL] abandon contrôlé: reason={reason}")
+            return
+
+        # FIX handoff attach : run_preselection_takeover fait le switch de fenêtre
+        # (clic "Participer" -> switch_to_latest_window_and_close_others) sur sa
+        # propre variable locale `driver`, et ne renvoie que (ok, reason) — jamais
+        # la nouvelle Page. `driver` ici continue donc de référencer l'onglet
+        # topsurveys.app fermé par ce switch. Sans resync, la boucle PRESEL->RES
+        # ci-dessous ré-exécute execute_survey_page sur une Page fermée : elle
+        # retombe dans la branche TOPSURVEYS_LISTING (URL topsurveys.app en cache
+        # côté client Playwright même page fermée) à chaque itération, et échoue
+        # systématiquement en TargetClosedError, pendant que le vrai survey
+        # (nouvel onglet externe déjà ouvert) n'est jamais manipulé. Même remède
+        # que la branche non-TopSurveys ci-dessous (réutilisation à l'identique de
+        # _resync_live_page, non modifiée).
+        from preselection.survey_handler import _resync_live_page
+        driver = _resync_live_page(driver)
+        driver._survey_account_id = account_id
+
+        print("[ATTACH][PRESEL] présélection terminée -> bascule en résolution survey")
+    else:
+        # Stratégie additive : pas de moteur de présélection popup pour cette
+        # plateforme — on saute directement à la sélection du survey.
+        print(
+            f"[ATTACH][PRESEL] plateforme={platform.get_platform_name()} — pas de "
+            "popup de présélection → sélection directe du meilleur survey."
+        )
+
+        try:
+            _base_handles = set(driver.context.pages)
+        except Exception:
+            _base_handles = set()
+
+        _survey_selected = platform.select_survey(driver)
+
+        if not _survey_selected:
+            print("[ATTACH][PRESEL] aucun survey sélectionné → abandon contrôlé.")
+            return
+
+        # Même problème de focus que sur la route "login" (cf.
+        # run_attach_login_takeover) : le clic ouvre un nouvel onglet, mais
+        # l'onglet plateforme reste ouvert et garde le focus réel sans switch
+        # explicite. Réutilisation à l'identique de switch_to_latest_window_
+        # and_close_others + _resync_live_page (déjà validées).
+        try:
+            import Management.redirect_watcher as redirect_watcher
+            from preselection.survey_handler import _resync_live_page
+
+            redirect_watcher.switch_to_latest_window_and_close_others(
+                driver,
+                base_handles=_base_handles,
+                timeout=12,
+                prefer_external=True,
+                platform_domains=platform.get_domains(),
+            )
+            driver = _resync_live_page(driver)
+            driver._survey_account_id = account_id
+            redirect_watcher.wait_for_final_redirection(driver, max_wait=30)
+        except Exception as _switch_e:
+            print(f"[ATTACH][PRESEL][WARN] Erreur lors du switch d'onglet après sélection survey : {_switch_e}")
+
+        print("[ATTACH][PRESEL] survey sélectionné -> bascule en résolution survey")
 
     max_steps = int(os.getenv("ATTACH_MAX_STEPS", "100"))
     for i in range(1, max_steps + 1):
         try:
-            done = survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_ctx)
+            done = survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_ctx, platform=platform)
             _ctx.maybe_update_summary()
-            print(f"[ATTACH][PRESEL->RES] step={i}/{max_steps} ok={done} url={_attach_display_url(driver.current_url)}")
+            print(f"[ATTACH][PRESEL->RES] step={i}/{max_steps} ok={done} url={_attach_display_url(driver.url)}")
+            if not done and survey_executor._attach_disq_stop_requested:
+                print(f"[ATTACH][PRESEL->RES][DISQ] Page de disqualification détectée → arrêt immédiat boucle step={i}.")
+                break
         except Exception as e:
             print(f"[ATTACH][PRESEL->RES][ERROR] step={i} {type(e).__name__}: {e}")
             break
@@ -649,25 +1056,81 @@ def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str) -
 
     print("[ATTACH][PRESEL] route terminée.")
 
-def main():
-    config = load_config()
-    platform = get_platform()
+def _select_platform_or_exit(account_id: str) -> str:
+    """
+    Sélection de rotation (hors mode attach uniquement) : détermine, pour ce
+    compte, la première plateforme de global_config.PLATFORM_ROTATION (dans
+    l'ordre de la liste) dont le cooldown métier est expiré. Se refait à
+    chaque lancement de process — jamais mise en cache au-delà d'un cycle de
+    process, chaque plateforme ayant son propre cycle de cooldown/objectif
+    journalier indépendant des autres.
 
-    print(
-        f"[BOOT] RUN_ENV={RUN_ENV} RUN_MODE={RUN_MODE} BROWSER_MODE={BROWSER_MODE} attach={is_attach_mode()}",
-        flush=True,
+    Si aucune plateforme n'est disponible : réarme le cooldown_until_ts
+    RACINE (verrou d'exclusivité — status/cooldown_until_ts au niveau racine
+    ne changent pas de sémantique) sur l'échéance la plus proche parmi les
+    cooldowns métier des plateformes listées (jamais sur epoch), puis termine
+    le process proprement (EXIT_VOLUNTARY). Objectif : éviter qu'un
+    superviseur externe (wake_scheduler côté parc interne, ou tout mécanisme
+    de relance équivalent chez un tiers) ne relance le process en boucle
+    rapprochée tant qu'aucune plateforme n'est réellement prête, ce qui
+    risquerait de déclencher à tort le seuil de crash-loop existant
+    (check_and_record_start).
+    """
+    from global_config import PLATFORM_ROTATION, PLATFORM_DAILY_TARGET
+    from platforms import validate_platform_rotation, validate_platform_daily_targets
+    from State.account_state import (
+        load_state as _select_load_state,
+        select_first_available_platform,
+        nearest_platform_cooldown_deadline,
+        update_state as _select_update_state,
+    )
+    from Survey.log_utils import log_info
+
+    validate_platform_rotation(PLATFORM_ROTATION)
+    validate_platform_daily_targets(PLATFORM_ROTATION, PLATFORM_DAILY_TARGET)
+
+    state = _select_load_state(account_id)
+    chosen = select_first_available_platform(state, PLATFORM_ROTATION)
+    if chosen is not None:
+        log_info(
+            "[PLATFORM_ROTATION]",
+            f"account_id={account_id} plateforme sélectionnée={chosen!r} "
+            f"(rotation={list(PLATFORM_ROTATION)!r})",
+        )
+        return chosen
+
+    deadline = nearest_platform_cooldown_deadline(state, PLATFORM_ROTATION)
+    _select_update_state(account_id, lambda st: st.__setitem__("cooldown_until_ts", deadline))
+    log_info(
+        "[PLATFORM_ROTATION]",
+        f"account_id={account_id} aucune plateforme disponible parmi "
+        f"{list(PLATFORM_ROTATION)!r} — cooldown racine réarmé sur {deadline!r}, "
+        "arrêt volontaire.",
     )
 
-    #  Fail-fast : même si quelqu'un force des env vars en prod, attach ne doit jamais tourner
-    if is_attach_mode() and (not IS_LOCAL):
-        raise SystemExit("attach_forbidden_in_prod")
+    from bot_supervisor import record_exit, EXIT_VOLUNTARY
+    record_exit(account_id, EXIT_VOLUNTARY, "no_platform_available")
+    sys.exit(EXIT_VOLUNTARY)
 
+
+def main():
+    # Même garde qu'à l'import du module (cf. plus haut) : en mode attach,
+    # l'environnement est déjà entièrement fourni par attach_tab.ps1, donc pas
+    # besoin de relire receiver_config.json ici non plus.
+    if os.getenv("BROWSER_MODE", "").strip().lower() != "attach":
+        config = load_config()
+    else:
+        config = {}
+
+    # account_id résolu AVANT la sélection de plateforme (hors mode attach) :
+    # la sélection de rotation a besoin de l'état Postgres de CE compte pour
+    # déterminer quelle plateforme est prête (cf. _select_platform_or_exit).
     account_id = (
         os.getenv("ACCOUNT_ID")
         or config.get("account_id")
     )
     email = (
-        os.getenv("EMAIL") 
+        os.getenv("EMAIL")
         or config.get("Email")
     )
 
@@ -675,40 +1138,108 @@ def main():
         raise RuntimeError("ACCOUNT_ID introuvable")
 
     if is_attach_mode():
-        # ⚠ ATTACH = LOCAL DEBUG TAKEOVER
+        # Mode attach : débogage manuel d'une seule plateforme à la fois,
+        # ciblée via l'environnement — comportement inchangé.
+        platform = get_platform()
+    else:
+        platform = get_platform(_select_platform_or_exit(account_id))
+
+    print(
+        f"[BOOT] RUN_ENV={RUN_ENV} BROWSER_MODE={BROWSER_MODE} attach={is_attach_mode()}",
+        flush=True,
+    )
+
+    # Note : attach est désormais contrôlé uniquement par BROWSER_MODE=attach,
+    # indépendamment de RUN_ENV. Pas de garde supplémentaire nécessaire.
+
+    if is_attach_mode():
+        # ⚠ ATTACH = LOCAL DEBUG TAKEOVER — Playwright natif (BLOC 1)
         # - pas de lock Postgres
-        # - pas de navigation TopSurveys
+        # - attachement CDP à Chrome déjà lancé (ATTACH_DEBUGGER_ADDRESS)
         # - pas de quit() (sinon tu fermes ton Chrome)
-        driver = launch_driver_or_fail(config, account_id)
+        attach_addr = os.getenv("ATTACH_DEBUGGER_ADDRESS", "").strip()
+        if not attach_addr:
+            raise RuntimeError("ATTACH_DEBUGGER_ADDRESS manquant en mode attach")
+
+        # Résoudre la route AVANT de sélectionner l'onglet :
+        #   - en mode "resolution", on exclut topsurveys.app de la liste affichée
+        #   - le prompt (si ATTACH_ROUTE_PROMPT=1) doit précéder l'affichage des tabs
+        attach_route = _get_attach_route()
+        print(f"[ATTACH] route={attach_route}")
+
+        from preselection.playwright_launcher import attach_browser_playwright
+        _pw, _browser = attach_browser_playwright(attach_addr)
+        _context = _browser.contexts[0]
+
+        # En mode résolution, exclure les onglets de la plateforme configurée de
+        # la sélection — dérivé de platform.get_domains() plutôt que câblé en dur
+        # sur topsurveys.app (identique à l'existant pour TopSurveys : get_domains()
+        # y retourne exactement ["topsurveys.app"]).
+        _exclude = None
+        if attach_route == "resolution":
+            _exclude_domains = platform.get_domains() if platform else ["topsurveys.app"]
+            _exclude = lambda url, _d=_exclude_domains: any(d in (url or "").lower() for d in _d)
+
+        # Sélection de l'onglet actif (Playwright natif)
+        page = _attach_select_tab_pw(_context, exclude_url_pred=_exclude)
+        print(f"[ATTACH] Page sélectionnée url={_attach_display_url(page.url)}")
+
+        # Bascule visuelle vers l'onglet sélectionné : certaines pages nécessitent
+        # d'être au premier plan (focus/visibility) pour fonctionner correctement.
+        # Additif uniquement : ne modifie pas la logique de sélection ci-dessus.
+        try:
+            page.bring_to_front()
+            print("[ATTACH] Tab bring_to_front OK")
+        except Exception as e:
+            print(f"[ATTACH] Tab bring_to_front impossible: {e}")
+
         from Survey.survey_solver import get_current_survey_ctx
         start_debug_http_server(get_current_survey_ctx)
 
         api_key = (
             os.getenv("OPENAI_API_KEY")
-            or os.getenv("OPENAI_API_KEY_LOCAL")
             or config.get("openai_api_key")
-            or config.get("api_key")
             or config.get("OPENAI_API_KEY")
         )
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY introuvable (nécessaire en attach)")
 
-        if should_run_hot_reload():
-            start_hot_reload_thread()
-
-        attach_route = _get_attach_route()
-        print(f"[ATTACH] route={attach_route}")
-        if attach_route == "preselection":
-            run_attach_preselection_takeover(driver, api_key=api_key, account_id=account_id)
+        if attach_route == "login":
+            # Route BLOC 1 complète : login + sélection survey + présélection + résolution
+            run_attach_login_takeover(page, _pw, api_key=api_key, account_id=account_id, config=config, platform=platform)
         else:
-            run_attach_takeover(driver, api_key=api_key, account_id=account_id)
+            # Routes preselection / resolution : pont BLOC 1 → BLOC 2/3 immédiat via shim
+            page._survey_account_id = account_id
+            if attach_route == "preselection":
+                run_attach_preselection_takeover(page, api_key=api_key, account_id=account_id, platform=platform)
+            else:
+                run_attach_takeover(page, api_key=api_key, account_id=account_id, platform=platform)
         return
+
+    # setup_logging() attache un handler stdout au logger racine ("logging" stdlib).
+    # ajout du paramètre account_id pour permettre la purge par compte:
+    # sans handler configuré, logging.getLogger(...).info/debug (update_checker.py,
+    # module "logging" stdlib) est avalé silencieusement par le handler de secours
+    # Python (seuil WARNING), et warning/error y échappent vers stderr — un fichier
+    # de log distinct de celui consulté par l'opérateur (bot_*_stdout.log vs
+    # bot_*_stderr.log, cf. nssm_setup_bot.ps1). D'où l'absence totale de trace de
+    # la vérification de mise à jour, quel que soit son issue.
+    # Doit précéder check_and_apply() ci-dessous, seul appelant concerné par ce bug.
+    setup_logging(account_id=account_id)
+
+    # Vérification et application d'une mise à jour binaire avant tout démarrage.
+    # No-op si UPDATE_CHECK_ENABLED != "1". Si une mise à jour est appliquée,
+    # os.execv() remplace le processus et cette ligne ne retourne jamais.
+    # Placé ici : account_id résolu, aucun lock ni driver acquis → relance propre.
+    from update_checker import check_and_apply as _check_and_apply
+    _check_and_apply(account_id)
 
     # FIX-A: install_sigterm_handler AVANT acquire_account_lock_or_exit.
     # Auparavant, un SIGTERM arrivant entre acquire et install_sigterm_handler
     # terminait le processus sans remettre cooldown_until_ts à zéro en Postgres,
     # forçant le scheduler à attendre l'expiration du TTL avant de relancer.
     install_sigterm_handler(account_id)
+    install_sigint_handler(account_id)   # Ctrl+C / Windows bare-metal
     install_sigusr1_handler()
 
     acquire_account_lock_or_exit(account_id)
@@ -725,6 +1256,13 @@ def main():
     start_debug_http_server(get_current_survey_ctx)
 
     notify_fn = build_notifier(config)
+
+    # Vérification du seuil de redémarrages automatiques (crash-loop) : tourne
+    # désormais au niveau module, avant check_license_or_exit() — voir le
+    # commentaire correspondant en tête de fichier. Ne pas la réintroduire ici :
+    # un second appel à check_and_record_start() dans le même run lirait le
+    # sentinel EXIT_CRASH que le premier appel vient d'écrire et fausserait le
+    # compteur (incrément à tort dès le premier démarrage sain).
 
     # Proxy-lock retiré : en prod on a 1 bot par proxy, donc lock proxy redondant
     runtime_ctx = {
@@ -756,22 +1294,26 @@ def main():
             driver._survey_account_id = account_id
 
             _acct_env = os.getenv("ACCOUNT_ID", "").strip()
-            _db_env = os.getenv("DATABASE_URL", "").strip()
-            # if _acct_env and _db_env:
-            #     from preselection.chrome_profile_store import start_profile_autosave
-            #     def _get_user_data_dir(_ctx=runtime_ctx):
-            #         _d = _ctx.get("driver")
-            #         if _d and hasattr(_d, "_chrome_user_data_dir"):
-            #             return _d._chrome_user_data_dir or ""
-            #         return ""
-            #     _autosave_stop_event = start_profile_autosave(_acct_env, _get_user_data_dir, interval_sec=300)
-
-            # restore_session_cookies(driver, account_id) #Archivé car le profil sauvegardé contient deja les cookies.
 
             def _soft_restart(reason):
+                # 🔎 FIX : runtime_ctx["driver"] est figé au lancement initial et n'est
+                # jamais mis à jour après un switch d'onglet interne (cf. survey_handler.py
+                # ::_resync_live_page, qui republie désormais la page vivante vers le
+                # RuntimeGuard à chaque resync). On préfère donc self.driver du guard
+                # quand il est disponible et vivant — c'est la copie la plus fraîche.
+                # Sans ce fix, soft_restart_cleanup()/safe_get() échouait systématiquement
+                # avec "Target page, context or browser has been closed" dès qu'un
+                # restart survenait après un survey ayant fait un switch d'onglet.
+                _driver_for_restart = runtime_ctx["driver"]
+                try:
+                    _guard_driver = get_guard().driver
+                    if _guard_driver is not None and not _guard_driver.is_closed():
+                        _driver_for_restart = _guard_driver
+                except Exception:
+                    pass
                 return soft_restart(
                     runtime_ctx["session"],
-                    runtime_ctx["driver"],
+                    _driver_for_restart,
                     reason,
                     platform=platform,
                 )
@@ -784,10 +1326,21 @@ def main():
                         account_id=account_id,
                         notify_fn=notify_fn,
                         on_soft_restart=_soft_restart,
+                        platform_name=platform.get_platform_name(),
                     )
                 get_guard().attach_driver(driver)
 
-            api_key, payout_name, payout_revolut_tag = init_session_and_enter_surveys(driver, config, account_id, notify_fn, platform=platform)
+            # init_session_and_enter_surveys retourne désormais aussi le driver :
+            # pour les plateformes non-TopSurveys (ex. ySense), le clic sur le
+            # survey ouvre un nouvel onglet et un switch interne peut avoir
+            # remplacé la Page active — sans récupérer cette nouvelle référence
+            # ici, run_main_loop() ci-dessous continuerait sur l'ancien onglet
+            # (même bug que celui déjà corrigé en mode attach, cf. BEM).
+            api_key, payout_name, payout_revolut_tag, driver = init_session_and_enter_surveys(driver, config, account_id, notify_fn, platform=platform)
+            driver._survey_account_id = account_id
+            runtime_ctx["driver"] = driver
+            if should_run_guard_monitor():
+                get_guard().attach_driver(driver)
 
             runtime_ctx["session"] = {
                 "account_id": account_id,
@@ -798,10 +1351,6 @@ def main():
                 "password": config.get("Password", ""),
             }
 
-            if should_run_hot_reload() and not hot_reload_started:
-                start_hot_reload_thread()
-                hot_reload_started = True
-
             run_main_loop(driver, api_key, account_id, payout_name=payout_name, payout_revolut_tag=payout_revolut_tag, platform=platform)
 
         except SystemExit:
@@ -811,7 +1360,7 @@ def main():
             print(f"[MAIN][ERROR] cycle={cycle}/{max_cycles} {type(e).__name__}: {e}")
             traceback.print_exc()
             # FIX-B2 (partie catch): libération lock en cas de crash Exception
-            if not IS_LOCAL:
+            if not is_attach_mode():
                 try:
                     from State.account_state import update_state
                     update_state(account_id, lambda st: (
@@ -831,15 +1380,12 @@ def main():
             # FIX-B4: pas de 'continue' ici — supprime les SystemExit et empêche l'arrêt propre
             try:
                 if driver and (not is_attach_mode()):
-                    # Arrêter l'autosave avant la sauvegarde finale pour éviter une double écriture simultanée
-                    if _autosave_stop_event is not None:
-                        _autosave_stop_event.set()
-                    # Sauvegarder le profil Chrome avant de quitter (si profil persistant)
-                    # _acct = os.getenv("ACCOUNT_ID", "").strip()  #Autosave desactivé pour le moment.
-                    # _db   = os.getenv("DATABASE_URL", "").strip()
-                    # if _acct and _db and hasattr(driver, "_chrome_user_data_dir") and driver._chrome_user_data_dir:
-                    #     from preselection.chrome_profile_store import save_profile
-                    #     save_profile(_acct, driver._chrome_user_data_dir)
+                    # Point de gel (FREEZE_ON_TRIGGER, cf. Management/guards/
+                    # freeze_gate.py) : no-op si désactivé — fermeture/relance du
+                    # navigateur entre deux cycles inchangée par défaut.
+                    from Management.guards.freeze_gate import freeze_and_wait
+                    freeze_and_wait(account_id, f"main_cycle_teardown:cycle={cycle}")
+
                     # Terminer le processus Chrome lancé par subprocess.Popen
                     if hasattr(driver, '_chrome_proc') and driver._chrome_proc:
                         try:
@@ -852,12 +1398,41 @@ def main():
                             driver._proxy_relay_proc.terminate()
                         except Exception:
                             pass
-                    driver.quit()
+                    # FIX: driver est une Page Playwright (launch_browser_playwright),
+                    # pas un driver Selenium — pas de méthode quit(). L'appeler levait
+                    # un AttributeError silencieusement avalé ici, donc context.close()
+                    # et l'arrêt de la connexion Playwright (driver._pw.stop()) n'étaient
+                    # jamais exécutés. La connexion Playwright du cycle précédent restait
+                    # active, et le rappel de sync_playwright().start() au cycle suivant
+                    # (même process/thread) échouait avec "Sync API inside the asyncio
+                    # loop". context.close() ferme le BrowserContext persistant (et le
+                    # process Chrome sous-jacent) ; pw.stop() libère la connexion.
+                    try:
+                        driver.context.close()
+                    except Exception as _ctx_close_exc:
+                        from Survey.log_utils import log_debug as _teardown_log_debug
+                        _teardown_log_debug("[MAIN][TEARDOWN]", f"context.close() a échoué : {_ctx_close_exc}")
+                    try:
+                        # driver.context._pw (posé par launch_browser_playwright, cf.
+                        # playwright_launcher.py) survit aux switch d'onglet internes qui
+                        # remplacent `driver` par une autre Page (ex. _resync_live_page) —
+                        # driver._pw seul pouvait alors être None et pw.stop() jamais
+                        # appelé, laissant la connexion Playwright du cycle précédent
+                        # (et sa boucle asyncio interne) active pour le lancement suivant.
+                        from Survey.log_utils import log_debug as _teardown_log_debug2
+                        _pw = getattr(getattr(driver, "context", None), "_pw", None) or getattr(driver, "_pw", None)
+                        if _pw:
+                            _pw.stop()
+                        else:
+                            _teardown_log_debug2("[MAIN][TEARDOWN]", "Aucune instance Playwright (_pw) trouvée pour ce driver — stop() ignoré.")
+                    except Exception as _pw_stop_exc:
+                        from Survey.log_utils import log_debug as _teardown_log_debug3
+                        _teardown_log_debug3("[MAIN][TEARDOWN]", f"pw.stop() a échoué : {_pw_stop_exc}")
             except Exception:
                 pass
 
-    # Si on sort de la boucle, on stoppe proprement (ECS relancera via scheduler)
-    if not IS_LOCAL:
+    # Si on sort de la boucle, libérer le slot Postgres (le scheduler relancera)
+    if not is_attach_mode():
         try:
             from State.account_state import update_state
             update_state(account_id, lambda st: (
@@ -867,6 +1442,14 @@ def main():
             ))
         except Exception as _le:
             print(f"[MAIN][WARN] Impossible de libérer le lock en fin de cycles: {_le}")
+        # Recyclage volontaire et sain (pas un crash) : sans cet appel, le sentinel
+        # EXIT_CRASH écrit par check_and_record_start() au début de CE run reste en
+        # place (ce chemin ne passait jusqu'ici jamais par record_exit()) — le
+        # prochain démarrage le lirait comme un crash et incrémenterait à tort
+        # restart_count, pouvant faire atteindre le seuil EXIT_FATAL après plusieurs
+        # recyclages sains consécutifs (voir Utils/AUDIT_ARRET_RELANCE_BOTS.md, Observation 5b).
+        from bot_supervisor import record_exit, EXIT_VOLUNTARY
+        record_exit(account_id, EXIT_VOLUNTARY, "max_main_cycles_reached")
     raise SystemExit("max_main_cycles_reached")
         
 if __name__ == "__main__":

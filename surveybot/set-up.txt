@@ -1,0 +1,280 @@
+#############################################
+# PRE-REQUIS (une seule fois par machine)
+#############################################
+
+# 1) Installer Microsoft Visual C++ Redistribuable
+winget install --id Microsoft.VCRedist.2015+.x64 -e --silent
+
+# 2) Autoriser l'execution de scripts locaux non signes
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# 3) Debloquer les fichiers .ps1 copies sur cette machine (telechargement/partage
+#    reseau/cle USB) - Set-ExecutionPolicy seul NE suffit PAS : Windows marque
+#    individuellement chaque fichier recu de l'exterieur ("Zone.Identifier"), et
+#    RemoteSigned peut continuer a bloquer un script marque ainsi meme avec la
+#    policy ci-dessus. A refaire a chaque fois que de nouveaux .ps1 arrivent sur
+#    la machine (copie initiale, mise a jour manuelle) :
+Get-ChildItem -Path C:\surveybot -Recurse -Filter *.ps1 | Unblock-File
+
+
+#############################################
+# PROVISIONING INITIAL (une seule fois par machine, AVANT setup_machine.ps1)
+#############################################
+# Rien de tout ceci n'est automatise : update_checker.py ne remplace QUE le
+# contenu de code\ une fois que code\ existe deja et tourne. Sur une machine
+# neuve, il faut d'abord faire exister ce depart manuellement.
+
+# 1) Copier manuellement depuis le repo dev vers C:\surveybot\ (racine) :
+#      - launch_all.ps1
+#      - nssm_setup_bot.ps1
+#      - check_zombie_bots.ps1
+#      - wake_scheduler.ps1
+#      - stop_bot.ps1
+#      - stop_bot_manual.ps1
+#      - sync_orchestration_scripts.ps1
+#      - setup_machine.ps1
+#      - requirements.txt
+#      - accounts.json         (comptes/proxies de cette machine)
+#      - receiver_config.json  (OPENAI_API_KEY / TWO_CAPTCHA_KEY / telegram_bot_token /
+#                                telegram_chat_id / payout_name / payout_revolut_tag)
+#    Ces fichiers ne sont PAS geres par update_checker.py (il ne touche que code\).
+#    launch_all.ps1 est indispensable des le premier logon (tache
+#    SurveyBot_LaunchAllOnLogon, etape 3bis de la checklist) - ne pas le copier
+#    laisserait le tout premier demarrage de parc echouer avant meme que la
+#    synchronisation automatique n'ait eu l'occasion de le telecharger. Tous les
+#    fichiers ci-dessus sauf setup_machine.ps1/requirements.txt/accounts.json/
+#    receiver_config.json seront ensuite synchronises automatiquement par
+#    sync_orchestration_scripts.ps1 (etape 4 de la checklist) - jusque-la, et pour
+#    ces 4 derniers en permanence, la mise a jour reste manuelle.
+
+# 2) Deployer la derniere version de code\ (contenu du zip de dist_zip\, cote
+#    build : build_release_zip.ps1) :
+#      - telecharger le zip le plus recent (voir manifest.json sur R2)
+#      - extraire son contenu directement dans C:\surveybot\code\
+#    Une fois cette premiere version en place, chaque demarrage du bot verifie
+#    et applique lui-meme les mises a jour suivantes (update_checker.py) - cette
+#    etape manuelle ne se refait qu'en cas de C:\surveybot\code\ absent/corrompu.
+
+
+#############################################
+# PROVISIONING AUTOMATISE (setup_machine.ps1)
+#############################################
+# A executer une seule fois par machine, en administrateur, une fois les fichiers
+# ci-dessus en place. Cree le venv\, installe les dependances (requirements.txt),
+# cree les dossiers profiles\ (un par compte de accounts.json), cree pids\/logs\,
+# et installe NSSM automatiquement (telechargement + PATH systeme) s'il est absent.
+cd C:\surveybot
+.\setup_machine.ps1
+
+# Si NSSM vient d'etre installe par ce script : ROUVRIR le terminal (le PATH
+# systeme n'est relu qu'a l'ouverture) avant de continuer, puis verifier :
+nssm version
+
+# Test manuel recommande avant toute automatisation (verifie login/config/proxy
+# sans dependre de NSSM ni des taches planifiees) :
+.\venv\Scripts\python.exe .\code\main.py
+
+
+#############################################
+# CHECKLIST - A FAIRE UNE SEULE FOIS PAR MACHINE
+# (terminal PowerShell en mode administrateur, dans C:\surveybot)
+#############################################
+# IMPORTANT : les taches planifiees ci-dessous s'executent sous deux principaux
+# differents (voir Utils/ORCHESTRATION_TRACKING.md section 18) :
+#   - SYSTEM (-LogonType ServiceAccount) pour OrchestrationSync et LogRotation, qui ne
+#     spawnent aucun process bot.
+#   - Le COMPTE ADMIN INTERACTIF de l'operateur (-LogonType Interactive) pour
+#     LaunchAllOnLogon, ZombieCheck et WakeScheduler : ces 3 taches peuvent lancer un
+#     process bot (via launch_all.ps1) et doivent donc atterrir dans la meme session
+#     Windows interactive que l'operateur (compositeur DWM actif, GPU reel), jamais en
+#     Session 0. Consequence assumee : si personne n'est connecte sur ce compte, ces 3
+#     taches ne peuvent pas (re)lancer de bot ce jour-la - coherent avec le principe
+#     "aucun bot ne doit tourner hors session interactive".
+# Dans les deux cas, sans -ExecutionPolicy Bypass dans l'argument de la tache
+# elle-meme, le scope LocalMachine (Undefined par defaut) fait retomber PowerShell sur
+# Restricted -> le script ne s'execute jamais (echec avant meme sa premiere ligne,
+# LastTaskResult=1, aucun log ecrit car le script n'atteint jamais son propre
+# Start-Transcript). Deja rencontre en prod sur wake_scheduler.ps1 (28/07/2026) - voir
+# Utils/ORCHESTRATION_TRACKING.md section 14 pour le diagnostic complet.
+#
+# Remplacer <COMPUTERNAME>\<CompteAdmin> ci-dessous par le compte Windows local sur
+# lequel l'operateur se connecte manuellement (pas d'auto-logon, pas de mot de passe
+# stocke - la connexion reste un geste manuel).
+
+# 1) (Transition uniquement, tant que NSSM n'est pas decommissionne - cf.
+#    decommission_nssm.ps1) Creer/mettre a jour les services NSSM a partir de
+#    accounts.json. A ne plus executer une fois la bascule PID/launch_all.ps1 validee.
+.\nssm_setup_bot.ps1
+
+# 2) Tache planifiee de detection zombie (heartbeat perime, ou bot reellement arrete ->
+#    relance via launch_all.ps1, cf. section 18). Principal INTERACTIVE (pas SYSTEM) :
+#    voir note IMPORTANT ci-dessus.
+$principalInteractive = New-ScheduledTaskPrincipal -UserId "<COMPUTERNAME>\<CompteAdmin>" -LogonType Interactive -RunLevel Limited
+
+$action   = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\surveybot\check_zombie_bots.ps1"
+$trigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 3) -Once -At (Get-Date)
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
+Register-ScheduledTask -TaskName "SurveyBot_ZombieCheck" -Action $action -Trigger $trigger -Settings $settings -Principal $principalInteractive -Force
+
+# 3) Tache planifiee wake_scheduler (reveil des bots en cooldown expire, relance via
+#    launch_all.ps1). Principal INTERACTIVE (pas SYSTEM) : voir note IMPORTANT ci-dessus.
+$action   = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\surveybot\wake_scheduler.ps1"
+$trigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 5) -Once -At (Get-Date)
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 4)
+Register-ScheduledTask -TaskName "SurveyBot_WakeScheduler" -Action $action -Trigger $trigger -Settings $settings -Principal $principalInteractive -Force
+
+# 3bis) Tache planifiee de demarrage au logon : lance TOUS les comptes de
+#    accounts.json (launch_all.ps1 sans -AccountId) des que l'operateur ouvre sa
+#    session interactive - aucune autre intervention manuelle requise apres la
+#    connexion. Meme compte/principal que les taches 2 et 3 ci-dessus.
+$action   = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\surveybot\launch_all.ps1"
+$trigger  = New-ScheduledTaskTrigger -AtLogOn -User "<COMPUTERNAME>\<CompteAdmin>"
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -StartWhenAvailable
+Register-ScheduledTask -TaskName "SurveyBot_LaunchAllOnLogon" -Action $action -Trigger $trigger -Settings $settings -Principal $principalInteractive -Force
+
+# 4) Tache planifiee de sync des scripts d'orchestration (launch_all.ps1,
+#    nssm_setup_bot.ps1, wake_scheduler.ps1, check_zombie_bots.ps1) - verifie
+#    toutes les 10 min si une version plus recente existe sur R2 et la
+#    telecharge automatiquement. requirements.txt est verifie mais JAMAIS
+#    applique automatiquement (juste signale par Telegram).
+#    NB : sync_orchestration_scripts.ps1 lui-meme n'est PAS couvert par ce
+#    mecanisme (deja copie manuellement a l'etape de provisioning initial) -
+#    a remettre a jour manuellement sur chaque machine si ce fichier change.
+#    Principal SYSTEM (pas Interactive) : ne spawne aucun process bot, cf. note
+#    IMPORTANT en tete de checklist.
+$principalSystem = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+
+$action   = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\surveybot\sync_orchestration_scripts.ps1 -ManifestUrl `"https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration_manifest.json`""
+$trigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 10) -Once -At (Get-Date)
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+Register-ScheduledTask -TaskName "SurveyBot_OrchestrationSync" -Action $action -Trigger $trigger -Settings $settings -Principal $principalSystem -Force
+
+# 5) Tache planifiee de rotation/purge des logs transverses d'orchestration
+#    (wake_scheduler_task.log, orchestration_sync_task.log, launch_all.log, ...) -
+#    segmentation quotidienne + retention 7 jours dans un dossier d'archive plat
+#    unique. Ne touche jamais aux logs par bot (deja gere par LOG_HISTORY_CYCLES
+#    dans launch_all.ps1). Voir rotate_orchestration_logs.ps1 pour le detail.
+#    Principal SYSTEM (pas Interactive) : meme raison que la tache 4 ci-dessus.
+$action   = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\surveybot\rotate_orchestration_logs.ps1"
+$trigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 10) -Once -At (Get-Date)
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+Register-ScheduledTask -TaskName "SurveyBot_LogRotation" -Action $action -Trigger $trigger -Settings $settings -Principal $principalSystem -Force
+
+# Verification que les 5 taches sont bien enregistrees :
+Get-ScheduledTask -TaskName "SurveyBot_*" | Format-Table TaskName,State -AutoSize
+
+# Verification du Principal (doit afficher le compte admin interactif pour
+# LaunchAllOnLogon/ZombieCheck/WakeScheduler, et SYSTEM/ServiceAccount pour
+# OrchestrationSync/LogRotation) :
+Get-ScheduledTask -TaskName "SurveyBot_*" | Select-Object TaskName,Principal
+
+
+#############################################
+# VERIFICATIONS POST-DEPLOIEMENT
+#############################################
+
+# Service(s) reellement actifs :
+Get-Service surveybot_* | Format-Table Name,Status -AutoSize
+
+# Heartbeat applicatif (age_sec doit rester bas et STABLE d'une lecture a l'autre -
+# s'il augmente au meme rythme que l'horloge, le bot est arrete malgre un .state
+# ancien, pas "encore vivant") :
+Get-ChildItem C:\surveybot\pids -Filter "bot_*.state" | ForEach-Object {
+    $s = Get-Content $_.FullName -Raw | ConvertFrom-Json
+    [PSCustomObject]@{
+        account_id        = $s.account_id
+        last_heartbeat_ts = $s.last_heartbeat_ts
+        age_sec           = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [long]$s.last_heartbeat_ts
+    }
+} | Format-Table -AutoSize
+
+# Empecher toute mise en veille systeme (S3) - a faire sur CHAQUE machine du parc,
+# la veille ecran seule (extinction moniteur) n'a aucun impact et peut rester active :
+powercfg /change standby-timeout-ac 0
+powercfg /change hibernate-timeout-ac 0
+
+
+
+
+#############################################
+# COMMANDES USUELLES - bot lance via launch_all.ps1 (PID, pas NSSM)
+# C'est le chemin normal une fois la tache SurveyBot_LaunchAllOnLogon en place -
+# les commandes NSSM plus bas ne s'appliquent qu'en transition, tant qu'un service
+# surveybot_<id> existe encore pour ce compte (avant decommission_nssm.ps1).
+#############################################
+
+# Pour lancer un bot a l'arret (ou tous les comptes) :
+.\launch_all.ps1 -AccountId "bot_001"
+.\launch_all.ps1
+
+# Pour stopper un bot DURABLEMENT (maintenance, intervention operateur, ...) :
+# stop_bot_manual.ps1 pose le marqueur pids\bot_<id>.manual_stop (lu par
+# wake_scheduler.ps1, qui ignore alors ce bot) PUIS appelle `nssm stop` - ce dernier
+# appel est un no-op silencieux si aucun service NSSM n'existe pour ce compte (bot
+# demarre uniquement via launch_all.ps1). Pour un bot PID, completer avec stop_bot.ps1
+# ci-dessous pour reellement arreter le process :
+.\stop_bot_manual.ps1 -AccountId "bot_001"
+.\stop_bot.ps1 -AccountId "bot_001"
+# Le marqueur pose par stop_bot_manual.ps1 est leve automatiquement au prochain
+# demarrage reel du bot (bot_supervisor.clear_manual_stop_marker, appele par main.py).
+# Voir le statut et le pid d'un bot
+Get-Content C:\surveybot\pids\bot_bot_001.state | ConvertFrom-Json | Select last_heartbeat_ts, pid, last_exit_code, last_exit_reason
+#Tuer la tache definitivement
+taskkill /PID <PID> /T /F
+
+# Avant de reutiliser un profil (profile_dir d'accounts.json) pour un autre bot -
+# necessaire uniquement si plusieurs comptes tournent sur le meme profile_dir a
+# des moments differents. Chrome refuse deux instances simultanees sur le meme
+# user-data-dir : un process precedent qui le tient encore (ou un verrou residuel
+# d'un crash) est la cause probable d'un browser_launch_failed en crash-loop sur
+# le bot suivant. Ne JAMAIS se fier a "je l'ai arrete plus tot" seul - reverifier :
+$profileDir = "C:\surveybot\profiles\bot_001"
+
+# Chrome : le chemin du profil apparait dans sa ligne de commande (--user-data-dir=...)
+Get-CimInstance Win32_Process -Filter "Name='chrome.exe'"|Where-Object { $_.CommandLine -like "*$profileDir*" } |Select-Object ProcessId, CommandLine
+
+# python.exe : ligne de commande identique pour tous les bots (account_id passe par
+# variable d'environnement, pas en argument) - donc pas filtrable par profil
+# directement. Verifier plutot via le .state du compte qui utilisait ce profil
+# jusqu'ici (pid + last_heartbeat_ts recent = process concerne toujours vivant) :
+Get-Content C:\surveybot\pids\bot_bot_<AccountId_precedent>.state -ErrorAction SilentlyContinue | ConvertFrom-Json | Select-Object pid, last_heartbeat_ts
+
+# Verrou physique Chrome (SingletonLock, ...) : peut survivre a un crash sans
+# qu'aucun process ne soit reellement vivant dessus (cf. browser_launch_failed) :
+Get-ChildItem $profileDir -Filter "Singleton*" -Force
+
+# Si verrou present ET aucun chrome.exe/python.exe vivant dessus (les verifs
+# ci-dessus) : verrou residuel d'un crash precedent, a purger avant relance sur
+# ce profil pour eviter un nouveau browser_launch_failed :
+Remove-Item "$profileDir\Singleton*" -Force -ErrorAction SilentlyContinue
+
+# Pour un arret COURT (relance prevue dans les toutes prochaines minutes, avant le
+# prochain tick de wake_scheduler.ps1/check_zombie_bots.ps1) : stop_bot.ps1 seul suffit,
+# sans poser de marqueur durable.
+.\stop_bot.ps1 -AccountId "bot_001"
+
+# Pour voir le statut (bot PID) :
+Get-ChildItem C:\surveybot\pids -Filter "bot_*.pid"
+
+# voir le statut des taches planifiees :
+Get-ScheduledTask -TaskName "SurveyBot_*" | Get-ScheduledTaskInfo | Select-Object TaskName, LastRunTime, LastTaskResult, NextRunTime | Format-Table -AutoSize
+
+#############################################
+# COMMANDES NSSM - transition uniquement, tant qu'un service surveybot_<id> existe
+#############################################
+
+# Pour lancer un bot a l'arret, executer la commande ci-dessous:
+nssm start surveybot_bot_001
+
+# Pour stopper un bot DURABLEMENT via NSSM - meme remarque que ci-dessus sur
+# stop_bot_manual.ps1 (marqueur + `nssm stop`, celui-ci fonctionne tant que le
+# service existe) :
+.\stop_bot_manual.ps1 -AccountId "bot_001"
+
+# nssm stop reste valide pour un arret COURT dont vous savez qu'il sera suivi d'un
+# nssm start dans les toutes prochaines minutes (avant le prochain tick de
+# wake_scheduler.ps1) - sinon toujours preferer stop_bot_manual.ps1 ci-dessus.
+nssm stop surveybot_bot_001
+
+# Pour voir le statut
+nssm status surveybot_bot_001

@@ -7,8 +7,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
+
 
 
 # =========================
@@ -19,14 +18,14 @@ def _norm(s: str) -> str:
     """Normalisation souple (comparaison robuste)."""
     if not s:
         return ""
-    s = unicodedata.normalize("NFKC", s).replace("\u00a0", " ").strip().lower()
-    s = re.sub(r"[»«“”\"'›→·•:…]+", " ", s)
+    s = unicodedata.normalize("NFKC", s).replace(" ", " ").strip().lower()
+    s = re.sub(r"[»«""\"'›→·•:…]+", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
 
 
 def _overlap_1d(a0: float, a1: float, b0: float, b1: float) -> float:
-    """Taux d’overlap entre 2 segments (0..1)."""
+    """Taux d'overlap entre 2 segments (0..1)."""
     inter = max(0.0, min(a1, b1) - max(a0, b0))
     denom = max(1.0, min(a1 - a0, b1 - b0))
     return inter / denom
@@ -64,7 +63,7 @@ class _InputNode:
 @dataclass
 class _Cluster:
     key: float              # centre (x ou y)
-    members: List[int]      # indices d’inputs
+    members: List[int]      # indices d'inputs
     span_min: float
     span_max: float
 
@@ -89,7 +88,7 @@ _JS_COLLECT = r"""
   }
 
   function norm(txt){
-    return (txt||'').replace(/\u00A0/g,' ').replace(/\s+/g,' ').trim();
+    return (txt||'').replace(/ /g,' ').replace(/\s+/g,' ').trim();
   }
 
   function tag(el, uid){
@@ -129,7 +128,7 @@ _JS_COLLECT = r"""
   }
 
   // 2) Contextes texte (candidats)
-  // On cible des tags “souvent contextuels” + cellules
+  // On cible des tags "souvent contextuels" + cellules
   const textSel = [
     "th","td","label","legend","p","span","div","li"
   ];
@@ -164,7 +163,7 @@ _JS_COLLECT = r"""
 def _collect(driver) -> Tuple[List[_InputNode], List[_Node], Dict[str, Any]]:
     """Collecte via JS (zéro OCR, cheap)."""
     try:
-        data = driver.execute_script(_JS_COLLECT)
+        data = driver.evaluate(_JS_COLLECT)
     except Exception:
         return [], [], {}
 
@@ -232,7 +231,7 @@ def _build_clusters(inputs: List[_InputNode], axis: str, tol: float) -> List[_Cl
 
 
 # =========================
-# Mapping “tableau visuel”
+# Mapping "tableau visuel"
 # =========================
 
 def _find_best_row_label(nodes: List[_Node], row: _Cluster, inputs: List[_InputNode]) -> Optional[_Node]:
@@ -318,7 +317,7 @@ def _build_visual_matrix_map(driver, *, force: bool = False, max_age_s: float = 
     now = time.time()
     cur_url = ""
     try:
-        cur_url = driver.current_url
+        cur_url = driver.url
     except Exception:
         pass
 
@@ -331,7 +330,7 @@ def _build_visual_matrix_map(driver, *, force: bool = False, max_age_s: float = 
 
     inputs, nodes, meta = _collect(driver)
     if len(inputs) < 6:
-        # trop peu d’inputs → pas un tableau probable
+        # trop peu d'inputs → pas un tableau probable
         built = {"url": cur_url, "built_ts": now, "ok": False, "why": "too_few_inputs"}
         try:
             driver._visual_matrix_cache = built
@@ -438,53 +437,46 @@ def try_click_matrix_by_visual_mapping(
             print(f"[DOMMAP] cellule non mappée ridx={ridx} cidx={cidx}")
         return False
 
-    # récupérer l’élément par uid
-    try:
-        el = driver.find_element(By.CSS_SELECTOR, f"[data-survey-uid='{uid}']")
-    except Exception as e:
+    # récupérer l'élément par uid
+    page = driver
+    el = page.query_selector(f"[data-survey-uid='{uid}']")
+    if el is None:
         if debug:
-            print(f"[DOMMAP] element introuvable pour uid={uid}: {e}")
+            print(f"[DOMMAP] element introuvable pour uid={uid}")
         return False
 
-    # clic robuste (js + actionchains + click)
     try:
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+        el.scroll_into_view_if_needed()
         time.sleep(0.12)
     except Exception:
         pass
 
-    for mode in ("js", "ac", "native"):
+    try:
+        el.click()
+        time.sleep(0.12)
+        # post-check simple (si input type=radio/checkbox)
         try:
-            if mode == "js":
-                driver.execute_script("arguments[0].click();", el)
-            elif mode == "ac":
-                ActionChains(driver).move_to_element(el).click().perform()
-            else:
-                el.click()
-            time.sleep(0.12)
-            # post-check simple (si input type=radio/checkbox)
-            try:
-                tag = (el.tag_name or "").lower()
-                if tag == "input":
-                    tp = (el.get_attribute("type") or "").lower()
-                    if tp in ("radio", "checkbox"):
-                        if el.is_selected():
-                            if debug:
-                                print(f"[DOMMAP] ✅ cellule cliquée ({mode}) row={row_label!r} col={col_label!r}")
-                            return True
-                # aria cases
-                aria = (el.get_attribute("aria-checked") or "").lower()
-                if aria == "true":
-                    if debug:
-                        print(f"[DOMMAP] ✅ cellule cliquée aria ({mode}) row={row_label!r} col={col_label!r}")
-                    return True
-            except Exception:
-                # si on ne peut pas vérifier, on considère succès (best effort)
+            tag = el.evaluate("e => e.tagName.toLowerCase()")
+            if tag == "input":
+                tp = (el.get_attribute("type") or "").lower()
+                if tp in ("radio", "checkbox"):
+                    if el.is_checked():
+                        if debug:
+                            print(f"[DOMMAP] ✅ cellule cliquée row={row_label!r} col={col_label!r}")
+                        return True
+            # aria cases
+            aria = (el.get_attribute("aria-checked") or "").lower()
+            if aria == "true":
                 if debug:
-                    print(f"[DOMMAP] ✅ clic effectué ({mode}) row={row_label!r} col={col_label!r} (post-check indispo)")
+                    print(f"[DOMMAP] ✅ cellule cliquée aria row={row_label!r} col={col_label!r}")
                 return True
         except Exception:
-            continue
+            # si on ne peut pas vérifier, on considère succès (best effort)
+            if debug:
+                print(f"[DOMMAP] ✅ clic effectué row={row_label!r} col={col_label!r} (post-check indispo)")
+            return True
+    except Exception:
+        pass
 
     if debug:
         print(f"[DOMMAP] ❌ échec clic sur cellule row={row_label!r} col={col_label!r}")

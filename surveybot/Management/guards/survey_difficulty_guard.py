@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Tuple, Optional
 from urllib.parse import parse_qs, urlparse
 
-from selenium.webdriver.common.by import By
+
 
 
 # ✅ Selectors "forts" (si présents → très probable que ce soit strict)
@@ -72,8 +72,7 @@ STRICT_KEYWORDS = {
 def _has_datadome_iframe(driver) -> bool:
     """True si un iframe DataDome (captcha-delivery.com) est présent dans la page."""
     try:
-        iframes = driver.find_elements(
-            By.CSS_SELECTOR,
+        iframes = driver.query_selector_all(
             'iframe[src*="captcha-delivery.com"], iframe[title*="DataDome"]',
         )
         return bool(iframes)
@@ -84,7 +83,7 @@ def _has_datadome_iframe(driver) -> bool:
 def _page_text_lc(driver) -> str:
     """Récupère le texte de la page en minuscules, de façon safe."""
     try:
-        return (driver.execute_script("return document.body.innerText || ''") or "").lower()
+        return (driver.evaluate("() => document.body.innerText || ''") or "").lower()
     except Exception:
         return ""
 
@@ -92,39 +91,40 @@ def _page_text_lc(driver) -> str:
 def _detect_image_evaluation(driver) -> bool:
     """
     Détecte les pages d'évaluation d'image (Walr) qui nécessitent Vision API.
-    
+
     Pattern DOM:
         <div class="rsScrollGridWrappper">  (contient une image)
         + div.rsBtn (boutons de réponse, ≥2)
-    
+
     Ces pages ne sont pas supportées en V1 prod → on les abandonne.
     """
     try:
+        page = driver
         # 1) Vérifier la présence de rsScrollGridWrappper ou similaire
-        scroll_els = driver.find_elements(By.CSS_SELECTOR, 
+        scroll_els = page.query_selector_all(
             "div.rsScrollGridWrappper, div[class*='rsScrollGridW']")
-        
+
         if not scroll_els:
             return False
-        
+
         # 2) Vérifier la présence de boutons rsBtn (≥2)
-        rsBtn_els = driver.find_elements(By.CSS_SELECTOR, "div.rsBtn")
-        
+        rsBtn_els = page.query_selector_all("div.rsBtn")
+
         if len(rsBtn_els) < 2:
             return False
-        
+
         # 3) Vérifier qu'il y a une image dans la page
-        imgs = driver.find_elements(By.TAG_NAME, "img")
+        imgs = page.query_selector_all("img")
         has_walr_image = False
         for img in imgs:
             try:
                 src = img.get_attribute("src") or ""
-                if "walr.com" in src or (src.startswith("http") and img.is_displayed()):
+                if "walr.com" in src or (src.startswith("http") and img.is_visible()):
                     has_walr_image = True
                     break
             except Exception:
                 continue
-        
+
         if has_walr_image:
             print(f"[DIFFICULTY_GUARD] ✓ Image evaluation: rsScrollGrid + {len(rsBtn_els)} rsBtn + image")
             return True
@@ -139,9 +139,9 @@ def _detect_image_evaluation(driver) -> bool:
 def _is_large_visible_image(el) -> bool:
     """Détecte une image réellement centrale (pas un petit logo décoratif)."""
     try:
-        if not el.is_displayed():
+        if not el.is_visible():
             return False
-        rect = el.rect or {}
+        rect = el.bounding_box() or {}
         width = rect.get("width", 0) or 0
         height = rect.get("height", 0) or 0
         return width >= 220 and height >= 120
@@ -159,20 +159,19 @@ def _detect_ta_image_only_question(driver) -> bool:
     Ce pattern indique une question dépendante de l'image (DOM-only insuffisant).
     """
     try:
-        ta_images = driver.find_elements(By.CSS_SELECTOR, "img.taImage")
+        page = driver
+        ta_images = page.query_selector_all("img.taImage")
         has_large_ta_image = any(_is_large_visible_image(img) for img in ta_images)
         if not has_large_ta_image:
             return False
 
-        textareas = driver.find_elements(
-            By.CSS_SELECTOR,
+        textareas = page.query_selector_all(
             "textarea[required], textarea.mat-mdc-input-element, textarea[name='selectedOptField']",
         )
         if not textareas:
             return False
 
-        option_inputs = driver.find_elements(
-            By.CSS_SELECTOR,
+        option_inputs = page.query_selector_all(
             "input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox'], div.rsBtn",
         )
         if option_inputs:
@@ -189,9 +188,9 @@ def _detect_ta_image_only_question(driver) -> bool:
 def _is_element_visible(el) -> bool:
     """Vérifie si un élément est réellement visible (pas caché dans une modale, etc.)"""
     try:
-        if not el.is_displayed():
+        if not el.is_visible():
             return False
-        rect = el.rect
+        rect = el.bounding_box() or {}
         if rect.get("width", 0) < 10 or rect.get("height", 0) < 10:
             return False
         return True
@@ -205,15 +204,14 @@ def _is_actionable_captcha_element(el) -> bool:
     On ne garde que les éléments qui ressemblent à un challenge utilisateur réel.
     """
     try:
-        tag = (el.tag_name or "").lower()
+        tag = (el.evaluate("e => e.tagName.toLowerCase()") or "").lower()
         cls = (el.get_attribute("class") or "").lower()
         el_id = (el.get_attribute("id") or "").lower()
         src = (el.get_attribute("src") or "").lower()
         try:
             badge_ancestor = bool(
-                el.parent.execute_script(
-                    "return !!arguments[0].closest('.g-recaptcha-badge, .grecaptcha-badge');",
-                    el,
+                el.evaluate(
+                    "e => !!e.closest('.g-recaptcha-badge, .grecaptcha-badge')"
                 )
             )
         except Exception:
@@ -248,6 +246,36 @@ def _is_actionable_captcha_element(el) -> bool:
         return False
 
 
+_REAL_RECAPTCHA_SELECTORS = (
+    "iframe[src*='recaptcha']",
+    "iframe[title*='recaptcha']",
+    ".g-recaptcha",
+    "[data-sitekey]",
+)
+
+
+def is_real_recaptcha_present(driver) -> bool:
+    """
+    True uniquement si un widget Google reCAPTCHA réel (iframe/sitekey) est présent.
+
+    Distinct de reason="captcha" de detect_strict_survey() : ce dernier inclut aussi
+    "#captcha" et "iframe[src*='captcha']" génériques, qui matchent également les
+    CAPTCHA image-texte classiques (canvas/img id="captcha" + input texte), gérés
+    par captcha.normal_captcha et non par solve_recaptcha_v2_auto.
+    """
+    try:
+        for sel in _REAL_RECAPTCHA_SELECTORS:
+            try:
+                for el in driver.query_selector_all(sel):
+                    if _is_element_visible(el) and _is_actionable_captcha_element(el):
+                        return True
+            except Exception:
+                continue
+        return False
+    except Exception:
+        return False
+
+
 def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
     """
     Détecte si la page demande une interaction "stricte".
@@ -255,16 +283,18 @@ def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
     - 1) Check selectors (rapide)
     - 2) Fallback keywords (texte)
     """
+    page = driver
+
     # === 0) IMAGE EVALUATION (Walr) - Non supporté en V1 prod ===
     if _detect_image_evaluation(driver) or _detect_ta_image_only_question(driver):
         return True, "image_evaluation"
-    
+
     # === 1) DOM selectors ===
     for reason, selectors in STRICT_SELECTORS.items():
         matches = []
         for sel in selectors:
             try:
-                els = driver.find_elements(By.CSS_SELECTOR, sel)
+                els = page.query_selector_all(sel)
                 if els:
                     matches.append(sel)
             except Exception:
@@ -280,7 +310,7 @@ def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
             visible_count = 0
             for sel in matches:
                 try:
-                    for el in driver.find_elements(By.CSS_SELECTOR, sel):
+                    for el in page.query_selector_all(sel):
                         if _is_element_visible(el):
                             visible_count += 1
                             if visible_count >= 2:
@@ -301,7 +331,7 @@ def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
                 continue
             for sel in matches:
                 try:
-                    for el in driver.find_elements(By.CSS_SELECTOR, sel):
+                    for el in page.query_selector_all(sel):
                         if _is_element_visible(el) and _is_actionable_captcha_element(el):
                             return True, "captcha"
                 except Exception:
@@ -337,7 +367,7 @@ def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
 
     has_media = False
     try:
-        if driver.find_elements(By.TAG_NAME, "audio") or driver.find_elements(By.TAG_NAME, "video"):
+        if page.query_selector_all("audio") or page.query_selector_all("video"):
             has_media = True
     except Exception:
         pass

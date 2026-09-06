@@ -847,6 +847,9 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
             else:
                 lines.append(
                     f"selection_rule: Pour QID={qid}, sélectionner entre 1 et {display_max_sel} option(s) pertinente(s) séparée(s) par |. "
+                    f"Si le texte de la question (contexte ci-dessus) indique explicitement un nombre maximal de "
+                    f"sélections différent (ex: \"jusqu'à deux\", \"au plus 3\", \"maximum 2 réponses\"), ce nombre "
+                    f"prime sur la limite de {display_max_sel} indiquée ici et doit être respecté en priorité. "
                     f"Ne jamais sélectionner 'Autre'/'Other'. "
                     f"Ne jamais sélectionner une option exclusive ('Aucune de ces réponses', 'Aucun', 'None of the above', etc.) sauf si la RÈGLE SECTEUR s'applique."
                 )
@@ -859,6 +862,27 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                 lines.append(
                     f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {max_sel} valeurs "
                     f"séparées par |. Pas de répétition. Valeurs différentes obligatoires."
+                )
+            elif ctx.get("native_date_input"):
+                # Champ natif <input type="date"> unique (ex: Confirmit cf-question--date) :
+                # 1 seul target DOM pour toute la date -> AUCUN séparateur "|" ici, contrairement
+                # à la RÈGLE CHAMP MULTI-CASES (context.kind=multi_text) plus haut, qui ne
+                # s'applique pas à ce bloc (kind=single). Voir BOT_EVOLUTION_MEMORY.md.
+                lines.append(
+                    f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT 1 valeur : la date complète "
+                    "au format AAAA-MM-JJ (ex: 1998-06-15), SANS séparateur '|', en une seule chaîne "
+                    "(ne jamais décomposer en jour/mois/année séparés pour ce champ)."
+                )
+            elif ctx.get("ifop_zip2city_widget"):
+                # Widget tiers zip2city (Ifop/SSI, s2.ifoponline.com) : la question demande
+                # code postal + ville, mais le seul champ saisissable est un code postal ;
+                # la ville est résolue et sélectionnée ensuite par la couche d'application
+                # (Survey/input_text.py::fill_ifop_zip2city_widget), pas par ce texte. Voir
+                # BOT_EVOLUTION_MEMORY.md : "IFOP ZIP2CITY".
+                lines.append(
+                    f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT 1 valeur : un code postal "
+                    "français valide à 5 chiffres (ex: 75001), cohérent avec le profil/la localisation "
+                    "connue du répondant si disponible, SANS séparateur '|', SANS nom de ville."
                 )
             else:
                 lines.append(

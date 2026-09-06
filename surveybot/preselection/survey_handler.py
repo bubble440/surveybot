@@ -1,7 +1,80 @@
 import time, os, threading
 from Cash.payout import _payout_and_check_daily_stop
 
-IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
+# SNAP_ENABLED est une variable GLOBAL_CONFIG : en build compilé (Nuitka), elle provient
+# exclusivement de global_config.py, jamais de l'environnement du process (cf. config.py).
+# En dev/attach (global_config.py absent du projet), fallback os.getenv.
+try:
+    from global_config import SNAP_ENABLED  # type: ignore
+except ImportError:
+    SNAP_ENABLED = os.getenv("SNAP_ENABLED", "")
+
+
+def _resync_live_page(driver):
+    """
+    🔎 FIX : certaines fonctions (click_participer_if_qualified côté
+    question_analyzer.py, switch_to_latest_window_and_close_others côté
+    redirect_watcher.py) font le switch vers le nouvel onglet EN INTERNE, sur une
+    variable locale, et ferment l'ancien onglet (souvent celui référencé par
+    `driver` chez l'appelant) — sans jamais renvoyer la nouvelle Page. `driver`
+    continue donc de pointer vers une Page FERMÉE.
+
+    Symptôme observé : `page.url` est une propriété mise en cache côté client
+    Playwright (pas un appel réseau) — elle continue de répondre même sur une
+    page fermée, en renvoyant la dernière valeur connue. `wait_for_final_redirection`
+    peut donc "stabiliser" sur une URL qui semble correcte (ex: l'URL de l'onglet
+    d'origine avant l'ouverture du popup) alors que la page est déjà morte. Toute
+    vraie opération DOM qui suit (query_selector_all, evaluate, wait_for_selector)
+    échoue alors immédiatement avec "Target page, context or browser has been closed".
+
+    Cette fonction revérifie que `driver` est bien une page vivante ; si ce n'est
+    plus le cas, elle retombe sur la dernière page vivante du même contexte
+    navigateur (best-effort : c'est la page la plus probable après un switch).
+    À appeler après tout appel à une fonction susceptible d'avoir fait un switch
+    d'onglet en interne, avant de continuer à utiliser `driver`.
+    """
+    try:
+        if not driver.is_closed():
+            return driver
+    except Exception:
+        pass
+
+    print("[DRIVER][DIAG] Référence `driver` fermée détectée — resync en cours.")
+
+    # Priorité 1 : la page publiée par le RuntimeGuard (survey_solver.py y republie
+    # désormais à chaque switch interne — souvent plus fraîche que driver.context,
+    # notamment si `driver` lui-même est une référence tellement périmée que même
+    # son .context n'est plus fiable).
+    try:
+        from Management.guards.runtime_guard import get_guard
+        _gd = get_guard().driver
+        if _gd is not None and not _gd.is_closed():
+            print(f"[DRIVER][DIAG] Resync via RuntimeGuard → {_gd.url}")
+            return _gd
+    except Exception:
+        pass
+
+    # Priorité 2 : dernière page vivante du contexte de `driver`.
+    try:
+        pages = driver.context.pages
+        live = [p for p in pages if not p.is_closed()]
+        if live:
+            resynced = live[-1]
+            print(f"[DRIVER][DIAG] Resync via context.pages → {resynced.url}")
+            # Republication pour les autres holders (soft_restart, guard CTA, ...).
+            try:
+                from Management.guards.runtime_guard import get_guard
+                get_guard().attach_driver(resynced)
+            except Exception as _ge:
+                print(f"[DRIVER][DIAG][WARN] Impossible de republier vers RuntimeGuard: {_ge}")
+            return resynced
+        print("[DRIVER][DIAG][WARN] Aucune page vivante trouvée dans le contexte après resync.")
+    except Exception as e:
+        print(f"[DRIVER][DIAG][WARN] Resync impossible ({e}) — on retourne `driver` tel quel.")
+
+    return driver
+
+
 
 # FIX-B3: _restart_depth était un global partagé entre threads.
 # Un soft_restart peut relancer run_survey() depuis n'importe quel thread
@@ -22,10 +95,6 @@ def _set_restart_depth(v: int) -> None:
     _restart_tl.depth = v
 
 import preselection.response_executor
-if not IS_LOCAL:
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
 from preselection.question_validation import detect_disqualification_reason
 from State.daily_target import DAILY_TARGET_EUR
 from Cash.payout import MIN_CASHOUT_EUR
@@ -34,10 +103,11 @@ from Cash.payout import MIN_CASHOUT_EUR
 def _safe_page_text(driver) -> str:
     """Récupère un texte exploitable pour les détecteurs (robuste)."""
     try:
-        return driver.find_element(By.TAG_NAME, "body").text or ""
+        page = driver
+        return page.evaluate("() => document.body ? (document.body.innerText || '') : ''") or ""
     except Exception:
         try:
-            return driver.page_source or ""
+            return driver.content() or ""
         except Exception:
             return ""
 
@@ -45,10 +115,11 @@ def _safe_page_text(driver) -> str:
 def is_topsurveys_preselection_popup(driver) -> bool:
     """Détection DOM minimale d'un popup de présélection TopSurveys déjà affiché."""
     try:
-        return bool(driver.execute_script("""
+        page = driver
+        return bool(page.evaluate("""() => {
             try {
-              const inTopSurveys = /(^|\.)topsurveys\.app$/i.test(location.hostname || '')
-                || /(^|\.)topsurveys\.com$/i.test(location.hostname || '');
+              const inTopSurveys = /(^|\.)topsurveys\\.app$/i.test(location.hostname || '')
+                || /(^|\.)topsurveys\\.com$/i.test(location.hostname || '');
               if (!inTopSurveys) return false;
 
               const hasActions = !!document.querySelector(
@@ -64,7 +135,7 @@ def is_topsurveys_preselection_popup(driver) -> bool:
             } catch(e) {
               return false;
             }
-        """))
+        }"""))
     except Exception:
         return False
 
@@ -84,8 +155,30 @@ def run_attach_preselection_takeover(
     import preselection.question_analyzer
     import preselection.response_executor
 
+    page = driver
+
+    # FIX popup_not_detected : _wait_for_survey_popup (BLOC 1) attend ps-popup-content-wrapper,
+    # mais is_topsurveys_preselection_popup requiert ps-common-actions-button (rendu plus tard
+    # par Vue après chargement de la première question). On attend explicitement ce bouton.
+    _ACTION_SEL = (
+        "button[data-test-id='ps-common-actions-button'], "
+        "button[data-test-id='ps-skip-question-button']"
+    )
+    try:
+        page.wait_for_selector(_ACTION_SEL, state="attached", timeout=10_000)
+    except Exception:
+        pass  # best-effort : on tente la détection quand même
+
     if not is_topsurveys_preselection_popup(driver):
-        return False, "popup_not_detected"
+        # Un popup TopSurveys connu (recompense periodique, boite mystere, "Bon
+        # travail !", fin de serie quotidienne) peut obstruer la page et empecher
+        # la detection du popup de preselection. On delegue leur resolution au
+        # mecanisme deja centralise (Survey/functions.py, non modifie, non
+        # duplique) avant de conclure a une absence reelle de popup de preselection.
+        from Survey.functions import _resolve_topsurveys_popups
+        _resolve_topsurveys_popups(driver)
+        if not is_topsurveys_preselection_popup(driver):
+            return False, "popup_not_detected"
 
     print(f"[ATTACH][PRESEL] takeover start (max_rounds={max_rounds}, timeout={transition_timeout_s}s)")
 
@@ -116,9 +209,10 @@ def run_attach_preselection_takeover(
                         continue
                 if not skipped:
                     try:
-                        skip_btn = driver.find_element(By.CSS_SELECTOR, "button[data-test-id='ps-skip-question-button']")
-                        driver.execute_script("arguments[0].click();", skip_btn)
-                        skipped = True
+                        skip_btn = page.query_selector("button[data-test-id='ps-skip-question-button']")
+                        if skip_btn:
+                            page.evaluate("(el) => el.click()", skip_btn)
+                            skipped = True
                     except Exception:
                         pass
                 if not skipped:
@@ -146,7 +240,7 @@ def run_attach_preselection_takeover(
             pass
 
         try:
-            base_handles = set(driver.window_handles)
+            base_handles = set(driver.context.pages)
         except Exception:
             base_handles = set()
 
@@ -166,6 +260,7 @@ def run_attach_preselection_takeover(
                     timeout=min(12, transition_timeout_s),
                     prefer_external=True,
                 )
+                driver = _resync_live_page(driver)
                 Management.redirect_watcher.wait_for_final_redirection(driver, max_wait=transition_timeout_s)
             except Exception as _e:
                 # H4: on logue l'erreur pour permettre le diagnostic — le bot risque
@@ -205,6 +300,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
     import Management.guards.survey_difficulty_guard
     import Management.redirect_watcher
     import launch
+    from State.survey_memory import SurveySession, flush_disqualified, flush_qualified
     
     def _restart(reason: str) -> None:
         """
@@ -236,20 +332,57 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
             print(f"[RESTART][FATAL] soft_restart fallback échoué: {e}")
 
     time.sleep(1)
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Plateformes non-TopSurveys (ex. ySense) : toute la boucle ci-dessous
+    # (preselection.question_analyzer.get_response_for_question,
+    # click_participer_if_qualified, response_executor.execute_response,
+    # sélecteurs ps-*, vérification "app.topsurveys.app/surveys"...) est
+    # bâtie exclusivement sur le DOM et le parcours de présélection
+    # TopSurveys (popup de qualification + bouton "Participer" avant
+    # d'atteindre le survey réel). Ces plateformes n'ont pas cette phase :
+    # select_survey() amène déjà directement sur la page du survey réel (ou
+    # sur un écran de prescreening propre à la plateforme, géré de façon
+    # générique par solve_full_survey/execute_survey_page). Appliquer cette
+    # boucle malgré tout dessus produisait une détection de popup/DOM
+    # systématiquement erronée ("Aucun popup détecté", "JS DOM extraction
+    # échouée") et pouvait bloquer indéfiniment avant même d'atteindre
+    # solve_full_survey(). On délègue donc directement à cette dernière,
+    # qui gère déjà son propre cycle de vie (execute_survey_page, retour
+    # plateforme via platform.handle_post_survey, reload sur page figée).
+    # ─────────────────────────────────────────────────────────────────────
+    _is_topsurveys = platform is None or platform.get_platform_name() == "topsurveys"
+    if not _is_topsurveys:
+        try:
+            Survey.survey_solver.solve_full_survey(
+                driver,
+                api_key=api_key,
+                account_id=account_id,
+                survey_context=ctx,
+                platform=platform,
+            )
+        except TopSurveysReturn:
+            pass
+        return
+
     _STUCK_THRESHOLD = 5
     _last_scan_key = None
     _same_scan_count = 0
     _card_retry_count = 0
     _MAX_CARD_RETRIES = 20
     _cashout_done = False          # ← ajout
+    session = SurveySession()      # Session mémoire inter-bots (locale jusqu'au flush)
 
     def _skip_card_and_retry(reason: str) -> bool:
         """
         Marque la carte courante comme bloquée et navigue vers la meilleure carte suivante.
         Retourne True si le budget est épuisé (soft restart déclenché → appelant doit `return`),
         False si la navigation a réussi (appelant doit `continue`).
+        Carte abandonnée sans disqualification/qualification détectée (ni flush) : la session
+        mémoire du popup abandonné ne doit pas fuiter sur le popup suivant → recréation ici,
+        au même titre que les recréations déjà faites après flush_disqualified/flush_qualified.
         """
-        nonlocal _card_retry_count, _last_scan_key, _same_scan_count
+        nonlocal _card_retry_count, _last_scan_key, _same_scan_count, session
         from preselection.survey_navigator import mark_last_selected_survey_as_blocked, go_to_best_paid_survey
         mark_last_selected_survey_as_blocked()
         _card_retry_count += 1
@@ -261,6 +394,8 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
         _last_scan_key = None
         _same_scan_count = 0
         go_to_best_paid_survey(driver)
+        session = SurveySession()
+        Survey.log_utils.log_debug("SURVEY_HANDLER", f"Session mémoire réinitialisée après carte abandonnée ({reason})")
         return False
 
     try:
@@ -278,13 +413,13 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
             except Exception as _cap_exc:
                 print(f"[CAPTCHA][WARN] {_cap_exc}")
 
-            question, answer, input_type = preselection.question_analyzer.get_response_for_question(driver, api_key)
+            question, answer, input_type = preselection.question_analyzer.get_response_for_question(driver, api_key, session=session)
 
             # =================================================================
             # STUCK DETECTION: même page scannée N fois → soft-restart
             # =================================================================
             try:
-                _cur_url = driver.current_url
+                _cur_url = driver.url
             except Exception:
                 _cur_url = ""
             _scan_key = (_cur_url, str(question)[:150] if question else "")
@@ -329,16 +464,14 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                                 pass
                         else:
                             # 2) Sinon, fallback bouton skip TopSurveys (quand il existe)
-                            skip_btn = driver.find_element(
-                                By.CSS_SELECTOR,
+                            skip_btn = driver.query_selector(
                                 "button[data-test-id='ps-skip-question-button']"
                             )
-                            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", skip_btn)
+                            if not skip_btn:
+                                raise Exception("ps-skip-question-button introuvable")
+                            skip_btn.evaluate("e => e.scrollIntoView({block:'center'})")
                             time.sleep(0.2)
-                            try:
-                                skip_btn.click()
-                            except Exception:
-                                driver.execute_script("arguments[0].click();", skip_btn)
+                            skip_btn.click()
 
                             Management.guards.runtime_guard.get_guard().record_success()
                             time.sleep(1.2)
@@ -355,6 +488,14 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                 # ❌ Cas : disqualification détectée par la validation
                 if action == "DISQUALIFIED":
                     print(f"⚠️ Disqualification détectée (validator) | reason={answer.get('reason')}")
+                    if SNAP_ENABLED.strip() == "1":
+                        from Management.snap_uploader import capture_and_upload
+                        capture_and_upload(driver, "disqualified")
+                    try:
+                        flush_disqualified(session)
+                    except Exception:
+                        pass
+                    session = SurveySession()
                     preselection.question_analyzer.handle_disqualification_and_retry(driver)
                     time.sleep(1.5)
                     from preselection.survey_navigator import go_to_best_value_survey
@@ -378,6 +519,11 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
             dq_reason = detect_disqualification_reason(question, _safe_page_text(driver))
             if dq_reason:
                 print(f"⚠️ Disqualification détectée (reason={dq_reason}).")
+                try:
+                    flush_disqualified(session)
+                except Exception:
+                    pass
+                session = SurveySession()
                 # best-effort: fermer popup si présent
                 try:
                     preselection.question_analyzer.handle_disqualification_and_retry(driver)
@@ -401,7 +547,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                     print("⚠️ Réponse non appliquée correctement, relance du survey...")
                     if not _cashout_done:
                         try:
-                            _payout_and_check_daily_stop(driver, account_id)  # retrait + DAILY STOP
+                            _payout_and_check_daily_stop(driver, account_id, email="", platform=platform)  # retrait + DAILY STOP
                             Management.guards.runtime_guard.get_guard().record_success()
                         except Exception as e:
                             Management.guards.runtime_guard.get_guard().record_error(e)
@@ -413,15 +559,29 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
             else:
                 try:
                     # Cas : on est qualifié → lancer solve_full_survey()
+                    if SNAP_ENABLED.strip() == "1":
+                        from Management.snap_uploader import new_survey, capture_and_upload
+                        new_survey()
+                        capture_and_upload(driver, "pre-qualification-click")
+
                     if preselection.question_analyzer.click_participer_if_qualified(driver):
                         # H3: click_participer_if_qualified fait déjà le switch de fenêtre
                         # en interne — ne pas rappeler switch_to_latest_window_and_close_others
                         # ici pour éviter la race condition du double switch.
+                        # 🔎 FIX : ce switch interne ferme l'ancien onglet référencé par `driver`
+                        # sans jamais renvoyer la nouvelle page — resync obligatoire avant de
+                        # continuer, sous peine d'opérer sur une Page fermée (cf. _resync_live_page).
+                        driver = _resync_live_page(driver)
                         final_url = Management.redirect_watcher.wait_for_final_redirection(driver, max_wait=60)
+
+                        if SNAP_ENABLED.strip() == "1":
+                            from Management.snap_uploader import new_survey, capture_and_upload
+                            new_survey()
+                            capture_and_upload(driver, "qualification")
 
                         if final_url and "app.topsurveys.app/surveys" in final_url:
                             Survey.log_utils.log_info("SURVEY_HANDLER", "Retour TopSurveys après clic Participer — popup/exclusion attendue")
-                            Survey.survey_executor._handle_topsurveys_exclusion_popup(driver, account_id)
+                            Survey.survey_executor._handle_topsurveys_exclusion_popup(driver, account_id, platform=platform)
                             # if _skip_card_and_retry("topsurveys_redirect"):
                             #     return
                             continue
@@ -436,6 +596,10 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
 
                         # feu vert → on entre en résolution complète
                         try:
+                            flush_qualified(session)
+                        except Exception:
+                            pass
+                        try:
                             Survey.survey_solver.solve_full_survey(
                                 driver,
                                 api_key=api_key,
@@ -444,12 +608,24 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                                 platform=platform,
                             )
                         except TopSurveysReturn:
+                            # 🔎 FIX : solve_full_survey() peut avoir basculé en interne sur
+                            # un autre onglet (cf. survey_solver.py::_switch_to_external_tab,
+                            # qui republie maintenant vers le RuntimeGuard). `driver` ici est
+                            # celui d'AVANT l'appel — on le resynchronise avant de continuer
+                            # la boucle, sinon la prochaine itération opère sur une page
+                            # potentiellement fermée.
+                            driver = _resync_live_page(driver)
                             continue
                         return
 
                     # Cas : on est disqualifié → cliquer sur OK puis relancer
                     if preselection.question_analyzer.handle_disqualification_and_retry(driver):
                         print("⚠️ Disqualification détectée après question finale.")
+                        try:
+                            flush_disqualified(session)
+                        except Exception:
+                            pass
+                        session = SurveySession()
                         time.sleep(2)
                         Management.guards.runtime_guard.get_guard().record_success()
                         # if _skip_card_and_retry("disqualification_or_retry"):

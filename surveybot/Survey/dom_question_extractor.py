@@ -14,7 +14,6 @@ from __future__ import annotations
 from typing import List, Optional
 import re
 import html
-from selenium.webdriver.common.by import By
 
 # Import des utilitaires
 try:
@@ -43,6 +42,9 @@ except ImportError:
         compute_min_select,
     )
 
+
+
+
 # ================================================================================
 # CONSTANTE
 # ================================================================================
@@ -57,19 +59,18 @@ _INDEXED_NAME_PATTERN = re.compile(r"^[A-Za-z]+\d+", re.IGNORECASE)
 def _find_question_text_near_element(driver, el) -> str:
     """
     Cherche un texte "question" visuellement proche (au-dessus) de l'élément input/textarea.
-    
+
     Objectif: éviter les fallbacks vision quand la question est bien dans le DOM
     mais pas dans le même conteneur HTML (Angular/React très fragmenté).
-    
+
     Stratégie:
     - Parcourt tous les éléments visibles
     - Cherche ceux au-dessus (verticalement) avec overlap horizontal
     - Retourne le texte du plus proche (gap minimal)
     """
     try:
-        txt = driver.execute_script(
-            """
-            const el = arguments[0];
+        txt = driver.evaluate(
+            """(el) => {
             if (!el) return "";
             const r = el.getBoundingClientRect();
 
@@ -112,8 +113,8 @@ def _find_question_text_near_element(driver, el) -> str:
 
             candidates.sort((a,b) => (a.gap - b.gap) || (b.area - a.area));
             return candidates.length ? candidates[0].t : "";
-            """,
-            el
+            }""",
+            el,
         )
         return _norm(txt) if txt else ""
     except Exception:
@@ -127,7 +128,7 @@ def _find_question_text_near_element(driver, el) -> str:
 def _find_associated_label(driver, el) -> str:
     """
     Cherche un <label> associé à cet input/select/textarea.
-    
+
     Stratégies:
     1. Label avec attribut for=id
     2. Label parent contenant l'input
@@ -145,19 +146,20 @@ def _find_associated_label(driver, el) -> str:
         return True
 
     try:
+        page = driver
+
         # 0) Widgets ARIA custom: label via aria-labelledby (Forsta/Confirmit, etc.)
         aria_labelledby = (el.get_attribute("aria-labelledby") or "").strip()
         if aria_labelledby:
             parts = [p for p in aria_labelledby.split() if p]
             texts = []
             for ref_id in parts:
-                try:
-                    node = driver.find_element(By.ID, ref_id)
-                    txt = _norm(node.text or node.get_attribute("innerText") or node.get_attribute("textContent") or "")
-                    if txt and txt not in texts:
-                        texts.append(txt)
-                except Exception:
-                    pass
+                node = page.query_selector(f"#{ref_id}")
+                if node is None:
+                    continue
+                txt = _norm(node.inner_text() or node.text_content() or "")
+                if txt and txt not in texts:
+                    texts.append(txt)
             if texts:
                 joined = _norm(" ".join(texts))
                 if _is_valid_option_label(joined):
@@ -166,32 +168,29 @@ def _find_associated_label(driver, el) -> str:
         # 1) Label avec for=id
         el_id = el.get_attribute("id")
         if el_id:
-            try:
-                label = driver.find_element(By.CSS_SELECTOR, f'label[for="{el_id}"]')
-                txt = _norm(label.text or label.get_attribute("textContent") or "")
+            label = page.query_selector(f'label[for="{el_id}"]')
+            if label is not None:
+                txt = _norm(label.inner_text() or label.text_content() or "")
                 if _is_valid_option_label(txt):
                     return txt
-            except Exception:
-                pass
 
         # 2) Label parent
         try:
-            labels = el.find_elements(By.XPATH, "ancestor::label")
+            labels = el.query_selector_all("xpath=ancestor::label")
             for label in labels:
-                txt = _norm(label.text or label.get_attribute("textContent") or "")
+                txt = _norm(label.inner_text() or label.text_content() or "")
                 if _is_valid_option_label(txt):
                     return txt
         except Exception:
             pass
-        
+
         # 3) Label sibling
         try:
-            labels = el.find_elements(
-                By.XPATH,
-                "preceding-sibling::label[1] | following-sibling::label[1]"
+            labels = el.query_selector_all(
+                "xpath=preceding-sibling::label[1] | following-sibling::label[1]"
             )
             for label in labels:
-                txt = _norm(label.text)
+                txt = _norm(label.inner_text())
                 if _is_valid_option_label(txt):
                     return txt
         except Exception:
@@ -200,12 +199,11 @@ def _find_associated_label(driver, el) -> str:
         # 4) Variants custom: libellé dans un sibling non-<label>
         # ex: <div class="answer_options"><div class="option_label"><span>...</span></div><input ...></div>
         try:
-            custom_label_nodes = el.find_elements(
-                By.XPATH,
-                "ancestor::*[contains(@class,'answer_options')][1]//*[contains(@class,'option_label')]"
+            custom_label_nodes = el.query_selector_all(
+                "xpath=ancestor::*[contains(@class,'answer_options')][1]//*[contains(@class,'option_label')]"
             )
             for node in custom_label_nodes:
-                txt = _norm(node.text or node.get_attribute("innerText") or "")
+                txt = _norm(node.inner_text() or node.text_content() or "")
                 if _is_valid_option_label(txt):
                     return txt
         except Exception:
@@ -215,9 +213,9 @@ def _find_associated_label(driver, el) -> str:
         #     (ex: Askia — <td><input class="askia-live"/><span>Label</span></td>).
         #     Déclenché uniquement quand les stratégies label/aria/parent ont échoué.
         try:
-            sibling_spans = el.find_elements(By.XPATH, "following-sibling::span[1]")
+            sibling_spans = el.query_selector_all("xpath=following-sibling::span[1]")
             for span in sibling_spans:
-                txt = _norm(span.text or "")
+                txt = _norm(span.inner_text() or "")
                 if txt and len(txt) <= 300 and _is_valid_option_label(txt):
                     return txt
         except Exception:
@@ -228,9 +226,8 @@ def _find_associated_label(driver, el) -> str:
         # (et non le conteneur global de question) pour éviter de capturer
         # le texte agrégé de toute la question.
         try:
-            dom_option_txt = driver.execute_script(
-                r"""
-                const input = arguments[0];
+            dom_option_txt = page.evaluate(
+                r"""(input) => {
                 if (!input) return '';
 
                 const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
@@ -274,7 +271,7 @@ def _find_associated_label(driver, el) -> str:
 
                 candidates.sort((a, b) => a.len - b.len);
                 return candidates[0].t;
-                """,
+                }""",
                 el,
             )
             dom_option_txt = _norm(dom_option_txt)
@@ -282,11 +279,106 @@ def _find_associated_label(driver, el) -> str:
                 return dom_option_txt
         except Exception:
             pass
-        
+
         return ""
-    
+
     except Exception:
         return ""
+
+
+def _find_ipsos_sharky_grid_progressive_option_label(el) -> str:
+    """
+    Résolution additionnelle et strictement scopée du libellé d'option pour le
+    widget Ipsos/mrIWeb Sharky "GridProgressive" (matrice progressive, template
+    iis-sharky) : chaque option est un div.prog-the-answer-container[role='radio']
+    sans <label>, sans aria-labelledby, sans name — le libellé est porté par un
+    span.mrQuestionText descendant. Aucune des stratégies de _find_associated_label
+    ne couvre ce cas (pas de for=id, pas de label ancêtre/sibling, pas de
+    .answer_options/.option_label, et le sibling span direct visé par la
+    stratégie 4b n'existe pas ici — le span est un descendant imbriqué, pas un
+    sibling immédiat de l'élément role='radio').
+
+    Voir BOT_EVOLUTION_MEMORY.md ("ipsos_mriweb_grid_progressive", dom_analyzer.py)
+    pour la résolution de la question associée à ce même widget.
+
+    Guard DOM strict : el porte role='radio' ET la classe 'prog-the-answer-container',
+    ET est un enfant direct d'un div.the-radiogroup[role='radiogroup'].
+    N'est appelée qu'en complément de _find_associated_label (jamais à sa place),
+    uniquement quand celle-ci n'a rien résolu pour cet élément.
+    """
+    try:
+        role = (el.get_attribute("role") or "").strip().lower()
+        class_attr = (el.get_attribute("class") or "")
+        if role != "radio" or "prog-the-answer-container" not in class_attr.split():
+            return ""
+
+        parent_groups = el.query_selector_all(
+            "xpath=parent::div[contains(concat(' ',normalize-space(@class),' '),' the-radiogroup ')]"
+        )
+        if not parent_groups:
+            return ""
+
+        span_nodes = el.query_selector_all("xpath=.//span[contains(concat(' ',normalize-space(@class),' '),' mrQuestionText ')]")
+        if not span_nodes:
+            return ""
+        txt = _norm(span_nodes[0].inner_text() or span_nodes[0].get_attribute("innerText") or "")
+        if txt and _is_valid_option_label_text(txt):
+            return txt
+        return ""
+    except Exception:
+        return ""
+
+
+def _find_ipsos_sharky_grid_progressive_checkbox_option_label(el) -> str:
+    """
+    Variante checkbox (multi-réponses) de _find_ipsos_sharky_grid_progressive_option_label,
+    pour le widget Ipsos/mrIWeb Sharky "GridProgressive" quand le conteneur
+    question-container porte QSubType-MA / prog-type-checkbox : chaque option est
+    un div.prog-the-answer-container[role='checkbox'] (libellé dans un
+    span.mrQuestionText descendant), enfant direct de div.clearfix.prog-answers-row
+    (pas de div.the-radiogroup dans cette variante).
+
+    Voir BOT_EVOLUTION_MEMORY.md ("ipsos_mriweb_grid_progressive", dom_analyzer.py)
+    pour la résolution de la question associée, et
+    _find_ipsos_sharky_grid_progressive_option_label pour la variante radio (non
+    modifiée par cette fonction).
+
+    Guard DOM strict : el porte role='checkbox' ET la classe 'prog-the-answer-container',
+    ET est un enfant direct d'un div.clearfix.prog-answers-row.
+    N'est appelée qu'en complément de _find_associated_label / de la variante radio
+    ci-dessus (jamais à leur place), uniquement quand elles n'ont rien résolu pour
+    cet élément.
+    """
+    try:
+        role = (el.get_attribute("role") or "").strip().lower()
+        class_attr = (el.get_attribute("class") or "")
+        if role != "checkbox" or "prog-the-answer-container" not in class_attr.split():
+            return ""
+
+        parent_rows = el.query_selector_all(
+            "xpath=parent::div[contains(concat(' ',normalize-space(@class),' '),' prog-answers-row ')]"
+        )
+        if not parent_rows:
+            return ""
+
+        span_nodes = el.query_selector_all("xpath=.//span[contains(concat(' ',normalize-space(@class),' '),' mrQuestionText ')]")
+        if not span_nodes:
+            return ""
+        txt = _norm(span_nodes[0].inner_text() or span_nodes[0].get_attribute("innerText") or "")
+        if txt and _is_valid_option_label_text(txt):
+            return txt
+        return ""
+    except Exception:
+        return ""
+
+
+def _is_valid_option_label_text(txt: str) -> bool:
+    txt = _norm(txt)
+    if not txt:
+        return False
+    if _is_validation_instruction(txt):
+        return False
+    return True
 
 
 # ================================================================================
@@ -299,34 +391,66 @@ def _extract_ssi_confirmit_question(driver, el) -> str:
     """
     try:
         # Chercher ancêtre avec class contenant 'question'
-        containers = el.find_elements(
-            By.XPATH,
-            "ancestor::*[contains(@class,'question') or contains(@class,'qtext')]"
+        containers = el.query_selector_all(
+            "xpath=ancestor::*[contains(@class,'question') or contains(@class,'qtext')]"
         )
         if not containers:
             return ""
-        
+
         container = containers[0]
-        
+
         # Chercher div.qtext ou .questiontext
-        try:
-            qtext_div = container.find_element(
-                By.CSS_SELECTOR,
-                ".qtext, .questiontext, .question-text"
-            )
-            txt = _norm(qtext_div.text)
+        qtext_div = container.query_selector(".qtext, .questiontext, .question-text")
+        if qtext_div is not None:
+            txt = _norm(qtext_div.inner_text())
             if txt and _is_question_text(txt):
                 return txt
-        except Exception:
-            pass
-        
+
         # Fallback: prendre tout le texte du container
-        txt = _norm(container.text)
+        txt = _norm(container.inner_text())
         if txt and _is_question_text(txt):
             return txt
-        
+
         return ""
-    
+
+    except Exception:
+        return ""
+
+
+def _extract_confirmit_cf_numeric_isolated_question(driver, el) -> str:
+    """
+    Forsta/Confirmit Wix : input natif isolé dans un conteneur `.cf-question--numeric`
+    (distinct de `.cf-question--numeric-list`, déjà couvert par
+    _extract_confirmit_cf_numeric_list_blocks — match CSS exact via closest(), qui ne
+    matche pas `.cf-question--numeric-list` car les classes CSS sont comparées par
+    token entier, pas par sous-chaîne).
+
+    Sans ce patch, la question résolue pour ce cas ne contient que l'instruction
+    générique ("Saisissez votre réponse.") : `_nearest_question_container` remonte à
+    `.cf-question__content` (ancêtre le plus proche portant "question" dans sa classe),
+    qui ne contient pas les divs frères `.cf-question__text` / `.cf-question__instruction`,
+    et `_find_question_text_near_element` (recherche par proximité visuelle) retient
+    l'instruction car elle est visuellement plus proche de l'input que le texte de
+    question.
+
+    Garde-fou DOM strict : l'ancêtre `.cf-question--numeric` doit exister ET contenir
+    un `.cf-question__text` non vide.
+    """
+    try:
+        txt = driver.evaluate(
+            """(el) => {
+            const cfq = el.closest('.cf-question--numeric');
+            if (!cfq) return null;
+            const qtext = cfq.querySelector('.cf-question__text');
+            if (!qtext || !qtext.innerText.trim()) return null;
+            const instr = cfq.querySelector('.cf-question__instruction');
+            const parts = [qtext.innerText.trim()];
+            if (instr && instr.innerText.trim()) parts.push(instr.innerText.trim());
+            return parts.join(' ');
+            }""",
+            el,
+        )
+        return _norm(txt) if txt else ""
     except Exception:
         return ""
 
@@ -337,29 +461,23 @@ def _extract_surveywriter_ssi_question(driver, el) -> str:
     """
     try:
         # Chercher ancêtre avec class 'survey-question' ou similaire
-        containers = el.find_elements(
-            By.XPATH,
-            "ancestor::*[contains(@class,'survey-question') or contains(@class,'question-container')]"
+        containers = el.query_selector_all(
+            "xpath=ancestor::*[contains(@class,'survey-question') or contains(@class,'question-container')]"
         )
         if not containers:
             return ""
-        
+
         container = containers[0]
-        
+
         # Chercher label-text
-        try:
-            label_div = container.find_element(
-                By.CSS_SELECTOR,
-                ".label-text, .survey-label, .question-label"
-            )
-            txt = _norm(label_div.text)
+        label_div = container.query_selector(".label-text, .survey-label, .question-label")
+        if label_div is not None:
+            txt = _norm(label_div.inner_text())
             if txt and _is_question_text(txt):
                 return txt
-        except Exception:
-            pass
-        
+
         return ""
-    
+
     except Exception:
         return ""
 
@@ -374,9 +492,8 @@ def _nearest_question_container(el):
     Critères: div/section/fieldset avec class contenant 'question' ou similaire.
     """
     try:
-        containers = el.find_elements(
-            By.XPATH,
-            "ancestor::*["
+        containers = el.query_selector_all(
+            "xpath=ancestor::*["
             "contains(@class,'question') or "
             "contains(@class,'survey-item') or "
             "contains(@class,'form-group') or "
@@ -392,10 +509,49 @@ def _nearest_question_container(el):
         return None
 
 
+def _nearest_question_container_structural(el):
+    """
+    Fallback structurel additif à `_nearest_question_container`, pour les DOM où aucun
+    ancêtre ne porte de mot-clé sémantique ('question'/'survey-item'/'form-group'/
+    'field-wrap') ni de balise <fieldset>/<section> (ex: classes CSS modules hashées
+    type Next.js/React, sans sémantique lisible).
+
+    Ne doit être appelé qu'en complément (jamais en remplacement) de
+    `_nearest_question_container` — cible spécifiquement le pattern "un champ par
+    wrapper-frère" (ex: triplet de date mois/jour/année, chacun dans son propre div
+    avec son propre <label for=...>, sans attribut name).
+
+    Garde-fou DOM strict : remonte au plus 4 niveaux d'ancêtres ; à chaque niveau,
+    ne retient le parent que s'il regroupe au moins 3 enfants directs contenant chacun
+    exactement un champ texte/nombre (input/select/textarea) muni d'un id ET associé à
+    un <label>. Ce critère purement structurel (comptage de frères similaires) ne
+    dépend d'aucun nom de classe.
+    """
+    try:
+        node = el
+        for _ in range(4):
+            parent_nodes = node.query_selector_all("xpath=..")
+            if not parent_nodes:
+                return None
+            parent = parent_nodes[0]
+            try:
+                field_siblings = parent.query_selector_all(
+                    "xpath=*[.//input[@id] or .//select[@id] or .//textarea[@id]][.//label]"
+                )
+            except Exception:
+                field_siblings = []
+            if len(field_siblings) >= 3:
+                return parent
+            node = parent
+        return None
+    except Exception:
+        return None
+
+
 def _extract_question_from_container(container, options: List[str]) -> str:
     """
     Extrait le texte de question depuis un conteneur, en excluant les options.
-    
+
     Stratégie:
     - Prendre tout le texte du conteneur
     - Retirer les options (qui sont souvent répétées dans le texte)
@@ -404,8 +560,8 @@ def _extract_question_from_container(container, options: List[str]) -> str:
     try:
         if not container:
             return ""
-        
-        raw_text = container.text or ""
+
+        raw_text = container.inner_text() or ""
         if not _norm(raw_text):
             return ""
 
@@ -423,13 +579,13 @@ def _extract_question_from_container(container, options: List[str]) -> str:
 
         # Nettoyer
         question_text = _norm(" ".join(kept_lines))
-        
+
         # Vérifier que ce qui reste ressemble à une question
         if question_text and len(question_text) > 5 and _is_question_text(question_text):
             return question_text
-        
+
         return ""
-    
+
     except Exception:
         return ""
 
@@ -446,7 +602,7 @@ def _extract_mriweb_grid_question_text(el) -> str:
       en excluant explicitement le bloc `.error-block`
     """
     try:
-        grids = el.find_elements(By.XPATH, "ancestor::table[contains(@class,'mrGridTable')][1]")
+        grids = el.query_selector_all("xpath=ancestor::table[contains(@class,'mrGridTable')][1]")
     except Exception:
         grids = []
 
@@ -464,9 +620,8 @@ def _extract_mriweb_grid_question_text(el) -> str:
         pass
 
     try:
-        candidates = grid.find_elements(
-            By.XPATH,
-            "ancestor::div[contains(@class,'content-wrapper')][1]"
+        candidates = grid.query_selector_all(
+            "xpath=ancestor::div[contains(@class,'content-wrapper')][1]"
             "//span[contains(@class,'mrQuestionText') and normalize-space(.)!='' and "
             "not(ancestor::td[contains(@class,'error-block')])]",
         )
@@ -475,7 +630,7 @@ def _extract_mriweb_grid_question_text(el) -> str:
 
     for node in candidates:
         try:
-            txt = _norm(node.text or node.get_attribute("innerText") or "")
+            txt = _norm(node.inner_text() or "")
         except Exception:
             txt = ""
         if not txt:
@@ -508,15 +663,14 @@ def _find_group_heading_text_near_element(driver, el, options: List[str]) -> str
             # pour couvrir le pattern fieldset > article > legend (ex: prescreener
             # surveys.insights-today.com). L'accès via textContent contourne
             # les légendes CSS-invisibles (width/height=0 mais texte présent dans le DOM).
-            legends = el.find_elements(By.XPATH, "ancestor::fieldset[1]//legend[1]")
+            legends = el.query_selector_all("xpath=ancestor::fieldset[1]//legend[1]")
         except Exception:
             legends = []
 
         if legends:
             legend_text = _norm(
-                legends[0].text
-                or legends[0].get_attribute("innerText")
-                or legends[0].get_attribute("textContent")
+                legends[0].inner_text()
+                or legends[0].text_content()
                 or ""
             )
             legend_lc = _norm_lc(legend_text)
@@ -525,10 +679,9 @@ def _find_group_heading_text_near_element(driver, el, options: List[str]) -> str
                 return legend_text
 
         option_keys = [_norm_lc(opt) for opt in (options or []) if _norm(opt)]
-        txt = driver.execute_script(
-            r"""
-            const el = arguments[0];
-            const optionKeys = Array.isArray(arguments[1]) ? arguments[1] : [];
+        txt = driver.evaluate(
+            r"""([el, optionKeys]) => {
+            optionKeys = Array.isArray(optionKeys) ? optionKeys : [];
             if (!el) return "";
 
             const norm = (v) => (v || "").replace(/\s+/g, " ").trim();
@@ -601,9 +754,74 @@ def _find_group_heading_text_near_element(driver, el, options: List[str]) -> str
 
             candidates.sort((a,b) => (b.priority - a.priority) || (a.len - b.len));
             return candidates.length ? candidates[0].t : '';
-            """,
-            el,
-            option_keys,
+            }""",
+            [el, option_keys],
+        )
+        return _norm(txt) if txt else ""
+    except Exception:
+        return ""
+
+
+def _find_heading_tag_near_choice_group(driver, el, options: List[str]) -> str:
+    """
+    Dernier repli structurel pour un groupe radio/checkbox dont l'intitulé de
+    question est un texte COURT (ex: "I am..."), rejeté par les replis génériques
+    `_find_question_text_near_element` / `_find_group_heading_text_near_element`
+    (seuil de longueur minimale fixe à 8 caractères dans ces deux fonctions,
+    non modifié ici — appelé uniquement en complément additif, après leur échec).
+
+    Ne s'appuie sur AUCUN mot-clé de classe CSS : le signal discriminant est la
+    balise sémantique heading (h1-h6 / [role="heading"]) — un intitulé porté par
+    une vraie balise de titre est un signal fiable indépendamment de sa longueur,
+    contrairement à un nœud de texte quelconque.
+
+    Garde-fou DOM strict :
+    - remonte au plus 5 niveaux d'ancêtres depuis `el` (budget contrôlé), en
+      s'arrêtant au premier niveau où un candidat valide est trouvé.
+    - ne retient qu'un heading visible, situé AVANT le groupe de choix en ordre
+      DOM (jamais un titre d'une section suivante), hors du conteneur du groupe
+      lui-même, dont le texte ne correspond à aucune option.
+    - si plusieurs headings valides au même niveau, retient le plus proche du
+      groupe (dernier avant lui en ordre DOM), pas le premier de la page.
+    """
+    try:
+        option_keys = [_norm_lc(o) for o in (options or []) if _norm(o)]
+        txt = driver.evaluate(
+            r"""([el, optionKeys]) => {
+            optionKeys = Array.isArray(optionKeys) ? optionKeys : [];
+            if (!el) return "";
+            const norm = (v) => (v || "").replace(/\s+/g, " ").trim();
+            const normLc = (v) => norm(v).toLowerCase();
+            const isVisible = (node) => {
+              if (!node || !(node instanceof Element)) return false;
+              const st = window.getComputedStyle(node);
+              if (!st || st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') return false;
+              const r = node.getBoundingClientRect();
+              return r.width > 0 && r.height > 0;
+            };
+            const groupContainer = el.closest('label, fieldset, .question, .question-container') || el.parentElement;
+            let scope = el.parentElement;
+            const budget = 5;
+            for (let i = 0; i < budget && scope; i++) {
+              const headings = Array.from(scope.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"]'));
+              let best = "";
+              for (const h of headings) {
+                if (groupContainer && groupContainer.contains(h)) continue;
+                if (!isVisible(h)) continue;
+                const pos = h.compareDocumentPosition(el);
+                const beforeGroup = !!(pos & Node.DOCUMENT_POSITION_FOLLOWING);
+                if (!beforeGroup) continue;
+                const t = norm(h.textContent || h.innerText || '');
+                if (!t) continue;
+                if (optionKeys.includes(normLc(t))) continue;
+                best = t;
+              }
+              if (best) return best;
+              scope = scope.parentElement;
+            }
+            return "";
+            }""",
+            [el, option_keys],
         )
         return _norm(txt) if txt else ""
     except Exception:
@@ -629,13 +847,12 @@ def _group_key_for_choice(el, itype: str) -> str:
             try:
                 dat_val = _norm_lc(el.get_attribute("dat") or "")
                 if dat_val:
-                    fs_nodes = el.find_elements(
-                        By.XPATH,
-                        "ancestor::fieldset[contains(@class,'question-wrapper')][1]",
+                    fs_nodes = el.query_selector_all(
+                        "xpath=ancestor::fieldset[contains(@class,'question-wrapper')][1]",
                     )
                     if fs_nodes:
-                        all_inp = fs_nodes[0].find_elements(
-                            By.XPATH, ".//input[@type='checkbox' or @type='radio']"
+                        all_inp = fs_nodes[0].query_selector_all(
+                            "xpath=.//input[@type='checkbox' or @type='radio']"
                         )
                         matching = sum(
                             1 for inp in all_inp
@@ -675,14 +892,13 @@ def _group_key_for_choice(el, itype: str) -> str:
                     # avec names non vides tous distincts et des marqueurs DOM
                     # SPSSMR/HTMLPlayer observables (mrForm / classes mr*).
                     try:
-                        fieldsets = el.find_elements(By.XPATH, "ancestor::fieldset[1]")
+                        fieldsets = el.query_selector_all("xpath=ancestor::fieldset[1]")
                     except Exception:
                         fieldsets = []
 
                     try:
-                        mr_tables = el.find_elements(
-                            By.XPATH,
-                            "ancestor::*[contains(@class,'mrQuestionTable')][1]",
+                        mr_tables = el.query_selector_all(
+                            "xpath=ancestor::*[contains(@class,'mrQuestionTable')][1]",
                         )
                     except Exception:
                         mr_tables = []
@@ -694,9 +910,8 @@ def _group_key_for_choice(el, itype: str) -> str:
                     # Guard DOM strict : contains(@class,'muAll') + in_mr_form vérifié ci-dessous.
                     if group_container is None:
                         try:
-                            muall_nodes = el.find_elements(
-                                By.XPATH,
-                                "ancestor::*[contains(@class,'muAll')][1]",
+                            muall_nodes = el.query_selector_all(
+                                "xpath=ancestor::*[contains(@class,'muAll')][1]",
                             )
                             if muall_nodes:
                                 group_container = muall_nodes[0]
@@ -706,7 +921,7 @@ def _group_key_for_choice(el, itype: str) -> str:
                     if group_container is not None:
                         try:
                             in_mr_form = bool(
-                                el.find_elements(By.XPATH, "ancestor::form[@id='mrForm' or @name='mrForm'][1]")
+                                el.query_selector_all("xpath=ancestor::form[@id='mrForm' or @name='mrForm'][1]")
                             )
                         except Exception:
                             in_mr_form = False
@@ -717,9 +932,8 @@ def _group_key_for_choice(el, itype: str) -> str:
                         if not has_mr_class:
                             try:
                                 has_mr_class = bool(
-                                    group_container.find_elements(
-                                        By.XPATH,
-                                        ".//*[contains(@class,'mrQuestionTable') or contains(@class,'mrMultiple')]",
+                                    group_container.query_selector_all(
+                                        "xpath=.//*[contains(@class,'mrQuestionTable') or contains(@class,'mrMultiple')]",
                                     )
                                 )
                             except Exception:
@@ -729,7 +943,7 @@ def _group_key_for_choice(el, itype: str) -> str:
 
                         if is_spssmr_like:
                             try:
-                                scoped_boxes = group_container.find_elements(By.XPATH, ".//input[@type='checkbox'][@name]")
+                                scoped_boxes = group_container.query_selector_all("xpath=.//input[@type='checkbox'][@name]")
                             except Exception:
                                 scoped_boxes = []
 
@@ -748,13 +962,13 @@ def _group_key_for_choice(el, itype: str) -> str:
                             )
 
                             if len(scoped_boxes) >= 2 and names_distinct:
-                                c_tag = _norm_lc(group_container.tag_name or "")
+                                c_tag = _norm_lc(group_container.evaluate("e => e.tagName.toLowerCase()") or "")
                                 c_id = _norm_lc(group_container.get_attribute("id") or "")
                                 c_legend = ""
                                 try:
-                                    legends = group_container.find_elements(By.XPATH, ".//legend[1]")
+                                    legends = group_container.query_selector_all("xpath=.//legend[1]")
                                     if legends:
-                                        c_legend = _norm_lc((legends[0].text or "").strip())
+                                        c_legend = _norm_lc((legends[0].inner_text() or "").strip())
                                 except Exception:
                                     c_legend = ""
 
@@ -783,16 +997,15 @@ def _group_key_for_choice(el, itype: str) -> str:
                     if ls_m:
                         ls_prefix = ls_m.group(1)
                         try:
-                            ls_q_divs = el.find_elements(
-                                By.XPATH,
-                                "ancestor::div[starts-with(@id,'question')][1]",
+                            ls_q_divs = el.query_selector_all(
+                                "xpath=ancestor::div[starts-with(@id,'question')][1]",
                             )
                             if ls_q_divs:
                                 ls_q_id = ls_q_divs[0].get_attribute("id") or ""
                                 if re.match(r"^question\d+$", ls_q_id):
                                     ls_qc = ls_q_divs[0]
-                                    ls_sibs = ls_qc.find_elements(
-                                        By.XPATH, ".//input[@type='checkbox'][@name]"
+                                    ls_sibs = ls_qc.query_selector_all(
+                                        "xpath=.//input[@type='checkbox'][@name]"
                                     )
                                     ls_prefix_pat = re.compile(
                                         rf"^{re.escape(ls_prefix)}[a-z]", re.IGNORECASE
@@ -830,13 +1043,13 @@ def _group_key_for_choice(el, itype: str) -> str:
                     qualtrics_match = re.match(r"^(qr~qid[0-9a-z_-]+)~\d+$", clean_name)
                     if qualtrics_match:
                         try:
-                            q_fieldsets = el.find_elements(By.XPATH, "ancestor::fieldset[legend][1]")
+                            q_fieldsets = el.query_selector_all("xpath=ancestor::fieldset[legend][1]")
                         except Exception:
                             q_fieldsets = []
 
                         if q_fieldsets:
                             try:
-                                sibling_boxes = q_fieldsets[0].find_elements(By.XPATH, ".//input[@type='checkbox'][@name]")
+                                sibling_boxes = q_fieldsets[0].query_selector_all("xpath=.//input[@type='checkbox'][@name]")
                             except Exception:
                                 sibling_boxes = []
 
@@ -859,16 +1072,15 @@ def _group_key_for_choice(el, itype: str) -> str:
                     # quand >=2 checkboxes partagent la même racine `sgE-...`.
                     if re.match(r"^sge-\d+-\d+-\d+-\d+$", clean_name):
                         try:
-                            sg_fieldsets = el.find_elements(
-                                By.XPATH,
-                                "ancestor::fieldset[contains(@class,'sg-question') and starts-with(@id,'sgE-')][1]",
+                            sg_fieldsets = el.query_selector_all(
+                                "xpath=ancestor::fieldset[contains(@class,'sg-question') and starts-with(@id,'sgE-')][1]",
                             )
                         except Exception:
                             sg_fieldsets = []
 
                         if sg_fieldsets:
                             try:
-                                sibling_boxes = sg_fieldsets[0].find_elements(By.XPATH, ".//input[@type='checkbox'][@name]")
+                                sibling_boxes = sg_fieldsets[0].query_selector_all("xpath=.//input[@type='checkbox'][@name]")
                             except Exception:
                                 sibling_boxes = []
 
@@ -895,16 +1107,15 @@ def _group_key_for_choice(el, itype: str) -> str:
                     suffix_num_base = re.sub(r"-\d+$", "", clean_name)
                     if suffix_num_base and suffix_num_base != clean_name:
                         try:
-                            fieldsets = el.find_elements(
-                                By.XPATH,
-                                "ancestor::fieldset[contains(@class,'question-multiple')][1]",
+                            fieldsets = el.query_selector_all(
+                                "xpath=ancestor::fieldset[contains(@class,'question-multiple')][1]",
                             )
                         except Exception:
                             fieldsets = []
 
                         if fieldsets:
                             try:
-                                sibling_boxes = fieldsets[0].find_elements(By.XPATH, ".//input[@type='checkbox'][@name]")
+                                sibling_boxes = fieldsets[0].query_selector_all("xpath=.//input[@type='checkbox'][@name]")
                             except Exception:
                                 sibling_boxes = []
 
@@ -926,9 +1137,8 @@ def _group_key_for_choice(el, itype: str) -> str:
                     # ce pattern DOM précis est observé (scope minimal).
                     if re.match(r"^v_\d+$", clean_name):
                         try:
-                            containers = el.find_elements(
-                                By.XPATH,
-                                "ancestor::*[contains(@class,'type-multi') and contains(@class,'question-')][1]",
+                            containers = el.query_selector_all(
+                                "xpath=ancestor::*[contains(@class,'type-multi') and contains(@class,'question-')][1]",
                             )
                         except Exception:
                             containers = []
@@ -954,11 +1164,11 @@ def _group_key_for_choice(el, itype: str) -> str:
                         scope = None
                         try:
                             for xp in [
-                                "ancestor::div[contains(@class,'card-body')][1]",
-                                "ancestor::div[contains(@class,'card')][1]",
-                                "ancestor::form[1]",
+                                "xpath=ancestor::div[contains(@class,'card-body')][1]",
+                                "xpath=ancestor::div[contains(@class,'card')][1]",
+                                "xpath=ancestor::form[1]",
                             ]:
-                                nodes = el.find_elements(By.XPATH, xp)
+                                nodes = el.query_selector_all(xp)
                                 if nodes:
                                     scope = nodes[0]
                                     break
@@ -967,8 +1177,8 @@ def _group_key_for_choice(el, itype: str) -> str:
 
                         if scope is not None:
                             try:
-                                sibling_boxes = scope.find_elements(
-                                    By.XPATH, ".//input[@type='checkbox'][@name]"
+                                sibling_boxes = scope.query_selector_all(
+                                    "xpath=.//input[@type='checkbox'][@name]"
                                 )
                             except Exception:
                                 sibling_boxes = []
@@ -1004,18 +1214,18 @@ def _group_key_for_choice(el, itype: str) -> str:
                     _upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                     _lower = "abcdefghijklmnopqrstuvwxyz"
                     _xp = (
-                        f"ancestor::fieldset["
+                        f"xpath=ancestor::fieldset["
                         f"translate(@id,'{_upper}','{_lower}')='{fieldset_id_lc}'"
                         f"][1]"
                     )
                     try:
-                        fs_nodes = el.find_elements(By.XPATH, _xp)
+                        fs_nodes = el.query_selector_all(_xp)
                     except Exception:
                         fs_nodes = []
                     if fs_nodes:
                         try:
-                            sibling_boxes = fs_nodes[0].find_elements(
-                                By.XPATH, ".//input[@type='checkbox'][@name]"
+                            sibling_boxes = fs_nodes[0].query_selector_all(
+                                "xpath=.//input[@type='checkbox'][@name]"
                             )
                         except Exception:
                             sibling_boxes = []
@@ -1033,15 +1243,63 @@ def _group_key_for_choice(el, itype: str) -> str:
                             )
                             return qid_prefix
 
+                    # SSI/Confirmit RS1 pattern (ex: Ifop s2.ifoponline.com): the
+                    # question wrapper is `<div class="question select" id="{QID}_div">`
+                    # (not a `<fieldset id="fieldset_{QID}">` as in the Confirmit/Wix
+                    # pattern above), and each checkbox option carries a distinct name
+                    # `{QID}_{optionId}`. A hidden sibling input
+                    # `name="hid_list_{QID}"` lists every option id of the question —
+                    # used here as the strict DOM discriminant to avoid over-matching
+                    # unrelated `<alpha><digits>_<digits>` names on other platforms.
+                    # Guard DOM strict: ancestor div[id="{QID}_div"] (case-insensitive)
+                    # containing BOTH an input[type=hidden][name="hid_list_{QID}"] AND
+                    # >=2 checkboxes sharing the "{QID}_<digits>" name prefix.
+                    _div_xp = (
+                        f"xpath=ancestor::div["
+                        f"translate(@id,'{_upper}','{_lower}')='{qid_prefix}_div'"
+                        f"][1]"
+                    )
+                    try:
+                        div_nodes = el.query_selector_all(_div_xp)
+                    except Exception:
+                        div_nodes = []
+                    if div_nodes:
+                        try:
+                            hid_list_nodes = div_nodes[0].query_selector_all(
+                                "xpath=.//input[@type='hidden' and "
+                                f"translate(@name,'{_upper}','{_lower}')='hid_list_{qid_prefix}']"
+                            )
+                        except Exception:
+                            hid_list_nodes = []
+                        if hid_list_nodes:
+                            try:
+                                sibling_boxes = div_nodes[0].query_selector_all(
+                                    "xpath=.//input[@type='checkbox'][@name]"
+                                )
+                            except Exception:
+                                sibling_boxes = []
+                            prefix_pat = re.compile(
+                                rf"^{re.escape(qid_prefix)}_\d+$", re.IGNORECASE
+                            )
+                            matching = sum(
+                                1 for sib in sibling_boxes
+                                if prefix_pat.match(_norm_lc(sib.get_attribute("name") or ""))
+                            )
+                            if matching >= 2:
+                                log_debug(
+                                    "[DOM_GROUPING]",
+                                    f"ssi_confirmit_rs1_hid_list_group prefix={qid_prefix} matching={matching}",
+                                )
+                                return qid_prefix
+
                 # ARIA-group pattern (SurveyJS / sd-selectbase and similar): options of
                 # the same checkbox question carry distinct names but all share a single
                 # fieldset[role="group"][aria-labelledby] container.
                 # Guard DOM strict: ancestor fieldset[@role="group"][@aria-labelledby]
                 # + >=2 checkboxes with ALL-distinct names → group by aria-labelledby.
                 try:
-                    grp_fs = el.find_elements(
-                        By.XPATH,
-                        "ancestor::fieldset[@role='group'][@aria-labelledby][1]",
+                    grp_fs = el.query_selector_all(
+                        "xpath=ancestor::fieldset[@role='group'][@aria-labelledby][1]",
                     )
                 except Exception:
                     grp_fs = []
@@ -1052,8 +1310,8 @@ def _group_key_for_choice(el, itype: str) -> str:
                     )
                     if grp_labelledby:
                         try:
-                            sib_boxes = grp_fs[0].find_elements(
-                                By.XPATH, ".//input[@type='checkbox'][@name]"
+                            sib_boxes = grp_fs[0].query_selector_all(
+                                "xpath=.//input[@type='checkbox'][@name]"
                             )
                         except Exception:
                             sib_boxes = []
@@ -1081,11 +1339,10 @@ def _group_key_for_choice(el, itype: str) -> str:
             # différentes → deux question_blocks identiques.
             # Guard strict: tag != input + sibling input[type="radio"][name] non vide.
             try:
-                tag_name = (el.tag_name or "").lower()
+                tag_name = (el.evaluate("e => e.tagName.toLowerCase()") or "").lower()
                 if tag_name != "input":
-                    sibling_inputs = el.find_elements(
-                        By.XPATH,
-                        "../input[@type='radio' and @name and normalize-space(@name)!=''][1]"
+                    sibling_inputs = el.query_selector_all(
+                        "xpath=../input[@type='radio' and @name and normalize-space(@name)!=''][1]"
                     )
                     if sibling_inputs:
                         native_name = _norm_lc(sibling_inputs[0].get_attribute("name") or "")
@@ -1105,12 +1362,12 @@ def _group_key_for_choice(el, itype: str) -> str:
             try:
                 container = None
                 container_xpaths = [
-                    "ancestor::*[@role='radiogroup' or @role='group' or @aria-labelledby][1]",
-                    "ancestor::*[@role='listbox' or contains(@class,'multi-select-container') or contains(@class,'single-choice-container')][1]",
-                    "ancestor::*[contains(@class,'question-items') or contains(@class,'answers') or contains(@class,'options') or contains(@class,'choices')][1]",
+                    "xpath=ancestor::*[@role='radiogroup' or @role='group' or @aria-labelledby][1]",
+                    "xpath=ancestor::*[@role='listbox' or contains(@class,'multi-select-container') or contains(@class,'single-choice-container')][1]",
+                    "xpath=ancestor::*[contains(@class,'question-items') or contains(@class,'answers') or contains(@class,'options') or contains(@class,'choices')][1]",
                 ]
                 for xp in container_xpaths:
-                    nodes = el.find_elements(By.XPATH, xp)
+                    nodes = el.query_selector_all(xp)
                     if nodes:
                         container = nodes[0]
                         break
@@ -1129,9 +1386,9 @@ def _group_key_for_choice(el, itype: str) -> str:
                         return f"dom:{key}"
             except Exception:
                 pass
-        
+
         return ""
-    
+
     except Exception:
         return ""
 
@@ -1139,7 +1396,7 @@ def _group_key_for_choice(el, itype: str) -> str:
 def _compute_max_select(itype: str, options: List[str], question_text: str | None = None) -> int:
     """
     Calcule max_select (cardinalité maximale de sélection).
-    
+
     Règles:
     - radio / button: 1 (exclusif)
     - checkbox: nombre total d'options moins options exclusives

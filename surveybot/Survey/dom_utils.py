@@ -17,7 +17,9 @@ from typing import List
 import re
 import os
 import unicodedata
-from selenium.webdriver.common.by import By
+
+
+
 
 # ================================================================================
 # CONSTANTES
@@ -71,25 +73,25 @@ def _looks_like_system_field(el) -> bool:
     Critères : name/id contient un token système OU type=hidden.
     """
     try:
-        tag_name = el.tag_name.lower()
+        tag_name = el.evaluate("e => e.tagName.toLowerCase()")
         if tag_name not in ("input", "select", "textarea"):
             return False
-        
+
         input_type = el.get_attribute("type") or ""
         if input_type.lower() == "hidden":
             return True
-        
+
         name_val = (el.get_attribute("name") or "").lower()
         id_val = (el.get_attribute("id") or "").lower()
 
         # Qualtrics language selector UI (non-question field)
         if tag_name == "select" and name_val == "q_lang":
             return True
-        
+
         for token in _SYS_FIELD_TOKENS:
             if token in name_val or token in id_val:
                 return True
-        
+
         return False
     except Exception:
         return False
@@ -99,75 +101,109 @@ def _looks_like_system_field(el) -> bool:
 # VISIBILITÉ
 # ================================================================================
 
+def _is_hidden_offscreen_ariahidden_container(el) -> bool:
+    """
+    Retourne True si l'élément est logé dans un conteneur `aria-hidden="true"`
+    positionné hors du viewport (position fixed/absolute + coordonnées très négatives).
+
+    Pattern GfK/mrIWeb (et similaires) : champs techniques (honeypot "What is your
+    name?", checkbox de contrôle qualité, etc.) rendus dans le DOM mais explicitement
+    exclus de l'arbre d'accessibilité ET du viewport visuel. Contrairement aux
+    techniques "visually-hidden" d'accessibilité (qui ne posent jamais aria-hidden=true
+    sur ce type de conteneur, sous peine de se cacher aussi des lecteurs d'écran),
+    cette combinaison signale sans ambiguïté un champ jamais visible/actionnable
+    pour l'utilisateur final.
+    """
+    try:
+        return bool(el.evaluate(
+            """(node) => {
+                let n = node;
+                while (n) {
+                    if (n.getAttribute && n.getAttribute('aria-hidden') === 'true') {
+                        const st = window.getComputedStyle(n);
+                        if (st && (st.position === 'fixed' || st.position === 'absolute')) {
+                            const r = n.getBoundingClientRect();
+                            if (r.top < -300 || r.left < -300) return true;
+                        }
+                    }
+                    n = n.parentElement;
+                }
+                return false;
+            }"""
+        ))
+    except Exception:
+        return False
+
+
 def _is_actionable_visible(el) -> bool:
     """
     Retourne True si l'élément est actionnable/visible par l'utilisateur.
-    
+
     Gère les cas spéciaux :
     - Inputs masqués mais avec wrapper visible (Decipher/FocusVision: clickableCell, sq-cardrating-button)
     - Inputs masqués mais label visible (custom UI)
     - Exclusion des blocs LimeSurvey masqués (ls-js-hidden)
-    
+
     Stratégie :
     1. Vérifier que l'élément n'est pas dans un bloc ls-js-hidden (LimeSurvey)
     2. Si input type=hidden → chercher wrapper cliquable parent
-    3. Sinon, vérifier is_displayed() standard
+    3. Sinon, vérifier is_visible() standard
     """
     try:
+        # 0-bis) Conteneur technique aria-hidden hors-écran (honeypot / QA fields GfK mrIWeb)
+        if _is_hidden_offscreen_ariahidden_container(el):
+            return False
+
         # 0) LimeSurvey: ignorer tout ce qui est dans un bloc masqué "ls-js-hidden"
         try:
-            if el.find_elements(
-                By.XPATH,
-                "ancestor-or-self::*[contains(concat(' ',normalize-space(@class),' '),' ls-js-hidden ')][1]",
+            if el.query_selector_all(
+                "xpath=ancestor-or-self::*[contains(concat(' ',normalize-space(@class),' '),' ls-js-hidden ')][1]",
             ):
                 return False
         except Exception:
             pass
-        
+
         # 1) Cas spécial: input type=hidden mais wrapper cliquable visible
         #    (Decipher/FocusVision: clickableCell, sq-cardrating-button, etc.)
-        tag = el.tag_name.lower()
+        tag = el.evaluate("e => e.tagName.toLowerCase()")
         if tag == "input":
             input_type = (el.get_attribute("type") or "").lower()
             if input_type == "hidden":
                 # Chercher un parent cliquable
                 try:
-                    cliquable_wrappers = el.find_elements(
-                        By.XPATH,
-                        "ancestor::*[contains(@class,'clickableCell') or "
+                    cliquable_wrappers = el.query_selector_all(
+                        "xpath=ancestor::*[contains(@class,'clickableCell') or "
                         "contains(@class,'sq-cardrating-button') or "
                         "contains(@class,'clickable')]"
                     )
                     if cliquable_wrappers:
                         # Vérifier que le wrapper est visible
                         for wrapper in cliquable_wrappers:
-                            if wrapper.is_displayed():
+                            if wrapper.is_visible():
                                 return True
                 except Exception:
                     pass
                 # Pas de wrapper cliquable visible → pas actionnable
                 return False
-        
+
         # 2) Cas spécial: <select> masqué mais widget visible (bootstrap-select / custom select)
         if tag == "select":
             try:
-                if el.is_displayed():
+                if el.is_visible():
                     return True
             except Exception:
                 pass
 
             try:
-                wrappers = el.find_elements(
-                    By.XPATH,
-                    (
-                        "ancestor-or-self::*[contains(concat(' ', normalize-space(@class), ' '), ' bootstrap-select ') "
-                        "or contains(concat(' ', normalize-space(@class), ' '), ' bs-select-hidden ') "
-                        "or contains(concat(' ', normalize-space(@class), ' '), ' selectpicker ')][1]"
-                        "|following-sibling::*[contains(concat(' ', normalize-space(@class), ' '), ' bootstrap-select ')][1]"
-                    ),
+                wrappers = el.query_selector_all(
+                    "xpath="
+                    "ancestor-or-self::*[contains(concat(' ', normalize-space(@class), ' '), ' bootstrap-select ') "
+                    "or contains(concat(' ', normalize-space(@class), ' '), ' bs-select-hidden ') "
+                    "or contains(concat(' ', normalize-space(@class), ' '), ' selectpicker ')][1]"
+                    "|following-sibling::*[contains(concat(' ', normalize-space(@class), ' '), ' bootstrap-select ')][1]",
                 )
                 for wrapper in wrappers:
-                    if wrapper.is_displayed():
+                    if wrapper.is_visible():
                         return True
             except Exception:
                 pass
@@ -175,9 +211,8 @@ def _is_actionable_visible(el) -> bool:
             # l'élément est masqué côté CSS mais présent dans le DOM sous un
             # <fieldset> portant un <legend class="qualification-text">.
             try:
-                if el.find_elements(
-                    By.XPATH,
-                    "ancestor::fieldset[1]//*[contains(@class,'qualification-text')]",
+                if el.query_selector_all(
+                    "xpath=ancestor::fieldset[1]//*[contains(@class,'qualification-text')]",
                 ):
                     return True
             except Exception:
@@ -187,39 +222,36 @@ def _is_actionable_visible(el) -> bool:
             try:
                 el_classes = (el.get_attribute("class") or "").lower()
                 if "mrdropdown" in el_classes:
-                    platform_clones = el.find_elements(
-                        By.XPATH,
-                        "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' platform_clone ')][1]",
+                    platform_clones = el.query_selector_all(
+                        "xpath=ancestor::div[contains(concat(' ',normalize-space(@class),' '),' platform_clone ')][1]",
                     )
                     if platform_clones:
-                        combo_widgets = platform_clones[0].find_elements(
-                            By.XPATH,
-                            "preceding-sibling::*["
+                        combo_widgets = platform_clones[0].query_selector_all(
+                            "xpath=preceding-sibling::*["
                             "contains(concat(' ',normalize-space(@class),' '),' combo_master ') or "
                             "contains(concat(' ',normalize-space(@class),' '),' combo_ct ')"
                             "][1]",
                         )
                         for widget in combo_widgets:
-                            if widget.is_displayed():
+                            if widget.is_visible():
                                 return True
             except Exception:
                 pass
             return False
 
-        # 3) Cas standard: vérifier is_displayed()
-        if el.is_displayed():
+        # 3) Cas standard: vérifier is_visible()
+        if el.is_visible():
             return True
         # Fieldset progressif : même logique que pour <select> ci-dessus.
         try:
-            if el.find_elements(
-                By.XPATH,
-                "ancestor::fieldset[1]//*[contains(@class,'qualification-text')]",
+            if el.query_selector_all(
+                "xpath=ancestor::fieldset[1]//*[contains(@class,'qualification-text')]",
             ):
                 return True
         except Exception:
             pass
         return False
-    
+
     except Exception:
         # En cas d'erreur (stale element, etc.), considérer invisible
         return False
@@ -235,37 +267,39 @@ def _best_xpath_for_element(driver, el) -> str:
     Stratégie: construit un chemin absolu en remontant dans la hiérarchie.
     """
     try:
-        script = """
-        function getAbsoluteXPath(element) {
-            if (!element || element.nodeType !== 1) return '';
-            
-            const parts = [];
-            let current = element;
-            
-            while (current && current.nodeType === 1) {
-                let index = 0;
-                let sibling = current.previousSibling;
-                
-                while (sibling) {
-                    if (sibling.nodeType === 1 && sibling.tagName === current.tagName) {
-                        index++;
+        xpath = driver.evaluate(
+            """(element) => {
+            function getAbsoluteXPath(element) {
+                if (!element || element.nodeType !== 1) return '';
+
+                const parts = [];
+                let current = element;
+
+                while (current && current.nodeType === 1) {
+                    let index = 0;
+                    let sibling = current.previousSibling;
+
+                    while (sibling) {
+                        if (sibling.nodeType === 1 && sibling.tagName === current.tagName) {
+                            index++;
+                        }
+                        sibling = sibling.previousSibling;
                     }
-                    sibling = sibling.previousSibling;
+
+                    const tagName = current.tagName.toLowerCase();
+                    const part = index > 0 ? `${tagName}[${index + 1}]` : tagName;
+                    parts.unshift(part);
+
+                    current = current.parentElement;
                 }
-                
-                const tagName = current.tagName.toLowerCase();
-                const part = index > 0 ? `${tagName}[${index + 1}]` : tagName;
-                parts.unshift(part);
-                
-                current = current.parentElement;
+
+                return '/' + parts.join('/');
             }
-            
-            return '/' + parts.join('/');
-        }
-        
-        return getAbsoluteXPath(arguments[0]);
-        """
-        xpath = driver.execute_script(script, el)
+
+            return getAbsoluteXPath(element);
+        }""",
+            el,
+        )
         return xpath if xpath else "//*"
     except Exception:
         return "//*"
@@ -306,13 +340,13 @@ def _is_question_text(text: str) -> bool:
     """
     if not text or len(text) < 3:
         return False
-    
+
     text_lower = text.lower().strip()
-    
+
     # Patterns d'exclusion (instructions de validation, messages d'erreur)
     if _is_validation_instruction(text):
         return False
-    
+
     # Patterns positifs
     question_markers = [
         "what", "how", "why", "when", "where", "who", "which",
@@ -320,19 +354,19 @@ def _is_question_text(text: str) -> bool:
         "are you", "were you", "is it", "was it",
         "select", "choose", "indicate", "rate", "rank", "please"
     ]
-    
+
     for marker in question_markers:
         if marker in text_lower:
             return True
-    
+
     # Texte se terminant par '?' ou ':'
     if text.rstrip().endswith(("?", ":")):
         return True
-    
+
     # Texte long (> 20 caractères) pourrait être une question
     if len(text) > 20:
         return True
-    
+
     return False
 
 
@@ -342,11 +376,11 @@ def _is_validation_instruction(text: str) -> bool:
     """
     if not text:
         return False
-    
+
     for pattern in _VALIDATION_INSTRUCTION_PATTERNS:
         if pattern.search(text):
             return True
-    
+
     return False
 
 
@@ -360,15 +394,15 @@ def _detect_itype(el) -> str:
     Retourne: 'radio', 'checkbox', 'dropdown', 'text', 'textarea', 'unknown'
     """
     try:
-        tag = el.tag_name.lower()
+        tag = el.evaluate("e => e.tagName.toLowerCase()")
         role = (el.get_attribute("role") or "").lower().strip()
 
         if tag == "select":
             return "dropdown"
-        
+
         if tag == "textarea":
             return "textarea"
-        
+
         if tag == "input":
             input_type = (el.get_attribute("type") or "text").lower()
             if input_type in ("radio",):
@@ -382,9 +416,8 @@ def _detect_itype(el) -> str:
                 if "radioqt" in el_class:
                     try:
                         has_radio_question = bool(
-                            el.find_elements(
-                                By.XPATH,
-                                "ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' radio_question ')][1]",
+                            el.query_selector_all(
+                                "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' radio_question ')][1]",
                             )
                         )
                     except Exception:
@@ -392,9 +425,8 @@ def _detect_itype(el) -> str:
 
                     try:
                         has_option_radio = bool(
-                            el.find_elements(
-                                By.XPATH,
-                                "ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' answer_options ')][1]//*[contains(concat(' ', normalize-space(@class), ' '), ' option_radio ')]",
+                            el.query_selector_all(
+                                "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' answer_options ')][1]//*[contains(concat(' ', normalize-space(@class), ' '), ' option_radio ')]",
                             )
                         )
                     except Exception:
@@ -413,7 +445,7 @@ def _detect_itype(el) -> str:
             return "checkbox"
 
         return "unknown"
-    
+
     except Exception:
         return "unknown"
 
@@ -427,22 +459,22 @@ def _dropdown_field_hint(driver, el) -> str:
     Retourne un hint pour un dropdown (ex: placeholder, première option).
     """
     try:
-        tag = el.tag_name.lower()
+        tag = el.evaluate("e => e.tagName.toLowerCase()")
         if tag != "select":
             return ""
-        
+
         # Chercher l'option sélectionnée ou la première option
-        options = el.find_elements(By.TAG_NAME, "option")
+        options = el.query_selector_all("option")
         if not options:
             return ""
-        
+
         # Première option (souvent placeholder)
-        first_option_text = _norm(options[0].text)
+        first_option_text = _norm(options[0].inner_text())
         if first_option_text and len(first_option_text) < 50:
             return first_option_text
-        
+
         return ""
-    
+
     except Exception:
         return ""
 

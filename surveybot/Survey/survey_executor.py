@@ -1,9 +1,12 @@
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
 import re, openai, time, unicodedata, os, sys, hashlib, tempfile
 from urllib.parse import urlsplit
-from Survey.log_utils import log_debug, log_info
+from Survey.log_utils import is_debug, log_debug, log_info
 from Survey.functions import _handle_topsurveys_exclusion_popup
+from config import is_cta_intercept_only, is_attach_mode
+
+
+
+
 
 def _short_url(url: str) -> str:
     try:
@@ -19,6 +22,82 @@ def _norm_lc(s: str) -> str:
 def _env_truthy(name: str, default: str = "0") -> bool:
     v = (os.getenv(name, default) or "").strip().lower()
     return v in ("1", "true", "yes", "on")
+
+def _apply_atm1d_trap_ground_truth(actions: list, qid_meta: dict) -> list:
+    """Widget sq-atm1d Decipher (trap de rappel visuel imagé, ex: "quelles images
+    contiennent un arbre ?") : la page embarque en clair (script inline `jsexport`,
+    cf. dom_extractors_decipher.py::_extract_atm1d_trap_correct_labels) la liste des
+    options correctes/incorrectes ("cs:trapCorrect"), fiable à 100% — contrairement au
+    modèle qui ne voit qu'un label opaque dérivé du nom de fichier image et peut en
+    omettre une (aucune reformulation de prompt ne corrige cela). Quand cette vérité-
+    terrain est disponible (meta.trap_correct_norm posé par l'extracteur, couverture
+    complète garantie), on remplace les actions du modèle pour ce bloc précis par la
+    sélection déterministe issue du DOM, au lieu de dépendre de sa réponse.
+
+    Guard strict, additif : ne touche que les blocs checkbox dont le target enregistré
+    porte meta.source == "sq-atm1d" ET un trap_correct_norm non vide ; tout autre bloc
+    (checkbox générique compris) traverse cette fonction inchangé.
+    """
+    if not isinstance(qid_meta, dict) or not qid_meta:
+        return actions
+
+    from Survey.dom_registry import get_target
+
+    kept_actions = list(actions or [])
+    overridden_qids: list[str] = []
+
+    for qid, meta in qid_meta.items():
+        if not isinstance(meta, dict):
+            continue
+        if (meta.get("itype") or "").strip().lower() != "checkbox":
+            continue
+        target_id = (meta.get("target_id") or "").strip()
+        if not target_id:
+            continue
+        try:
+            registry_data = get_target(target_id) or {}
+        except Exception:
+            registry_data = {}
+        reg_meta = registry_data.get("meta") if isinstance(registry_data, dict) else None
+        if not isinstance(reg_meta, dict) or reg_meta.get("source") != "sq-atm1d":
+            continue
+        trap_correct_norm = reg_meta.get("trap_correct_norm")
+        if not isinstance(trap_correct_norm, dict) or not trap_correct_norm:
+            continue
+
+        correct_values = [ln for ln, ok in trap_correct_norm.items() if ok]
+        if not correct_values:
+            continue
+
+        question_text = str(meta.get("question") or "")
+        new_actions = [
+            {
+                "qid": qid,
+                "target_id": target_id,
+                "value": v,
+                "itype": "checkbox",
+                "context": question_text,
+                "matrix_row_label": None,
+                "matrix_col_label": None,
+                "cardsort_card_label": None,
+                "cardsort_bucket_labels": None,
+                "raw": f"[atm1d_trap_ground_truth] {qid} //// {target_id} //// {v} //// checkbox //// {question_text}",
+            }
+            for v in correct_values
+        ]
+
+        qid_upper = qid.strip().upper()
+        kept_actions = [
+            a for a in kept_actions
+            if not (isinstance(a, dict) and (a.get("qid") or "").strip().upper() == qid_upper)
+        ]
+        kept_actions.extend(new_actions)
+        overridden_qids.append(qid)
+
+    if overridden_qids:
+        log_info("[ATM1D_TRAP]", f"ground-truth override applied qids={overridden_qids}")
+
+    return kept_actions
 
 PAUSE_BEFORE_CTA = 1.0  # pause après le dispatch des réponses, avant le clic CTA (laisser le DOM se stabiliser)
 
@@ -37,22 +116,21 @@ def _local_pause_before_cta(reason: str = "") -> None:
             raise
     except Exception:
         return
-    
+
 def _is_visible_js(driver, el) -> bool:
     """
-    Fallback JavaScript pour  la  d'un .
-     quand Selenium.is_displayed() retourne False sur des structures DOM
-    complexes (tables  AreYouNet, etc.) alors que l' est visible.
+    Fallback JavaScript pour la visibilité d'un élément.
+    Utilisé quand is_visible() retourne False sur des structures DOM complexes.
     """
+    page = driver
     try:
-        return driver.execute_script("""
-            var el = arguments[0];
+        return bool(page.evaluate("""(el) => {
             if (!el) return false;
             var style = window.getComputedStyle(el);
             if (style.display === 'none' || style.visibility === 'hidden') return false;
             var rect = el.getBoundingClientRect();
             return rect.width > 0 && rect.height > 0;
-        """, el)
+        }""", el))
     except Exception:
         return False
 
@@ -60,16 +138,10 @@ def _is_visible_js(driver, el) -> bool:
 def _has_unfilled_required_inputs(driver) -> bool:
     """
     Retourne True si la page courante contient des inputs required visibles et non remplis.
-    Utilisé pour éviter un clic CTA prématuré sur les formulaires multi-champs
-    (ex: page pre-screener avec postcode + age + education + gender dans un seul <form>).
-
-    Critères DOM purs (sélecteurs observables) :
-    - input[type=text/number/email][required] visible et vide
-    - select[required] visible et sans sélection
-    - groupes radio[required] visibles sans option cochée
     """
+    page = driver
     try:
-        return bool(driver.execute_script("""
+        return bool(page.evaluate("""() => {
             var isVisible = function(el) {
                 if (!el) return false;
                 var s = window.getComputedStyle(el);
@@ -77,7 +149,6 @@ def _has_unfilled_required_inputs(driver) -> bool:
                 var r = el.getBoundingClientRect();
                 return r.width > 0 && r.height > 0;
             };
-            // Text/number/email inputs required and empty
             var textSel = "input[required][type='text'], input[required][type='number'], input[required][type='email'], textarea[required]";
             var isAngularHelper = function(el) {
                 if ((el.className || '').indexOf('hold-model') !== -1) return true;
@@ -93,10 +164,8 @@ def _has_unfilled_required_inputs(driver) -> bool:
             };
             var textInputs = Array.from(document.querySelectorAll(textSel));
             if (textInputs.some(function(el) { return isVisible(el) && !isAngularHelper(el) && !(el.value || '').trim(); })) return true;
-            // Required selects with no value
             var selects = Array.from(document.querySelectorAll("select[required]"));
             if (selects.some(function(el) { return isVisible(el) && !el.value; })) return true;
-            // Required radio groups with no checked option
             var radioNames = {};
             Array.from(document.querySelectorAll("input[type='radio'][required]")).forEach(function(el) {
                 if (isVisible(el) && el.name) radioNames[el.name] = true;
@@ -105,19 +174,68 @@ def _has_unfilled_required_inputs(driver) -> bool:
                 if (!document.querySelector("input[type='radio'][name='" + name + "']:checked")) return true;
             }
             return false;
-        """))
+        }"""))
     except Exception:
         return False
 
 
+def _qp_interactive_mode_active(driver) -> bool:
+    """
+    QuestionPro "Interactive" : toutes les sections de l'enquête sont rendues dans un
+    seul DOM/une seule page ; le passage d'une section à la suivante est déclenché
+    côté client dès qu'une question est renseignée, sans navigation d'URL ni rechargement.
+
+    Lecture seule, aucun effet de bord. Gate DOM strict :
+    `div.survey-inside-wrapper.has-interactive-mode` présent.
+    """
+    page = driver
+    try:
+        return bool(page.query_selector_all("div.survey-inside-wrapper.has-interactive-mode"))
+    except Exception:
+        return False
+
+
+def _qp_visible_validation_errors(driver, limit: int = 5) -> list[str]:
+    """
+    QuestionPro (mode Interactive) : remonte les messages d'erreur de validation
+    actuellement visibles à l'écran (`span[id^='errorSpan_'][role='alert']`, hors
+    classes 'hidden'/'d-none', texte non vide). Lecture seule, aucun effet de bord —
+    sert uniquement à confirmer explicitement (via log) qu'une page vient d'être
+    acceptée sans erreur, plutôt que de le supposer silencieusement.
+
+    Gate DOM strict : ne s'exécute que si `_qp_interactive_mode_active(driver)`.
+    """
+    if not _qp_interactive_mode_active(driver):
+        return []
+    page = driver
+    try:
+        errors = page.evaluate(
+            r"""(limit) => {
+                var spans = Array.from(document.querySelectorAll("span[id^='errorSpan_'][role='alert']"));
+                var out = [];
+                for (var i = 0; i < spans.length && out.length < limit; i++) {
+                    var el = spans[i];
+                    var cls = el.className || '';
+                    if (cls.indexOf('hidden') !== -1 || cls.indexOf('d-none') !== -1) continue;
+                    var txt = (el.innerText || el.textContent || '').trim();
+                    if (txt) out.push(txt);
+                }
+                return out;
+            }""",
+            limit,
+        )
+        return [str(e) for e in (errors or [])]
+    except Exception:
+        return []
+
+
 def _detect_rate_rank_image_eval_dom(driver) -> tuple[bool, str]:
     """
-    Détecte un pattern DOM de type "image/product evaluation" (rate & rank)
-    qui doit déclencher un abandon DOM-only (sans stratégie alternative).
+    Détecte un pattern DOM de type "image/product evaluation" (rate & rank).
     """
+    page = driver
     try:
-        dom = driver.execute_script(
-            r"""
+        dom = page.evaluate(r"""() => {
             const txt = (el) => ((el && (el.innerText || el.textContent)) || '').trim();
             const isVisible = (el) => {
               if (!el) return false;
@@ -134,8 +252,7 @@ def _detect_rate_rank_image_eval_dom(driver) -> tuple[bool, str]:
               has_rate_rank_hint: /rate\s*and\s*rank/i.test(document.body?.innerText || ''),
               has_visual_media_hint: !!document.querySelector('app-game-item-media, .zoom-gallery, .MagicZoom, img[src*="imageviewer"], img[src*="firstinsight"]'),
             };
-            """
-        ) or {}
+        }""") or {}
     except Exception:
         dom = {}
 
@@ -164,9 +281,6 @@ def _detect_rate_rank_image_eval_dom(driver) -> tuple[bool, str]:
 def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> tuple[bool, str, str]:
     """
     Détecte un écran avec choix visuels (images/icônes) non résolus par l'analyse DOM.
-    Critères explicites:
-      1) le DOM expose un groupe radio/checkbox visible avec >=2 options image-only,
-      2) l'extraction ne contient aucun bloc radio/checkbox exploitable (>=2 options).
     """
     has_exploitable_choice_block = False
     for b in question_blocks or []:
@@ -185,9 +299,10 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
     if has_exploitable_choice_block:
         return False, "", ""
 
+    page = driver
     try:
-        dom = driver.execute_script(
-            r"""
+        dom = page.evaluate(
+            r"""(qHints) => {
             const isVisible = (el) => {
               if (!el) return false;
               const s = window.getComputedStyle(el);
@@ -199,7 +314,7 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
             const fold = (s) => {
               const base = norm(s).toLowerCase();
               try {
-                return base.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                return base.normalize('NFD').replace(/[̀-ͯ]/g, '');
               } catch (e) {
                 return base;
               }
@@ -368,7 +483,7 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
 
             const bodyText = norm((document.body && document.body.innerText) || '');
             const hasQuestionHint = /etes[-\s]*vous|quel\s+age|quel\s+ge|how\s+old|are\s+you/i.test(bodyText);
-            const questionHints = (arguments[0] || []).map(q => norm(q)).filter(Boolean);
+            const questionHints = (qHints || []).map(q => norm(q)).filter(Boolean);
             const hasQuestionTextHint = questionHints.some(q => q.length >= 8 && bodyText.includes(q.slice(0, 48)));
 
             return {
@@ -387,8 +502,8 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
               has_visual_challenge_instruction: hasVisualChallengeInstruction,
               project: norm(document.querySelector("input[name='I.Project']")?.value || ''),
             };
-            """
-            , [
+        }""",
+            [
                 _norm_lc((b.get("question") or ""))
                 for b in (question_blocks or [])
                 if _norm_lc((b.get("question") or ""))
@@ -476,9 +591,6 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
 
 # ---------------------------------------------------------------------------
 # DÉTECTION PAGE DE DISQUALIFICATION / FIN DE SONDAGE
-# Guard DOM : aucun input exploitable (branche else execute_survey_page) +
-#   signal textuel de rejet OU iframe callback panel (samplicio.us, etc.)
-# Non-régression : ces signaux n'apparaissent pas sur les pages intro/consent.
 # ---------------------------------------------------------------------------
 
 _DISQ_TEXT_SIGNALS = [
@@ -496,16 +608,30 @@ _DISQ_TEXT_SIGNALS = [
     "screened out",
     "disqualified",
     "you have been disqualified",
+    "haven't qualified for any surveys",
 ]
 
 _DISQ_CALLBACK_PATTERNS = ["samplicio.us", "clientcallback", "client_callback"]
 
+# Sentinel positionné par _budgeted_disqualification_restart quand attach_stop est retourné.
+# Permet aux boucles takeover de main.py de distinguer ce cas d'un échec de step ordinaire.
+_attach_disq_stop_requested: bool = False
+
+# ---------------------------------------------------------------------------
+# CONSENT_SCREEN_STUCK_RELOAD : reload borné quand handle_consent_screen échoue
+# de façon répétée sur le même DOM (clic CTA sans effet observable, cf.
+# BOT_EVOLUTION_MEMORY.md). État conservé par instance driver (id) car
+# execute_survey_page est ré-invoquée à chaque step avec les mêmes locals réinitialisés.
+# ---------------------------------------------------------------------------
+_CONSENT_SCREEN_STUCK_STATE: dict = {}
+_CONSENT_SCREEN_STUCK_BUDGET = 2  # échecs consécutifs sur le même DOM avant reload
+
 
 def _detect_disqualification_page(driver) -> tuple:
     """Retourne (True, signal) si la page est une page de disqualification/fin, (False, '') sinon."""
+    page = driver
     try:
-        cb_src = driver.execute_script(
-            """
+        cb_src = page.evaluate("""() => {
             var iframes = document.querySelectorAll('iframe[src]');
             for (var i = 0; i < iframes.length; i++) {
                 var s = (iframes[i].getAttribute('src') || '').toLowerCase();
@@ -514,17 +640,14 @@ def _detect_disqualification_page(driver) -> tuple:
                 }
             }
             return null;
-            """
-        )
+        }""")
         if cb_src:
             return True, f"callback_iframe:{str(cb_src)[:80]}"
     except Exception:
         pass
 
     try:
-        body_text = driver.execute_script(
-            "return (document.body && document.body.innerText) || '';"
-        )
+        body_text = page.evaluate("() => (document.body && document.body.innerText) || ''")
         body_lc = _norm_lc(body_text or "")
         for sig in _DISQ_TEXT_SIGNALS:
             if sig in body_lc:
@@ -546,8 +669,9 @@ def _budgeted_disqualification_restart(driver) -> str:
     if not is_disq:
         return "no_match"
 
+    page = driver
     try:
-        current_url = driver.current_url or ""
+        current_url = page.url or ""
     except Exception:
         current_url = ""
     up = urlsplit(current_url)
@@ -567,6 +691,12 @@ def _budgeted_disqualification_restart(driver) -> str:
         driver._disq_page_seen = counters
     except Exception:
         pass
+
+    if is_attach_mode():
+        log_info("[DISQ_PAGE]", f"disqualification détectée ({signal}) en mode attach — arrêt bot (pas de relance).")
+        global _attach_disq_stop_requested
+        _attach_disq_stop_requested = True
+        return "attach_stop"
 
     log_info("[DISQ_PAGE]", f"disqualification détectée ({signal}) -> soft_restart key={budget_key}")
     try:
@@ -588,8 +718,9 @@ def _budgeted_dom_only_abort_for_image_eval(driver) -> str:
     if not is_match:
         return "no_match"
 
+    page = driver
     try:
-        current_url = driver.current_url or ""
+        current_url = page.url or ""
     except Exception:
         current_url = ""
     up = urlsplit(current_url)
@@ -637,8 +768,9 @@ def _budgeted_soft_restart_for_image_only_inputs(driver, question_blocks: list[d
     if not is_match:
         return "no_match"
 
+    page = driver
     try:
-        current_url = driver.current_url or ""
+        current_url = page.url or ""
     except Exception:
         current_url = ""
     up = urlsplit(current_url)
@@ -664,8 +796,7 @@ def _budgeted_soft_restart_for_image_only_inputs(driver, question_blocks: list[d
 
     if pattern_reason == "image_only_wrapped_inputs":
         try:
-            clicked = driver.execute_script(
-                r"""
+            clicked = page.evaluate(r"""() => {
                 const isVisible = (el) => {
                   if (!el) return false;
                   const s = window.getComputedStyle(el);
@@ -694,8 +825,7 @@ def _budgeted_soft_restart_for_image_only_inputs(driver, question_blocks: list[d
                   : null;
                 (lbl || inp).click();
                 return inp.id || inp.name || 'ok';
-                """
-            )
+            }""")
         except Exception as _e:
             clicked = None
             log_debug("DOM_ONLY_ABORT", f"image_only_wrapped_inputs random_click failed: {type(_e).__name__}: {_e}")
@@ -722,11 +852,7 @@ def _detect_open_text_embedded_image_unresolvable_dom(
     question_blocks: list[dict],
 ) -> tuple[bool, str, str]:
     """
-    Détecte un écran "question ouverte qualitative" non résoluble de façon fiable
-    en DOM-only:
-      - un seul textarea visible/exploitable,
-      - pas d'autres contrôles de réponse (radio/checkbox/select/autre text input),
-      - présence d'une image embarquée large (src data:image) de type taImage.
+    Détecte un écran "question ouverte qualitative" non résoluble de façon fiable en DOM-only.
     """
     open_text_blocks = [
         b
@@ -736,9 +862,9 @@ def _detect_open_text_embedded_image_unresolvable_dom(
     if len(open_text_blocks) != 1:
         return False, "", ""
 
+    page = driver
     try:
-        dom = driver.execute_script(
-            """
+        dom = page.evaluate("""() => {
             const isVisible = (el) => {
               if (!el) return false;
               const s = window.getComputedStyle(el);
@@ -781,8 +907,7 @@ def _detect_open_text_embedded_image_unresolvable_dom(
               ta_image_count: taImages.length,
               large_embedded_ta_image_count: largeEmbeddedTaImages.length,
             };
-            """
-        ) or {}
+        }""") or {}
     except Exception:
         dom = {}
 
@@ -826,8 +951,9 @@ def _budgeted_soft_restart_for_open_text_embedded_image(driver, question_blocks:
     if not is_match:
         return "no_match"
 
+    page = driver
     try:
-        current_url = driver.current_url or ""
+        current_url = page.url or ""
     except Exception:
         current_url = ""
     up = urlsplit(current_url)
@@ -866,15 +992,10 @@ def _budgeted_soft_restart_for_open_text_embedded_image(driver, question_blocks:
 def _handle_forcewatch_video_gate(driver) -> str:
     """
     Détection/traitement DOM-only d'un écran vidéo avec gate forcewatch.
-
-    Retourne:
-      - "resolved": question vidéo répondue via DOM,
-      - "soft_restart": gate vidéo détecté sans action exploitable,
-      - "no_match": aucun gate vidéo de ce type détecté.
     """
+    page = driver
     try:
-        has_forcewatch_video = bool(driver.execute_script(
-            """
+        has_forcewatch_video = bool(page.evaluate("""() => {
             const isVisible = (el) => {
               if (!el) return false;
               const s = window.getComputedStyle(el);
@@ -884,21 +1005,16 @@ def _handle_forcewatch_video_gate(driver) -> str:
             };
             const videos = Array.from(document.querySelectorAll('video[data-forcewatch]'));
             return videos.some(v => isVisible(v));
-            """
-        ))
+        }"""))
     except Exception:
         has_forcewatch_video = False
 
     if has_forcewatch_video:
-        # ── Étape 1 : déclencher la lecture vidéo via JS pour activer les handlers Kantar ──
-        # Le script mrIWeb surveille 'timeupdate' et 'ended' pour retirer disabled du bouton.
-        # En headless, on simule la fin de la vidéo sans attendre la lecture réelle.
         try:
-            driver.execute_script("""
+            page.evaluate("""() => {
                 var vids = Array.from(document.querySelectorAll('video[data-forcewatch]'));
                 vids.forEach(function(v) {
                     try {
-                        // Positionner à 95% de la durée (déclenche timeupdate)
                         if (v.duration && isFinite(v.duration) && v.duration > 0) {
                             v.currentTime = v.duration * 0.95;
                         }
@@ -906,19 +1022,16 @@ def _handle_forcewatch_video_gate(driver) -> str:
                         v.dispatchEvent(new Event('ended', {bubbles: true}));
                     } catch(e) {}
                 });
-            """)
+            }""")
             log_debug("[VIDEO_GATE]", "forcewatch JS trigger: timeupdate + ended dispatched")
         except Exception as _vt_exc:
             log_debug("[VIDEO_GATE]", f"forcewatch JS trigger failed (non-fatal): {_vt_exc}")
 
-        # ── Étape 2 : polling court — attendre que le bouton submit soit enabled ──
-        # Budget : 10 itérations × 0,5 s = 5 s max
         _submit_enabled = False
         for _poll_i in range(10):
             try:
-                _is_disabled = driver.execute_script(
-                    "var b = document.querySelector('#submit-button'); "
-                    "return b ? b.hasAttribute('disabled') : true;"
+                _is_disabled = page.evaluate(
+                    "() => { var b = document.querySelector('#submit-button'); return b ? b.hasAttribute('disabled') : true; }"
                 )
                 if not _is_disabled:
                     _submit_enabled = True
@@ -932,22 +1045,14 @@ def _handle_forcewatch_video_gate(driver) -> str:
             log_debug("[VIDEO_GATE]", "submit-button toujours disabled après 5s (non-fatal, on tente quand même)")
 
     if not has_forcewatch_video:
-        # Détection complémentaire : player ISD (div#ISD présent dans le DOM)
-        # + .cf-navigation__button masqué via CSS (computed style) — pattern Forsta/Confirmit.
-        # Critère 1 : existence structurelle de div#ISD (pas de check visibilité — vidéo peut
-        #             encore charger au moment de l'exécution, BoundingClientRect = 0).
-        # Critère 2 : getComputedStyle pour tenir compte des règles CSS injectées (<style>),
-        #             pas seulement du style inline (getAttribute('style') insuffisant).
         try:
-            has_isd_gate = bool(driver.execute_script(
-                """
+            has_isd_gate = bool(page.evaluate("""() => {
                 const isdRoot = document.querySelector('#ISD');
                 if (!isdRoot) return false;
                 const navBtn = document.querySelector('.cf-navigation__button');
                 if (!navBtn) return false;
                 return window.getComputedStyle(navBtn).display === 'none';
-                """
-            ))
+            }"""))
         except Exception:
             has_isd_gate = False
 
@@ -965,8 +1070,8 @@ def _handle_forcewatch_video_gate(driver) -> str:
 
     try:
         radios = [
-            el for el in driver.find_elements(By.CSS_SELECTOR, "input[type='radio'][name]")
-            if el.is_enabled() and el.is_displayed()
+            el for el in page.query_selector_all("input[type='radio'][name]")
+            if el.is_enabled() and el.is_visible()
         ]
     except Exception:
         radios = []
@@ -995,11 +1100,13 @@ def _handle_forcewatch_video_gate(driver) -> str:
             for tok in aria.split():
                 if "columnlabel" in tok:
                     try:
-                        txt = driver.find_element(By.ID, tok).text
-                        col_txt += f" {txt}"
+                        col_el = page.query_selector(f"#{tok}")
+                        if col_el:
+                            col_txt += f" {col_el.inner_text()}"
                     except Exception:
                         pass
-            label_txt = _norm_lc(inp.find_element(By.XPATH, "ancestor::label[1]").text)
+            label_el = inp.query_selector("xpath=ancestor::label[1]")
+            label_txt = _norm_lc(label_el.inner_text() if label_el else "")
             blob = f"{label_txt} {_norm_lc(col_txt)}"
             if "oui" in blob or "yes" in blob:
                 score += 100
@@ -1016,7 +1123,7 @@ def _handle_forcewatch_video_gate(driver) -> str:
         if not target:
             continue
         try:
-            driver.execute_script("arguments[0].click();", target)
+            page.evaluate("(el) => el.click()", target)
             clicked_groups += 1
         except Exception:
             continue
@@ -1032,24 +1139,20 @@ def _handle_forcewatch_video_gate(driver) -> str:
 
     print("[VIDEO_GATE] video_question resolved via DOM -> continue")
     return "resolved"
-    
+
 def _coerce_safe_value_if_questionish(raw_line: str) -> str:
     """
     Si le modèle renvoie par erreur un intitulé de question au lieu d'une valeur,
-    fabrique une valeur sûre en fonction du texte.
-    Remappe aussi 'number' -> 'text'.
+    fabrique une valeur sûre en fonction du texte. Remappe aussi 'number' -> 'text'.
     """
     line = (raw_line or "").strip()
-    # parse "label //// type //// contexte" tolérant
     m = re.split(r"/{4,}", line)
     label = (m[0] if m else "").strip()
     itype = (m[1] if len(m) > 1 else "").strip().lower() or "text"
     context = (m[2] if len(m) > 2 else "").strip()
 
-    # forcer number -> text
     if itype == "number":
         itype = "text"
-
 
     low = _norm_lc(label)
     is_questiony = ("?" in label) or any(
@@ -1069,15 +1172,13 @@ def _coerce_safe_value_if_questionish(raw_line: str) -> str:
     )
 
     if itype in ("text", "textarea") and (is_questiony or not label or len(label) < 2):
-        # Heuristiques de valeur
         if any(k in low for k in ["postal", "code postal", "zip"]):
-            label = "95000"  # 5 chiffres FR
+            label = "95000"
         elif any(k in low for k in ["age", "how old"]):
-            label = "28"  # adulte ok
+            label = "28"
         elif any(k in low for k in ["naissance", "year of birth"]):
             label = "1996"
         else:
-            # valeur texte par  :  les  non  si champ num.
             label = "28"
 
     return f"{label} //// {itype} //// {context}"
@@ -1086,70 +1187,57 @@ def _coerce_safe_value_if_questionish(raw_line: str) -> str:
 
 # ============================================================================
 # PATCH: Detection popup TopSurveys "Bon travail !"
-# Ferme le popup, relance la preselection, ET execute le nouveau survey
 # ============================================================================
 def _handle_walr_image_eval_blocks(driver, question_blocks: list, api_key: str) -> bool:
     """
     Walr Image Evaluation: traitement spécial des questions d'évaluation d'images.
-    
-    Ce type de question nécessite l'envoi de l'image à OpenAI Vision pour analyse.
-    Le bloc DOM contient:
-      - requires_vision: True
-      - image_url: URL de l'image à évaluer
-      - context.walr_image_eval: True
-      - target_id: pour récupérer option_xpath_map du registry
-    
-    Retourne True si un bloc a été traité, False sinon.
     """
     import base64
     import requests
     from Survey.dom_registry import get_target
-    
-    # Filtrer les blocs walr_image_eval
+
+    page = driver
+
     vision_blocks = [
-        b for b in question_blocks 
+        b for b in question_blocks
         if b.get("requires_vision") and b.get("context", {}).get("walr_image_eval")
     ]
-    
+
     if not vision_blocks:
         return False
-    
+
     print(f"[WALR_IMG_VISION] {len(vision_blocks)} bloc(s) image_eval détecté(s)")
-    
+
     for block in vision_blocks:
         target_id = block.get("target_id")
         image_url = block.get("image_url")
         question = block.get("question", "Is this image positive or negative?")
         options = block.get("options", [])
-        
+
         if not target_id or not image_url:
             print(f"[WALR_IMG_VISION] SKIP - missing target_id or image_url")
             continue
-        
-        # Récupérer les infos du registry (option_xpath_map)
+
         registry_data = get_target(target_id)
         if not registry_data:
             print(f"[WALR_IMG_VISION] SKIP - target_id {target_id} not in registry")
             continue
-        
+
         option_xpath_map = registry_data.get("option_xpath_map", {})
         frame_chain = registry_data.get("frame_chain", [])
-        
+
         if not option_xpath_map:
             print(f"[WALR_IMG_VISION] SKIP - no option_xpath_map for {target_id}")
             continue
-        
+
         print(f"[WALR_IMG_VISION] Processing: question='{question[:50]}...'")
         print(f"[WALR_IMG_VISION] Options: {options}")
         print(f"[WALR_IMG_VISION] Image URL: {image_url[:80]}...")
-        
-        # Télécharger l'image et convertir en base64
+
         try:
             resp = requests.get(image_url, timeout=15)
             resp.raise_for_status()
             img_data = base64.b64encode(resp.content).decode("utf-8")
-            
-            # Détecter le type MIME
             content_type = resp.headers.get("Content-Type", "image/jpeg")
             if "png" in content_type.lower():
                 media_type = "image/png"
@@ -1159,13 +1247,11 @@ def _handle_walr_image_eval_blocks(driver, question_blocks: list, api_key: str) 
                 media_type = "image/webp"
             else:
                 media_type = "image/jpeg"
-            
             print(f"[WALR_IMG_VISION] Image downloaded: {len(resp.content)} bytes, type={media_type}")
         except Exception as e:
             print(f"[WALR_IMG_VISION] FAILED to download image: {e}")
             continue
-        
-        # Construire le prompt pour Vision API
+
         options_str = ", ".join(f'"{opt}"' for opt in options)
         vision_prompt = f"""Analyze this image and answer the following question.
 
@@ -1175,11 +1261,9 @@ Available options: {options_str}
 
 You MUST respond with EXACTLY one of the available options, nothing else.
 Just output the option text that best answers the question based on what you see in the image."""
-        
-        # Appel OpenAI Vision API
+
         try:
             client = openai.OpenAI(api_key=api_key)
-            
             vision_response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
@@ -1190,7 +1274,7 @@ Just output the option text that best answers the question based on what you see
                                 "type": "image_url",
                                 "image_url": {
                                     "url": f"data:{media_type};base64,{img_data}",
-                                    "detail": "low"  # low detail = moins cher
+                                    "detail": "low"
                                 }
                             },
                             {
@@ -1202,27 +1286,23 @@ Just output the option text that best answers the question based on what you see
                 ],
                 max_tokens=50
             )
-            
             chosen_option = (vision_response.choices[0].message.content or "").strip()
             print(f"[WALR_IMG_VISION] Vision API response: '{chosen_option}'")
         except Exception as e:
             print(f"[WALR_IMG_VISION] Vision API FAILED: {e}")
-            # Fallback: choisir la première option
             chosen_option = options[0] if options else ""
             print(f"[WALR_IMG_VISION] Using fallback option: '{chosen_option}'")
-        
-        # Normaliser et matcher l'option
+
         chosen_lc = _norm_lc(chosen_option)
         matched_xpath = None
         matched_option = None
-        
+
         for opt, xpath in option_xpath_map.items():
             if _norm_lc(opt) == chosen_lc:
                 matched_xpath = xpath
                 matched_option = opt
                 break
-        
-        # Si pas de match exact, essayer match partiel
+
         if not matched_xpath:
             for opt, xpath in option_xpath_map.items():
                 opt_lc = _norm_lc(opt)
@@ -1231,72 +1311,68 @@ Just output the option text that best answers the question based on what you see
                     matched_option = opt
                     print(f"[WALR_IMG_VISION] Partial match: '{chosen_option}' -> '{opt}'")
                     break
-        
+
         if not matched_xpath:
             print(f"[WALR_IMG_VISION] NO MATCH for '{chosen_option}' in options")
-            # Fallback: utiliser la première option
             matched_option = list(option_xpath_map.keys())[0]
             matched_xpath = option_xpath_map[matched_option]
             print(f"[WALR_IMG_VISION] Fallback to first option: '{matched_option}'")
-        
+
         print(f"[WALR_IMG_VISION] Clicking option '{matched_option}' via XPath: {matched_xpath}")
-        
-        # Naviguer vers le frame si nécessaire
+
+        # Naviguer vers le frame si nécessaire (natif Playwright)
         try:
-            driver.switch_to.default_content()
+            frame = page.main_frame
             for frame_idx in frame_chain:
-                iframes = driver.find_elements(By.CSS_SELECTOR, "iframe")
+                iframes = frame.query_selector_all("iframe")
                 if frame_idx < len(iframes):
-                    driver.switch_to.frame(iframes[frame_idx])
+                    child_frame = iframes[frame_idx].content_frame()
+                    if child_frame:
+                        frame = child_frame
         except Exception as e:
-            print(f"[WALR_IMG_VISION] Frame switch error (non-fatal): {e}")
-        
-        # Cliquer sur le bouton
+            print(f"[WALR_IMG_VISION] Frame navigation error (non-fatal): {e}")
+            frame = page.main_frame
+
         try:
-            btn = driver.find_element(By.XPATH, matched_xpath)
-            
-            # Scroll into view
-            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
+            btn = frame.query_selector(f"xpath={matched_xpath}")
+            if btn is None:
+                print(f"[WALR_IMG_VISION] Click FAILED: element not found")
+                continue
+
+            btn.evaluate("(el) => el.scrollIntoView({block: 'center'})")
             time.sleep(0.3)
-            
-            # Clic via ActionChains (plus fiable que .click())
-            ActionChains(driver).move_to_element(btn).pause(0.1).click().perform()
+            btn.hover()
+            btn.click()
             print(f"[WALR_IMG_VISION] SUCCESS - clicked '{matched_option}'")
-            
-            time.sleep(0.5)  # Attendre réaction
+
+            time.sleep(0.5)
             return True
-            
+
         except Exception as e:
             print(f"[WALR_IMG_VISION] Click FAILED: {e}")
-            # Essayer JS click en fallback
             try:
-                btn = driver.find_element(By.XPATH, matched_xpath)
-                driver.execute_script("arguments[0].click();", btn)
-                print(f"[WALR_IMG_VISION] SUCCESS via JS click")
-                return True
+                btn = frame.query_selector(f"xpath={matched_xpath}")
+                if btn:
+                    page.evaluate("(el) => el.click()", btn)
+                    print(f"[WALR_IMG_VISION] SUCCESS via JS click")
+                    return True
             except Exception as e2:
                 print(f"[WALR_IMG_VISION] JS click also FAILED: {e2}")
                 continue
-    
+
     return False
 
 
 def _handle_cf_carousel_image_blocks(driver, question_blocks: list, api_key: str) -> bool:
     """
     Confirmit/GfK CF-Carousel avec image partagée : traitement Vision API.
-
-    Détecte les blocs context.kind=cf_carousel_item qui possèdent un champ image_url.
-    Envoie UNE seule requête gpt-4o Vision avec l'image + toutes les affirmations,
-    puis navigue chaque item du carousel et clique la réponse.
-
-    Retourne True si au moins un bloc a été traité, False sinon.
-    Gate DOM strict : image_url présent sur au moins un bloc cf_carousel_item.
     """
     import requests
     import base64
     from Survey.dom_registry import get_target
 
-    # Gate : blocs cf_carousel_item avec image_url
+    page = driver
+
     carousel_blocks = [
         b for b in question_blocks
         if (b.get("context") or {}).get("kind") == "cf_carousel_item"
@@ -1308,7 +1384,6 @@ def _handle_cf_carousel_image_blocks(driver, question_blocks: list, api_key: str
     image_url = carousel_blocks[0]["image_url"]
     print(f"[CF_CAROUSEL_VISION] {len(carousel_blocks)} item(s) avec image: {image_url[:80]}")
 
-    # Télécharger l'image une seule fois
     try:
         resp = requests.get(image_url, timeout=15)
         resp.raise_for_status()
@@ -1320,7 +1395,6 @@ def _handle_cf_carousel_image_blocks(driver, question_blocks: list, api_key: str
         print(f"[CF_CAROUSEL_VISION] Téléchargement image FAILED: {e}")
         return False
 
-    # Construire le prompt Vision avec toutes les affirmations
     lines = ["Regarde attentivement cette image et réponds à chaque affirmation par exactement une des options fournies."]
     lines.append("Format STRICT — une ligne par question : Q<n>: <réponse exacte>")
     lines.append("")
@@ -1331,7 +1405,6 @@ def _handle_cf_carousel_image_blocks(driver, question_blocks: list, api_key: str
         lines.append(f"Q{i}: {affirmation}  [options: {opts_str}]")
     vision_prompt = "\n".join(lines)
 
-    # Appel Vision API (gpt-4o)
     try:
         client = openai.OpenAI(api_key=api_key)
         vision_response = client.chat.completions.create(
@@ -1359,7 +1432,6 @@ def _handle_cf_carousel_image_blocks(driver, question_blocks: list, api_key: str
         print(f"[CF_CAROUSEL_VISION] Vision API FAILED: {e}")
         return False
 
-    # Parser les réponses : "Q1: Vrai\nQ2: Faux\n..."
     answer_map: dict[int, str] = {}
     for line in raw_answer.splitlines():
         line = line.strip()
@@ -1386,7 +1458,6 @@ def _handle_cf_carousel_image_blocks(driver, question_blocks: list, api_key: str
         pre_click_xpaths = registry_data.get("pre_click_xpaths") or []
         frame_chain = registry_data.get("frame_chain") or []
 
-        # Matcher la réponse (exact puis partiel)
         chosen_lc = (chosen_raw or "").lower().strip()
         matched_xpath = None
         matched_option = None
@@ -1403,7 +1474,6 @@ def _handle_cf_carousel_image_blocks(driver, question_blocks: list, api_key: str
                     matched_option = opt
                     break
         if not matched_xpath and options:
-            # Fallback : première option
             first_key = list(option_xpath_map.keys())[0] if option_xpath_map else None
             if first_key:
                 matched_xpath = option_xpath_map[first_key]
@@ -1416,42 +1486,43 @@ def _handle_cf_carousel_image_blocks(driver, question_blocks: list, api_key: str
 
         print(f"[CF_CAROUSEL_VISION] Q{i}: réponse={matched_option!r} xpath={matched_xpath}")
 
-        # Naviguer vers le frame si nécessaire
+        # Naviguer vers le frame si nécessaire (natif Playwright)
         try:
-            driver.switch_to.default_content()
+            frame = page.main_frame
             for frame_idx in frame_chain:
-                iframes = driver.find_elements(By.CSS_SELECTOR, "iframe")
+                iframes = frame.query_selector_all("iframe")
                 if frame_idx < len(iframes):
-                    driver.switch_to.frame(iframes[frame_idx])
+                    child_frame = iframes[frame_idx].content_frame()
+                    if child_frame:
+                        frame = child_frame
         except Exception:
-            pass
+            frame = page.main_frame
 
-        # Cliquer le paging button pour naviguer vers cet item
         for pxp in pre_click_xpaths[:1]:
             try:
-                paging_cands = driver.find_elements(By.XPATH, pxp)
+                paging_cands = frame.query_selector_all(f"xpath={pxp}")
                 if paging_cands:
                     pel = paging_cands[0]
                     aria_pressed = (pel.get_attribute("aria-pressed") or "").strip().lower()
                     if aria_pressed != "true":
-                        driver.execute_script("arguments[0].click();", pel)
+                        frame.evaluate("(el) => el.click()", pel)
                         time.sleep(0.25)
             except Exception:
                 pass
 
-        # Cliquer la réponse
         try:
-            cands = driver.find_elements(By.XPATH, matched_xpath)
+            cands = frame.query_selector_all(f"xpath={matched_xpath}")
             btn_el = cands[0] if cands else None
             if btn_el is None:
                 print(f"[CF_CAROUSEL_VISION] Q{i}: élément introuvable xpath={matched_xpath}")
                 continue
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn_el)
-            driver.execute_script("arguments[0].click();", btn_el)
+            btn_el.evaluate("(el) => el.scrollIntoView({block:'center'})")
+            page.evaluate("(el) => el.click()", btn_el)
             time.sleep(0.15)
             ok = (btn_el.get_attribute("aria-checked") or "").strip().lower() == "true"
             if not ok:
-                ActionChains(driver).move_to_element(btn_el).pause(0.05).click().perform()
+                btn_el.hover()
+                btn_el.click()
                 time.sleep(0.15)
             print(f"[CF_CAROUSEL_VISION] Q{i}: clicked OK")
             any_clicked = True
@@ -1462,22 +1533,13 @@ def _handle_cf_carousel_image_blocks(driver, question_blocks: list, api_key: str
     return any_clicked
 
 
-
 def _handle_phone_verification(driver):
     """
-    Détecte et traite l'écran interstitiel "Courte pause – Vérifie ton profil"
-    sur topsurveys.app.
-
-    Critères DOM stricts : div.phone-verification-container ET input.phone-number-input
-    présents simultanément. Scoped topsurveys.app uniquement.
-
-    Retourne :
-      True  — écran détecté + numéro saisi + bouton cliqué
-      False — écran détecté mais impossible d'obtenir un numéro (log + abandon)
-      None  — écran absent (continuer le flux normal)
+    Détecte et traite l'écran interstitiel "Courte pause – Vérifie ton profil" sur topsurveys.app.
     """
+    page = driver
     try:
-        current_url = driver.current_url or ""
+        current_url = page.url or ""
     except Exception:
         current_url = ""
 
@@ -1485,10 +1547,10 @@ def _handle_phone_verification(driver):
         return None
 
     try:
-        has_screen = bool(driver.execute_script(
-            "return !!(document.querySelector('div.phone-verification-container')"
-            " && document.querySelector('input.phone-number-input'));"
-        ))
+        has_screen = bool(page.evaluate("""() =>
+            !!(document.querySelector('div.phone-verification-container')
+            && document.querySelector('input.phone-number-input'))
+        """))
     except Exception:
         has_screen = False
 
@@ -1524,11 +1586,14 @@ def _handle_phone_verification(driver):
     log_info("[PHONE_VERIF]", "Saisie du numéro de téléphone")
 
     try:
-        inp = driver.find_element(By.CSS_SELECTOR, "input.phone-number-input")
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", inp)
+        inp = page.query_selector("input.phone-number-input")
+        if inp is None:
+            log_info("[PHONE_VERIF]", "Champ téléphone introuvable")
+            return False
+        inp.evaluate("(el) => el.scrollIntoView({block:'center'})")
         inp.click()
-        inp.clear()
-        inp.send_keys(phone)
+        inp.fill("")
+        inp.type(phone)
         log_debug("[PHONE_VERIF]", f"Numéro saisi: {phone}")
         time.sleep(0.5)
     except Exception as e:
@@ -1536,23 +1601,22 @@ def _handle_phone_verification(driver):
         return False
 
     try:
-        btn = driver.find_element(
-            By.CSS_SELECTOR,
-            "div.phone-verification-container button.p-btn--fill"
-        )
+        btn = page.query_selector("div.phone-verification-container button.p-btn--fill")
     except Exception:
+        btn = None
+    if btn is None:
         log_info("[PHONE_VERIF]", "Bouton Suivant introuvable après saisie")
         return False
 
-    if _env_truthy("CTA_INTERCEPT_ONLY"):
+    if is_cta_intercept_only():
         is_disabled = btn.get_attribute("disabled") is not None
         status = "disabled" if is_disabled else "enabled"
         log_info("[PHONE_VERIF]", f"CTA_INTERCEPT_ONLY — bouton={status}, interception OK sans navigation")
         return True
 
     try:
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
-        driver.execute_script("arguments[0].click();", btn)
+        btn.evaluate("(el) => el.scrollIntoView({block:'center'})")
+        page.evaluate("(el) => el.click()", btn)
         log_info("[PHONE_VERIF]", "Bouton Suivant cliqué")
         time.sleep(1.0)
         return True
@@ -1563,19 +1627,11 @@ def _handle_phone_verification(driver):
 
 def _handle_pin_verification(driver):
     """
-    Détecte et traite l'écran de saisie du code PIN à 6 chiffres (après vérification téléphone)
-    sur topsurveys.app.
-
-    Critères DOM stricts : div.phone-verification-container ET 6 input.pin-input-item présents.
-    Scoped topsurveys.app uniquement.
-
-    Retourne :
-      True  — PIN saisi + bouton Confirmer cliqué
-      False — écran détecté mais order_id absent ou timeout 5sim ou erreur
-      None  — écran absent (continuer le flux normal)
+    Détecte et traite l'écran de saisie du code PIN à 6 chiffres sur topsurveys.app.
     """
+    page = driver
     try:
-        current_url = driver.current_url or ""
+        current_url = page.url or ""
     except Exception:
         current_url = ""
 
@@ -1583,7 +1639,7 @@ def _handle_pin_verification(driver):
         return None
 
     try:
-        pin_inputs = driver.find_elements(By.CSS_SELECTOR,
+        pin_inputs = page.query_selector_all(
             "div.phone-verification-container input.pin-input-item")
     except Exception:
         return None
@@ -1593,7 +1649,6 @@ def _handle_pin_verification(driver):
 
     log_info("[PIN_VERIF]", "Écran PIN détecté (6 inputs pin-input-item)")
 
-    # Résolution de l'order_id : account_state en priorité, env en fallback
     account_id = getattr(driver, "_survey_account_id", None)
     order_id = ""
     if account_id:
@@ -1628,25 +1683,24 @@ def _handle_pin_verification(driver):
     log_info("[PIN_VERIF]", f"Code PIN reçu ({len(pin_code)} chiffres) — saisie")
 
     try:
-        pin_inputs = driver.find_elements(By.CSS_SELECTOR,
+        pin_inputs = page.query_selector_all(
             "div.phone-verification-container input.pin-input-item")
         for i, digit in enumerate(pin_code[:6]):
             inp = pin_inputs[i]
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", inp)
+            inp.evaluate("(el) => el.scrollIntoView({block:'center'})")
             inp.click()
-            inp.send_keys(digit)
+            inp.type(digit)
             time.sleep(0.1)
     except Exception as e:
         log_info("[PIN_VERIF]", f"Saisie PIN échouée: {e}")
         return False
 
-    # Attendre que le bouton Confirmer soit enabled (3s max)
     confirm_btn = None
     for _ in range(30):
         try:
-            btn = driver.find_element(By.CSS_SELECTOR,
+            btn = page.query_selector(
                 "div.phone-verification-container button.p-btn--fill")
-            if btn.get_attribute("disabled") is None:
+            if btn and btn.get_attribute("disabled") is None:
                 confirm_btn = btn
                 break
         except Exception:
@@ -1657,20 +1711,19 @@ def _handle_pin_verification(driver):
         log_info("[PIN_VERIF]", "Bouton Confirmer toujours désactivé après 3s — abandon")
         return False
 
-    if _env_truthy("CTA_INTERCEPT_ONLY"):
+    if is_cta_intercept_only():
         log_info("[PIN_VERIF]", "CTA_INTERCEPT_ONLY — interception OK, bouton Confirmer enabled, pas de clic")
         return True
 
     try:
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", confirm_btn)
-        driver.execute_script("arguments[0].click();", confirm_btn)
+        confirm_btn.evaluate("(el) => el.scrollIntoView({block:'center'})")
+        page.evaluate("(el) => el.click()", confirm_btn)
         log_info("[PIN_VERIF]", "Bouton Confirmer cliqué")
         time.sleep(1.0)
     except Exception as e:
         log_info("[PIN_VERIF]", f"Clic Confirmer échoué: {e}")
         return False
 
-    # Finaliser la commande 5sim (best-effort)
     try:
         from Survey.fivesim_client import finish_order
         finish_order(order_id)
@@ -1678,6 +1731,48 @@ def _handle_pin_verification(driver):
         pass
 
     return True
+
+
+_DECIPHER_CARDRATING_MATRIX_AUTONAV_TIMEOUT = 3  # secondes, attente bornée d'auto-navigation
+
+
+def _decipher_cardrating_matrix_all_rows_answered(driver, question_blocks: list[dict]) -> bool:
+    """
+    Garde-fou strict : widget Decipher/FocusVision `sq-cardrating` utilisé en mode matrice
+    (plusieurs lignes d'UNE question présentées comme cartes successives du widget, mais
+    extraites côté DOM via le chemin générique answers-list en groupes radio distincts —
+    `context.focusvision_answers_list=True` — car `_extract_decipher_cardrating_blocks`
+    produit des cartes non labellisées sur ce DOM et est écarté par
+    `_prune_cardrating_unlabeled_blocks_favor_row_groups`, cf. BOT_EVOLUTION_MEMORY.md).
+
+    Ne s'active que si TOUTES les cartes du widget ont disparu du DOM (plus aucun
+    `li.sq-cardrating-card` restant), signal du widget lui-même confirmant que toutes les
+    lignes ont reçu une réponse — jamais sur une réponse partielle. Ne préjuge pas d'une
+    navigation réelle : sert uniquement de garde d'entrée pour l'appelant, qui doit ensuite
+    vérifier lui-même si la page a effectivement changé.
+    """
+    has_matrix_group_block = any(
+        isinstance(b, dict)
+        and isinstance(b.get("context"), dict)
+        and b["context"].get("focusvision_answers_list") is True
+        and str(b["context"].get("group_key") or "").startswith("radio:name:")
+        for b in (question_blocks or [])
+    )
+    if not has_matrix_group_block:
+        return False
+
+    try:
+        remaining = driver.evaluate(
+            "() => { "
+            "var w = document.querySelector('div.sq-cardrating-widget[data-uid]'); "
+            "if (!w) return -1; "
+            "return w.querySelectorAll('ul.sq-cardrating-cards li.sq-cardrating-card').length; "
+            "}"
+        )
+    except Exception:
+        return False
+
+    return remaining == 0
 
 
 def _should_skip_post_actions_navigation(
@@ -1688,21 +1783,13 @@ def _should_skip_post_actions_navigation(
     before_sig=None,
 ) -> bool:
     """
-    Garde-fou minimal: certains blocs avancent automatiquement après le clic
-    réponse (ex: Walr cardsort, StudyStream button.choice, QARTS autosubmit,
-    Askia auto-navigation via tr.myresponse JS handler).
-    La routine CTA post-actions ne doit pas tourner, sinon elle peut cliquer
-    sur l'écran suivant et soumettre prématurément.
+    Garde-fou minimal: certains blocs avancent automatiquement après le clic réponse.
     """
-    # ── Détection auto-navigation post-dispatch (critère purement DOM-observable) ──
-    # Si l'URL a changé entre le clic réponse et l'appel CTA, la navigation a déjà
-    # eu lieu — on ne doit pas cliquer le CTA, quel que soit le provider.
-    # Pour les changements DOM-only (SPA sans changement d'URL), on exige en plus
-    # la présence du marqueur Askia (form[action*="AskiaExt.dll"]) pour éviter les
-    # faux-positifs sur les plateformes qui mutent le DOM sur sélection radio.
+    page = driver
+
     if before_url is not None:
         try:
-            url_changed = driver.current_url != before_url
+            url_changed = page.url != before_url
             if url_changed:
                 log_info("[AUTONAV]", "URL changée après clic radio → skip CTA (navigation déjà effectuée)")
                 return True
@@ -1711,13 +1798,11 @@ def _should_skip_post_actions_navigation(
         if before_sig is not None:
             try:
                 import Management.redirect_watcher as _rw
+                # _rw._dom_signature attend un objet shim/driver → passer driver (= shim en BLOC 3b1)
                 if _rw._dom_signature(driver) != before_sig:
-                    if driver.find_elements(By.CSS_SELECTOR, "form[action*='AskiaExt.dll']"):
-                        # Guard: si la page contient un widget ranking Askia (adc-ranking-isotope),
-                        # le changement DOM est une animation isotope (translate3d), PAS une navigation.
-                        # Dans ce cas, ne pas skip le CTA — la page attend le clic "Suivant".
+                    if page.query_selector_all("form[action*='AskiaExt.dll']"):
                         has_ranking_widget = bool(
-                            driver.find_elements(By.CSS_SELECTOR, "div.adc-ranking-isotope")
+                            page.query_selector_all("div.adc-ranking-isotope")
                         )
                         if has_ranking_widget:
                             log_info("[ASKIA_AUTONAV]", "DOM changé mais widget ranking détecté → animation isotope, CTA requis")
@@ -1726,18 +1811,52 @@ def _should_skip_post_actions_navigation(
                             return True
             except Exception:
                 pass
-            
+
     for block in question_blocks or []:
         try:
             ctx = block.get("context") if isinstance(block, dict) else None
-            if isinstance(ctx, dict) and (
-                ctx.get("walr_cardsort") is True or ctx.get("studystream_auto_advance") is True
-            ):
+            if isinstance(ctx, dict) and ctx.get("walr_cardsort") is True:
                 return True
         except Exception:
             continue
 
-    # QARTS autosubmit: cliquer une option radio déclenche la navigation directement.
+    for block in question_blocks or []:
+        try:
+            ctx = block.get("context") if isinstance(block, dict) else None
+            if not (isinstance(ctx, dict) and ctx.get("studystream_auto_advance") is True):
+                continue
+            url_changed = False
+            if before_url is not None:
+                try:
+                    url_changed = page.url != before_url
+                except Exception:
+                    pass
+            if url_changed:
+                log_info("[STUDYSTREAM_AUTONAV]", "URL changée après clic → skip CTA (auto-navigation confirmée)")
+                return True
+            # La signature DOM générique (_dom_signature, basée sur innerText) capte aussi
+            # la mutation d'état visuel de l'option cliquée (ex: icône "check" qui apparaît) :
+            # ce n'est pas un changement de page. On vérifie donc explicitement que le texte
+            # de la question courante (déjà extrait dans le bloc) a disparu du DOM avant de
+            # conclure à une navigation réelle.
+            question_text = (block.get("question") or "").strip()
+            question_still_present = True
+            if question_text:
+                try:
+                    from Survey.dom_utils import _norm
+                    body_text = page.evaluate(
+                        "() => document.body ? (document.body.innerText || '') : ''"
+                    ) or ""
+                    question_still_present = _norm(question_text) in _norm(body_text)
+                except Exception:
+                    question_still_present = True
+            if not question_still_present:
+                log_info("[STUDYSTREAM_AUTONAV]", "question précédente absente du DOM → navigation réelle confirmée → skip CTA")
+                return True
+            log_info("[STUDYSTREAM_AUTONAV]", "question toujours affichée après clic (mutation d'état de sélection uniquement) → CTA requis")
+        except Exception:
+            continue
+
     for block in question_blocks or []:
         try:
             ctx = block.get("context") if isinstance(block, dict) else None
@@ -1747,19 +1866,29 @@ def _should_skip_post_actions_navigation(
         except Exception:
             continue
 
-    # Savanta JQM carousel : skip CTA tant que tous les items ne sont pas répondus.
-    # Condition : carousel-index < carousel-total (both present dans le DOM).
+    for block in question_blocks or []:
+        try:
+            ctx = block.get("context") if isinstance(block, dict) else None
+            if isinstance(ctx, dict) and ctx.get("ipsos_mriweb_grid_progressive_auto_advance") is True:
+                log_info(
+                    "[IPSOS_GRID_PROGRESSIVE]",
+                    "clic radio a déjà déclenché l'avance automatique → skip CTA",
+                )
+                return True
+        except Exception:
+            continue
+
     for block in question_blocks or []:
         try:
             ctx = block.get("context") if isinstance(block, dict) else None
             if not (isinstance(ctx, dict) and ctx.get("savanta_jqm_carousel") is True):
                 continue
             try:
-                index_str = driver.execute_script(
-                    "var s=document.querySelector('span.carousel-index'); return s ? s.textContent.trim() : null;"
+                index_str = page.evaluate(
+                    "() => { var s=document.querySelector('span.carousel-index'); return s ? s.textContent.trim() : null; }"
                 )
-                total_str = driver.execute_script(
-                    "var s=document.querySelector('span.carousel-total'); return s ? s.textContent.trim() : null;"
+                total_str = page.evaluate(
+                    "() => { var s=document.querySelector('span.carousel-total'); return s ? s.textContent.trim() : null; }"
                 )
                 if index_str and total_str and index_str.strip() != total_str.strip():
                     print(
@@ -1772,7 +1901,6 @@ def _should_skip_post_actions_navigation(
         except Exception:
             continue
 
-    # Confirmit cf-hrs-single carousel : skip CTA sauf sur le dernier card.
     for block in question_blocks or []:
         try:
             ctx = block.get("context") if isinstance(block, dict) else None
@@ -1785,77 +1913,250 @@ def _should_skip_post_actions_navigation(
                     f"(non-dernier) → skip CTA",
                 )
                 return True
-            break  # dernier card : ne pas skip
+            break
         except Exception:
             continue
 
-    # Critères DOM explicites (défense en profondeur si le contexte est absent)
-    try:
-        if driver.find_elements(By.CSS_SELECTOR, "#cardSortContainer button.answer-button"):
+    if before_url is not None and _decipher_cardrating_matrix_all_rows_answered(driver, question_blocks):
+        log_debug(
+            "[DECIPHER_CARDRATING_MATRIX_AUTONAV]",
+            "toutes les lignes du widget sq-cardrating répondues → attente bornée d'une auto-navigation",
+        )
+        try:
+            import Management.redirect_watcher as _rw_cardrating
+            changed = _rw_cardrating.wait_for_navigation_or_dom_change(
+                driver,
+                before_url=before_url,
+                before_sig=before_sig,
+                timeout=_DECIPHER_CARDRATING_MATRIX_AUTONAV_TIMEOUT,
+            )
+        except Exception:
+            changed = None
+        if changed and changed.changed:
+            log_info(
+                "[DECIPHER_CARDRATING_MATRIX_AUTONAV]",
+                "navigation auto détectée après dernière ligne du widget → skip CTA",
+            )
             return True
+        log_info(
+            "[DECIPHER_CARDRATING_MATRIX_AUTONAV]",
+            "pas de navigation auto détectée dans le budget → flux CTA normal",
+        )
+
+    try:
+        if page.query_selector_all("#cardSortContainer button.answer-button"):
+            return True
+        # Le pattern `div.question-body-options__choice button.choice` est celui de
+        # _extract_button_choice_radio_blocks, qui pose déjà studystream_auto_advance=True
+        # sur ces blocs. Quand ce flag est présent, la branche STUDYSTREAM_AUTONAV ci-dessus
+        # a déjà tranché (avec vérification de navigation réelle) : ce fallback structurel,
+        # purement DOM, ne doit pas écraser cette décision par un simple comptage de boutons.
+        has_studystream_flag = any(
+            isinstance(b, dict)
+            and isinstance(b.get("context"), dict)
+            and b["context"].get("studystream_auto_advance") is True
+            for b in (question_blocks or [])
+        )
+        if has_studystream_flag:
+            return False
         return len(
-            driver.find_elements(By.CSS_SELECTOR, "div.question-body-options__choice button.choice")
+            page.query_selector_all("div.question-body-options__choice button.choice")
         ) >= 2
     except Exception:
         return False
 
-def execute_survey_page(driver, account_id, api_key, ctx=None):
+def _consent_screen_stuck_reload_retry(driver) -> bool:
     """
-    Nouvelle version : capture , demande GPT-4o quoi faire, puis applique l'action.
+    Reload borné quand handle_consent_screen échoue de façon répétée sur le même
+    écran de consentement (DOM inchangé, clic CTA sans effet observable).
+
+    Ne s'invoque que si handle_consent_screen vient de retourner False. Compare la
+    signature DOM légère (cta_handler._dom_progress_marker) à celle du dernier échec
+    enregistré pour cette instance driver : si identique _CONSENT_SCREEN_STUCK_BUDGET
+    fois de suite, déclenche un reload et réinitialise le compteur. Retourne toujours
+    False (le step courant reste un échec ; le step suivant repart d'un DOM frais après
+    reload, ou retente normalement sinon).
     """
-    import Survey.action_dispatcher as action_dispatcher
-    import selenium.webdriver.support.ui
+    import Survey.cta_handler as cta_handler
+
+    key = id(driver)
+    try:
+        sig = cta_handler._dom_progress_marker(driver)
+    except Exception:
+        return False
+
+    state = _CONSENT_SCREEN_STUCK_STATE.get(key)
+    if state and state.get("sig") == sig:
+        state["fail_count"] = state.get("fail_count", 0) + 1
+    else:
+        state = {"sig": sig, "fail_count": 1}
+    _CONSENT_SCREEN_STUCK_STATE[key] = state
+
+    log_debug(
+        "[CONSENT_SCREEN_STUCK_RELOAD]",
+        f"fail_count={state['fail_count']}/{_CONSENT_SCREEN_STUCK_BUDGET} même DOM détecté",
+    )
+
+    if state["fail_count"] < _CONSENT_SCREEN_STUCK_BUDGET:
+        return False
+
+    _CONSENT_SCREEN_STUCK_STATE.pop(key, None)
+
+    try:
+        if driver.is_closed():
+            log_debug("[CONSENT_SCREEN_STUCK_RELOAD]", "page déjà fermée — abandon")
+            return False
+    except Exception:
+        return False
+
+    try:
+        log_info(
+            "[CONSENT_SCREEN_STUCK_RELOAD]",
+            f"reload déclenché après {_CONSENT_SCREEN_STUCK_BUDGET} échecs consécutifs sur le même DOM",
+        )
+        driver.reload(wait_until="domcontentloaded")
+        time.sleep(2)
+    except Exception as _reload_exc:
+        log_debug("[CONSENT_SCREEN_STUCK_RELOAD]", f"reload échoué: {type(_reload_exc).__name__}")
+
+    return False
+
+
+def _detect_phone_verification_screen(driver) -> bool:
+    """
+    Détection en lecture seule (aucun clic/saisie) de l'écran interstitiel de
+    demande de numéro de téléphone sur topsurveys.app : conteneur de
+    vérification de profil ET champ de saisie du numéro conjointement présents
+    dans le DOM. Fonction additive et indépendante de _handle_phone_verification
+    (désactivée) — sert uniquement à déclencher la notification opérateur.
+    """
+    try:
+        current_url = (driver.url or "").lower()
+    except Exception:
+        current_url = ""
+
+    if "topsurveys.app" not in current_url:
+        return False
+
+    try:
+        return bool(driver.evaluate("""() =>
+            !!(document.querySelector('div.phone-verification-container')
+            && document.querySelector('input.phone-number-input'))
+        """))
+    except Exception:
+        return False
+
+
+def notify_phone_verification_screen(driver, account_id) -> bool:
+    """
+    Notifie l'opérateur via Telegram lors de la détection de l'écran de demande
+    de numéro de téléphone (cf. _detect_phone_verification_screen), une seule
+    fois par occurrence : dédupliqué via driver._phone_verif_notified, réarmé
+    dès que l'écran n'est plus détecté. Appelable depuis n'importe quel point de
+    détection existant (boucle de takeover, exécution de page) sans dupliquer la
+    logique de dédoublonnage.
+    """
+    has_screen = _detect_phone_verification_screen(driver)
+
+    if not has_screen:
+        setattr(driver, "_phone_verif_notified", False)
+        return False
+
+    if getattr(driver, "_phone_verif_notified", False):
+        return True
+
+    setattr(driver, "_phone_verif_notified", True)
+    log_info(
+        "[PHONE_VERIF]",
+        f"Écran demande de numéro de téléphone détecté — notification opérateur (account_id={account_id})",
+    )
+
+    tg_token = os.getenv("telegram_bot_token", "").strip()
+    tg_chat = os.getenv("telegram_chat_id", "").strip()
+    if tg_token and tg_chat:
+        try:
+            from Management.notifier import send_telegram
+            send_telegram(
+                f"[PHONE_VERIF] Vérification par numéro de téléphone demandée — account_id : {account_id}",
+                tg_token,
+                tg_chat,
+            )
+        except Exception as e:
+            log_info("[PHONE_VERIF]", f"Notification Telegram échouée: {e}")
+    else:
+        log_info("[PHONE_VERIF]", "Telegram non configuré (telegram_bot_token/telegram_chat_id) — notification console uniquement")
+
+    return True
+
+
+def execute_survey_page(driver, account_id, api_key, ctx=None, platform=None):
+    """
+    Orchestration d'une page de survey : DOM analysis → GPT → dispatch actions.
+
+    driver reçu depuis solve_full_survey (BLOC 3a) est un PlaywrightDriverShim.
+    page = driver extrait la Page Playwright native pour les opérations DOM directes.
+    Les 7 sous-modules lazy-importés (dom_analyzer, page_snapshot, input_handler,
+    prompt_builder, dom_classifier, action_dispatcher, batch_response_parser) et
+    redirect_watcher reçoivent `driver` (= shim) — frontière BLOC 3b1 → BLOC 3b2+.
+    """
     import Survey.dom_analyzer as dom_analyzer
+    import Survey.page_snapshot as page_snapshot
+    import Survey.input_handler as input_handler
     import Survey.prompt_builder as prompt_builder
-    import Survey.batch_response_parser as batch_response_parser
     import Survey.dom_classifier as dom_classifier
     import Survey.action_dispatcher as action_dispatcher
-    import Survey.batch_response_parser as batch_response_parser
-    import Survey.input_handler as input_handler
     import Management.redirect_watcher as redirect_watcher
-    import Survey.page_snapshot as page_snapshot
+    import Survey.batch_response_parser as batch_response_parser
+
+    page = driver
 
     # =========================================================================
     # PATCH: Récupération erreur réseau Chrome (ERR_TUNNEL_CONNECTION_FAILED)
-    # Couvre le chemin takeover/attach qui appelle execute_survey_page() directement,
-    # sans passer par solve_full_survey(). Le retour (_NET_ERR_*) est ignoré ici :
-    # si la récupération échoue, execute_survey_page() verra un DOM vide et
-    # abandonnera naturellement via le pipeline normal.
+    # _recover_from_network_error est migrée BLOC 3a et utilise _pw_page en interne.
     # =========================================================================
     try:
         from Survey.survey_solver import _recover_from_network_error
         _recover_from_network_error(driver)
     except Exception as _nerr_exc:
-        pass  # jamais bloquant
+        pass
 
     # =========================================================================
-    # PATCH: Écran vérification téléphone TopSurveys ("Courte pause")
+    # PATCH: Écran vérification téléphone TopSurveys ("Courte pause") — désactivé
     # =========================================================================
     # _phone_result = _handle_phone_verification(driver)
     # if _phone_result is not None:
         # return _phone_result
 
     # =========================================================================
-    # PATCH: Écran saisie code PIN TopSurveys (après vérification téléphone)
+    # PATCH: Écran saisie code PIN TopSurveys — désactivé
     # =========================================================================
     # _pin_result = _handle_pin_verification(driver)
     # if _pin_result is not None:
         # return _pin_result
 
     # =========================================================================
-    # PATCH: Detecter popup TopSurveys
+    # PATCH: Notification opérateur écran demande de numéro de téléphone —
+    # détection en lecture seule uniquement (la résolution automatique reste
+    # désactivée ci-dessus). N'interrompt pas le flux d'exécution de la page.
     # =========================================================================
     try:
-        _cur = driver.current_url
+        notify_phone_verification_screen(driver, account_id)
+    except Exception as _phone_notif_exc:
+        log_debug("[PHONE_VERIF]", f"notify_phone_verification_screen échoué: {_phone_notif_exc}")
+
+    # =========================================================================
+    # PATCH: Detecter popup TopSurveys
+    # _handle_topsurveys_exclusion_popup est dans Survey/functions.py (non migré).
+    # Pont BLOC 3b1 → Survey/functions.py : passer driver (= shim).
+    # =========================================================================
+    try:
+        _cur = page.url
         if "topsurveys.app" in (_cur or "").lower():
-            if _handle_topsurveys_exclusion_popup(driver, account_id):
+            if _handle_topsurveys_exclusion_popup(driver, account_id, platform=platform):
                 reason = "[TOPSURVEYS_POPUP] Popup traite -> continue boucle takeover"
                 print(reason)
                 _local_pause_before_cta(reason)
                 return True
-            # Fallback: topsurveys sans mystery box ni popup "Bon travail!"
-            # (ex: retour apres fin complete de survey)
-            # Les mystery boxes sont gerees en priorite dans _handle_topsurveys_exclusion_popup.
             print("[TOPSURVEYS_LISTING] URL=topsurveys sans popup -> best_survey")
             try:
                 import preselection.survey_navigator as survey_navigator
@@ -1871,7 +2172,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         _local_pause_before_cta(reason)
 
     # =========================================================================
-    # CAPTCHA: Détection et résolution automatique (no-op si aucun captcha)
+    # CAPTCHA: hors-périmètre → passer driver (= shim)
     # =========================================================================
     try:
         from captcha.normal_captcha import handle_captcha
@@ -1880,22 +2181,28 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
     except Exception as _cap_exc:
         print(f"[CAPTCHA][WARN] {_cap_exc}")
 
-    # DataDome CAPTCHA (DataDomeSliderTask via 2Captcha + injection cookie + refresh)
-    try:
-        from captcha.datadome_handler import solve_datadome_auto
-        if solve_datadome_auto(driver):
-            print("[DATADOME] DataDome résolu → reprise du flux")
-            return True
-    except Exception as _dd_exc:
-        print(f"[DATADOME][WARN] {_dd_exc}")
-
-    #  micro-: compteur rescans DOM sur CETTE page (reset  chaque page)
     try:
         driver._dom_rescans_this_page = 0
     except Exception:
         pass
 
+    # =========================================================================
+    # PATCH: Bandeau consentement Transcend (#transcend-consent-manager, shadow root
+    # closed) — fermé dès le chargement de page, avant le premier traitement DOM du
+    # cycle (classify_dom ci-dessous), plutôt que d'attendre try_click_navigation_cta
+    # en fin de cycle (cf. BOT_EVOLUTION_MEMORY.md). Appel additif : le call-site
+    # existant dans try_click_navigation_cta reste inchangé, comme filet de sécurité.
+    # _click_closed_shadow_consent_accept gère déjà son propre garde-fou DOM strict
+    # (no-op si #transcend-consent-manager absent) et CTA_INTERCEPT_ONLY en interne —
+    # non dupliqués ici.
+    # =========================================================================
+    try:
+        import Survey.cta_handler as cta_handler
+        cta_handler._click_closed_shadow_consent_accept(driver)
+    except Exception as _consent_shadow_exc:
+        log_debug("[CTA_CONSENT_SHADOW]", f"early_call_failed: {_consent_shadow_exc}")
 
+    # dom_classifier est hors-périmètre → passer driver (= shim)
     classification = dom_classifier.classify_dom(driver)
 
     if classification:
@@ -1906,17 +2213,24 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         print(f"[DOM_CLASSIFIER] itype={itype} handler={handler_name} openai={allow_openai}")
 
         if not allow_openai:
-            # handler local direct
-            return getattr(action_dispatcher, handler_name)(driver)
+            # action_dispatcher est hors-périmètre → passer driver (= shim)
+            handler_result = getattr(action_dispatcher, handler_name)(driver)
+
+            # CONSENT_SCREEN_STUCK_RELOAD : consentement détecté à chaque itération
+            # mais clic CTA sans effet (cf. RELOAD_RETRY plus bas, qui ne couvre que
+            # l'absence totale d'élément actionnable — pas ce cas).
+            if itype == "consent_screen" and not handler_result:
+                handler_result = _consent_screen_stuck_reload_retry(driver)
+
+            return handler_result
 
     video_gate_state = _handle_forcewatch_video_gate(driver)
     if video_gate_state == "soft_restart":
         return True
     if video_gate_state == "resolved":
-        # Radios répondues, CTA direct sans OpenAI (respect CTA_INTERCEPT_ONLY)
-        intercept_only = _env_truthy("CTA_INTERCEPT_ONLY")
+        intercept_only = is_cta_intercept_only()
         try:
-            before_url = driver.current_url
+            before_url = page.url
             before_sig = redirect_watcher._dom_signature(driver)
             time.sleep(PAUSE_BEFORE_CTA)
             _local_pause_before_cta("video_gate_resolved")
@@ -1931,6 +2245,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
             log_debug("[VIDEO_GATE]", f"CTA error (non-bloquant): {_vg_cta_e}")
         return True
 
+    # dom_analyzer est hors-périmètre → passer driver (= shim)
     extracted_question_blocks = dom_analyzer.analyze_dom(driver) or []
     question_blocks = prompt_builder.filter_blocks_for_openai(extracted_question_blocks)
     if _env_truthy("DOM_CONTEXT_DEBUG", "0"):
@@ -1939,7 +2254,6 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
             f"{len(question_blocks or [])} extracted={len(extracted_question_blocks or [])}"
         )
 
-
     image_only_abort = _budgeted_soft_restart_for_image_only_inputs(driver, question_blocks)
     if image_only_abort == "restarted":
         return True
@@ -1947,9 +2261,9 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         return False
     if image_only_abort == "random_selected":
         print("[DOM_ONLY_ABORT] image_only_wrapped_inputs random_selected -> CTA direct")
-        intercept_only = _env_truthy("CTA_INTERCEPT_ONLY")
+        intercept_only = is_cta_intercept_only()
         try:
-            before_url = driver.current_url
+            before_url = page.url
             before_sig = redirect_watcher._dom_signature(driver)
             time.sleep(PAUSE_BEFORE_CTA)
             _local_pause_before_cta("navigation_cta")
@@ -1971,15 +2285,14 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         return False
 
     # =========================================================================
-    # CF-CAROUSEL AVEC IMAGE: Traitement Vision API AVANT le flux standard
-    # Blocs cf_carousel_item portant un image_url → gpt-4o Vision
+    # CF-CAROUSEL AVEC IMAGE: Vision API AVANT le flux standard
     # =========================================================================
     try:
         if question_blocks and _handle_cf_carousel_image_blocks(driver, question_blocks, api_key):
             print("[CF_CAROUSEL_VISION] Blocs traités avec succès -> CTA")
-            intercept_only = _env_truthy("CTA_INTERCEPT_ONLY")
+            intercept_only = is_cta_intercept_only()
             try:
-                before_url = driver.current_url
+                before_url = page.url
                 before_sig = redirect_watcher._dom_signature(driver)
                 time.sleep(PAUSE_BEFORE_CTA)
                 _local_pause_before_cta("navigation_cta")
@@ -1999,8 +2312,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         traceback.print_exc()
 
     # =========================================================================
-    # WALR IMAGE EVALUATION: Traitement Vision API AVANT le flux standard
-    # Ces questions necessitent envoi de image a OpenAI Vision pour analyse.
+    # WALR IMAGE EVALUATION: Vision API AVANT le flux standard
     # =========================================================================
     try:
         if question_blocks and _handle_walr_image_eval_blocks(driver, question_blocks, api_key):
@@ -2012,7 +2324,6 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         traceback.print_exc()
 
     if not question_blocks:
-        #  NEW: Decipher cardrating multi-rows (DOM-only) avant vision
         try:
             from Survey.action_dispatcher import solve_decipher_cardrating_rows
             if solve_decipher_cardrating_rows(driver):
@@ -2020,7 +2331,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         except Exception as e:
             print(f"[CARD RATING] solver failed before vision: {e}")
 
-    #  SNAPSHOT DEBUG (opt-in)
+    # page_snapshot est hors-périmètre → passer driver (= shim)
     try:
         page_snapshot.snapshot_if_enabled(
             driver,
@@ -2031,7 +2342,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         pass
 
     try:
-        has_gridclick = bool(driver.execute_script("return !!document.querySelector('.gridclick');"))
+        has_gridclick = bool(page.evaluate("() => !!document.querySelector('.gridclick')"))
     except Exception:
         has_gridclick = False
 
@@ -2049,13 +2360,11 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
             continue
 
         try:
-            active_row = driver.execute_script(
-                """
+            active_row = page.evaluate("""() => {
                 const el = document.querySelector('.gridclick .item.current .text-content')
                     || document.querySelector('.gridclick .item.current');
                 return el ? String(el.textContent || el.innerText || '') : '';
-                """
-            )
+            }""")
         except Exception:
             active_row = ""
 
@@ -2074,19 +2383,13 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
     if question_blocks:
         question_blocks_for_batch = prompt_builder.expand_question_blocks_for_batch(question_blocks)
 
-        # Séparation system / user pour activer le prompt caching OpenAI.
-        # build_system_prompt() retourne un contenu statique identique entre tous les appels :
-        # le cache s'active automatiquement dès le 2e appel (préfixe ≥ 1 024 tokens identiques).
-        # Pour vérifier : usage.prompt_tokens_details.cached_tokens > 0 dans la réponse API.
         system_prompt = prompt_builder.build_system_prompt()
         user_prompt = prompt_builder.build_batch_prompt(question_blocks_for_batch, ctx=ctx)
 
-        if (os.getenv("LOG_LEVEL") or "").strip().lower() == "debug":
-            print("🧠 [PROMPT_DEBUG] ===== SYSTEM PROMPT =====")
-            print(system_prompt[:5000])
-            print("🧠 [PROMPT_DEBUG] ===== USER PROMPT =====")
+        if is_debug():
+            print("🧠 [PROMPT→GPT] ===== USER PROMPT =====")
             print(user_prompt[:200000])
-            print("[PROMPT_DEBUG] ===================================")
+            print("[PROMPT→GPT] ===================================")
 
         instruction_raw = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -2097,7 +2400,6 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         )
 
         raw_text = instruction_raw.choices[0].message.content or ""
-        # contraintes max_select par QID (doit matcher le build_batch_prompt)
         qid_constraints = {
             f"Q{i}": (
                 len([c for c in (b.get("cards") or []) if str(c or "").strip()])
@@ -2106,10 +2408,9 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
             )
             for i, b in enumerate(question_blocks_for_batch, start=1)
         }
-        if (os.getenv("LOG_LEVEL") or "").strip().lower() == "debug":
+        if is_debug():
             print(f"[survey_executor][debug] qid_constraints={qid_constraints}")
 
-        #  Meta par QID (pour sanitizer avec les options du DOM)
         qid_meta = {
             f"Q{i}": {
                 "question": (b.get("question") or ""),
@@ -2125,22 +2426,33 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
             for i, b in enumerate(question_blocks_for_batch, start=1)
         }
 
+        # batch_response_parser est hors-périmètre — pas de driver param, fonctions pures
         actions = batch_response_parser.parse_batch_response(raw_text, constraints=qid_constraints, qid_meta=qid_meta)
         actions = batch_response_parser.sanitize_actions(actions, qid_meta=qid_meta)
+        actions = _apply_atm1d_trap_ground_truth(actions, qid_meta)
 
-        # Snapshot pré-dispatch : sert à détecter si le clic réponse a déjà
-        # déclenché une navigation (ex: Askia tr.myresponse auto-submit).
         try:
-            _pre_dispatch_url = driver.current_url
+            _pre_dispatch_url = page.url
             _pre_dispatch_sig = redirect_watcher._dom_signature(driver)
         except Exception:
             _pre_dispatch_url = None
             _pre_dispatch_sig = None
 
-        #  "plan" (multi actions) + anti-double-fallback par action
+        # action_dispatcher est hors-périmètre → passer driver (= shim)
         result = action_dispatcher.execute_actions_plan(driver, actions, stop_on_navigation=True)
 
-        # Record answered Q/R in session context for coherence (non-blocking)
+        # QuestionPro Interactive : confirmer explicitement (log) l'absence d'erreur de
+        # validation visible plutôt que de la supposer silencieusement (cf. BOT_EVOLUTION_MEMORY.md).
+        try:
+            _qp_validation_errors = _qp_visible_validation_errors(driver)
+            if _qp_validation_errors:
+                log_info(
+                    "[QP_INTERACTIVE_VALIDATION]",
+                    f"erreur(s) de validation visible(s) après application des réponses: {_qp_validation_errors}",
+                )
+        except Exception:
+            pass
+
         if ctx is not None:
             try:
                 for action in (actions or []):
@@ -2166,8 +2478,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
                         )
             except Exception as e:
                 print(f"[SURVEY_CTX] record error: {e}")
-                
-        # --- Post-actions CTA nav (sauf auto-navigation déjà déclenchée) ---
+
         if _should_skip_post_actions_navigation(
             driver,
             question_blocks,
@@ -2176,19 +2487,14 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         ):
             print("[AUTONAV] skip post-actions CTA navigation (auto-navigation déjà effectuée)")
         elif _has_unfilled_required_inputs(driver):
-            # Des champs required sont encore vides → ne pas soumettre le formulaire maintenant.
-            # La boucle externe relancera execute_survey_page pour remplir les champs restants.
             log_info("[CTA_SKIP]", "Champs required non remplis → skip CTA (formulaire multi-champs)")
         else:
             try:
-                before_url = driver.current_url
-                before_sig = redirect_watcher._dom_signature(driver)  # ou recalc local si tu veux optimiser
-
-                # iframe-safe
-                time.sleep(PAUSE_BEFORE_CTA)  # laisser les réponses se stabiliser dans le DOM avant de naviguer
+                before_url = page.url
+                before_sig = redirect_watcher._dom_signature(driver)
+                time.sleep(PAUSE_BEFORE_CTA)
                 _local_pause_before_cta("navigation_cta")
                 clicked = input_handler.try_click_navigation_cta_any_context(driver)
-
                 if clicked:
                     changed = redirect_watcher.wait_for_navigation_or_dom_change(
                         driver,
@@ -2199,10 +2505,40 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
                     if changed:
                         _kind = "URL" if changed.url_changed else "DOM-only (SPA)"
                         print(f" Navigation détectée après CTA ({_kind}).")
+                        if _kind == "DOM-only (SPA)":
+                            # Classification "DOM-only" possible sur un état transitoire
+                            # (ex. redirection cross-origin multi-sauts) : confirmer la
+                            # stabilisation avant de laisser le step suivant relancer
+                            # analyze_dom() sur un document pas encore final.
+                            _stabilized = redirect_watcher.wait_for_dom_stabilization_after_cta_nav(
+                                driver, timeout=5.0
+                            )
+                            if _stabilized:
+                                log_debug("[CTA_NAV_STABILIZE]", "dom_stable=true après navigation DOM-only")
+                            else:
+                                log_info(
+                                    "[CTA_NAV_STABILIZE]",
+                                    "dom_stable_timeout après navigation DOM-only (5.0s) — poursuite du flux",
+                                )
+                    elif _qp_interactive_mode_active(driver):
+                        # QuestionPro Interactive : la progression de section / soumission
+                        # finale ne doit pas être simplement supposée — confirmer explicitement
+                        # (log) quand ni URL ni DOM n'ont changé sous le budget de 10s.
+                        log_info(
+                            "[QP_INTERACTIVE_SUBMIT]",
+                            "clic CTA effectué mais aucune navigation/mutation DOM détectée sous 10s — "
+                            "progression de section ou soumission finale non confirmée",
+                        )
+                elif _qp_interactive_mode_active(driver):
+                    log_info(
+                        "[QP_INTERACTIVE_SUBMIT]",
+                        "toutes les questions visibles semblent répondues mais aucun bouton de "
+                        "navigation/soumission n'a été trouvé/cliqué",
+                    )
             except Exception:
                 pass
 
-        return result    
+        return result
     else:
         dom_only_abort = _budgeted_dom_only_abort_for_image_eval(driver)
         if dom_only_abort == "restarted":
@@ -2213,20 +2549,15 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         disq_abort = _budgeted_disqualification_restart(driver)
         if disq_abort == "restarted":
             return True
-        if disq_abort == "budget_exhausted":
+        if disq_abort in ("budget_exhausted", "attach_stop"):
             return False
 
-        # DOM-only: si le DOM est insuffisant, on abandonne proprement.
         print("DOM-only: aucun input exploitable (abort). source: survey_executor.py")
 
         screenshot_path = None
 
-        # ------------------------------------------------------------
-        # FALLBACK LOCAL "CTA-only" (question mais un bouton existe)
-        # Objectif: éviter un abandon prématuré sur des pages comme "Consent"
-        # ------------------------------------------------------------
         try:
-            before_url = driver.current_url
+            before_url = page.url
         except Exception:
             before_url = ""
 
@@ -2235,60 +2566,58 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         except Exception:
             before_sig = ""
 
-        # Essayer de cliquer sur un CTA de navigation (ex: "Start Survey", "Continue", "Next", etc.)
-        # PHASE 1: Fallback CSS direct (connus de boutons nav)
-        # Plus fiable que la recherche par texte pour les frameworks connus
-        # PHASE 2: Si pas de bouton trouvé, recherche générique DOM (ex: boutons avec texte "next", "continue", etc.)
         NAV_BUTTON_SELECTORS = [
-            ".footer #next",                   # MetrixLab/Toluna intro CTA icon-only (div#next)
-            "#next.next",                      # MetrixLab/Toluna variant
-            "#cm-NextButton",                    # CMIX
-            ".cm-navigation-next-button",        # CMIX alt
-            ".cf-question--info button.cf-navigation-next",  # Confirmit intro CTA inline
-            ".cf-page__question-list button.cf-navigation-next",  # Confirmit fallback scope
-            "button.cf-navigation__button.cf-navigation-next",  # Confirmit/Forsta nav button explicit
-            ".cf-question--info button.cf-navigation-ok",  # Confirmit/Forsta info gate "OK"
-            ".cf-page__question-list button.cf-navigation-ok",  # Confirmit/Forsta fallback scope
-            "button.cf-navigation__button.cf-navigation-ok",  # Confirmit/Forsta nav button explicit
-            "#btn_continue",                     # Decipher
-            "#btnContinue",                      # navigatorsurveys/PureSpectrum routing page
-            "input.continue",                    # Decipher alt
-            "[data-role='next']",                # Generic data-role
-            "#btn_next",                         # AreYouNet (img inside <a>)
-            '[data-testid="start-button"]',      # Quantilope coversheet
-            "#bnNext", # Primis/Primisoft (bouton "Suivant")
-            "#consent-button-confirm",        # Consent modal RGPD (Toluna-like UI)
-            "#consent-button-confirm",        # Consent modal RGPD (Toluna-like UI)
-            "input.i-contbtn",                   # IntelliSurvey (value vide, id=contbtn)
-            "input[type='image'][name='next']",  # Snap Survey / bouton image nav "next"
-        ]        
+            ".footer #next",
+            "#next.next",
+            "#cm-NextButton",
+            ".cm-navigation-next-button",
+            ".cf-question--info button.cf-navigation-next",
+            ".cf-page__question-list button.cf-navigation-next",
+            "button.cf-navigation__button.cf-navigation-next",
+            ".cf-question--info button.cf-navigation-ok",
+            ".cf-page__question-list button.cf-navigation-ok",
+            "button.cf-navigation__button.cf-navigation-ok",
+            "#btn_continue",
+            "#btnContinue",
+            "input.continue",
+            "[data-role='next']",
+            "#btn_next",
+            '[data-testid="start-button"]',
+            "#bnNext",
+            "#consent-button-confirm",
+            "#consent-button-confirm",
+            "input.i-contbtn",
+            "input[type='image'][name='next']",
+        ]
         try:
             _local_pause_before_cta("cta_only_fallback")
-            
-            # Phase 1: CSS selectors directs (frameworks connus)
+
             log_debug("[CTA_FALLBACK]", f"Phase 1: testing {len(NAV_BUTTON_SELECTORS)} selectors")
             for selector in NAV_BUTTON_SELECTORS:
                 try:
-                    btn = driver.find_element(By.CSS_SELECTOR, selector)
-                    log_debug("[CTA_FALLBACK]", f"Selector {selector} found: {btn.tag_name}")
-                    # Si c'est une image dans un lien <a>, cibler le lien parent (AreYouNet, etc.)
-                    if btn.tag_name.lower() == "img":
-                        try:
-                            parent = btn.find_element(By.XPATH, "./..")
-                            if parent.tag_name.lower() == "a":
+                    btn = page.query_selector(selector)
+                    if btn is None:
+                        continue
+                    log_debug("[CTA_FALLBACK]", f"Selector {selector} found")
+                    # Si c'est une image dans un lien <a>, cibler le lien parent
+                    try:
+                        tag = btn.evaluate("(el) => el.tagName.toLowerCase()")
+                        if tag == "img":
+                            parent = btn.query_selector("xpath=..")
+                            if parent and parent.evaluate("(el) => el.tagName.toLowerCase()") == "a":
                                 btn = parent
-                        except Exception:
-                            pass
-                    is_disp = btn.is_displayed() if btn else False
-                    is_vis_js = _is_visible_js(driver, btn) if btn else False
-                    log_debug("[CTA_FALLBACK]", f"{selector}: is_displayed={is_disp}, _is_visible_js={is_vis_js}")
-                    if btn and (is_disp or is_vis_js):                        #  que ce n'est pas un bouton "refuser/exit"
-                        btn_text = (btn.text or btn.get_attribute("value") or "").lower()
+                    except Exception:
+                        pass
+                    is_vis = btn.is_visible()
+                    is_vis_js = _is_visible_js(driver, btn)
+                    log_debug("[CTA_FALLBACK]", f"{selector}: is_visible={is_vis}, _is_visible_js={is_vis_js}")
+                    if is_vis or is_vis_js:
+                        btn_text = ((btn.inner_text() or btn.get_attribute("value") or "")).lower()
                         if any(bad in btn_text for bad in ["exit", "quit", "refuse", "disagree"]):
                             continue
 
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
-                        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+                        btn.evaluate("(el) => el.scrollIntoView({block:'center'})")
+                        intercept_only = is_cta_intercept_only()
                         if intercept_only:
                             clicked = input_handler.try_click_navigation_cta_any_context(driver)
                             if not clicked:
@@ -2296,8 +2625,8 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
                                 continue
                             print(f"[CTA_NAV] FOUND+INTERCEPTED via CSS: {selector}")
                         else:
-                            driver.execute_script("arguments[0].click();", btn)
-                            print(f" CTA  via  CSS: {selector}")
+                            page.evaluate("(el) => el.click()", btn)
+                            print(f" CTA via CSS: {selector}")
 
                         try:
                             redirect_watcher.wait_for_navigation_or_dom_change(
@@ -2308,9 +2637,9 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
                         return True
                 except Exception as e:
                     log_debug("[CTA_FALLBACK]", f"Selector {selector} FAILED: {type(e).__name__}")
-                    continue  #  non , essayer le suivant
-            
-            # Phase 2: Recherche par texte (fallback existant)
+                    continue
+
+            # Phase 2: Recherche par texte (input_handler est hors-périmètre → passer driver)
             clicked = (
                 input_handler.click_cta_strong_any_context(driver, text="accepter")
                 or input_handler.click_cta_strong_any_context(driver, text="continuer")
@@ -2326,31 +2655,25 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
                 or input_handler.click_cta_strong_any_context(driver, text="confirmez")
                 or input_handler.click_cta_strong_any_context(driver, text="confirm")
             )
-            # Fallback direct par ID pour Qualtrics et CTA standards
             if not clicked:
                 for cta_id in ["cm-NextButton", "NextButton", "nextButton", "continueButton", "submitButton"]:
                     try:
-                        btn = driver.find_element(By.ID, cta_id)
-                        if btn.is_displayed():
-                            driver.execute_script("arguments[0].click();", btn)
+                        btn = page.query_selector(f"#{cta_id}")
+                        if btn and btn.is_visible():
+                            page.evaluate("(el) => el.click()", btn)
                             clicked = True
                             print(f"[CTA_FALLBACK] Clicked by ID: {cta_id}")
                             break
                     except Exception:
                         pass
-            # Phase 3: CTA structurel (mrIWeb mrNext, etc.) via scorer
+            # Phase 3: CTA structurel (mrIWeb mrNext, etc.)
             if not clicked:
-                cta_intercept_only = _env_truthy("CTA_INTERCEPT_ONLY", "0")
+                cta_intercept_only = is_cta_intercept_only()
                 try:
                     if cta_intercept_only:
-                        from selenium.webdriver.common.by import By as _By
-                        _btn = None
-                        try:
-                            _btn = driver.find_element(_By.CSS_SELECTOR, "input[type='submit'][name='_NNext']")
-                        except Exception:
-                            pass
-                        if _btn and _btn.is_displayed():
-                            driver.execute_script("arguments[0].dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}))", _btn)
+                        _btn = page.query_selector("input[type='submit'][name='_NNext']")
+                        if _btn and _btn.is_visible():
+                            page.evaluate("(el) => el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}))", _btn)
                             clicked = True
                             log_debug("[CTA_FALLBACK]", "Phase 3: mrIWeb structural CTA intercepted (CTA_INTERCEPT_ONLY)")
                         else:
@@ -2362,7 +2685,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
                 except Exception as _e3:
                     log_debug("[CTA_FALLBACK]", f"Phase 3 error: {type(_e3).__name__}: {_e3}")
             if clicked:
-                print(" CTA  via recherche par texte")
+                print(" CTA via recherche par texte")
                 try:
                     redirect_watcher.wait_for_navigation_or_dom_change(
                         driver, before_url=before_url, before_sig=before_sig, timeout=10
@@ -2370,178 +2693,115 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
                 except Exception:
                     pass
                 return True
-                
+
         except Exception as e:
-            #  Logger l'erreur au lieu de l'avaler silencieusement
             print(f" Fallback CTA-only : {type(e).__name__}: {e}")
 
         # ----------------------------------------------------------------
-        # WAIT_PAGE : détection des pages transitoires "veuillez patienter"
-        # (ex: sample.savanta.com "Validating details. Please do not refresh")
-        # → attendre une redirection automatique, sinon forcer un refresh.
-        # Actif uniquement en mode proxy haute latence (PROXY_LATENCY_MODE=1).
+        # RELOAD_RETRY : page bloquée sans élément actionnable détectable
+        # (ex. redirection intermédiaire figée sur un loader) — reload borné
+        # et re-détection DOM, générique, sans dépendance à un signal texte.
         # ----------------------------------------------------------------
-        if _env_truthy("PROXY_LATENCY_MODE", "0"):
+        _RELOAD_RETRY_MAX = 2
+        for _rr_attempt in range(1, _RELOAD_RETRY_MAX + 1):
             try:
-                _WAIT_SIGNALS = [
-                    "please wait", "veuillez patienter",
-                    "please do not refresh", "do not refresh",
-                    "validating", "validation en cours",
-                    "just a moment", "un instant",
-                ]
-                _wp_src = (driver.page_source or "").lower()
-                if any(sig in _wp_src for sig in _WAIT_SIGNALS):
-                    _wp_before_url = driver.current_url
-                    print(f"[WAIT_PAGE] Page transitoire détectée ({_wp_before_url}) → attente redirection (10s max)")
-                    for _ in range(10):
-                        time.sleep(1)
-                        try:
-                            if driver.current_url != _wp_before_url:
-                                print(f"[WAIT_PAGE] Redirection automatique détectée → {driver.current_url}")
-                                return True
-                        except Exception:
-                            break
-                    print("[WAIT_PAGE] Pas de redirection automatique → refresh forcé")
-                    try:
-                        driver.refresh()
-                        time.sleep(5)
-                    except Exception as _wp_re:
-                        print(f"[WAIT_PAGE][WARN] Refresh échoué: {_wp_re}")
-                    return True
-            except Exception as _wp_e:
-                print(f"[WAIT_PAGE][WARN] Détection échouée: {_wp_e}")
+                if page.is_closed():
+                    log_debug("[RELOAD_RETRY]", f"page déjà fermée avant tentative {_rr_attempt} — abandon")
+                    break
+            except Exception:
+                break
+            try:
+                log_debug(
+                    "[RELOAD_RETRY]",
+                    f"tentative {_rr_attempt}/{_RELOAD_RETRY_MAX} — reload page (aucun élément actionnable)",
+                )
+                page.reload(wait_until="domcontentloaded")
+                time.sleep(2)
+            except Exception as _rr_e:
+                log_debug("[RELOAD_RETRY]", f"reload échoué tentative {_rr_attempt}: {type(_rr_e).__name__}")
+                break
+            try:
+                _rr_blocks = dom_analyzer.analyze_dom(driver) or []
+            except Exception as _rr_e2:
+                log_debug("[RELOAD_RETRY]", f"re-détection échouée tentative {_rr_attempt}: {type(_rr_e2).__name__}")
+                _rr_blocks = []
+            if _rr_blocks:
+                log_info(
+                    "[RELOAD_RETRY]",
+                    f"élément actionnable détecté après reload (tentative {_rr_attempt}/{_RELOAD_RETRY_MAX})",
+                )
+                return True
 
-        # DOM-only: abandon explicite si aucun CTA DOM exploitable.
         if _env_truthy("SURVEY_DOM_ONLY_ABORT", "1"):
             print("DOM-only: abort_reason=dom_no_match_abort (SURVEY_DOM_ONLY_ABORT=1).")
             return False
 
-        # Import lazy: n'embarquer screenshot_analyzer / PIL que si un traitement image est explicitement activé
-        import Survey.screenshot_analyzer as screenshot_analyzer
-        # 1) Tentative screenshot  (EdgeSurvey/InnovateMR : question souvent dans img.taImage)
-        try:
-            img = driver.find_element(By.CSS_SELECTOR, "img.taImage")
-            tmp_dir = os.path.join(tempfile.gettempdir(), "surveybot_screens")
-            os.makedirs(tmp_dir, exist_ok=True)
-            screenshot_path = os.path.join(tmp_dir, f"taImage_{int(time.time()*1000)}.png")
-            img.screenshot(screenshot_path)
-            print(f" Screenshot  (img.taImage) -> {screenshot_path}")
-        except Exception:
-            screenshot_path = None
-
-        # 2) Fallback viewport (moins lourd que full_page) puis full_page en dernier recours
-        if not screenshot_path:
-            print(" Screenshot viewport (pas full-page). source: survey_executor.py")
-            try:
-                screenshot_path = screenshot_analyzer.take_screenshot(driver, full_page=False)
-            except Exception:
-                screenshot_path = screenshot_analyzer.take_screenshot(driver, full_page=True)
-
-        print(" Envoi  GPT pour  visuelle. source: survey_executor.py line 59")
-        instruction = screenshot_analyzer.send_image_to_gpt(screenshot_path, api_key)
-
-        #  UTILISATION, juste  avoir  la  du  (variable `instruction`)
-        #    et avant de la renvoyer   :
-        lines = [ln for ln in (instruction or "").splitlines() if ln.strip()]
-        fixed_lines = [_coerce_safe_value_if_questionish(ln) for ln in lines]
-        instruction = "\n".join(fixed_lines)
-        #print(" Instruction  ( dans le fixed_lines) :", instruction, " source: survey_executor.py")
-
-        # --- Ne conserver que la  ligne non vide ---
-        if instruction:
-            instruction = next(
-                (ln.strip() for ln in instruction.splitlines() if ln.strip()), ""
-            )
-
-        print(
-            " Instruction  () :",
-            instruction,
-            " source: survey_executor.py line 67",
-        )
-
-        try:
-            success = action_dispatcher.execute_action(driver, instruction)
-            if not success:
-                print(
-                    " Aucune action  par le dispatcher. source: survey_executor.py"
-                )
-            return success
-        except Exception as e:
-            print(
-                " Erreur dans  de   sur GPT; source: survey_executor.py",
-            )
-            return False
 
 def extract_full_visible_text(driver):
     """
-    Extrait tout le texte visible de la page, en ignorant les balises de type lien, script, style, header, etc.
+    Extrait tout le texte visible de la page.
     """
-    js = """
-    return Array.from(document.querySelectorAll('body *'))
-      .filter(e => {
-          const style = window.getComputedStyle(e);
-          const tag = e.tagName.toLowerCase();
-          const ignored = ['a', 'footer', 'header', 'nav', 'script', 'style'];
-          return style && style.display !== 'none' &&
-                 style.visibility !== 'hidden' &&
-                 e.offsetParent !== null &&
-                 !ignored.includes(tag);
-      })
-      .map(e => e.innerText)
-      .filter(t => t && t.trim().length > 5)
-      .map(t => t.trim());
-    """
-
+    page = driver
     try:
-        result = driver.execute_script(js)
-        return list(dict.fromkeys(result))  # supprimer les doublons
+        result = page.evaluate("""() =>
+            Array.from(document.querySelectorAll('body *'))
+              .filter(e => {
+                  const style = window.getComputedStyle(e);
+                  const tag = e.tagName.toLowerCase();
+                  const ignored = ['a', 'footer', 'header', 'nav', 'script', 'style'];
+                  return style && style.display !== 'none' &&
+                         style.visibility !== 'hidden' &&
+                         e.offsetParent !== null &&
+                         !ignored.includes(tag);
+              })
+              .map(e => e.innerText)
+              .filter(t => t && t.trim().length > 5)
+              .map(t => t.trim())
+        """)
+        return list(dict.fromkeys(result))
     except Exception as e:
         print(" JS extraction erreur:", e, "survey_executor.py line 251")
         return []
 
-#  Sous-fonction : appliquer une action  par l'IA
-
 def perform_action_based_on_text(driver, action):
     """
-    Essaie de cliquer sur un bouton ou un label qui correspond  l'action textuelle de l'IA.
+    Essaie de cliquer sur un bouton ou un label qui correspond à l'action textuelle de l'IA.
     """
-    buttons = (
-        driver.find_elements(By.TAG_NAME, "button")
-        + driver.find_elements(By.TAG_NAME, "input")
-        + driver.find_elements(By.TAG_NAME, "a")
-    )
+    page = driver
+    buttons = page.query_selector_all("button, input, a")
 
     for elem in buttons:
         try:
-            label = elem.get_attribute("value") or elem.text
+            label = elem.get_attribute("value") or elem.inner_text()
             if not label:
-                spans = elem.find_elements(By.TAG_NAME, "span")
+                spans = elem.query_selector_all("span")
                 for span in spans:
-                    if span.text.strip():
-                        label = span.text.strip()
+                    span_text = span.inner_text().strip()
+                    if span_text:
+                        label = span_text
                         break
             if label and action.lower() in label.lower():
-                ActionChains(driver).move_to_element(elem).click().perform()
+                page.evaluate("(el) => el.click()", elem)
                 print(
-                    f" Action '{action}'  sur l' : {label} survey_executor.py line 274"
+                    f" Action '{action}' appliquée sur l'élément : {label} survey_executor.py line 274"
                 )
                 time.sleep(2)
                 return True
-        except:
+        except Exception:
             continue
 
     print(
-        f" Aucun  ne correspond  l'action source: survey_executor.py line 280"
+        f" Aucun élément ne correspond à l'action source: survey_executor.py line 280"
     )
     return False
 
 def _page_fingerprint(driver) -> str:
-    url = driver.current_url or ""
-    # cheap: titre + un bout de body text
-    title = driver.title or ""
+    page = driver
+    url = page.url or ""
+    title = page.title() or ""
     body = ""
     try:
-        body = driver.find_element(By.TAG_NAME, "body").text[:2000]
+        body = (page.evaluate("() => document.body ? document.body.innerText : ''") or "")[:2000]
     except Exception:
         pass
     raw = f"{url}\n{title}\n{body}"

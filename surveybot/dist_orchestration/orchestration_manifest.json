@@ -1,0 +1,66 @@
+{
+    "generated_at":  "2026-09-03T19:14:26Z",
+    "files":  [
+                  {
+                      "rel_path":  "launch_all.ps1",
+                      "sha256":  "ffdb3c11a6192b5bcfa7a9c4bd11eb6c1ccd24df685559ca44712af44cd6dd0a",
+                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/launch_all.ps1"
+                  },
+                  {
+                      "rel_path":  "nssm_setup_bot.ps1",
+                      "sha256":  "2fc48f8495eb8685d7b1d4a1859375b36efca835df5faf3cda48e1455f8c1598",
+                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/nssm_setup_bot.ps1"
+                  },
+                  {
+                      "rel_path":  "wake_scheduler.ps1",
+                      "sha256":  "401426465602c1060877a73ba6e2e3439f6493a8e71e6785affe7615235e56cc",
+                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/wake_scheduler.ps1"
+                  },
+                  {
+                      "rel_path":  "check_zombie_bots.ps1",
+                      "sha256":  "2c7626254f081569f55a93c39a0748006eccf6bd6b09c0f43ccb2e424ae4276a",
+                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/check_zombie_bots.ps1"
+                  },
+                  {
+                      "rel_path":  "stop_bot.ps1",
+                      "sha256":  "be7b7d1a4025d70cf7a79d1403862830b9370676d6c87ae8832be66fa0d6913b",
+                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/stop_bot.ps1"
+                  },
+                  {
+                      "rel_path":  "stop_bot_manual.ps1",
+                      "sha256":  "2c7b078be43dec763ff6809016364beb040f88f8d6b043e417e5872048572956",
+                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/stop_bot_manual.ps1"
+                  },
+                  {
+                      "rel_path":  "resume_bot_freeze.ps1",
+                      "sha256":  "64362397dd0ba76e150f24dd507da3a940a2cee10dce4054843638a53e3b0d77",
+                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/resume_bot_freeze.ps1"
+                  },
+                  {
+                      "rel_path":  "decommission_nssm.ps1",
+                      "sha256":  "251c1eb8fe295510858b236d7a8f8633b5982e561d0368ebb8426a9bf9ed0449",
+                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/decommission_nssm.ps1"
+                  },
+                  {
+                      "rel_path":  "rotate_orchestration_logs.ps1",
+                      "sha256":  "097dd2e0066d7749a9f888eb0a3fb3cabc9b1bc74f3c4890ed6b38bfd7774a3a",
+                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/rotate_orchestration_logs.ps1"
+                  },
+                  {
+                      "rel_path":  "set-up.txt",
+                      "sha256":  "ac92bce015a6e885af8e5ec956f9a55cc81554b032a71bf41fe299e801a7fbfd",
+                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/set-up.txt"
+                  },
+                  {
+                      "rel_path":  "sync_orchestration_scripts.ps1",
+                      "sha256":  "79fb99eb389785622b9a2fd1442bfbeb78da9281e7f52c0f232b1bf70b2e29b9",
+                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/sync_orchestration_scripts.ps1"
+                  }
+              ],
+    "track_only":  [
+                       {
+                           "rel_path":  "requirements.txt",
+                           "sha256":  "d5d232f4b24e6ee04cbc0ee06715300a4d400f0fdc5578989ed8a99b369bfda7"
+                       }
+                   ]
+}

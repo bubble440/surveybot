@@ -24,10 +24,9 @@ import time
 import re
 import unicodedata
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+
+
+
 
 
 # =============================================================================
@@ -136,6 +135,7 @@ from Survey.input_dropdown import (
     open_dropdown_generic,
     select_option_with_hint,
     select_option_with_hint,
+    select_native_option_by_target,
 )
 
 # Aliases pour rétrocompatibilité
@@ -157,6 +157,9 @@ from Survey.input_text import (
     is_numeric_field,
     swagbucks_zip_patch,
     fill_text_input,
+    fill_native_date_input,
+    fill_ifop_zip2city_widget,
+    fill_text_input_by_id_in_frame,
 )
 
 # Aliases pour rétrocompatibilité
@@ -247,6 +250,7 @@ def handle_generic_input(driver, gpt_answer: str):
     - Si des <select> existent et que 'gpt_answer' ressemble à une option → on tente de la sélectionner.
     - Si 'gpt_answer' ressemble à un CTA → on laisse la logique bouton.
     """
+    page = driver
     try:
         if looks_like_nav_label(gpt_answer):
             return False  # géré côté CTA
@@ -266,8 +270,8 @@ def handle_generic_input(driver, gpt_answer: str):
 
         # 0) Gestion dropdowns en priorité quand placeholder
         if ans_norm in PLACEHOLDER_TOKENS:
-            if has_native_selects(driver) or driver.find_elements(
-                By.CSS_SELECTOR, "[role='combobox'], [aria-haspopup='listbox']"
+            if has_native_selects(driver) or page.query_selector_all(
+                "[role='combobox'], [aria-haspopup='listbox']"
             ):
                 return open_first_dropdown(driver)
             print(
@@ -281,25 +285,19 @@ def handle_generic_input(driver, gpt_answer: str):
                 return True
 
         # 1. Radios
-        radio_inputs = driver.find_elements(
-            By.CSS_SELECTOR, "input[type='radio'], [role='radio']"
-        )
+        radio_inputs = page.query_selector_all("input[type='radio'], [role='radio']")
         if radio_inputs:
             print("🔘 Options radio détectées. source: input_handler.py")
             return click_radio_by_label(driver, gpt_answer)
 
         # 2. Checkboxes
-        checkboxes = driver.find_elements(
-            By.CSS_SELECTOR, "input[type='checkbox'], [role='checkbox']"
-        )
+        checkboxes = page.query_selector_all("input[type='checkbox'], [role='checkbox']")
         if checkboxes:
             print("☑️ Checkboxs détectées. source: input_handler.py")
             return click_checkbox_by_label(driver, gpt_answer)
 
         # 3. Texte (⚠ ignorer les placeholders)
-        text_inputs = driver.find_elements(
-            By.CSS_SELECTOR, "input[type='text'], textarea"
-        )
+        text_inputs = page.query_selector_all("input[type='text'], textarea")
         if text_inputs:
             if ans_norm in PLACEHOLDER_TOKENS:
                 print(
@@ -325,17 +323,16 @@ def apply_ai_response(driver, response):
     """
     print("run: apply_ai_response")
     
+    page = driver
+
     # 0) Si ça ressemble à un CTA, on laisse les stratégies bouton gérer.
     if looks_like_nav_label(response):
         # On tente juste du texte (rare) puis bouton; jamais checkbox
         try:
-            input_fields = driver.find_elements(
-                By.CSS_SELECTOR, "input[type='text'], textarea"
-            )
+            input_fields = page.query_selector_all("input[type='text'], textarea")
             for field in input_fields:
                 try:
-                    field.clear()
-                    field.send_keys(response)
+                    field.fill(response)
                     time.sleep(1)
                     print(
                         f"✓ Réponse texte insérée (CTA-like ignoré côté checkbox) : {response}"
@@ -358,13 +355,10 @@ def apply_ai_response(driver, response):
 
     # 1. Essayer comme champ texte
     try:
-        input_fields = driver.find_elements(
-            By.CSS_SELECTOR, "input[type='text'], textarea"
-        )
+        input_fields = page.query_selector_all("input[type='text'], textarea")
         for field in input_fields:
             try:
-                field.clear()
-                field.send_keys(response)
+                field.fill(response)
                 time.sleep(1)
                 print(f"✓ Réponse texte insérée : {response}")
                 return True
@@ -404,45 +398,44 @@ def _click_next_any(driver):
     Clique le bouton de navigation après sélection.
     Supporte data-test-id, <button> textuels et <input type=submit>.
     """
-    wait = WebDriverWait(driver, 5)
+    page = driver
+    deadline = time.time() + 5
 
     # a) selectors spécifiques (quand dispo)
     try:
-        btn = driver.find_element(
-            By.CSS_SELECTOR, 'button[data-test-id="ps-common-actions-button"]'
-        )
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
-        time.sleep(0.2)
-        driver.execute_script("arguments[0].click();", btn)
-        print("✅️ Bouton (data-test-id) cliqué.")
-        return True
+        btn = page.query_selector('button[data-test-id="ps-common-actions-button"]')
+        if btn and btn.is_visible() and btn.is_enabled():
+            page.evaluate("(el) => el.scrollIntoView({block:'center'})", btn)
+            time.sleep(0.2)
+            page.evaluate("(el) => el.click()", btn)
+            print("✅️ Bouton (data-test-id) cliqué.")
+            return True
     except Exception:
         pass
 
-    # b) libellés communs
-    try:
-        btn = wait.until(
-            EC.element_to_be_clickable(
-                (
-                    By.XPATH,
-                    "//button[contains(., 'Suivant') or contains(., 'Continuer') or contains(., 'Next') or contains(., 'Continue')]",
-                )
+    # b) libellés communs — polling jusqu'à deadline
+    while time.time() < deadline:
+        try:
+            btn = page.query_selector(
+                "xpath=//button[contains(., 'Suivant') or contains(., 'Continuer') or contains(., 'Next') or contains(., 'Continue')]"
             )
-        )
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+            if btn and btn.is_visible() and btn.is_enabled():
+                page.evaluate("(el) => el.scrollIntoView({block:'center'})", btn)
+                time.sleep(0.2)
+                page.evaluate("(el) => el.click()", btn)
+                print("✅️ Bouton navigation cliqué (texte).")
+                return True
+        except Exception:
+            pass
         time.sleep(0.2)
-        driver.execute_script("arguments[0].click();", btn)
-        print("✅️ Bouton navigation cliqué (texte).")
-        return True
-    except Exception:
-        pass
 
     # c) submit
     try:
-        sub = driver.find_element(By.CSS_SELECTOR, "input[type='submit']")
-        driver.execute_script("arguments[0].click();", sub)
-        print("✅️ Submit cliqué.")
-        return True
+        sub = page.query_selector("input[type='submit']")
+        if sub:
+            page.evaluate("(el) => el.click()", sub)
+            print("✅️ Submit cliqué.")
+            return True
     except Exception:
         pass
 
@@ -455,16 +448,28 @@ def _click_next_any(driver):
 
 def _find_best_label_text(el):
     """
-    Récupère un texte pertinent pour le label (prend le .text, sinon plus long des spans descendants).
+    Récupère un texte pertinent pour le label (prend le inner_text, sinon plus long des spans descendants).
     """
-    txt = (el.text or el.get_attribute("innerText") or "").strip()
+    h = el
+    try:
+        txt = h.inner_text().strip()
+    except Exception:
+        txt = (h.get_attribute("innerText") or "").strip()
     if txt:
         return txt
     try:
-        spans = el.find_elements(By.XPATH, ".//span[normalize-space(string())!='']")
+        spans = h.query_selector_all("xpath=.//span[normalize-space(string())!='']")
         if spans:
-            spans = sorted(spans, key=lambda s: len((s.text or "").strip()), reverse=True)
-            return (spans[0].text or "").strip()
+            scored = []
+            for s in spans:
+                try:
+                    t = s.inner_text().strip()
+                    scored.append((len(t), t))
+                except Exception:
+                    pass
+            if scored:
+                scored.sort(key=lambda x: x[0], reverse=True)
+                return scored[0][1]
     except Exception:
         pass
     return ""
@@ -495,37 +500,43 @@ def _find_linked_input_for_label(driver, label_el):
     - via l'attribut 'for'
     - sinon via un sibling/descendant
     """
+    page = driver
+    el = label_el
     linked = None
     # 1) via for/id
     try:
-        for_attr = label_el.get_attribute("for")
+        for_attr = el.get_attribute("for")
         if for_attr:
-            linked = driver.find_element(By.ID, for_attr)
-            t = (linked.get_attribute("type") or "").lower()
-            if t != "checkbox":
-                linked = None
+            linked = page.query_selector(f"#{for_attr}")
+            if linked:
+                t = (linked.get_attribute("type") or "").lower()
+                if t != "checkbox":
+                    linked = None
     except Exception:
         linked = None
 
     # 2) fallback : descendant/suivant
     if linked is None:
         try:
-            linked = label_el.find_element(By.XPATH, ".//input[@type='checkbox']")
+            linked = el.query_selector("xpath=.//input[@type='checkbox']")
         except Exception:
-            try:
-                linked = label_el.find_element(By.XPATH, "following::input[@type='checkbox'][1]")
-            except Exception:
-                linked = None
+            pass
+    if linked is None:
+        try:
+            linked = el.query_selector("xpath=following::input[@type='checkbox'][1]")
+        except Exception:
+            linked = None
     return linked
 
 
 def _is_visible(driver, el):
     """Vérifie si un élément est visible avec une taille minimum."""
     try:
-        if not el.is_displayed():
+        h = el
+        if not h.is_visible():
             return False
-        box = el.rect
-        return box and box.get("width", 0) > 5 and box.get("height", 0) > 5
+        box = h.bounding_box()
+        return box is not None and box.get("width", 0) > 5 and box.get("height", 0) > 5
     except Exception:
         return False
 
@@ -569,10 +580,12 @@ __all__ = [
     "best_dropdown_for_hint", "dropdown_visible_value", "is_dropdown_filled",
     "open_first_dropdown", "open_dropdown_generic",
     "select_option_with_hint", "select_option_with_hint",
+    "select_native_option_by_target",
     
     # Text
     "type_via_cdp", "react_set_value_and_fire", "is_numeric_field",
-    "swagbucks_zip_patch", "fill_text_input",
+    "swagbucks_zip_patch", "fill_text_input", "fill_native_date_input",
+    "fill_ifop_zip2city_widget", "fill_text_input_by_id_in_frame",
     
     # Radio
     "click_decipher_grid_radio", "click_decipher_grid_radio_strict",

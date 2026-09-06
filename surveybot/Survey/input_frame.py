@@ -11,17 +11,16 @@ Dépendances:
 - frame_utils pour iter_frame_chains et switch_to_frame_chain
 """
 
-from selenium.webdriver.common.by import By
+
+
+
+
+
 import unicodedata
 import re
+from urllib.parse import urlsplit
 
-# Import depuis input_utils (fonctions partagées)
-from Survey.input_utils import (
-    norm_btn_text,
-    safe_click,
-    CTA_SYNONYMS,
-)
-
+from Survey.log_utils import log_debug
 
 # =============================================================================
 # HELPERS IFRAME BASIQUES
@@ -33,10 +32,10 @@ def iter_iframes_safe(driver):
     Filtre les iframes trop petites (< 20x20 pixels).
     """
     frames = []
-    for fr in driver.find_elements(By.TAG_NAME, "iframe"):
+    for fr in driver.query_selector_all("iframe"):
         try:
-            r = fr.rect
-            if fr.is_displayed() and r.get("width", 0) > 20 and r.get("height", 0) > 20:
+            r = fr.bounding_box() or {}
+            if fr.is_visible() and r.get("width", 0) > 20 and r.get("height", 0) > 20:
                 frames.append(fr)
         except Exception:
             continue
@@ -45,43 +44,29 @@ def iter_iframes_safe(driver):
 
 def in_each_frame_recursive(driver, fn_try, depth=2):
     """
-    Appelle fn_try(driver) dans le contexte courant.
-    Si échec, essaye récursivement dans chaque iframe (profondeur limitée).
-    Revient toujours au default_content() après chaque descente.
-    
+    Appelle fn_try(driver) dans le contexte courant puis dans chaque iframe
+    (profondeur limitée). Utilise iter_frame_chains + switch_to_frame_chain
+    pour naviguer inter-frames sans API Selenium.
+
     Args:
-        driver: WebDriver instance
+        driver: Page Playwright ou shim
         fn_try: fonction callback(driver) -> bool
-        depth: profondeur maximale de récursion
-    
+        depth: profondeur maximale de frames à explorer
+
     Returns:
         True si fn_try a réussi dans n'importe quel contexte
     """
-    if depth < 0:
-        return False
+    from frame_utils import iter_frame_chains, switch_to_frame_chain
 
-    # 1) Essai dans le contexte courant
-    try:
-        if fn_try(driver):
-            return True
-    except Exception:
-        pass
-
-    # 2) Descente dans les iframes si non trouvé
-    frames = iter_iframes_safe(driver)
-    for fr in frames:
-        try:
-            driver.switch_to.frame(fr)
-            if in_each_frame_recursive(driver, fn_try, depth - 1):
-                driver.switch_to.default_content()
-                return True
-            driver.switch_to.default_content()
-        except Exception:
+    for chain in iter_frame_chains(driver, max_depth=depth):
+        with switch_to_frame_chain(driver, chain) as ok:
+            if not ok:
+                continue
             try:
-                driver.switch_to.default_content()
-            except:
-                pass
-            continue
+                if fn_try(driver):
+                    return True
+            except Exception:
+                continue
 
     return False
 
@@ -148,6 +133,60 @@ def try_click_navigation_cta_any_context(driver, depth=2) -> bool:
 # CTA NAVIGATION CROSS-FRAME AVEC FRAME_UTILS
 # =============================================================================
 
+# Garde-fou candidats : exclut les éléments de widgets CMP/consentement cookies tiers
+# (id/classes préfixés). Un needle "large" comme "accepter" est un sous-string direct
+# du libellé natif de ces widgets (ex: Evidon "Accepter les cookies") — sans exclusion,
+# is_match() les matche avant même d'atteindre le vrai CTA de la page (cf. BOT_EVOLUTION_MEMORY.md,
+# incident Evidon dkr1.ssisurveys.com).
+_CMP_ID_CLASS_DENYLIST = (
+    "_evh-", "_evidon-", "onetrust", "didomi", "qc-cmp",
+    "truste", "cybotcookiebot", "cky-", "transcend-consent-manager",
+)
+
+
+def _is_cmp_consent_element(el) -> bool:
+    try:
+        for attr in ("id", "class"):
+            v = (el.get_attribute(attr) or "").lower()
+            if any(tok in v for tok in _CMP_ID_CLASS_DENYLIST):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+# Domaines de routeurs/screeners tiers connus pour disqualifier quasi-systématiquement
+# les runs bot à l'étape PQ2 (aucun mouvement de souris humain avant clic) — cf.
+# Utils/plan_diagnostic_cisnet_fingerprint.md. Constante éditable manuellement au fil du
+# temps (ajout de domaines ou sous-domaines au cas par cas). Match par défaut sur le
+# domaine principal (TLD+SLD) : un hostname est concerné s'il est identique à une entrée
+# ou s'il s'agit d'un de ses sous-domaines (ex: "screener.purespectrum.com" matche
+# "purespectrum.com"). Distincte de _DISQ_CALLBACK_PATTERNS (Survey/survey_executor.py) :
+# cette dernière fait du matching de sous-chaîne sur un src d'iframe pour détecter un
+# callback de disqualification, usage et granularité différents, ne pas fusionner.
+KNOWN_ROUTER_SCREENER_DOMAINS = (
+    "samplicio.us",
+    "ssisurveys.com",
+    "researchnow.com",
+    "purespectrum.com",
+    "prsrvy.com",
+    "insights-today.com",
+)
+
+
+def _on_known_router_screener_domain(driver) -> bool:
+    try:
+        host = (urlsplit(driver.url or "").hostname or "").lower()
+    except Exception:
+        return False
+    if not host:
+        return False
+    for domain in KNOWN_ROUTER_SCREENER_DOMAINS:
+        if host == domain or host.endswith("." + domain):
+            return True
+    return False
+
+
 def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int = 2, **_kwargs) -> bool:
     """
     Clique un CTA (Suivant / Continuer / Next / Continue / Start...) en scannant
@@ -208,16 +247,19 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                 continue
 
             try:
-                els = driver.find_elements(By.CSS_SELECTOR, css)
+                els = driver.query_selector_all(css)
             except Exception:
                 els = []
 
             for el in els:
                 try:
-                    if not el.is_displayed():
+                    if not el.is_visible():
+                        continue
+                    if _is_cmp_consent_element(el):
+                        log_debug("[CTA_STRONG]", "cmp_element_excluded")
                         continue
                     # Extraction texte : value peut être symbolique (">>" etc.), fallback sur aria-label
-                    raw_val = (el.text or "") or (el.get_attribute("value") or "")
+                    raw_val = (el.inner_text() or "") or (el.get_attribute("value") or "")
                     t = _norm(raw_val)
                     if not t or not any(c.isalpha() for c in t):
                         t = _norm(el.get_attribute("aria-label") or "")
@@ -234,13 +276,40 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                         pass
 
                     try:
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                        driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
                     except Exception:
                         pass
 
+                    # Préambule mouvement de souris synthétique (Survey/synthetic_cursor.py),
+                    # uniquement sur les domaines de routeurs/screeners tiers connus
+                    # (KNOWN_ROUTER_SCREENER_DOMAINS ci-dessus) — cf. bug PQ2. Best-effort,
+                    # jamais un remplacement : ne change ni la recherche/priorité des
+                    # libellés ci-dessus, ni la cascade JS/natif ci-dessous, qui s'exécute
+                    # normalement dans tous les cas. move_only (jamais move_and_click) : le
+                    # clic réel doit rester porté exclusivement par la cascade ci-dessous,
+                    # sinon la cible reçoit 2 clics réels indépendants (double soumission/saut
+                    # de page possible). move_only ne presse jamais le bouton, mais reste
+                    # soumis à CTA_INTERCEPT_ONLY par prudence (aucune interaction navigateur
+                    # sur la cible pendant l'interception).
+                    if _on_known_router_screener_domain(driver):
+                        try:
+                            from Survey.cta_handler import _cta_intercept_enabled
+                            _intercept_on = _cta_intercept_enabled()
+                        except Exception:
+                            _intercept_on = False
+                        if _intercept_on:
+                            log_debug("[CTA_STRONG]", f"CTA_INTERCEPT_ONLY actif — synthetic_cursor preamble sauté avant {t!r}")
+                        else:
+                            try:
+                                from Survey.synthetic_cursor import move_only
+                                _syn_ok = move_only(driver, el)
+                                log_debug("[CTA_STRONG]", f"synthetic_cursor preamble ok={_syn_ok} before {t!r}")
+                            except Exception as _syn_exc:
+                                log_debug("[CTA_STRONG]", f"synthetic_cursor preamble exception={_syn_exc!r} before {t!r}")
+
                     # click robuste (JS)
                     try:
-                        driver.execute_script("arguments[0].click();", el)
+                        driver.evaluate("(el) => el.click()", el)
                     except Exception:
                         try:
                             el.click()

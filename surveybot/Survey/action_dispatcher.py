@@ -1,11 +1,14 @@
 ﻿from __future__ import annotations
 import re, unicodedata, os, time, zlib
-from selenium.webdriver.common.by import By
 import Survey.input_handler
-from Survey.dom_registry import get_target
+from Survey.dom_registry import get_target, get_stable_text_field_locator
 from typing import Optional
-from selenium.webdriver.common.action_chains import ActionChains
 from Survey.log_utils import is_debug, log_debug, log_info
+from config import RUN_ENV, is_cta_intercept_only
+
+
+
+
 
 PAUSE_INTER_DISPATCH = 0.5  # pause entre deux applications de réponse consécutives (laisser le DOM re-rendre)
 
@@ -36,9 +39,8 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
 
     def _dispatch_check(el) -> None:
         # radios souvent non-interactables (hidden) ; JS events
-        driver.execute_script(
-            """
-            const el = arguments[0];
+        driver.evaluate("""([_el, _arg1]) => {
+            const el = _el;
             if (!el) return;
             try { el.checked = true; } catch(e) {}
             el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -49,9 +51,8 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
         )
 
     def _all_rows_answered(widget_el) -> bool:
-        return bool(driver.execute_script(
-            """
-            const widget = arguments[0];
+        return bool(widget_el.evaluate("""(_el) => {
+            const widget = _el;
             if (!widget) return false;
             const uid = widget.getAttribute('data-uid');
             if (!uid) return false;
@@ -60,14 +61,11 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
             const names = [...new Set(inputs.map(i => i.name))];
             if (!names.length) return false;
             return names.every(n => !!root.querySelector("input[type='radio'][name='" + n + "']:checked"));
-            """,
-            widget_el
-        ))
+}"""))
 
     def _row_group_count(widget_el) -> int:
-        return int(driver.execute_script(
-            """
-            const widget = arguments[0];
+        return int(widget_el.evaluate("""(_el) => {
+            const widget = _el;
             if (!widget) return 0;
             const uid = widget.getAttribute('data-uid');
             if (!uid) return 0;
@@ -75,12 +73,10 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
             const inputs = Array.from(root.querySelectorAll("input[type='radio'][name^='ans" + uid + ".']"));
             const names = [...new Set(inputs.map(i => i.name))];
             return names.length;
-            """,
-            widget_el
-        ) or 0)
+}""") or 0)
 
     def _pick_option_button(widget_el):
-        btns = widget_el.find_elements(By.CSS_SELECTOR, ".sq-cardrating-buttons .sq-cardrating-button[data-clickable='true']")
+        btns = widget_el.query_selector_all(".sq-cardrating-buttons .sq-cardrating-button[data-clickable='true']")
         if not btns:
             return None
 
@@ -89,9 +85,9 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
         if wanted:
             for b in btns:
                 try:
-                    t = b.text or ""
+                    t = b.inner_text() or ""
                     if not t:
-                        t = b.find_element(By.CSS_SELECTOR, ".sq-cardrating-content").text
+                        t = (b.query_selector(".sq-cardrating-content") or b).inner_text()
                     if _norm(t) == wanted:
                         return b
                 except Exception:
@@ -103,9 +99,9 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
         norm_to_btn = {}
         for b in btns:
             try:
-                t = b.text or ""
+                t = b.inner_text() or ""
                 if not t:
-                    t = b.find_element(By.CSS_SELECTOR, ".sq-cardrating-content").text
+                    t = (b.query_selector(".sq-cardrating-content") or b).inner_text()
                 nt = _norm(t)
                 if nt and "jamais" not in nt:
                     norm_to_btn[nt] = b
@@ -119,16 +115,16 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
         # dernier recours: premier bouton non-'Jamais'
         for b in btns:
             try:
-                t = b.text or ""
+                t = b.inner_text() or ""
                 if not t:
-                    t = b.find_element(By.CSS_SELECTOR, ".sq-cardrating-content").text
+                    t = (b.query_selector(".sq-cardrating-content") or b).inner_text()
                 if "jamais" not in _norm(t):
                     return b
             except Exception:
                 continue
         return None
 
-    widgets = driver.find_elements(By.CSS_SELECTOR, ".sq-cardrating-widget[data-uid]")
+    widgets = driver.query_selector_all(".sq-cardrating-widget[data-uid]")
     if not widgets:
         return False
 
@@ -154,11 +150,11 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
 
             # cocher toutes les rows pour cette colonne (ans<uid>.<col>.<row>)
             # Les inputs sont dans le meme bloc question (souvent dans une QA-view cachée)
-            qroot = widget.find_element(By.XPATH, "ancestor::*[contains(@class,'question')][1]")
-            inputs = qroot.find_elements(By.CSS_SELECTOR, f"input[type='radio'][id^='ans{uid}.{col}.']")
+            qroot = widget.query_selector("ancestor::*[contains(@class,'question')][1]")
+            inputs = qroot.query_selector_all(f"input[type='radio'][id^='ans{uid}.{col}.']")
             if not inputs:
                 # fallback global (au cas où la structure varie)
-                inputs = driver.find_elements(By.CSS_SELECTOR, f"input[type='radio'][id^='ans{uid}.{col}.']")
+                inputs = driver.query_selector_all(f"input[type='radio'][id^='ans{uid}.{col}.']")
 
             if not inputs:
                 continue
@@ -199,14 +195,14 @@ def solve_focusvision_cardsort(
 
     def _pick_cardsort_root():
         try:
-            css = driver.find_elements(By.CSS_SELECTOR, ".sq-cardsort")
+            css = driver.query_selector_all(".sq-cardsort")
             return css[0] if css else None
         except Exception:
             return None
 
     def _active_card(cs):
         try:
-            cards = cs.find_elements(By.CSS_SELECTOR, ".sq-cardsort-cards li")
+            cards = cs.query_selector_all(".sq-cardsort-cards li")
         except Exception:
             cards = []
         for c in cards:
@@ -219,7 +215,7 @@ def solve_focusvision_cardsort(
                     continue
                 # fallback selenium visibility
                 try:
-                    if c.is_displayed():
+                    if c.is_visible():
                         return c
                 except Exception:
                     return c
@@ -229,11 +225,11 @@ def solve_focusvision_cardsort(
 
     def _completion_visible(cs) -> bool:
         try:
-            el = cs.find_elements(By.CSS_SELECTOR, ".sq-cardsort-completion")
+            el = cs.query_selector_all(".sq-cardsort-completion")
             if not el:
                 return False
             try:
-                return bool(el[0].is_displayed())
+                return bool(el[0].is_visible())
             except Exception:
                 return True
         except Exception:
@@ -241,30 +237,49 @@ def solve_focusvision_cardsort(
 
     def _read_bucket_label(b) -> str:
         try:
-            ps = b.find_elements(By.CSS_SELECTOR, ".sq-cardsort-bucket-legend")
+            ps = b.query_selector_all(".sq-cardsort-bucket-legend")
             if ps:
-                return _norm(ps[0].text or ps[0].get_attribute("innerText") or "")
+                return _norm(ps[0].inner_text() or "")
         except Exception:
             pass
         try:
-            raw = _norm(b.text or b.get_attribute("innerText") or "")
+            raw = _norm(b.inner_text() or "")
             return _norm((raw.splitlines()[0] if raw else ""))
         except Exception:
             return ""
+
+    def _card_label_text(card) -> str:
+        """
+        Texte de la carte utilisé pour la comparaison carte-affectation et le suivi de
+        progression. Doit être lu depuis le MÊME nœud que l'extracteur qui a construit
+        cards_cardsort (dom_extractors_decipher.py::_extract_focusvision_cardsort_block,
+        profil sq-cardsort -> ".sq-cardsort-card-legend"), pas depuis le <li> entier
+        (card.inner_text()) : le <li> contient aussi le bouton icône
+        .sq-cardsort-card-remove, absent du texte montré au modèle -> une comparaison sur
+        le <li> complet ne matche jamais le libellé de carte transmis dans l'affectation,
+        y compris pour la toute première carte.
+        """
+        try:
+            legend = card.query_selector(".sq-cardsort-card-legend")
+            if legend is not None:
+                return _norm(legend.inner_text() or "")
+        except Exception:
+            pass
+        return _norm(card.inner_text() or "")
 
     def _get_question_text(cs, card) -> str:
         parts = []
         # Question globale
         try:
-            qels = driver.find_elements(By.CSS_SELECTOR, ".question-text")
+            qels = driver.query_selector_all(".question-text")
             if qels:
-                parts.append(_norm(qels[0].text or qels[0].get_attribute("innerText") or ""))
+                parts.append(_norm(qels[0].inner_text() or ""))
         except Exception:
             pass
 
         # Texte carte active
         try:
-            parts.append(_norm(card.text or card.get_attribute("innerText") or ""))
+            parts.append(_card_label_text(card))
         except Exception:
             pass
 
@@ -272,7 +287,7 @@ def solve_focusvision_cardsort(
 
     def _pick_bucket(cs, question_text: str, card_text: str):
         try:
-            buckets = cs.find_elements(By.CSS_SELECTOR, "li.sq-cardsort-bucket")
+            buckets = cs.query_selector_all("li.sq-cardsort-bucket")
         except Exception:
             buckets = []
 
@@ -339,7 +354,7 @@ def solve_focusvision_cardsort(
 
     def _click(el) -> bool:
         try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            driver.evaluate("(e) => e.scrollIntoView({block:'center'})",el)
             time.sleep(0.05)
         except Exception:
             pass
@@ -348,14 +363,69 @@ def solve_focusvision_cardsort(
             return True
         except Exception:
             try:
-                ActionChains(driver).move_to_element(el).click().perform()
+                el.hover(); el.click()
                 return True
             except Exception:
                 try:
-                    driver.execute_script("arguments[0].click();", el)
+                    driver.evaluate("(e) => e.click()",el)
                     return True
                 except Exception:
                     return False
+
+    def _find_internal_next_control(cs):
+        """
+        Contrôle de navigation interne au widget cardsort (carte -> carte suivante),
+        distinct de toute navigation de page. Scope strict au widget (cs), exclusion
+        des boutons carte/bucket, détection par libellé "suivant/next/continuer" —
+        pas de sélecteur CSS deviné (classe non confirmée sur le DOM de référence).
+        """
+        try:
+            candidates = cs.query_selector_all("button, a[role='button'], div[role='button'], input[type='button']")
+        except Exception:
+            candidates = []
+        next_tokens = ("suivant", "next", "continuer", "continue")
+        for el in candidates:
+            try:
+                cl = (el.get_attribute("class") or "").lower()
+                if "sq-cardsort-bucket" in cl or "sq-cardsort-card" in cl:
+                    continue
+                txt = _norm_lc(el.inner_text() or el.get_attribute("aria-label") or el.get_attribute("value") or "")
+                if not any(t in txt for t in next_tokens):
+                    continue
+                return el
+            except Exception:
+                continue
+        return None
+
+    def _find_cardsort_next_control_by_class(cs):
+        """
+        Stratégie additive de détection du contrôle "Suivant" du carrousel cardsort,
+        distincte de _find_internal_next_control (recherche par libellé sur
+        button/a[role=button]/div[role=button]/input[type=button]). Sur le DOM de
+        référence snapshot 20260815_051536 (widget sq-cardsort-B1_Percept_Master_Slot),
+        le contrôle réel est <span class="sq-cardsort-icon-button sq-cardsort-next
+        sq-cardsort-state-disabled" disabled="disabled">Suivant...</span> : ni <button>,
+        ni [role='button'], ni <input type='button'> -> invisible à la recherche
+        générique ci-dessus, ce qui empêchait toute validation carte->carte
+        (CARDSORT_ABORT reason='apply_failed' dès la première carte). Garde-fou strict :
+        classe dédiée .sq-cardsort-next, scope au widget (cs) uniquement.
+        """
+        try:
+            return cs.query_selector(".sq-cardsort-next")
+        except Exception:
+            return None
+
+    def _is_control_enabled(el) -> bool:
+        try:
+            if el.get_attribute("disabled") is not None:
+                return False
+            if (el.get_attribute("aria-disabled") or "").strip().lower() == "true":
+                return False
+            if "disabled" in (el.get_attribute("class") or "").lower():
+                return False
+        except Exception:
+            return False
+        return True
 
     cs = _pick_cardsort_root()
     if not cs:
@@ -371,14 +441,9 @@ def solve_focusvision_cardsort(
         if not card:
             break
 
-        before_idx = ""
-        try:
-            before_idx = (card.get_attribute("index") or "").strip()
-        except Exception:
-            before_idx = ""
-
         qtxt = _get_question_text(cs, card)
-        card_text = _norm(card.text or card.get_attribute("innerText") or "")
+        card_text = _card_label_text(card)
+        before_text = card_text
         bucket = _pick_bucket(cs, qtxt, card_text)
         if not bucket:
             break
@@ -386,36 +451,83 @@ def solve_focusvision_cardsort(
         if not _click(bucket):
             break
 
-        # petit wait pour l'auto-advance (page JS)
+        # petit wait pour l'auto-advance éventuel (page JS)
         time.sleep(0.12)
 
-        # si la carte n'a pas changé, on retente 1 fois en cliquant l'item interne
-        card2 = _active_card(cs)
-        after_idx = ""
-        try:
-            after_idx = (card2.get_attribute("index") or "").strip() if card2 else ""
-        except Exception:
-            after_idx = ""
+        # Contrôle de navigation interne au widget ("Suivant" carte à carte) : sur certains DOMs
+        # sq-cardsort, le widget n'avance PAS seul après le clic bucket — un bouton "Suivant" interne,
+        # désactivé tant qu'aucun bucket n'est assigné, doit être cliqué explicitement une fois activé.
+        # Sans ce clic, la carte active ne change jamais -> apply_failed systématique malgré une
+        # affectation réellement prise en compte par le widget (bucket visuellement sélectionné).
+        next_ctrl = _find_internal_next_control(cs)
+        if next_ctrl is None:
+            next_ctrl = _find_cardsort_next_control_by_class(cs)
+        if next_ctrl is not None:
+            _enabled = False
+            for _ in range(5):
+                if _is_control_enabled(next_ctrl):
+                    _enabled = True
+                    break
+                time.sleep(0.1)
+            if _enabled:
+                if is_cta_intercept_only():
+                    try:
+                        next_ctrl.evaluate("(_el) => { _el.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); }")
+                        log_info("[CARDSORT_CTA]", "controle interne 'Suivant' trouve + interception OK (CTA_INTERCEPT_ONLY)")
+                    except Exception as exc:
+                        log_info("[CARDSORT_CTA]", f"controle interne 'Suivant' trouve + interception impossible: {exc}")
+                else:
+                    _click(next_ctrl)
+                    log_debug("[CARDSORT_DEBUG]", "controle interne 'Suivant' clique")
+                    # Le widget déclare "animationDuration": 500 (ms) dans son setupOptions
+                    # inline (transition carte->carte) : un sleep fixe de 0.12s (ancien code)
+                    # relit la carte active avant la fin de l'animation -> la carte sortante
+                    # est encore affichée au moment de la relecture (avant/apres identiques)
+                    # => apply_failed systématique malgré un clic Suivant réellement efficace.
+                    # Poll borné (budget max 8 x 0.1s = 0.8s, cohérent avec les 500ms déclarés
+                    # + marge) sur le changement d'identité de la carte active ou la complétion.
+                    _next_progressed = False
+                    for _ in range(8):
+                        if _completion_visible(cs):
+                            _next_progressed = True
+                            break
+                        polled = _active_card(cs)
+                        if polled is None or _card_label_text(polled) != before_text:
+                            _next_progressed = True
+                            break
+                        time.sleep(0.1)
+                    if not _next_progressed:
+                        log_debug("[CARDSORT_DEBUG]", "attente fin d'animation (500ms) epuisee sans changement de carte")
+            else:
+                log_debug("[CARDSORT_DEBUG]", "controle interne 'Suivant' introuvable/desactive apres budget d'attente")
 
-        if before_idx and after_idx and before_idx == after_idx:
+        # Signal de progression : identité textuelle de la carte active, PAS un
+        # attribut "index" (absent du DOM sq-cardsort réel — les <li> exposent
+        # class="sq-cardsort-card" + atmost, cf. dom_analyzer.py _should_skip_...).
+        # Un attribut "index" toujours vide rendait avant/apres toujours égaux à ""
+        # => la comparaison ne se déclenchait jamais => apply_failed systématique
+        # même quand le clic avait réellement fait progresser le widget.
+        card2 = _active_card(cs)
+        after_text = _card_label_text(card2) if card2 else ""
+
+        # si la carte active n'a pas changé, on retente 1 fois en cliquant l'item interne
+        if card2 is not None and after_text == before_text:
             try:
-                inner = bucket.find_element(By.CSS_SELECTOR, ".sq-cardsort-bucket-item")
+                inner = bucket.query_selector(".sq-cardsort-bucket-item")
                 _click(inner)
                 time.sleep(0.12)
             except Exception:
                 pass
-        card3 = _active_card(cs)
-        after_retry_idx = ""
-        try:
-            after_retry_idx = (card3.get_attribute("index") or "").strip() if card3 else ""
-        except Exception:
-            after_retry_idx = ""
+            card3 = _active_card(cs)
+            after_text = _card_label_text(card3) if card3 else ""
 
         if _completion_visible(cs):
+            log_debug("[CARDSORT_DEBUG]", f"completion visible, card={before_text[:40]!r}")
             progressed = True
             break
 
-        if before_idx and after_retry_idx and before_idx != after_retry_idx:
+        if card2 is None or after_text != before_text:
+            log_debug("[CARDSORT_DEBUG]", f"advanced card={before_text[:40]!r} -> {after_text[:40]!r}")
             progressed = True
 
     return progressed
@@ -475,8 +587,8 @@ def _click_xpath(driver, xpath: str) -> bool:
     if not xpath:
         return False
     try:
-        el = driver.find_element(By.XPATH, xpath)
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+        el = driver.query_selector(xpath)
+        driver.evaluate("(e) => e.scrollIntoView({block:'center'})",el)
         el.click()
         return True
     except Exception:
@@ -486,14 +598,14 @@ def _set_text_xpath(driver, xpath: str, text: str) -> bool:
     if not xpath:
         return False
     try:
-        el = driver.find_element(By.XPATH, xpath)
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+        el = driver.query_selector(xpath)
+        driver.evaluate("(e) => e.scrollIntoView({block:'center'})",el)
         el.click()
         try:
             el.clear()
         except Exception:
             pass
-        el.send_keys(text)
+        el.type(text)
         return True
     except Exception:
         return False
@@ -534,7 +646,7 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
 
     def _read_text(el) -> str:
         try:
-            txt = el.find_element(By.CSS_SELECTOR, ".text-content").get_attribute("innerText") or ""
+            txt = el.query_selector(".text-content").get_attribute("innerText") or ""
         except Exception:
             txt = ""
         if not txt:
@@ -546,7 +658,7 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
 
     def _click_trusted(el) -> bool:
         try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", el)
+            driver.evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",el)
         except Exception:
             pass
         try:
@@ -555,20 +667,20 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
         except Exception:
             pass
         try:
-            ActionChains(driver).move_to_element(el).pause(0.05).click().perform()
+            el.hover(); el.click()
             return True
         except Exception:
             pass
         try:
-            driver.execute_script("arguments[0].click();", el)
+            driver.evaluate("(e) => e.click()",el)
             return True
         except Exception:
             return False
 
     def _current_row_text(root_el) -> str:
         try:
-            cur = root_el.find_element(By.CSS_SELECTOR, ".item.current .text-content")
-            return _norm(cur.get_attribute("innerText") or cur.text or "")
+            cur = root_el.query_selector(".item.current .text-content")
+            return _norm(cur.inner_text() or "")
         except Exception:
             return ""
 
@@ -580,11 +692,11 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
         return a == b or a in b or b in a
 
     try:
-        root = driver.find_element(By.CSS_SELECTOR, ".gridclick.horizontal.text-version")
+        root = driver.query_selector(".gridclick.horizontal.inner_text()-version")
     except Exception:
         return False
 
-    buttons = root.find_elements(By.CSS_SELECTOR, ".scale-button")
+    buttons = root.query_selector_all(".scale-button")
     if len(buttons) < 2:
         return False
 
@@ -592,7 +704,7 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
     row_after = row_before
     if row_label:
         row_target = None
-        for item in root.find_elements(By.CSS_SELECTOR, ".item.item-text"):
+        for item in root.query_selector_all(".item.item-text"):
             if _match_fold(_read_text(item), row_label):
                 row_target = item
                 break
@@ -645,11 +757,11 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
         except Exception:
             btn_selected = False
         try:
-            item_answered = "answered" in (root.find_element(By.CSS_SELECTOR, ".item.current").get_attribute("class") or "")
+            item_answered = "answered" in (root.query_selector(".item.current").get_attribute("class") or "")
         except Exception:
             item_answered = False
         try:
-            progress_answered = "answeredNode" in (root.find_element(By.CSS_SELECTOR, ".node-container.currentNode").get_attribute("class") or "")
+            progress_answered = "answeredNode" in (root.query_selector(".node-container.currentNode").get_attribute("class") or "")
         except Exception:
             progress_answered = False
         if btn_selected or item_answered or progress_answered:
@@ -671,7 +783,10 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
     - nécessite un <tr> contenant des radios avec @name
     - cible la radio par croisement row label + aria-label (colonne)
     """
-    if not isinstance(target_payload, dict) or not target_payload.get("table_matrix_sge"):
+    if not isinstance(target_payload, dict) or not (
+        target_payload.get("table_matrix_sge")
+        or (target_payload.get("context") or {}).get("table_matrix_sge")
+    ):
         return False
 
     def _matrix_label_norm(text: str) -> str:
@@ -694,13 +809,11 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
         return cand == needle or cand in needle or needle in cand
 
     try:
-        rows = driver.find_elements(
-            By.XPATH,
-            "//tr[.//input[@type='radio'][@name]]",
-        )
+        rows = driver.query_selector_all("xpath=//tr[.//input[@type='radio'][@name]]")
     except Exception:
         rows = []
 
+    log_debug("[SGE_MATRIX]", f"rows found={len(rows)} for table_matrix_sge candidate")
     if not rows:
         log_debug("[SGE_MATRIX]", "rows empty for table_matrix_sge candidate")
         return False
@@ -708,15 +821,12 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
     matched_row = False
     for row in rows:
         try:
-            row_text = driver.execute_script(
-                """
-                const tr = arguments[0];
+            row_text = row.evaluate("""(_el) => {
+                const tr = _el;
                 if (!tr) return '';
                 const labelCell = tr.querySelector('th, td');
                 return (labelCell && (labelCell.innerText || labelCell.textContent) || '').trim();
-                """,
-                row,
-            ) or ""
+}""") or ""
         except Exception:
             row_text = ""
 
@@ -726,12 +836,10 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
         matched_row = True
 
         try:
-            radio = driver.execute_script(
-                r"""
-                const tr = arguments[0];
-                const need = arguments[1];
-                if (!tr) return null;
-                const radios = Array.from(tr.querySelectorAll("input[type='radio'][name]"));
+            ok = bool(row.evaluate("""(_el, _arg1) => {
+                const tr = _el;
+                const need = _arg1;
+                if (!tr) return false;
                 const norm = (txt) => {
                   return (txt || '')
                     .normalize('NFD')
@@ -742,60 +850,35 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
                     .toLowerCase();
                 };
                 const needNorm = norm(need);
-                const pick = radios.find((r) => {
+                const radios = Array.from(tr.querySelectorAll("input[type='radio'][name]"));
+                const input = radios.find((r) => {
                   const aria = (r.getAttribute('aria-label') || r.getAttribute('data-label') || '').trim();
-                  const ariaNorm = norm(aria);
-                  if (!!ariaNorm && !!needNorm && (ariaNorm === needNorm || ariaNorm.includes(needNorm) || needNorm.includes(ariaNorm))) {
-                    return true;
-                  }
-                  const cellOptText = (r.closest('td')?.querySelector('.opt-text')?.textContent || '').trim();
-                  const optNorm = norm(cellOptText);
-                  return !!optNorm && !!needNorm && (optNorm === needNorm || optNorm.includes(needNorm) || needNorm.includes(optNorm));
+                  if (norm(aria) === needNorm) return true;
+                  const optText = (r.closest('td')?.querySelector('.opt-text')?.textContent || '').trim();
+                  return norm(optText) === needNorm;
                 });
-                return pick || null;
-                """,
-                row,
-                col_need,
-            )
-        except Exception:
-            radio = None
-
-        if radio is None:
-            log_debug("[SGE_MATRIX]", f"no radio matched col_need='{col_need}' in matched row")
-            continue
-
-        try:
-            ok = bool(driver.execute_script(
-                """
-                const input = arguments[0];
                 if (!input) return false;
                 try { input.scrollIntoView({block:'center', inline:'center'}); } catch(e) {}
                 const table = input.closest('table.i-question-table');
                 const cell = input.closest('td.i-option-cell[tabindex]');
-                const isIntelliSurveyCell = !!(table && cell);
                 const id = input.getAttribute('id') || '';
-                const label = id ? document.querySelector(`label[for="${CSS.escape(id)}"]`) : null;
+                const label = id ? document.querySelector('label[for="' + CSS.escape(id) + '"]') : null;
                 try {
-                  if (isIntelliSurveyCell) {
-                    cell.click();
-                  } else if (label) {
-                    label.click();
-                  } else {
-                    input.click();
-                  }
+                  if (table && cell) { cell.click(); }
+                  else if (label) { label.click(); }
+                  else { input.click(); }
                 } catch(e) {}
                 if (!input.checked) {
                   try { input.checked = true; } catch(e) {}
-                  try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch(e) {}
-                  try { input.dispatchEvent(new Event('change', { bubbles: true })); } catch(e) {}
+                  try { input.dispatchEvent(new Event('input', {bubbles:true})); } catch(e) {}
+                  try { input.dispatchEvent(new Event('change', {bubbles:true})); } catch(e) {}
                 }
                 return !!input.checked;
-                """,
-                radio,
-            ))
+}""", col_need))
         except Exception:
             ok = False
 
+        log_debug("[SGE_MATRIX]", f"click ok={ok} col_need='{col_need}'")
         if ok:
             log_info("[TARGET]", "apply ok=true strategy=table_matrix_sge reason=applied")
             return True
@@ -821,15 +904,15 @@ def _try_encuesta_matrix_set(driver, row_label: str, col_label: str) -> bool:
 
     target_row_fold = _fold_norm_lc(row_label)
     try:
-        rows = driver.find_elements(By.CSS_SELECTOR, ".layout.ee__matrix--row:not(.hidden-sm-and-down)")
+        rows = driver.query_selector_all(".layout.ee__matrix--row:not(.hidden-sm-and-down)")
     except Exception:
         rows = []
 
     matched_row = None
     for row in rows:
         try:
-            row_title = row.find_element(By.CSS_SELECTOR, ".ee__matrix--first-column span")
-            row_text = _norm(row_title.text or row_title.get_attribute("innerText") or "")
+            row_title = row.query_selector(".ee__matrix--first-column span")
+            row_text = _norm(row_title.inner_text() or "")
         except Exception:
             continue
         row_fold = _fold_norm_lc(row_text)
@@ -845,16 +928,13 @@ def _try_encuesta_matrix_set(driver, row_label: str, col_label: str) -> bool:
     target_col_name = None
     if target_col_fold:
         try:
-            header_cells = driver.find_elements(
-                By.CSS_SELECTOR,
-                ".layout.ee__matrix--row.hidden-sm-and-down .ee__matrix--header-cells span",
-            )
+            header_cells = driver.query_selector_all(".layout.ee__matrix--row.hidden-sm-and-down .ee__matrix--header-cells span")
         except Exception:
             header_cells = []
 
         for idx, header in enumerate(header_cells, start=1):
             try:
-                header_text = _norm(header.text or header.get_attribute("innerText") or "")
+                header_text = _norm(header.inner_text() or "")
             except Exception:
                 continue
             if _fold_norm_lc(header_text) == target_col_fold:
@@ -866,16 +946,15 @@ def _try_encuesta_matrix_set(driver, row_label: str, col_label: str) -> bool:
         return False
 
     try:
-        target_input = matched_row.find_element(
-            By.CSS_SELECTOR,
-            f".ee__matrix--column input[type='radio'][name='{target_col_name}']",
-        )
+        target_input = matched_row.query_selector(f".ee__matrix--column input[type='radio'][name='{target_col_name}']")
+        if target_input is None:
+            raise Exception("not found")
     except Exception:
         log_info("[TARGET]", f"apply ok=false strategy=encuesta_matrix reason=input_not_found row={row_label!r} col={col_label!r}")
         return False
 
     try:
-        click_target = target_input.find_element(By.XPATH, "./ancestor::*[contains(@class,'v-input--selection-controls__input')][1]")
+        click_target = target_input.query_selector("./ancestor::*[contains(@class,'v-input--selection-controls__input')][1]")
     except Exception:
         click_target = target_input
 
@@ -885,17 +964,14 @@ def _try_encuesta_matrix_set(driver, row_label: str, col_label: str) -> bool:
         return False
 
     try:
-        checked = bool(driver.execute_script(
-            """
-            const input = arguments[0];
+        checked = bool(target_input.evaluate("""(_el) => {
+            const input = _el;
             if (!input) return false;
             if (input.checked) return true;
             const radio = input.closest('.v-radio');
             const classes = (radio && radio.className) ? String(radio.className) : '';
             return classes.includes('v-item--active');
-            """,
-            target_input,
-        ))
+}"""))
     except Exception:
         checked = False
 
@@ -905,6 +981,165 @@ def _try_encuesta_matrix_set(driver, row_label: str, col_label: str) -> bool:
 
     log_info("[TARGET]", "apply ok=true strategy=encuesta_matrix reason=applied")
     return True
+
+
+# --- Ask&Answer / FirstInsight : classement drag & drop (Angular CDK cdkDropList) ---
+# Bloc posé par _extract_askandanswer_ranking_dragdrop_blocks (dom_extractors_misc.py), flag
+# aa_ranking_dragdrop=True. Pas d'input caché exploitable (contrairement à alchemer_rank_dragdrop) :
+# l'ordre est uniquement porté par la position DOM des items cdkDrag -> il faut un drag pointer
+# réellement simulé (mousedown/mousemove par pas/mouseup), même technique que celle déjà validée
+# pour Angular CDK dans handle_drag_drop_logic._run_drag_attempt plus bas dans ce fichier.
+def _aa_ranking_dragdrop_locate(driver, drop_list_xpath: str, label: str):
+    """
+    Localise, dans la cdkDropList Ask&Answer visée par `drop_list_xpath`, l'item dont le texte
+    (div.ranking-answer-color) correspond à `label` (comparaison normalisée, insensible à la casse).
+    Retourne {"index": int, "count": int, "left"/"top"/"width"/"height": float} ou None.
+    """
+    try:
+        _dl_sel = drop_list_xpath if drop_list_xpath.startswith(("xpath=", "//", "..")) else "xpath=" + drop_list_xpath
+        dl = driver.query_selector(_dl_sel)
+    except Exception:
+        dl = None
+    if not dl:
+        return None
+
+    # NFKD avant comparaison : le texte DOM (normalize-space côté navigateur / textContent brut)
+    # reste en forme composée (NFC, ex: "é" = 1 codepoint) alors que les labels extraits via
+    # Survey.dom_utils._norm() sont NFKD-décomposés (ex: "é" = "e" + accent combinant) ; sans
+    # normaliser les deux côtés vers NFKD ici, toute option accentuée ne matche jamais.
+    needle_norm = unicodedata.normalize("NFKD", re.sub(r"\s+", " ", (label or "").strip())).lower()
+    needle = needle_norm.replace("\\", "\\\\").replace("'", "\\'")
+    try:
+        data = driver.evaluate(
+            f"""(_dl) => {{
+                const needle = '{needle}';
+                const norm = s => (s || '').normalize('NFKD').replace(/\\s+/g, ' ').trim().toLowerCase();
+                const items = Array.from(_dl.querySelectorAll('div.cdk-drag.ranking-option-list'));
+                let idx = -1;
+                for (let i = 0; i < items.length; i++) {{
+                    const t = items[i].querySelector('div.ranking-answer-color');
+                    if (norm(t ? t.textContent : '') === needle) {{ idx = i; break; }}
+                }}
+                if (idx === -1) return null;
+                const r = items[idx].getBoundingClientRect();
+                return {{index: idx, count: items.length, left: r.left, top: r.top, width: r.width, height: r.height}};
+            }}""",
+            dl,
+        )
+    except Exception:
+        data = None
+    return data if isinstance(data, dict) else None
+
+
+def _aa_ranking_dragdrop_slot_rect(driver, drop_list_xpath: str, slot_index: int):
+    """Rectangle de l'item actuellement à l'index `slot_index` dans la cdkDropList, ou None."""
+    try:
+        _dl_sel = drop_list_xpath if drop_list_xpath.startswith(("xpath=", "//", "..")) else "xpath=" + drop_list_xpath
+        dl = driver.query_selector(_dl_sel)
+    except Exception:
+        dl = None
+    if not dl:
+        return None
+    try:
+        data = driver.evaluate(
+            f"""(_dl) => {{
+                const items = Array.from(_dl.querySelectorAll('div.cdk-drag.ranking-option-list'));
+                const it = items[{int(slot_index)}];
+                if (!it) return null;
+                const r = it.getBoundingClientRect();
+                return {{left: r.left, top: r.top, width: r.width, height: r.height}};
+            }}""",
+            dl,
+        )
+    except Exception:
+        data = None
+    return data if isinstance(data, dict) else None
+
+
+def _aa_ranking_dragdrop_suppress_text_selection(driver) -> None:
+    """
+    Neutralise la sélection de texte native avant un drag pointer simulé sur la cdkDropList.
+
+    Cause racine confirmée (repro isolé) : les items de classement sont du texte simple
+    (div.ranking-answer-color) ; un mousedown+move simulé sur du texte déclenche la sélection
+    de texte native du navigateur (window.getSelection() non vide après le 1er drag). Cette
+    sélection résiduelle fait que le mouseup du drag SUIVANT n'a plus aucun effet sur la
+    cdkDropList (aucune exception, aucun déplacement DOM) — reproduit et confirmé en isolant
+    la cause (drag2 fonctionne dès que user-select est désactivé, sans aucun autre changement).
+    Best-effort, jamais bloquant : ne touche à aucun CTA/side-effect métier.
+    """
+    try:
+        driver.evaluate(
+            "() => { try { window.getSelection().removeAllRanges(); } catch (e) {} "
+            "document.body.style.userSelect = 'none'; document.body.style.webkitUserSelect = 'none'; }"
+        )
+    except Exception:
+        pass
+
+
+def _aa_ranking_dragdrop_apply(driver, drop_list_xpath: str, label: str, target_index: int, *, max_attempts: int = 2) -> bool:
+    """
+    Déplace l'item `label` de la cdkDropList Ask&Answer vers l'index cible `target_index` (0-based)
+    via un drag pointer simulé. Budget borné : `max_attempts` tentatives, abandon contrôlé + log
+    si non atteint (pas de fallback empilé).
+    """
+    for attempt in range(1, max_attempts + 1):
+        _aa_ranking_dragdrop_suppress_text_selection(driver)
+        loc = _aa_ranking_dragdrop_locate(driver, drop_list_xpath, label)
+        if not loc:
+            log_debug("[TARGET_DEBUG]", f"aa_ranking_dragdrop: attempt={attempt} item_not_found label={label!r}")
+            return False
+
+        cur_idx = loc["index"]
+        count = loc["count"]
+        if cur_idx == target_index:
+            log_debug("[TARGET_DEBUG]", f"aa_ranking_dragdrop: already_in_place label={label!r} index={cur_idx}")
+            return True
+
+        clamped_target = max(0, min(target_index, count - 1))
+        target_rect = _aa_ranking_dragdrop_slot_rect(driver, drop_list_xpath, clamped_target)
+        if not target_rect:
+            log_debug("[TARGET_DEBUG]", f"aa_ranking_dragdrop: attempt={attempt} target_slot_unavailable index={clamped_target}")
+            continue
+
+        start_x = loc["left"] + loc["width"] / 2
+        start_y = loc["top"] + loc["height"] / 2
+        end_x = target_rect["left"] + target_rect["width"] / 2
+        # Dépose au 1er quart de l'item cible en remontant (avant lui), au 3e quart en descendant
+        # (après lui) : évite les oscillations cdkDropList quand le point de dépôt tombe pile à
+        # la frontière entre deux items.
+        if clamped_target < cur_idx:
+            end_y = target_rect["top"] + target_rect["height"] * 0.25
+        else:
+            end_y = target_rect["top"] + target_rect["height"] * 0.75
+
+        try:
+            driver.mouse.move(int(start_x), int(start_y))
+            driver.mouse.down()
+            steps = 10
+            for step in range(1, steps + 1):
+                ix = int(start_x + ((end_x - start_x) * step) / steps)
+                iy = int(start_y + ((end_y - start_y) * step) / steps)
+                driver.mouse.move(ix, iy)
+                time.sleep(0.02)
+            time.sleep(0.05)
+            driver.mouse.up()
+        except Exception as e:
+            log_debug("[TARGET_DEBUG]", f"aa_ranking_dragdrop: attempt={attempt} drag_error={_short_exc(e)}")
+            continue
+
+        time.sleep(0.2)
+        after = _aa_ranking_dragdrop_locate(driver, drop_list_xpath, label)
+        if after and after["index"] == target_index:
+            log_debug("[TARGET_DEBUG]", f"aa_ranking_dragdrop: attempt={attempt} ok label={label!r} index={after['index']}")
+            return True
+        log_debug(
+            "[TARGET_DEBUG]",
+            f"aa_ranking_dragdrop: attempt={attempt} verify_failed label={label!r} "
+            f"index={(after or {}).get('index')} expected={target_index}",
+        )
+
+    return False
 
 
 def _apply_by_target_id(
@@ -933,7 +1168,7 @@ def _apply_by_target_id(
         # NEW: si le registry dit "pas d'iframe", on s'assure de revenir au default_content
         if not frame_chain:
             try:
-                driver.switch_to.default_content()
+                pass  # Playwright: page is always main frame
             except Exception:
                 pass
 
@@ -972,15 +1207,14 @@ def _apply_by_target_id(
                     log_debug("[TARGET_DEBUG]", f"toluna_runtime_answerrow cache hit target_id={target_id}")
 
                 try:
-                    data = driver.execute_script(
-                        r"""
+                    data = value.evaluate("""(_el) => {
                         const norm = s => (s || '').toLowerCase().normalize('NFKC')
                           .replace(/\u00A0/g, ' ')
                           .replace(/[»«\u201c\u201d"'›→·•:]/g, '')
                           .replace(/\s+/g, ' ')
                           .trim();
 
-                        const needle = norm(arguments[0]);
+                        const needle = norm(_el);
                         const rows = Array.from(document.querySelectorAll("[data-aut='Runtime_AnswerRow']"));
                         if (!needle) return { ok: false, reason: 'empty_needle' };
                         if (rows.length < 2) return { ok: false, reason: 'no_runtime_rows' };
@@ -1022,9 +1256,7 @@ def _apply_by_target_id(
                           clsBefore: inner.className || '',
                           alreadyChecked: alreadyChecked
                         };
-                        """,
-                        value,
-                    )
+}""")
                 except Exception as e:
                     log_debug("[TARGET_DEBUG]", f"toluna_runtime_answerrow probe failed: {type(e).__name__}: {e}")
                     return False
@@ -1050,13 +1282,13 @@ def _apply_by_target_id(
                     return False
 
                 try:
-                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", row_el)
+                    driver.evaluate("(e) => e.scrollIntoView({block:'center'})",row_el)
                     try:
                         row_el.click()
                     except Exception:
-                        ActionChains(driver).move_to_element(row_el).click().perform()
+                        row_el.hover(); row_el.click()
                     time.sleep(0.15)
-                    cls_after = driver.execute_script("return arguments[0].className || '';", inner_el)
+                    cls_after = inner_el.evaluate("e => e.className || ''")
                 except Exception as e:
                     log_debug("[TARGET_DEBUG]", f"toluna_runtime_answerrow click failed label={value!r} err={type(e).__name__}: {e}")
                     return False
@@ -1070,8 +1302,13 @@ def _apply_by_target_id(
                 return False
 
             def _find_best_visible(xpath: str):
+                # Résout le frame actif (positionné par switch_to_frame_chain juste avant
+                # l'appel à _apply_in_current_context) : driver.query_selector_all opère
+                # toujours sur le document racine, indépendamment de driver._current_frame,
+                # ce qui faisait échouer toute recherche xpath sur une page en frameset.
+                _search_ctx = getattr(driver, "_current_frame", driver)
                 try:
-                    cands = driver.find_elements(By.XPATH, xpath)
+                    cands = _search_ctx.query_selector_all(xpath)
                 except Exception:
                     cands = []
 
@@ -1080,7 +1317,7 @@ def _apply_by_target_id(
 
                 def _rect_ok(el) -> bool:
                     try:
-                        r = el.rect or {}
+                        r = el.bounding_box() or {}
                         return (r.get("width", 0) or 0) > 2 and (r.get("height", 0) or 0) > 2
                     except Exception:
                         return False
@@ -1088,7 +1325,7 @@ def _apply_by_target_id(
                 def _click_priority(el) -> int:
                     """Priorise les nœuds réellement cliquables pour radios/checkbox matrix."""
                     try:
-                        tag = (el.tag_name or "").lower()
+                        tag = (el.evaluate("e => (e.tagName || '').toLowerCase()") or "")
                     except Exception:
                         tag = ""
                     try:
@@ -1116,7 +1353,7 @@ def _apply_by_target_id(
                 visible_rect = []
                 for c in cands:
                     try:
-                        if c.is_displayed() and _rect_ok(c):
+                        if c.is_visible() and _rect_ok(c):
                             visible_rect.append((_click_priority(c), c))
                     except Exception:
                         continue
@@ -1128,7 +1365,7 @@ def _apply_by_target_id(
                 visible_any = []
                 for c in cands:
                     try:
-                        if c.is_displayed():
+                        if c.is_visible():
                             visible_any.append((_click_priority(c), c))
                     except Exception:
                         continue
@@ -1142,23 +1379,23 @@ def _apply_by_target_id(
             def _wait_checked(input_id: str | None, input_name: str | None, timeout_s: float = 1.2) -> bool:
                 import time
                 end = time.time() + timeout_s
+                # Même raison que _find_best_visible ci-dessus : vérifier .checked sur
+                # driver directement lirait le document racine, pas le frame où le clic
+                # vient d'avoir lieu.
+                _verify_ctx = getattr(driver, "_current_frame", driver)
 
                 while time.time() < end:
                     try:
                         if input_id:
-                            ok = driver.execute_script(
-                                "var e=document.getElementById(arguments[0]); return !!(e && e.checked);",
-                                input_id,
-                            )
+                            ok = _verify_ctx.evaluate("(id) => { var e=document.getElementById(id); return !!(e && e.checked); }", input_id)
                             if ok:
                                 return True
 
                         if input_name:
-                            ok = driver.execute_script(
-                                "return !!document.querySelector("
-                                "  \"input[type='radio'][name=\\\"\"+arguments[0]+\"\\\"]:checked, \" +"
-                                "  \"input[type='checkbox'][name=\\\"\"+arguments[0]+\"\\\"]:checked\""
-                                ");",
+                            ok = _verify_ctx.evaluate(
+                                "(n) => !!document.querySelector("
+                                "  `input[type='radio'][name='${n}']:checked,`"
+                                "  +` input[type='checkbox'][name='${n}']:checked`)",
                                 input_name,
                             )
                             if ok:
@@ -1209,7 +1446,7 @@ def _apply_by_target_id(
                     if node is None:
                         return False
                     try:
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", node)
+                        driver.evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",node)
                     except Exception:
                         pass
                     try:
@@ -1217,7 +1454,7 @@ def _apply_by_target_id(
                         return True
                     except Exception:
                         try:
-                            driver.execute_script("arguments[0].click();", node)
+                            driver.evaluate("(e) => e.click()",node)
                             return True
                         except Exception:
                             return False
@@ -1231,15 +1468,12 @@ def _apply_by_target_id(
                 initial_checked_id = None
                 if input_name:
                     try:
-                        initial_checked_id = driver.execute_script(
-                            """
-                            const n = arguments[0];
+                        initial_checked_id = input_name.evaluate("""(_el) => {
+                            const n = _el;
                             if (!n) return null;
                             const sel = document.querySelector("input[type='radio'][name='" + n + "']:checked");
                             return sel ? (sel.id || null) : null;
-                            """,
-                            input_name,
-                        )
+}""")
                     except Exception:
                         initial_checked_id = None
 
@@ -1256,15 +1490,12 @@ def _apply_by_target_id(
                 end = time.time() + 1.2
                 while time.time() < end:
                     try:
-                        checked_id = driver.execute_script(
-                            """
-                            const n = arguments[0];
+                        checked_id = input_name.evaluate("""(_el) => {
+                            const n = _el;
                             if (!n) return null;
                             const sel = document.querySelector("input[type='radio'][name='" + n + "']:checked");
                             return sel ? (sel.id || null) : null;
-                            """,
-                            input_name,
-                        )
+}""")
                     except Exception:
                         checked_id = None
 
@@ -1309,37 +1540,86 @@ def _apply_by_target_id(
                         log_debug("[TARGET_DEBUG]", f"target_id='{target_id}' kind='{kind}' itype='{resolved_itype}' value='{value}' -> purespectrum xpath dropdown option introuvable")
                     return False
 
-                def _click_xpath(xpath: str) -> bool:
+                def _pw_xpath(raw_xpath: str) -> str:
+                    # Playwright n'auto-détecte le moteur xpath que pour les
+                    # sélecteurs commençant par "//" ou ".." ; un xpath absolu
+                    # "/html/body/..." (format généré par l'extracteur pour ce
+                    # widget) est sinon interprété comme du CSS et lève une
+                    # exception de parsing (cf. diagnostic : query_selector_all
+                    # "Unexpected token /"). Préfixe explicite "xpath=" requis,
+                    # même convention que le reste du fichier (cf. dropdown_block_resolver.py).
+                    s = (raw_xpath or "").strip()
+                    if s and not s.startswith(("xpath=", "//", "..")):
+                        s = "xpath=" + s
+                    return s
+
+                def _click_xpath(xpath: str, label: str = "") -> bool:
                     if not xpath:
                         return False
+                    xpath = _pw_xpath(xpath)
                     node = _find_best_visible(xpath)
+                    node_source = "find_best_visible"
                     if node is None:
                         try:
-                            cands = driver.find_elements(By.XPATH, xpath)
-                            node = cands[0] if cands else None
-                        except Exception:
-                            node = None
+                            cands = driver.query_selector_all(xpath)
+                        except Exception as e_qsa:
+                            cands = []
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"purespectrum _click_xpath label='{label}' query_selector_all raised {type(e_qsa).__name__}: {e_qsa}")
+                        node = cands[0] if cands else None
+                        node_source = "query_selector_all_fallback"
                     if node is None:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"purespectrum _click_xpath label='{label}' no node resolved by xpath (find_best_visible and query_selector_all fallback both empty)")
                         return False
                     try:
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", node)
+                        driver.evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",node)
                     except Exception:
                         pass
                     try:
                         node.click()
                         return True
-                    except Exception:
+                    except Exception as e_native:
                         try:
-                            driver.execute_script("arguments[0].click();", node)
+                            driver.evaluate("(e) => e.click()",node)
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"purespectrum _click_xpath label='{label}' native click raised {type(e_native).__name__}: {e_native} -- JS click fallback succeeded (node_source={node_source})")
                             return True
-                        except Exception:
+                        except Exception as e_js:
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"purespectrum _click_xpath label='{label}' node resolved (node_source={node_source}) but both clicks failed: native={type(e_native).__name__}: {e_native} | js={type(e_js).__name__}: {e_js}")
                             return False
 
                 if toggle_xpath:
-                    _click_xpath(toggle_xpath)
-                    time.sleep(0.1)
+                    if not _click_xpath(toggle_xpath, label="toggle"):
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"target_id='{target_id}' value='{value}' -> purespectrum dropdown toggle click failed")
+                        return False
 
-                clicked = _click_xpath(xp)
+                    # Le menu ng-bootstrap s'ouvre de façon asynchrone (pas de garantie
+                    # qu'il soit ouvert juste après le clic) : on attend que l'option
+                    # ciblée soit effectivement visible plutôt qu'une pause fixe non
+                    # asservie à l'état réel du dropdown. Budget borné, abandon loggé.
+                    _menu_open_max_attempts = 20
+                    _menu_open_poll_s = 0.05
+                    _xp_pw = _pw_xpath(xp)
+                    menu_open = False
+                    for _ in range(_menu_open_max_attempts):
+                        opt_node = _find_best_visible(_xp_pw)
+                        try:
+                            if opt_node is not None and opt_node.is_visible():
+                                menu_open = True
+                                break
+                        except Exception:
+                            pass
+                        time.sleep(_menu_open_poll_s)
+
+                    if not menu_open:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"target_id='{target_id}' value='{value}' -> purespectrum dropdown menu did not open (budget exhausted)")
+                        return False
+
+                clicked = _click_xpath(xp, label="option")
                 if clicked:
                     return True
 
@@ -1384,14 +1664,14 @@ def _apply_by_target_id(
                     node = _find_best_visible(xpath)
                     if node is None:
                         try:
-                            cands = driver.find_elements(By.XPATH, xpath)
+                            cands = driver.query_selector_all(xpath)
                             node = cands[0] if cands else None
                         except Exception:
                             node = None
                     if node is None:
                         return False
                     try:
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", node)
+                        driver.evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",node)
                     except Exception:
                         pass
                     try:
@@ -1399,7 +1679,7 @@ def _apply_by_target_id(
                         return True
                     except Exception:
                         try:
-                            driver.execute_script("arguments[0].click();", node)
+                            driver.evaluate("(e) => e.click()",node)
                             return True
                         except Exception:
                             return False
@@ -1416,23 +1696,20 @@ def _apply_by_target_id(
                     if not xpath:
                         return False
                     try:
-                        cands = driver.find_elements(By.XPATH, xpath)
+                        cands = driver.query_selector_all(xpath)
                         node = cands[0] if cands else None
                     except Exception:
                         node = None
                     if node is None:
                         return False
                     try:
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", node)
+                        driver.evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",node)
                     except Exception:
                         pass
                     # Tenter mousedown puis click comme fallback
                     dispatched = False
                     try:
-                        driver.execute_script(
-                            "arguments[0].dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window}));",
-                            node,
-                        )
+                        node.evaluate("(_el) => { _el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window})); }")
                         dispatched = True
                     except Exception:
                         pass
@@ -1442,7 +1719,7 @@ def _apply_by_target_id(
                             dispatched = True
                         except Exception:
                             try:
-                                driver.execute_script("arguments[0].click();", node)
+                                driver.evaluate("(e) => e.click()",node)
                                 dispatched = True
                             except Exception:
                                 pass
@@ -1453,18 +1730,15 @@ def _apply_by_target_id(
                         _dl = time.time() + 0.6
                         while time.time() < _dl:
                             try:
-                                confirmed = driver.execute_script(
-                                    """
-                                    var ds = arguments[0];
+                                confirmed = _rps_ds.evaluate("""(_el) => {
+                                    var ds = _el;
                                     var inp = document.querySelector(
                                         "div[data-selector='" + ds + "'] input.hold-model"
                                     );
                                     if (!inp) return false;
                                     return inp.classList.contains('ng-valid') &&
                                            (inp.value || '').trim() !== '';
-                                    """,
-                                    _rps_ds,
-                                )
+}""")
                                 if confirmed:
                                     return True
                             except Exception:
@@ -1480,14 +1754,36 @@ def _apply_by_target_id(
                     _deadline = time.time() + 1.5
                     while time.time() < _deadline:
                         try:
-                            cands = driver.find_elements(By.XPATH, xp)
+                            cands = driver.query_selector_all(xp)
                             if cands:
-                                r = cands[0].rect or {}
+                                r = cands[0].bounding_box() or {}
                                 if (r.get("width") or 0) > 2 and (r.get("height") or 0) > 2:
                                     break
                         except Exception:
                             pass
                         time.sleep(0.1)
+
+                # Préambule mouvement de souris synthétique (Survey/synthetic_cursor.py) avant
+                # le clic qui détermine réellement la réponse (_mousedown_rps_option). rps-select
+                # (Toluna/SurveyRouter) ne passe jamais par _click_candidate (dispatch dédié
+                # ci-dessus) : résolution de nœud distincte et redondante avec celle interne à
+                # _mousedown_rps_option, nécessaire pour ne pas modifier son corps. Best-effort,
+                # jamais un remplacement : le résultat n'altère pas l'appel existant ci-dessous.
+                # move_only (jamais move_and_click) : le clic réel doit rester porté
+                # exclusivement par _mousedown_rps_option ci-dessous, sinon la cible reçoit 2
+                # clics réels indépendants.
+                #if payload.get("rps_select"):
+                #    try:
+                #        from Survey.synthetic_cursor import move_only
+                #        _rps_cands = driver.query_selector_all(xp)
+                #        _rps_node = _rps_cands[0] if _rps_cands else None
+                #        if _rps_node is not None:
+                #            _syn_ok = move_only(driver, _rps_node)
+                #            if debug_target:
+                #                log_debug("[DOM_RPS_SELECT]", f"synthetic_cursor preamble ok={_syn_ok} before option click")
+                #    except Exception as _syn_exc:
+                #        if debug_target:
+                #            log_debug("[DOM_RPS_SELECT]", f"synthetic_cursor preamble exception={_short_exc(_syn_exc)}")
 
                 clicked = _mousedown_rps_option(xp)
                 if clicked:
@@ -1560,13 +1856,10 @@ def _apply_by_target_id(
                     return False
 
                 try:
-                    from selenium.webdriver.common.keys import Keys
-                    row_el = driver.find_element(By.CSS_SELECTOR, f"[id='{row_id}']")
-                    handle_el = row_el.find_element(By.CSS_SELECTOR, ".cf-slider__handle[role='slider']")
+                    row_el = driver.query_selector(f"[id='{row_id}']")
+                    handle_el = row_el.query_selector(".cf-slider__handle[role='slider']")
 
-                    driver.execute_script(
-                        "arguments[0].scrollIntoView({block:'center',inline:'center'});", handle_el
-                    )
+                    driver.evaluate("(e) => e.scrollIntoView({block:'center',inline:'center'})", handle_el)
                     time.sleep(0.05)
 
                     min_v = int(handle_el.get_attribute("aria-valuemin") or 0)
@@ -1587,26 +1880,24 @@ def _apply_by_target_id(
 
                     # .cf-slider__no-value n'a PAS de tabindex en état initial → pas de listeners actifs.
                     # Il ne gagne tabindex="0" qu'APRÈS activation, pour permettre de revenir à no-value.
-                    # Seul le handle est interactif : focus JS + send_keys arrow keys directement.
+                    # Seul le handle est interactif : focus JS + press arrow keys directement.
                     # La 1ère pression depuis -1 active le composant (→0), les suivantes naviguent.
                     # delta = desired - (-1) = desired+1 pressions pour atteindre desired depuis -1.
-                    driver.execute_script("arguments[0].focus();", handle_el)
+                    handle_el.evaluate("(e) => e.focus()")
                     time.sleep(0.05)
 
                     delta = desired - current
                     if delta != 0:
-                        key = Keys.ARROW_RIGHT if delta > 0 else Keys.ARROW_LEFT
+                        key = "ArrowRight" if delta > 0 else "ArrowLeft"
                         # budget : crans normaux + 1 cran d'activation depuis -1
                         max_steps = (max_v - min_v) + 2
                         for _ in range(min(abs(delta), max_steps)):
-                            handle_el.send_keys(key)
+                            handle_el.press(key)
                             time.sleep(0.05)  # laisser le composant Confirmit traiter le keydown
 
                     # Relire depuis le DOM : sécurité stale reference si re-render à l'activation
-                    handle_el = row_el.find_element(By.CSS_SELECTOR, ".cf-slider__handle[role='slider']")
-                    now_val = driver.execute_script(
-                        "return arguments[0].getAttribute('aria-valuenow');", handle_el
-                    )
+                    handle_el = row_el.query_selector(".cf-slider__handle[role='slider']")
+                    now_val = handle_el.evaluate("(_el) => { return _el.getAttribute('aria-valuenow'); }")
                 except Exception as e:
                     log_debug("[TARGET_DEBUG]", f"slider-grid row skipped row_id={row_id} value='{value}' reason='exception:{_short_exc(e)}'")
                     return False
@@ -1630,9 +1921,8 @@ def _apply_by_target_id(
                 if _input_name_mx:
                     _mx_card_el = None
                     try:
-                        _mx_card_el = driver.execute_script(
-                            r"""
-                            const rawValue = arguments[0];
+                        _mx_card_el = value.evaluate("""(_el) => {
+                            const rawValue = _el;
                             if (!rawValue) return null;
                             const normVal = rawValue.replace(/\s+/g, ' ').trim().toLowerCase();
 
@@ -1654,18 +1944,13 @@ def _apply_by_target_id(
                                 }
                             }
                             return null;
-                            """,
-                            value,
-                        )
+}""")
                     except Exception:
                         _mx_card_el = None
 
                     if _mx_card_el is not None:
                         try:
-                            driver.execute_script(
-                                "arguments[0].scrollIntoView({block:'center', inline:'center'});",
-                                _mx_card_el,
-                            )
+                            _mx_card_el.evaluate("(_el) => { _el.scrollIntoView({block:'center', inline:'center'}); }")
                         except Exception:
                             pass
 
@@ -1677,7 +1962,7 @@ def _apply_by_target_id(
                             pass
                         if not _mx_clicked:
                             try:
-                                ActionChains(driver).move_to_element(_mx_card_el).click().perform()
+                                _mx_card_el.hover(); _mx_card_el.click()
                                 _mx_clicked = True
                             except Exception:
                                 pass
@@ -1687,10 +1972,8 @@ def _apply_by_target_id(
                             _mx_selected = False
                             while time.time() - _t0_mx < 1.2:
                                 try:
-                                    _mx_selected = bool(driver.execute_script(
-                                        "return arguments[0].classList"
-                                        " && arguments[0].classList.contains('mx-card-selected');",
-                                        _mx_card_el,
+                                    _mx_selected = bool(_mx_card_el.evaluate(
+                                        "(_el) => _el.classList && _el.classList.contains('mx-card-selected')"
                                     ))
                                     if _mx_selected:
                                         break
@@ -1777,7 +2060,7 @@ def _apply_by_target_id(
                             log_debug("[TARGET_DEBUG]", f"nfield_dragndrop_hidden: option not found value={value!r} opt_map={list(_dnd_opt_map)}")
                         return False
                 try:
-                    _dnd_cands = driver.find_elements(By.XPATH, _dnd_xp)
+                    _dnd_cands = driver.query_selector_all(_dnd_xp)
                     _dnd_radio = _dnd_cands[0] if _dnd_cands else None
                 except Exception:
                     _dnd_radio = None
@@ -1786,16 +2069,13 @@ def _apply_by_target_id(
                         log_debug("[TARGET_DEBUG]", f"nfield_dragndrop_hidden: element not found xpath={_dnd_xp}")
                     return False
                 try:
-                    driver.execute_script(
-                        """
-                        const inp = arguments[0];
+                    _dnd_radio.evaluate("""(_el) => {
+                        const inp = _el;
                         try { inp.checked = true; } catch(e) {}
                         inp.dispatchEvent(new Event('input',  {bubbles:true}));
                         inp.dispatchEvent(new Event('change', {bubbles:true}));
                         inp.dispatchEvent(new MouseEvent('click', {bubbles:true}));
-                        """,
-                        _dnd_radio,
-                    )
+}""")
                     log_info("[TARGET]", f"apply ok=true strategy=nfield_dragndrop_hidden value={value!r}")
                     return True
                 except Exception as _dnd_e:
@@ -1810,7 +2090,7 @@ def _apply_by_target_id(
             opt_map = payload.get("option_xpath_map") or {}
             if payload.get("kantar_rowrank") and opt_map and resolved_itype == "checkbox":
                 try:
-                    _rr_has_grid = bool(driver.find_elements(By.CSS_SELECTOR, ".__flexgrid_row"))
+                    _rr_has_grid = bool(driver.query_selector_all(".__flexgrid_row"))
                 except Exception:
                     _rr_has_grid = False
 
@@ -1843,7 +2123,7 @@ def _apply_by_target_id(
 
                     # 3) Résoudre l'input.mrEdit → lire rowid (0-based index de la carte)
                     try:
-                        mr_input = driver.find_element(By.XPATH, xp_rr)
+                        mr_input = driver.query_selector(xp_rr)
                         rowid_str = (mr_input.get_attribute("rowid") or "").strip()
                         rowid = int(rowid_str) if rowid_str.isdigit() else None
                     except Exception as _rr_fe:
@@ -1860,9 +2140,8 @@ def _apply_by_target_id(
                     #    scrollIntoView inclus pour garantir que l'élément est dans le viewport
                     #    avant que ActionChains tente le clic (évite les faux-positifs silencieux).
                     try:
-                        overlay = driver.execute_script(
-                            """
-                            var rowid = arguments[0];
+                        overlay = rowid.evaluate("""(_el) => {
+                            var rowid = _el;
                             var grids = document.querySelectorAll('.__flexgrid_row');
                             for (var g = 0; g < grids.length; g++) {
                                 var cards = grids[g].querySelectorAll(':scope > div');
@@ -1877,9 +2156,7 @@ def _apply_by_target_id(
                                 }
                             }
                             return null;
-                            """,
-                            rowid,
-                        )
+}""")
                     except Exception as _rr_oe:
                         overlay = None
                         if debug_target:
@@ -1895,7 +2172,7 @@ def _apply_by_target_id(
                     _time_rr.sleep(0.1)  # laisse le scroll se stabiliser
                     clicked_rr = False
                     try:
-                        ActionChains(driver).move_to_element(overlay).click().perform()
+                        overlay.hover(); overlay.click()
                         clicked_rr = True
                     except Exception as _rr_ce:
                         if debug_target:
@@ -1907,9 +2184,8 @@ def _apply_by_target_id(
                     # 5b) Vérification DOM : badge bleu (rgb(64,81,188)) sur le div de transition interne.
                     _time_rr.sleep(0.35)  # CSS transition 250 ms
                     try:
-                        _rr_verified = bool(driver.execute_script(
-                            """
-                            var rowid = arguments[0];
+                        _rr_verified = bool(rowid.evaluate("""(_el) => {
+                            var rowid = _el;
                             var grids = document.querySelectorAll('.__flexgrid_row');
                             for (var g = 0; g < grids.length; g++) {
                                 var cards = grids[g].querySelectorAll(':scope > div');
@@ -1920,18 +2196,15 @@ def _apply_by_target_id(
                                 }
                             }
                             return false;
-                            """,
-                            rowid,
-                        ))
+}"""))
                     except Exception:
                         _rr_verified = True  # impossibilité de vérifier → on suppose ok
                     log_debug("[TARGET_DEBUG]", f"kantar_rowrank: verify={'ok' if _rr_verified else 'ko'} rowid={rowid} ordinal={ordinal}")
 
                     # 6) Filet de sécurité : si le widget n'a pas écrit la valeur, écrire ordinal
                     try:
-                        driver.execute_script(
-                            """
-                            var inp = arguments[0], rank = arguments[1];
+                        inp.evaluate("""(_el) => {
+                            var inp = _el, rank = _arg1;
                             if (!inp.value) {
                                 inp.value = rank;
                                 ['input','change'].forEach(function(n){
@@ -1961,6 +2234,74 @@ def _apply_by_target_id(
                 and not payload.get("confirmit_wix_checkbox_grid")
                 and not payload.get("confirmit_wix_fieldset_radio")
             )
+            # Guard alchemer_rank_dragdrop : 1 bloc checkbox, N items à classer via inputs text aria-hidden.
+            # Placé avant le bloc opt_map car le payload ne contient pas d'option_xpath_map (opt_map serait vide).
+            # value = texte de l'item retourné par GPT ; ordinal = sa position 1-based dans le plan.
+            # Interaction : set input.value = ordinal via JS + dispatch input/change (Alchemer jQuery UI sortable).
+            if payload.get("alchemer_rank_dragdrop") and resolved_itype == "checkbox":
+                _ar_item_map = payload.get("item_input_map") or {}
+                if not _ar_item_map:
+                    return False
+
+                _ar_inp_id = _ar_item_map.get(v_norm) or (_ar_item_map.get(v_fold) if v_fold else None)
+                if not _ar_inp_id:
+                    for _ar_k, _ar_v in _ar_item_map.items():
+                        _ar_kn = _norm_lc(_ar_k)
+                        if v_norm and (v_norm == _ar_kn or v_norm in _ar_kn or _ar_kn in v_norm):
+                            _ar_inp_id = _ar_v
+                            break
+
+                if not _ar_inp_id:
+                    log_debug("[TARGET_DEBUG]", f"alchemer_rank_dragdrop: item introuvable value={value!r}")
+                    return False
+
+                _ar_ordinal = int(getattr(driver, "_alchemer_rank_dragdrop_ordinal", 1) or 1)
+                # inp_id and ordinal are embedded directly (inp_id is a controlled DOM attribute, ordinal is int)
+                _ar_js_id = _ar_inp_id.replace("'", "\\'")
+                _ar_ok = bool(driver.evaluate(f"""() => {{
+                    try {{
+                        var inp = document.getElementById('{_ar_js_id}');
+                        if (!inp) return false;
+                        inp.value = '{_ar_ordinal}';
+                        inp.dispatchEvent(new Event('input', {{bubbles: true}}));
+                        inp.dispatchEvent(new Event('change', {{bubbles: true}}));
+                        return true;
+                    }} catch (e) {{ return false; }}
+                }}"""))
+
+                log_debug(
+                    "[TARGET_DEBUG]",
+                    f"alchemer_rank_dragdrop: {'ok' if _ar_ok else 'ko'} item={value!r} rank={_ar_ordinal} inp={_ar_inp_id!r}",
+                )
+                return _ar_ok
+
+            # Guard aa_ranking_dragdrop : 1 bloc checkbox, N items à classer par glisser-déposer
+            # (Angular CDK cdkDropList, Ask&Answer/FirstInsight). Placé avant le bloc opt_map :
+            # l'interaction est un drag pointer, pas un clic sur option_xpath_map.
+            # value = texte de l'item retourné par IA ; ordinal = sa position 1-based dans le plan
+            # (calculé dans execute_actions_plan, comme alchemer_rank_dragdrop ci-dessus).
+            if payload.get("aa_ranking_dragdrop") and resolved_itype == "checkbox":
+                _ard_drop_xp = payload.get("aa_ranking_dragdrop_drop_list_xpath") or ""
+                if not _ard_drop_xp:
+                    log_debug("[TARGET_DEBUG]", "aa_ranking_dragdrop: drop_list_xpath manquant")
+                    return False
+
+                _ard_ordinal = int(getattr(driver, "_aa_ranking_dragdrop_ordinal", 1) or 1)
+                _ard_target_index = max(0, _ard_ordinal - 1)
+
+                _ard_ok = _aa_ranking_dragdrop_apply(driver, _ard_drop_xp, value, _ard_target_index)
+
+                log_debug(
+                    "[TARGET_DEBUG]",
+                    f"aa_ranking_dragdrop: {'ok' if _ard_ok else 'ko'} item={value!r} target_index={_ard_target_index}",
+                )
+                if _ard_ok:
+                    log_info(
+                        "[TARGET]",
+                        f"apply ok=true strategy=aa_ranking_dragdrop item={value!r} target_index={_ard_target_index}",
+                    )
+                return _ard_ok
+
             if opt_map and resolved_itype in ("radio", "checkbox") and not _skip_opt_map_for_cached_checkbox:
 
                 # Toluna Runtime AnswerRow: chemin DOM custom prioritaire et idempotent.
@@ -1981,6 +2322,38 @@ def _apply_by_target_id(
                         f"kantar_rowpicker_radio_dispatch: {'ok' if _rp_ok else 'ko'} value={value!r}",
                     )
                     return bool(_rp_ok)
+
+                # MUI dialog-question option (ipsos-norm survey) : div[role='button'] sans
+                # input natif/name/id stable, libellé porté par '.option-text'. La résolution
+                # XPath (option_xpath_map) échoue de façon persistante sur ce widget malgré une
+                # correspondance textuelle apparente — flag posé par le pipeline button_group
+                # générique (dom_analyzer.py, _is_mui_dialog_question_optimal_container).
+                # Bypass total du chemin XPath/_find_best_visible : résolution par texte
+                # normalisé en JS (click_mui_dialog_question_option), même famille de fix que
+                # kantar_rowpicker_radio ci-dessus.
+                if payload.get("mui_dialog_question_option") and resolved_itype == "radio":
+                    from Survey.input_radio import click_mui_dialog_question_option
+                    _mdq_ok = click_mui_dialog_question_option(driver, value)
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        f"mui_dialog_question_option_dispatch: {'ok' if _mdq_ok else 'ko'} value={value!r}",
+                    )
+                    return bool(_mdq_ok)
+
+                # QDTech/KuaiJueCe qd-radio icon (sans input natif) : le XPath positionnel
+                # posé dans option_xpath_map par _extract_qdtech_qdradio_icon_choice_blocks
+                # ne résout plus rien au moment du clic (Vue re-rend l'icône unselect/select).
+                # Bypass total du chemin XPath/_find_best_visible : résolution par texte
+                # normalisé en JS (click_qdtech_qdradio_icon), même famille de fix que
+                # kantar_rowpicker_radio/mui_dialog_question_option ci-dessus.
+                if payload.get("qdtech_qdradio_icon") and resolved_itype == "radio":
+                    from Survey.input_radio import click_qdtech_qdradio_icon
+                    _qdr_ok = click_qdtech_qdradio_icon(driver, value)
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        f"qdtech_qdradio_icon_dispatch: {'ok' if _qdr_ok else 'ko'} value={value!r}",
+                    )
+                    return bool(_qdr_ok)
 
                 # Guard decipher_ranksort_dropdown : 1 bloc checkbox, N items à classer.
                 # value = texte de l'item retourné par GPT ; ordinal = sa position (1-based) dans la réponse.
@@ -2019,9 +2392,8 @@ def _apply_by_target_id(
                     _rs_sel_name = (_rs_sel_info.get("sel_name") or "").strip()
 
                     # Sélection via JS (fiable sur select display:none)
-                    _rs_ok = bool(driver.execute_script(
-                        """
-                        var sel_id = arguments[0], sel_name = arguments[1], rank_text = arguments[2];
+                    _rs_ok = bool(driver.evaluate("""() => {
+                        var sel_id = _el, sel_name = _arg1, rank_text = arguments[2];
                         var sel = sel_id ? document.getElementById(sel_id)
                                         : document.querySelector('select[name="' + sel_name + '"]');
                         if (!sel) return false;
@@ -2047,6 +2419,24 @@ def _apply_by_target_id(
 
                 # 1) lookup direct
                 xp = opt_map.get(v_norm) or (opt_map.get(v_fold) if v_fold else None)
+
+                # 1.5) lookup exact sur formes repliées (accents + style d'apostrophe
+                # normalisés des DEUX côtés). Confirmé sur DOM de référence (widget Decipher
+                # sq-cardrating, ans183415) : la même échelle mélange apostrophe droite
+                # ("Pas d'accord") et typographique ("D'accord", "Entièrement d'accord") —
+                # les clés d'option_xpath_map gardent l'apostrophe DOM telle quelle
+                # (_norm_lc ne la replie pas), donc si la valeur reçue utilise l'autre
+                # style, l'étape 1 rate. Sans cette passe dédiée, le repli sous-chaîne de
+                # l'étape 2 peut alors matcher un candidat plus court AVANT d'atteindre le
+                # candidat correct selon l'ordre d'itération du dict (ex: "D'accord" étant
+                # une sous-chaîne repliée de "Entièrement d'accord"). Additive : ne s'active
+                # que si l'étape 1 a déjà échoué, et n'accepte qu'une égalité EXACTE sur la
+                # forme repliée — jamais moins précis que le substring de l'étape 2.
+                if not xp and v_fold:
+                    for k, x in opt_map.items():
+                        if k and _fold_norm_lc(k) == v_fold:
+                            xp = x
+                            break
 
                 # 2) lookup fuzzy (avec et sans accents)
                 if not xp:
@@ -2095,20 +2485,131 @@ def _apply_by_target_id(
                         log_debug("[TARGET_DEBUG]", f"target_id='{target_id}' kind='{kind}' itype='{resolved_itype}' value='{value}' -> option introuvable (opt_map={len(opt_map)})")
                     return False
 
+                # --- Confirmit/Wix "AnswerButtons" (confirmit-abtn) : variante sans <a> ---
+                # _extract_confirmit_wix_fieldset_radio_block construit xp en supposant un
+                # <a href="javascript:void(0)"> dans le <td> (layout classique). Sur la variante
+                # AnswerButtons (td.confirmit-abtn : <input hidden> + <label> dans
+                # div.confirmit-abtn-label, aucun <a>), ce xp ne résout jamais rien pour AUCUNE
+                # option -> _find_best_visible(xp) silencieux -> fallback générique radio_main
+                # non déterministe (clic par recherche de label pleine page, sans garantie de
+                # cibler la bonne option). Guard strict, additif : ne s'active QUE si le xp
+                # existant est introuvable ET que la structure confirmit-abtn est confirmée
+                # (label[for] dans un td.confirmit-abtn) ; sinon on retombe inchangé sur le
+                # chemin générique existant.
+                if payload.get("confirmit_wix_fieldset_radio") and resolved_itype == "radio":
+                    try:
+                        _a_cands = driver.query_selector_all(xp)
+                    except Exception:
+                        _a_cands = []
+                    if not _a_cands:
+                        _abtn_inp_id = None
+                        try:
+                            _m = re.search(r"@id=(['\"])(.*?)\1", xp)
+                            if _m:
+                                _abtn_inp_id = _m.group(2)
+                        except Exception:
+                            _abtn_inp_id = None
+                        _abtn_lbl = None
+                        if _abtn_inp_id:
+                            try:
+                                _abtn_lbl = driver.query_selector(
+                                    "xpath=" + f"//input[@id='{_abtn_inp_id}']/ancestor::td[contains(@class,'confirmit-abtn')][1]//label[@for='{_abtn_inp_id}']"
+                                )
+                            except Exception:
+                                _abtn_lbl = None
+                        if _abtn_lbl is not None:
+                            _abtn_clicked = False
+                            try:
+                                _abtn_lbl.click()
+                                _abtn_clicked = True
+                            except Exception:
+                                try:
+                                    driver.evaluate("(e) => e.click()", _abtn_lbl)
+                                    _abtn_clicked = True
+                                except Exception:
+                                    _abtn_clicked = False
+                            _abtn_ok = _abtn_clicked and _wait_checked(_abtn_inp_id, None)
+                            log_debug(
+                                "[TARGET_DEBUG]",
+                                f"confirmit_wix_fieldset_radio_abtn: {'ok' if _abtn_ok else 'ko'} id={_abtn_inp_id!r} clicked={_abtn_clicked}",
+                            )
+                            if _abtn_ok:
+                                log_info("[TARGET]", "apply ok=true strategy=confirmit_wix_fieldset_radio_abtn reason=input_checked")
+                                return True
+                            return False
+                        # structure abtn non confirmée (pas de label[for] trouvé) -> fall through inchangé
+
+                # --- Confirmit/Wix "AnswerButtons" (confirmit-abtn) : variante checkbox sans <a> ---
+                # Même structure DOM que le bloc radio ci-dessus (td.confirmit-abtn : <input hidden>
+                # + <label> dans div.confirmit-abtn-label, aucun <a>), mais pour un groupe checkbox
+                # (multi-select). Le xp hérité de _extract_confirmit_wix_fieldset_radio_block suppose
+                # toujours un <a> -> aucune stratégie de clic disponible pour ce type de groupe ->
+                # échec systématique sur chaque option. Stratégie nommée distincte, additive : ne
+                # touche pas au bloc radio ci-dessus ; ne s'active QUE si le xp existant est
+                # introuvable ET que la structure confirmit-abtn est confirmée (label[for] dans un
+                # td.confirmit-abtn).
+                if payload.get("confirmit_wix_fieldset_radio") and resolved_itype == "checkbox":
+                    try:
+                        _c_cands = driver.query_selector_all(xp)
+                    except Exception:
+                        _c_cands = []
+                    if not _c_cands:
+                        _cabtn_inp_id = None
+                        try:
+                            _m = re.search(r"@id=(['\"])(.*?)\1", xp)
+                            if _m:
+                                _cabtn_inp_id = _m.group(2)
+                        except Exception:
+                            _cabtn_inp_id = None
+                        _cabtn_lbl = None
+                        if _cabtn_inp_id:
+                            try:
+                                _cabtn_lbl = driver.query_selector(
+                                    "xpath=" + f"//input[@id='{_cabtn_inp_id}']/ancestor::td[contains(@class,'confirmit-abtn')][1]//label[@for='{_cabtn_inp_id}']"
+                                )
+                            except Exception:
+                                _cabtn_lbl = None
+                        if _cabtn_lbl is not None:
+                            _cabtn_clicked = False
+                            try:
+                                _cabtn_lbl.click()
+                                _cabtn_clicked = True
+                            except Exception:
+                                try:
+                                    driver.evaluate("(e) => e.click()", _cabtn_lbl)
+                                    _cabtn_clicked = True
+                                except Exception:
+                                    _cabtn_clicked = False
+                            _cabtn_ok = _cabtn_clicked and _wait_checked(_cabtn_inp_id, None)
+                            log_debug(
+                                "[TARGET_DEBUG]",
+                                f"confirmit_wix_fieldset_checkbox_abtn: {'ok' if _cabtn_ok else 'ko'} id={_cabtn_inp_id!r} clicked={_cabtn_clicked}",
+                            )
+                            if _cabtn_ok:
+                                log_info("[TARGET]", "apply ok=true strategy=confirmit_wix_fieldset_checkbox_abtn reason=input_checked")
+                                return True
+                            return False
+                        # structure abtn non confirmée (pas de label[for] trouvé) -> fall through inchangé
+
                 def _first_input_under(node):
                     try:
-                        if (node.tag_name or "").lower() == "input":
+                        if (node.evaluate("e => (e.tagName || '').toLowerCase()") or "") == "input":
                             return node
                     except Exception:
                         pass
                     try:
-                        return node.find_element(By.XPATH, ".//input[@type='radio' or @type='checkbox']")
+                        return node.query_selector(".//input[@type='radio' or @type='checkbox']")
                     except Exception:
                         return None
 
                 def _is_selected(inp):
                     try:
-                        return bool(inp and inp.is_selected())
+                        # is_checked() (pas is_selected(), inexistant sur ElementHandle/Locator
+                        # Playwright — legacy Selenium jamais migré ici, cf.
+                        # Utils/PLAYWRIGHT_NATIVE_MIGRATION.md) : seule méthode qui lit l'état
+                        # "checked" réel sans wait d'actionability/visibilité, donc valide aussi
+                        # pour les inputs natifs masqués en CSS (visibility:hidden, etc.).
+                        return bool(inp and inp.is_checked())
                     except Exception:
                         return False
 
@@ -2129,62 +2630,132 @@ def _apply_by_target_id(
                         # (ex: AngularJS ng-checked + label contenant un <a> où le modèle ng-model
                         # n'est pas forcément synchronisé tant que input/change n'ont pas été dispatchés).
                         try:
-                            if inp.is_selected() and not force_when_selected:
+                            if inp.is_checked() and not force_when_selected:
                                 return
                         except Exception:
                             pass
 
-                        driver.execute_script(
-                            """
-                            const inp = arguments[0];
-                            if (!inp) return;
-                            const type = (inp.type || '').toLowerCase();
-                            try { inp.checked = true; } catch(e) {}
-                            inp.dispatchEvent(new Event('input',  {bubbles:true}));
-                            inp.dispatchEvent(new Event('change', {bubbles:true}));
-                            // Pour checkbox, click peut retoggler via handlers. Pour radio, click aide souvent.
-                            if (type === 'radio') {
-                              inp.dispatchEvent(new MouseEvent('click', {bubbles:true}));
-                            }
-                            """,
-                            inp,
-                        )
+                        # [DIAG_CHECK_FORCE] instrumentation temporaire (diagnostic uniquement,
+                        # aucun changement de comportement) : capture explicite du résultat du
+                        # forçage JS + état checked (attribut vs propriété live) juste après,
+                        # au lieu de laisser l'exception passer sous silence.
+                        _diag_id = None
+                        try:
+                            _diag_id = (inp.get_attribute("id") or "").strip() or None
+                        except Exception:
+                            pass
+                        try:
+                            _diag_before = inp.evaluate(
+                                "(_el) => ({attr: _el.getAttribute('checked'), prop: !!_el.checked})"
+                            )
+                        except Exception as _diag_exc:
+                            _diag_before = None
+                            if debug_target:
+                                log_debug(
+                                    "[DIAG_CHECK_FORCE]",
+                                    f"pre-force state read failed id={_diag_id!r} "
+                                    f"{type(_diag_exc).__name__}: {_short_exc(_diag_exc)}",
+                                )
+                        if debug_target:
+                            log_debug(
+                                "[DIAG_CHECK_FORCE]",
+                                f"before force id={_diag_id!r} attr/prop={_diag_before!r}",
+                            )
+
+                        try:
+                            inp.evaluate("""(_el) => {
+                                const inp = _el;
+                                if (!inp) return;
+                                const type = (inp.type || '').toLowerCase();
+                                try { inp.checked = true; } catch(e) {}
+                                inp.dispatchEvent(new Event('input',  {bubbles:true}));
+                                inp.dispatchEvent(new Event('change', {bubbles:true}));
+                                if (type === 'radio') {
+                                  inp.dispatchEvent(new MouseEvent('click', {bubbles:true}));
+                                }
+}""")
+                        except Exception as _diag_force_exc:
+                            if debug_target:
+                                log_debug(
+                                    "[DIAG_CHECK_FORCE]",
+                                    f"force JS evaluate raised id={_diag_id!r} "
+                                    f"{type(_diag_force_exc).__name__}: {_short_exc(_diag_force_exc)}",
+                                )
+
+                        if debug_target:
+                            # Vérification via la référence déjà en main (inp)
+                            try:
+                                _diag_after_same_ref = inp.evaluate(
+                                    "(_el) => ({attr: _el.getAttribute('checked'), prop: !!_el.checked})"
+                                )
+                            except Exception as _diag_exc2:
+                                _diag_after_same_ref = None
+                                log_debug(
+                                    "[DIAG_CHECK_FORCE]",
+                                    f"post-force state read (same ref) failed id={_diag_id!r} "
+                                    f"{type(_diag_exc2).__name__}: {_short_exc(_diag_exc2)}",
+                                )
+                            log_debug(
+                                "[DIAG_CHECK_FORCE]",
+                                f"after force (same ref) id={_diag_id!r} attr/prop={_diag_after_same_ref!r}",
+                            )
+
+                            # Vérification indépendante : toute nouvelle requête DOM par id,
+                            # sans réutiliser la référence `inp` utilisée pour le forçage —
+                            # détecte une éventuelle divergence de référence (nœud remplacé/
+                            # re-rendu par le framework de la page entre le forçage et la lecture).
+                            if _diag_id:
+                                try:
+                                    _diag_fresh = driver.query_selector(f"[id='{_diag_id}']")
+                                    _diag_same_node = bool(
+                                        _diag_fresh is not None
+                                        and driver.evaluate(
+                                            "([a, b]) => a === b", [inp, _diag_fresh]
+                                        )
+                                    )
+                                    _diag_fresh_state = (
+                                        _diag_fresh.evaluate(
+                                            "(_el) => ({attr: _el.getAttribute('checked'), prop: !!_el.checked})"
+                                        )
+                                        if _diag_fresh is not None
+                                        else None
+                                    )
+                                    log_debug(
+                                        "[DIAG_CHECK_FORCE]",
+                                        f"post-force fresh requery id={_diag_id!r} "
+                                        f"found={_diag_fresh is not None} same_node={_diag_same_node} "
+                                        f"attr/prop={_diag_fresh_state!r}",
+                                    )
+                                except Exception as _diag_exc3:
+                                    log_debug(
+                                        "[DIAG_CHECK_FORCE]",
+                                        f"post-force fresh requery failed id={_diag_id!r} "
+                                        f"{type(_diag_exc3).__name__}: {_short_exc(_diag_exc3)}",
+                                    )
                     except Exception:
                         pass
 
                 def _cdp_click(el) -> bool:
-                    # Click "réel" via CDP (plus proche d'un user click)
+                    # Click via Playwright mouse (simule un user click réel)
                     try:
                         # IMPORTANT: certaines grilles (mat-table) scrollent horizontalement.
                         # On force le scroll dans les 2 axes pour éviter les éléments 0x0 / hors viewport.
                         try:
-                            driver.execute_script(
-                                "arguments[0].scrollIntoView({block:'center', inline:'center'});",
-                                el,
-                            )
+                            driver.evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})", el)
                         except Exception:
                             pass
 
-                        if not hasattr(driver, "execute_cdp_cmd"):
-                            if debug_target:
-                                log_debug("[TARGET_DEBUG]", "CDP click unavailable: driver has no execute_cdp_cmd()")
-                            return False
+                        bb = el.bounding_box() or {}
+                        x = int((bb.get("x") or 0) + (bb.get("width") or 0) / 2)
+                        y = int((bb.get("y") or 0) + (bb.get("height") or 0) / 2)
 
-                        rect = driver.execute_script(
-                            "const r = arguments[0].getBoundingClientRect();"
-                            "return {x:r.left + r.width/2, y:r.top + r.height/2, w:r.width, h:r.height};",
-                            el,
-                        )
-                        x = int(rect.get("x", 0))
-                        y = int(rect.get("y", 0))
-
-                        driver.execute_cdp_cmd("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y, "button": "none"})
-                        driver.execute_cdp_cmd("Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1})
-                        driver.execute_cdp_cmd("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1})
+                        driver.mouse.move(x, y)
+                        driver.mouse.down()
+                        driver.mouse.up()
                         return True
                     except Exception as e:
                         if debug_target:
-                            log_debug("[TARGET_DEBUG]", f"CDP click failed: {_short_exc(e)}")
+                            log_debug("[TARGET_DEBUG]", f"mouse click failed: {_short_exc(e)}")
                         return False
 
                 def _ensure_pre_clicks_ready(target_xpath: str) -> None:
@@ -2202,7 +2773,7 @@ def _apply_by_target_id(
                         cur = _find_best_visible(target_xpath)
                         if cur:
                             try:
-                                if cur.is_displayed():
+                                if cur.is_visible():
                                     return
                             except Exception:
                                 return
@@ -2224,7 +2795,7 @@ def _apply_by_target_id(
                                 pass
 
                             try:
-                                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", pre_el)
+                                driver.evaluate("(e) => e.scrollIntoView({block:'center'})",pre_el)
                             except Exception:
                                 pass
 
@@ -2232,7 +2803,7 @@ def _apply_by_target_id(
                                 pre_el.click()
                             except Exception:
                                 try:
-                                    driver.execute_script("arguments[0].click();", pre_el)
+                                    driver.evaluate("(e) => e.click()",pre_el)
                                 except Exception:
                                     continue
                             break
@@ -2246,7 +2817,7 @@ def _apply_by_target_id(
                             cur = _find_best_visible(target_xpath)
                             if cur:
                                 try:
-                                    if cur.is_displayed():
+                                    if cur.is_visible():
                                         return
                                 except Exception:
                                     return
@@ -2264,6 +2835,73 @@ def _apply_by_target_id(
                     if _first > 1 and debug_target:
                         log_debug("[TARGET_DEBUG]", f"_click_candidate: skip_to={_first} cm_key={_cm_key!r}")
 
+                    # Pré-détection label-intercept : si le nœud est un <input> avec un <label for="id">
+                    # dans le même parent, les méthodes pointer (1 et 2) timeouteront à 30s chacune.
+                    # On saute directement à la méthode 3 (CDP) pour ce premier appel seulement.
+                    if _first == 1:
+                        try:
+                            _has_label_intercept = node.evaluate(
+                                "(e) => { if (!e.id || e.tagName.toLowerCase() !== 'input') return false;"
+                                " var p = e.parentElement; return p ? !!p.querySelector('label[for=\"' + e.id + '\"]') : false; }"
+                            )
+                            if _has_label_intercept:
+                                if debug_target:
+                                    log_debug("[TARGET_DEBUG]", f"_click_candidate: label-intercept detected on {label!r}, skip to CDP")
+                                _first = 3
+                        except Exception:
+                            pass
+
+                    # Overlay bloquant (ex: bannière de consentement cookies jamais fermée en
+                    # amont, position:fixed, toujours au-dessus du point de clic quel que soit le
+                    # scroll) : les méthodes pointer (1 et 2) timeouteront à 30s chacune
+                    # ("subtree intercepts pointer events"), avec scroll répété induit par
+                    # l'auto-retry Playwright.
+                    # _dismiss_blocking_overlays (cta_handler.py) couvre déjà ce cas avant le clic
+                    # CTA de navigation : scan direct de tout élément position:fixed + z-index
+                    # élevé (indépendant de la profondeur d'un point de clic donné, donc insensible
+                    # à la profondeur d'imbrication du DOM sous le conteneur réellement fixe). On
+                    # le réutilise tel quel ici, avant les méthodes pointer, pour ce premier appel
+                    # seulement — aucune modification de son corps.
+                    # Diagnostic: le résultat (y compris échec/exception) est toujours loggé
+                    # (plus de branche silencieuse) pour distinguer un appel non atteint,
+                    # une exception avalée, ou une détection qui ne trouve réellement rien.
+                    if _first == 1:
+                        _overlay_dismiss_outcome = None
+                        try:
+                            from Survey.cta_handler import _dismiss_blocking_overlays
+                            _dismissed_overlays = _dismiss_blocking_overlays(driver)
+                            _overlay_dismiss_outcome = f"dismissed={_dismissed_overlays}"
+                        except Exception as _overlay_exc:
+                            _overlay_dismiss_outcome = f"exception={_short_exc(_overlay_exc)}"
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"_click_candidate: overlay-dismiss {_overlay_dismiss_outcome} before {label!r}")
+
+                    # Préambule mouvement de souris synthétique (Survey/synthetic_cursor.py),
+                    # uniquement pour les blocs issus des extracteurs de pré-qualification
+                    # routeur/screener tiers identifiés comme point de disqualification bot
+                    # (cf. Utils/plan_diagnostic_cisnet_fingerprint.md). Best-effort, jamais un
+                    # remplacement : le résultat n'est jamais utilisé pour altérer la cascade
+                    # ci-dessous, qui s'exécute normalement dans tous les cas (succès ou échec).
+                    # Aucune des 4 méthodes ni le cache _cm_cache ne sont modifiés par ce bloc.
+                    # move_only (jamais move_and_click) : le clic réel doit rester porté
+                    # exclusivement par la cascade ci-dessous, sinon la cible reçoit 2 clics
+                    # réels indépendants (annule une checkbox, peut viser une option voisine
+                    # dans une liste dense avant le clic bien ciblé de la cascade).
+                    #if _first == 1 and (
+                    #    payload.get("cloudresearch_sentry")
+                    #    or payload.get("prodege_prescreener_radio")
+                    #    or payload.get("researchnow_autoscreener_radio")
+                    #    or payload.get("datadiggers_icontrol_radio")
+                    #):
+                    #    try:
+                    #        from Survey.synthetic_cursor import move_only
+                    #        _syn_ok = move_only(driver, node)
+                    #        if debug_target:
+                    #            log_debug("[TARGET_DEBUG]", f"_click_candidate: synthetic_cursor preamble ok={_syn_ok} before {label!r}")
+                    #    except Exception as _syn_exc:
+                    #        if debug_target:
+                    #            log_debug("[TARGET_DEBUG]", f"_click_candidate: synthetic_cursor preamble exception={_short_exc(_syn_exc)} before {label!r}")
+
                     # 1) click webdriver standard
                     if _first <= 1:
                         try:
@@ -2277,7 +2915,7 @@ def _apply_by_target_id(
                     # 2) ActionChains (souvent plus robuste quand le DOM est "capricieux")
                     if _first <= 2:
                         try:
-                            ActionChains(driver).move_to_element(node).pause(0.05).click().perform()
+                            node.hover(); node.click()
                             _cm_cache[_cm_key] = 2
                             return True
                         except Exception as e:
@@ -2292,7 +2930,7 @@ def _apply_by_target_id(
 
                     # 4) JS click (dernier recours, parfois ignoré si anti-bot)
                     try:
-                        driver.execute_script("arguments[0].click();", node)
+                        driver.evaluate("(e) => e.click()",node)
                         _cm_cache[_cm_key] = 4
                         return True
                     except Exception as e:
@@ -2323,7 +2961,7 @@ def _apply_by_target_id(
                                 pre_el.click()
                             except Exception:
                                 try:
-                                    driver.execute_script("arguments[0].click();", pre_el)
+                                    driver.evaluate("(e) => e.click()",pre_el)
                                 except Exception:
                                     pass
                             time.sleep(0.12)
@@ -2336,7 +2974,7 @@ def _apply_by_target_id(
                         el = _find_best_visible(xp)
                         if el is None:
                             try:
-                                cands = driver.find_elements(By.XPATH, xp)
+                                cands = driver.query_selector_all(xp)
                                 el = cands[0] if cands else None
                             except Exception:
                                 el = None
@@ -2345,9 +2983,7 @@ def _apply_by_target_id(
                                 log_debug("[TARGET_DEBUG]", f"savanta_jqm_carousel: element not found xpath={xp}")
                             return False
                         try:
-                            driver.execute_script(
-                                "arguments[0].scrollIntoView({block:'center', inline:'center'});", el
-                            )
+                            el.evaluate("(_el) => { _el.scrollIntoView({block:'center', inline:'center'}); }")
                         except Exception:
                             pass
                         clicked = _click_candidate(el, "savanta_jqm_carousel_btn")
@@ -2358,33 +2994,27 @@ def _apply_by_target_id(
                         # Validation : l'input hidden carousel-values[data-index=N] doit avoir reçu une valeur
                         current_idx = payload.get("jqm_carousel_current_data_index")
                         if current_idx is not None:
-                            ok = driver.execute_script(
-                                """
-                                const idx = arguments[0];
+                            ok = current_idx.evaluate("""(_el) => {
+                                const idx = _el;
                                 const inp = document.querySelector(
                                     '.carousel-values input[data-index="' + idx + '"]'
                                 );
                                 if (!inp) return true;  // absent = pas de validation possible, optimiste
                                 return !!(inp.value && inp.value.trim() !== '');
-                                """,
-                                current_idx,
-                            )
+}""")
                             if ok:
                                 log_info("[TARGET]", "apply ok=true strategy=savanta_jqm_carousel reason=carousel_value_set")
                                 return True
                             # Attente courte (JQM peut être async)
                             time.sleep(0.3)
-                            ok = driver.execute_script(
-                                """
-                                const idx = arguments[0];
+                            ok = current_idx.evaluate("""(_el) => {
+                                const idx = _el;
                                 const inp = document.querySelector(
                                     '.carousel-values input[data-index="' + idx + '"]'
                                 );
                                 if (!inp) return true;
                                 return !!(inp.value && inp.value.trim() !== '');
-                                """,
-                                current_idx,
-                            )
+}""")
                             if ok:
                                 log_info("[TARGET]", "apply ok=true strategy=savanta_jqm_carousel reason=carousel_value_set_delayed")
                                 return True
@@ -2410,13 +3040,13 @@ def _apply_by_target_id(
                         paging_xps = payload.get("pre_click_xpaths") or []
                         for pxp in paging_xps[:1]:
                             try:
-                                paging_cands = driver.find_elements(By.XPATH, pxp)
+                                paging_cands = driver.query_selector_all(pxp)
                                 if paging_cands:
                                     pel = paging_cands[0]
                                     aria_pressed = (pel.get_attribute("aria-pressed") or "").strip().lower()
                                     if aria_pressed != "true":
                                         try:
-                                            driver.execute_script("arguments[0].click();", pel)
+                                            driver.evaluate("(e) => e.click()",pel)
                                         except Exception:
                                             pass
                                         time.sleep(0.25)
@@ -2426,7 +3056,7 @@ def _apply_by_target_id(
                         # Trouver le bouton cible sans contrainte is_displayed
                         btn_el = None
                         try:
-                            cands = driver.find_elements(By.XPATH, xp)
+                            cands = driver.query_selector_all(xp)
                             btn_el = cands[0] if cands else None
                         except Exception:
                             pass
@@ -2437,13 +3067,11 @@ def _apply_by_target_id(
 
                         # Scroll + clic JS
                         try:
-                            driver.execute_script(
-                                "arguments[0].scrollIntoView({block:'center', inline:'center'});", btn_el
-                            )
+                            btn_el.evaluate("(_el) => { _el.scrollIntoView({block:'center', inline:'center'}); }")
                         except Exception:
                             pass
                         try:
-                            driver.execute_script("arguments[0].click();", btn_el)
+                            driver.evaluate("(e) => e.click()",btn_el)
                         except Exception:
                             if debug_target:
                                 log_debug("[TARGET_DEBUG]", f"cf_carousel_item: JS click failed xpath={xp}")
@@ -2460,7 +3088,7 @@ def _apply_by_target_id(
                         if not ok:
                             # Tentative 2 : ActionChains (animation Confirmit parfois async)
                             try:
-                                ActionChains(driver).move_to_element(btn_el).pause(0.05).click().perform()
+                                btn_el.hover(); btn_el.click()
                                 time.sleep(0.15)
                                 ok = (btn_el.get_attribute("aria-checked") or "").strip().lower() == "true"
                             except Exception:
@@ -2485,7 +3113,7 @@ def _apply_by_target_id(
                 # via aria-checked="true" sur le div[role='radio'].
                 if payload.get("confirmit_cf_hrs_single"):
                     try:
-                        _hrs_cands = driver.find_elements(By.XPATH, xp)
+                        _hrs_cands = driver.query_selector_all(xp)
                         _hrs_el = _hrs_cands[0] if _hrs_cands else None
                     except Exception:
                         _hrs_el = None
@@ -2494,14 +3122,12 @@ def _apply_by_target_id(
                             log_debug("[TARGET_DEBUG]", f"confirmit_cf_hrs_single: element not found xpath={xp}")
                         return False
                     try:
-                        driver.execute_script(
-                            "arguments[0].scrollIntoView({block:'center', inline:'center'});", _hrs_el
-                        )
+                        _hrs_el.evaluate("(_el) => { _el.scrollIntoView({block:'center', inline:'center'}); }")
                     except Exception:
                         pass
                     _hrs_ok = False
                     try:
-                        driver.execute_script("arguments[0].click();", _hrs_el)
+                        driver.evaluate("(e) => e.click()",_hrs_el)
                         time.sleep(0.15)
                         try:
                             _hrs_ok = ((_hrs_el.get_attribute("aria-checked") or "").strip().lower() == "true")
@@ -2512,7 +3138,7 @@ def _apply_by_target_id(
                             log_debug("[TARGET_DEBUG]", f"confirmit_cf_hrs_single: JS click failed: {_short_exc(exc)}")
                     if not _hrs_ok:
                         try:
-                            ActionChains(driver).move_to_element(_hrs_el).pause(0.05).click().perform()
+                            _hrs_el.hover(); _hrs_el.click()
                             time.sleep(0.15)
                             _hrs_ok = ((_hrs_el.get_attribute("aria-checked") or "").strip().lower() == "true")
                         except Exception:
@@ -2534,8 +3160,7 @@ def _apply_by_target_id(
                         # ET div#container_{qname}[data-test="main-contain"]._rowpicker présent.
                         if resolved_itype == "radio":
                             try:
-                                _kantar_rp_qname_doc = driver.execute_script(
-                                    """
+                                _kantar_rp_qname_doc = el.evaluate("""(_el) => {
                                     for (const inp of Array.from(document.querySelectorAll('input[class*="mrSingle"][questionname]'))) {
                                         const cont = inp.closest('[questionname]') || inp.closest('div.questionContainer');
                                         if (!cont) continue;
@@ -2569,6 +3194,121 @@ def _apply_by_target_id(
                         log_debug("[TARGET_DEBUG]", f"element not found for xpath={xp} ({type(ex).__name__}: {_short_exc(ex)})")
                     return False
 
+                # --- Decipher sq-cardrating (widget carte en carrousel avec échelle
+                # d'accord, une carte affichée à la fois, boutons de réponse partagés et
+                # réutilisés à chaque étape ; chaque étape = une question individuelle
+                # avec sa propre valeur attendue) ---
+                # L'extraction answers-list group-by-row construit `xp` vers l'input caché
+                # de la vue QA (`sq-cardrating-qa-view`, explicitement documentée "shown only
+                # when QA Codes are turned on", donc jamais visible pour l'utilisateur final),
+                # avec un ancêtre .clickableCell qui existe dans le DOM mais reste invisible
+                # en permanence : `el` ci-dessus est résolu (fallback non-visible de
+                # _find_best_visible) mais tout clic natif/ActionChains dessus time out à
+                # 30s chacun, puis la cascade de repli générique (kantar_rowpicker,
+                # ipsos_sharky_grid_progressive, vant_picker_column...) échoue aussi, conçue
+                # pour d'autres structures de grille.
+                # Distinct de solve_decipher_cardrating_rows (une seule valeur appliquée à
+                # TOUTES les rows d'une grille en une passe) : ici chaque row/carte a sa
+                # propre valeur, résolue individuellement via ce target_id.
+                # Guard DOM strict : id de l'input résolu par `xp` de la forme
+                # ans<uid>.<col>.<row> ET widget .sq-cardrating-widget[data-uid=uid] présent
+                # sur la page — <col> n'est PAS réutilisé (insensible à un éventuel mauvais
+                # choix de colonne par le lookup fuzzy amont sur option_xpath_map, ex.
+                # "D'accord" étant une sous-chaîne de "Entièrement d'accord") : on ne clique
+                # jamais la colonne déduite de l'id caché, uniquement le bouton visible du
+                # widget dont le texte correspond exactement à la valeur demandée.
+                if resolved_itype == "radio":
+                    _cr_id_match = re.search(r"ans(\d+)\.(\d+)\.(\d+)", xp)
+                    if _cr_id_match:
+                        _cr_uid, _cr_row = _cr_id_match.group(1), _cr_id_match.group(3)
+                        # Contexte de frame actif, même convention que _find_best_visible/
+                        # _verify_ctx ailleurs dans cette fonction (driver interroge toujours
+                        # le document racine, indépendamment de driver._current_frame).
+                        _cr_ctx = getattr(driver, "_current_frame", driver)
+                        _cr_widget = None
+                        try:
+                            _cr_widget = _cr_ctx.query_selector(f".sq-cardrating-widget[data-uid='{_cr_uid}']")
+                        except Exception:
+                            _cr_widget = None
+
+                        if _cr_widget is not None:
+                            # Idempotence : une des options de cette row (colonne quelconque)
+                            # est-elle déjà cochée sur l'input caché correspondant ?
+                            _cr_already = False
+                            try:
+                                _cr_row_re = re.compile(rf"^ans{re.escape(_cr_uid)}\.\d+\.{re.escape(_cr_row)}$")
+                                for _cr_inp in _cr_ctx.query_selector_all(f"input[type='radio'][id^='ans{_cr_uid}.']"):
+                                    try:
+                                        _cr_iid = (_cr_inp.get_attribute("id") or "").strip()
+                                        if _cr_row_re.match(_cr_iid) and _cr_inp.is_checked():
+                                            _cr_already = True
+                                            break
+                                    except Exception:
+                                        continue
+                            except Exception:
+                                _cr_already = False
+
+                            if _cr_already:
+                                log_info("[TARGET]", f"apply ok=true strategy=decipher_cardrating_button reason=already_selected value='{value}'")
+                                return True
+
+                            # Résolution du bouton par correspondance EXACTE de texte (jamais
+                            # de sous-chaîne : "D'accord" est une sous-chaîne de "Entièrement
+                            # d'accord", donc tout matching non-exact reproduirait le même
+                            # décalage d'un cran que le lookup fuzzy amont sur option_xpath_map).
+                            _cr_btn = None
+                            try:
+                                for _cr_cand in _cr_widget.query_selector_all(".sq-cardrating-buttons .sq-cardrating-button"):
+                                    try:
+                                        _cr_content = _cr_cand.query_selector(".sq-cardrating-content") or _cr_cand
+                                        _cr_txt = (_cr_content.inner_text() or "").strip()
+                                    except Exception:
+                                        continue
+                                    _cr_k_norm, _cr_k_fold = _norm_lc(_cr_txt), _fold_norm_lc(_cr_txt)
+                                    if (v_norm and v_norm == _cr_k_norm) or (v_fold and v_fold == _cr_k_fold):
+                                        _cr_btn = _cr_cand
+                                        break
+                            except Exception:
+                                _cr_btn = None
+
+                            if _cr_btn is None:
+                                if debug_target:
+                                    log_debug("[TARGET_DEBUG]", f"decipher_cardrating_button: button_not_found value='{value}' uid={_cr_uid} row={_cr_row}")
+                                return False
+
+                            # Widget "une carte à la fois" : ne cliquer que si cette row est
+                            # bien la carte courante (data-position='0'), sinon le clic
+                            # s'appliquerait à une autre row que celle demandée.
+                            _cr_card = None
+                            try:
+                                _cr_card = _cr_widget.query_selector(f"li.sq-cardrating-card[data-index='{_cr_row}']")
+                            except Exception:
+                                _cr_card = None
+                            _cr_position = (_cr_card.get_attribute("data-position") or "").strip() if _cr_card is not None else None
+                            if _cr_card is None or _cr_position != "0":
+                                if debug_target:
+                                    log_debug("[TARGET_DEBUG]", f"decipher_cardrating_button: not_current_card value='{value}' uid={_cr_uid} row={_cr_row} position={_cr_position!r}")
+                                return False
+
+                            if (_cr_btn.get_attribute("data-clickable") or "").strip().lower() == "false":
+                                if debug_target:
+                                    log_debug("[TARGET_DEBUG]", f"decipher_cardrating_button: button_not_clickable value='{value}' uid={_cr_uid} row={_cr_row}")
+                                return False
+
+                            _cr_col = (_cr_btn.get_attribute("data-index") or "").strip()
+                            if not _click_candidate(_cr_btn, "decipher_cardrating_button"):
+                                if debug_target:
+                                    log_debug("[TARGET_DEBUG]", f"decipher_cardrating_button: click failed value='{value}' uid={_cr_uid} row={_cr_row}")
+                                return False
+
+                            _cr_verified = bool(_cr_col) and _wait_checked(f"ans{_cr_uid}.{_cr_col}.{_cr_row}", None, timeout_s=1.0)
+                            if _cr_verified:
+                                log_info("[TARGET]", f"apply ok=true strategy=decipher_cardrating_button reason=clicked value='{value}'")
+                                return True
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"decipher_cardrating_button: clicked but not verified value='{value}' uid={_cr_uid} row={_cr_row} col={_cr_col!r}")
+                            return False
+
                 # --- Askia Ranking Isotope (adcRanking jQuery plugin) ---
                 # Guard DOM strict : flag askia_ranking_isotope posé par l'extracteur.
                 # Le widget adcRanking branche ses handlers via $.fn.on('click', ...) —
@@ -2577,9 +3317,8 @@ def _apply_by_target_id(
                 # suivi d'une vérification sur l'input hidden associé (id="R{qid}_{data-value}").
                 # data-value est extrait depuis l'élément cible (div[data-value]).
                 if payload.get("askia_ranking_isotope") and resolved_itype == "checkbox":
-                    _adc_ok = bool(driver.execute_script(
-                        """
-                        var el = arguments[0];
+                    _adc_ok = bool(driver.evaluate("""() => {
+                        var el = _el;
                         if (!el) return false;
 
                         // Récupère le data-value sur le div cible (ou son ancêtre .statement)
@@ -2608,16 +3347,14 @@ def _apply_by_target_id(
                         // Délai possible : vérification après 80 ms (synchrone impossible, on retourne true
                         // sur la bonne foi du trigger — la vérification asynchrone se fera côté Python)
                         return true;
-                        """,
-                        el,
-                    ))
+}
+}"""))
                     if _adc_ok:
                         # Vérification asynchrone : l'input hidden doit avoir une valeur dans les 600 ms
                         _data_value = None
                         try:
-                            _data_value = driver.execute_script(
-                                """
-                                var el = arguments[0];
+                            _data_value = el.evaluate("""(_el) => {
+                                var el = _el;
                                 if (!el) return null;
                                 var dv = el.getAttribute('data-value');
                                 if (!dv) {
@@ -2625,9 +3362,7 @@ def _apply_by_target_id(
                                     if (s) dv = s.getAttribute('data-value');
                                 }
                                 return dv || null;
-                                """,
-                                el,
-                            )
+}""")
                         except Exception:
                             _data_value = None
 
@@ -2636,17 +3371,14 @@ def _apply_by_target_id(
                             _deadline = time.time() + 0.6
                             while time.time() < _deadline:
                                 try:
-                                    _adc_confirmed = bool(driver.execute_script(
-                                        """
-                                        var dv = arguments[0];
+                                    _adc_confirmed = bool(_data_value.evaluate("""(_el) => {
+                                        var dv = _el;
                                         var inputs = document.querySelectorAll('input[type="hidden"][id$="_' + dv + '"]');
                                         for (var i = 0; i < inputs.length; i++) {
                                             if ((inputs[i].value || '').trim() !== '') return true;
                                         }
                                         return false;
-                                        """,
-                                        _data_value,
-                                    ))
+}"""))
                                     if _adc_confirmed:
                                         break
                                 except Exception:
@@ -2673,9 +3405,8 @@ def _apply_by_target_id(
                 # ElementNotInteractableException. On redirige vers click_nfield_swatches_by_label.
                 if resolved_itype == "checkbox":
                     try:
-                        _nfield_qname = driver.execute_script(
-                            """
-                            const el = arguments[0];
+                        _nfield_qname = el.evaluate("""(_el) => {
+                            const el = _el;
                             if (!el || !el.closest) return null;
                             const fs = el.closest('fieldset[questionname]');
                             if (!fs) return null;
@@ -2688,9 +3419,7 @@ def _apply_by_target_id(
                             const cont = document.getElementById('container_' + qname);
                             if (!cont || !cont.querySelector('[data-test="main-contain"]._rowpicker')) return null;
                             return qname;
-                            """,
-                            el,
-                        )
+}""")
                     except Exception:
                         _nfield_qname = None
 
@@ -2709,9 +3438,8 @@ def _apply_by_target_id(
                 # ET div#container_{questionname} [data-test="main-contain"]._rowpicker présent.
                 if resolved_itype == "radio":
                     try:
-                        _kantar_rp_qname = driver.execute_script(
-                            """
-                            const el = arguments[0];
+                        _kantar_rp_qname = el.evaluate("""(_el) => {
+                            const el = _el;
                             if (!el || !el.closest) return null;
                             const cont = el.closest('[questionname]') || el.closest('div.questionContainer');
                             if (!cont) return null;
@@ -2724,9 +3452,7 @@ def _apply_by_target_id(
                             const rp = document.getElementById('container_' + qname);
                             if (!rp || !rp.querySelector('[data-test="main-contain"]._rowpicker')) return null;
                             return qname;
-                            """,
-                            el,
-                        )
+}""")
                     except Exception:
                         _kantar_rp_qname = None
 
@@ -2747,9 +3473,8 @@ def _apply_by_target_id(
                 # puis vérifier strictement via input.checked.
                 if resolved_itype == "radio":
                     try:
-                        shelf_result = driver.execute_script(
-                            """
-                            const node = arguments[0];
+                        shelf_result = el.evaluate("""(_el) => {
+                            const node = _el;
                             if (!node) return { matched: false, ok: false, reason: 'no_node' };
 
                             const question = node.closest ? node.closest('div.question, fieldset, form, .question') : null;
@@ -2804,9 +3529,7 @@ def _apply_by_target_id(
                               inputId: input.id || null,
                               inputName: input.name || null,
                             };
-                            """,
-                            el,
-                        ) or {}
+}""") or {}
                     except Exception as e:
                         shelf_result = {"matched": False, "ok": False, "reason": f"script_error:{_short_exc(e)}"}
 
@@ -2833,9 +3556,8 @@ def _apply_by_target_id(
                     and v_norm in set((payload.get("meta") or {}).get("exclusive_options_norm") or [])
                 ):
                     try:
-                        driver.execute_script(
-                            """
-                            const target = arguments[0];
+                        el.evaluate("""(_el) => {
+                            const target = _el;
                             if (!target) return;
                             const targetLi = target.closest ? target.closest('li.sq-atm1d-button') : null;
                             if (!targetLi) return;
@@ -2849,9 +3571,7 @@ def _apply_by_target_id(
                                 try { inp.dispatchEvent(new Event('change', { bubbles: true })); } catch(e) {}
                               }
                             }
-                            """,
-                            el,
-                        )
+}""")
                     except Exception:
                         pass
 
@@ -2887,18 +3607,16 @@ def _apply_by_target_id(
                         except Exception:
                             pass
                         try:
-                            node.find_element(By.XPATH, "ancestor-or-self::*[contains(@class,'mat-radio-checked')][1]")
+                            node.query_selector("ancestor-or-self::*[contains(@class,'mat-radio-checked')][1]")
                             return True
                         except Exception:
                             pass
 
                         # parfois l'état est porté par un parent (li -> span, etc.)
                         try:
-                            node.find_element(
-                                By.XPATH,
-                                "ancestor-or-self::*[@data-selected='true' or @aria-selected='true' or @aria-checked='true'][1]"
-                            )
-                            return True
+                            el_sel = node.query_selector("xpath=ancestor-or-self::*[@data-selected='true' or @aria-selected='true' or @aria-checked='true'][1]")
+                            if el_sel is not None:
+                                return True
                         except Exception:
                             pass
                         time.sleep(0.05)
@@ -2910,9 +3628,8 @@ def _apply_by_target_id(
                     end = time.time() + timeout_s
                     while time.time() < end:
                         try:
-                            ok = driver.execute_script(
-                                r"""
-                                const node = arguments[0];
+                            ok = node.evaluate("""(_el) => {
+                                const node = _el;
                                 if (!node) return false;
                                 const item = node.closest ? node.closest('.customItem') : null;
                                 if (!item) return false;
@@ -2923,9 +3640,7 @@ def _apply_by_target_id(
                                 const cls = String(rank.className || '').toLowerCase();
                                 if (cls.includes('customrankselected')) return true;
                                 return false;
-                                """,
-                                node,
-                            )
+}""")
                             if ok:
                                 return True
                         except Exception:
@@ -2960,9 +3675,8 @@ def _apply_by_target_id(
                     _value_js = value  # capture locale (pas de fermeture sur `value` qui peut muter)
                     while time.time() < _rank_deadline:
                         try:
-                            _rank_confirmed = driver.execute_script(
-                                """
-                                const needle = (arguments[0] || '').trim().toLowerCase();
+                            _rank_confirmed = _value_js.evaluate("""(_el) => {
+                                const needle = (_el || '').trim().toLowerCase();
                                 const wrappers = document.querySelectorAll(
                                     "div.answer[data-aut='Runtime_RankingItemWrapper']"
                                 );
@@ -2973,9 +3687,7 @@ def _apply_by_target_id(
                                     if (rank && /\d/.test(rank.textContent || '')) return true;
                                 }
                                 return false;
-                                """,
-                                _value_js,
-                            )
+}""")
                         except Exception:
                             _rank_confirmed = False
                         if _rank_confirmed:
@@ -2996,14 +3708,13 @@ def _apply_by_target_id(
                 if payload.get("confirmit_cf_ranking") and resolved_itype == "checkbox":
                     # Recherche de la div cible par texte normalisé, directement dans le DOM vivant.
                     # On ne réutilise pas `el` (xpath du groupe) mais on cherche l'item par son texte.
-                    _cfr_clicked = bool(driver.execute_script(
-                        """
+                    _cfr_clicked = bool(value.evaluate("""(_el) => {
                         const norm = s => (s || '').toLowerCase()
                             .normalize('NFKC')
                             .replace(/\u00A0/g, ' ')
                             .replace(/\s+/g, ' ')
                             .trim();
-                        const needle = norm(arguments[0]);
+                        const needle = norm(_el);
                         const items = document.querySelectorAll(
                             'div.cf-list__item.cf-ranking-answer[role="button"]'
                         );
@@ -3020,19 +3731,16 @@ def _apply_by_target_id(
                             }
                         }
                         return false;
-                        """,
-                        value,
-                    ))
+}"""))
                     if not _cfr_clicked:
                         # Vérifier si l'item est déjà sélectionné (action déjà appliquée) ou quota atteint
-                        _cfr_already = bool(driver.execute_script(
-                            """
+                        _cfr_already = bool(value.evaluate("""(_el) => {
                             const norm = s => (s || '').toLowerCase()
                                 .normalize('NFKC')
                                 .replace(/\u00A0/g, ' ')
                                 .replace(/\s+/g, ' ')
                                 .trim();
-                            const needle = norm(arguments[0]);
+                            const needle = norm(_el);
                             const items = document.querySelectorAll(
                                 'div.cf-list__item.cf-ranking-answer'
                             );
@@ -3046,9 +3754,7 @@ def _apply_by_target_id(
                                 if (item.classList.contains('cf-ranking-answer--disabled')) return true;
                             }
                             return false;
-                            """,
-                            value,
-                        ))
+}"""))
                         if _cfr_already:
                             log_info("[TARGET]", f"apply ok=true strategy=confirmit_cf_ranking reason=already_selected_or_quota value='{value}'")
                             return True
@@ -3061,14 +3767,13 @@ def _apply_by_target_id(
                     _cfr_deadline = time.time() + 1.0
                     while time.time() < _cfr_deadline:
                         try:
-                            _cfr_confirmed = bool(driver.execute_script(
-                                """
+                            _cfr_confirmed = bool(value.evaluate("""(_el) => {
                                 const norm = s => (s || '').toLowerCase()
                                     .normalize('NFKC')
                                     .replace(/\u00A0/g, ' ')
                                     .replace(/\s+/g, ' ')
                                     .trim();
-                                const needle = norm(arguments[0]);
+                                const needle = norm(_el);
                                 const items = document.querySelectorAll(
                                     'div.cf-list__item.cf-ranking-answer'
                                 );
@@ -3081,9 +3786,7 @@ def _apply_by_target_id(
                                     if (item.classList.contains('cf-ranking-answer--disabled')) return true;
                                 }
                                 return false;
-                                """,
-                                value,
-                            ))
+}"""))
                         except Exception:
                             _cfr_confirmed = False
                         if _cfr_confirmed:
@@ -3125,7 +3828,7 @@ def _apply_by_target_id(
                     # Resoudre l'element td
                     _cwroc_el = None
                     try:
-                        _cwroc_el = driver.find_element(By.XPATH, _cwroc_xp)
+                        _cwroc_el = driver.query_selector(_cwroc_xp)
                     except Exception:
                         pass
 
@@ -3153,15 +3856,12 @@ def _apply_by_target_id(
                     # Strategie 2 (fallback) : dispatchEvent mousedown+mouseup+click avec bubbles:true
                     if not _cwroc_clicked:
                         try:
-                            driver.execute_script(
-                                """
-                                const el = arguments[0];
+                            _cwroc_el.evaluate("""(_el) => {
+                                const el = _el;
                                 ['mousedown', 'mouseup', 'click'].forEach(type => {
                                     el.dispatchEvent(new MouseEvent(type, {bubbles: true, cancelable: true, view: window}));
                                 });
-                                """,
-                                _cwroc_el,
-                            )
+}""")
                             _cwroc_clicked = True
                         except Exception:
                             pass
@@ -3177,15 +3877,12 @@ def _apply_by_target_id(
                     _cwroc_deadline = time.time() + 1.0
                     while time.time() < _cwroc_deadline:
                         try:
-                            _cwroc_confirmed = bool(driver.execute_script(
-                                """
-                                const el = arguments[0];
+                            _cwroc_confirmed = bool(_cwroc_el.evaluate("""(_el) => {
+                                const el = _el;
                                 if (!el || !el.classList.contains('confirmit-rankedorderclick-selected')) return false;
                                 const span = el.querySelector('span.confirmit-ranked-order-value');
                                 return span ? /\d/.test(span.textContent) : true;
-                                """,
-                                _cwroc_el,
-                            ))
+}"""))
                         except Exception:
                             _cwroc_confirmed = False
                         if _cwroc_confirmed:
@@ -3208,9 +3905,8 @@ def _apply_by_target_id(
                     Signal de succès : la carte correspondante porte `.mx-card-selected`.
                     """
                     try:
-                        ok = driver.execute_script(
-                            r"""
-                            const cell = arguments[0];
+                        ok = cell_node.evaluate("""(_el) => {
+                            const cell = _el;
                             if (!cell || !cell.closest) return false;
                             const question = cell.closest('div.question');
                             if (!question) return false;
@@ -3237,9 +3933,7 @@ def _apply_by_target_id(
                               }
                             }
                             return false;
-                            """,
-                            cell_node,
-                        )
+}""")
                         return bool(ok)
                     except Exception:
                         return False
@@ -3253,7 +3947,7 @@ def _apply_by_target_id(
                     if not next_xpath:
                         return
 
-                    intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+                    intercept_only = is_cta_intercept_only()
                     moved = False
                     found_clickable_next = False
                     for _ in range(2):
@@ -3295,9 +3989,8 @@ def _apply_by_target_id(
 
                     try:
                         mx_collapsible_scope = bool(
-                            driver.execute_script(
-                                """
-                                const node = arguments[0];
+                            el.evaluate("""(_el) => {
+                                const node = _el;
                                 if (!node || !node.closest) return false;
                                 const cell = node.closest('.clickableCell');
                                 if (!cell) return false;
@@ -3305,22 +3998,19 @@ def _apply_by_target_id(
                                 if (!q) return false;
                                 if (!cell.querySelector("input[type='checkbox'].fir-hidden")) return false;
                                 return !!q.querySelector('.mx-stage .mx-collapsible-container');
-                                """,
-                                el,
-                            )
+}""")
                         )
                     except Exception:
                         mx_collapsible_scope = False
 
                     if mx_collapsible_scope:
                         try:
-                            cell_pre = driver.execute_script(
-                                """
-                                const node = arguments[0];
+                            # evaluate_handle : retourne un ElementHandle (nœud DOM cliquable),
+                            # contrairement à evaluate() qui sérialise le retour en dict/None.
+                            cell_pre = el.evaluate_handle("""(_el) => {
+                                const node = _el;
                                 return (node && node.closest) ? node.closest('.clickableCell') : null;
-                                """,
-                                el,
-                            )
+}""").as_element()
                         except Exception:
                             cell_pre = None
                         if cell_pre is not None and _is_decipher_mx_collapsible_checkbox_selected(cell_pre):
@@ -3329,10 +4019,10 @@ def _apply_by_target_id(
                         return True
 
                     try:
-                        if (el.tag_name or "").lower() == "label":
+                        if (el.evaluate("e => (e.tagName || '').toLowerCase()") or "") == "label":
                             fid = (el.get_attribute("for") or "").strip()
                             if fid:
-                                inp_for = driver.find_element(By.ID, fid)
+                                inp_for = driver.query_selector(f"[id='{fid}']")
                                 if _is_selected(inp_for):
                                     return True
                     except Exception:
@@ -3344,43 +4034,65 @@ def _apply_by_target_id(
                 # On applique une stratégie unique et DOM-gardée pour éviter les faux positifs.
                 if resolved_itype == "checkbox":
                     try:
-                        decipher_cell = driver.execute_script(
-                            """
-                            const node = arguments[0];
+                        # evaluate_handle : retourne un ElementHandle (nœud DOM cliquable),
+                        # contrairement à evaluate() qui sérialise le retour JS en dict/None.
+                        decipher_cell = el.evaluate_handle("""(_el) => {
+                            const node = _el;
                             if (!node || !node.closest) return null;
                             const cell = node.closest('.clickableCell');
                             if (!cell) return null;
                             const hiddenInput = cell.querySelector("input[type='checkbox'].fir-hidden");
                             if (!hiddenInput) return null;
                             return cell;
-                            """,
-                            el,
-                        )
+}""").as_element()
                     except Exception:
                         decipher_cell = None
 
                     if decipher_cell is not None:
-                        clicked = _click_candidate(decipher_cell, "decipher_clickable_cell")
-                        if not clicked:
-                            if debug_target:
-                                log_debug("[TARGET_DEBUG]", f"decipher clickableCell click failed: value='{value}' xpath='{xp}'")
-                            return False
+                        # Extraire l'id de l'input depuis le XPath (ex: @id="ans4725.0.13")
+                        # pour cibler le label et vérifier depuis le DOM frais post-clic.
+                        _inp_id_m = re.search(r'@id=["\']([^"\']+)["\']', xp)
+                        _inp_id_fv = _inp_id_m.group(1) if _inp_id_m else None
 
+                        # Stratégie : cliquer le <label for=id> Decipher (déclenche les handlers natifs)
+                        # plutôt que la .clickableCell qui n'a pas d'event listener JS.
+                        # Fallback : clic sur la .clickableCell si pas de label trouvé.
+                        _clicked_via_label = False
+                        if _inp_id_fv:
+                            try:
+                                _clicked_via_label = bool(driver.evaluate("""(inp_id) => {
+                                    const lbl = document.querySelector('label[for="' + inp_id + '"]');
+                                    if (!lbl) return false;
+                                    lbl.click();
+                                    return true;
+}""", _inp_id_fv))
+                            except Exception:
+                                _clicked_via_label = False
+
+                        if not _clicked_via_label:
+                            clicked = _click_candidate(decipher_cell, "decipher_clickable_cell")
+                            if not clicked:
+                                if debug_target:
+                                    log_debug("[TARGET_DEBUG]", f"decipher clickableCell click failed: value='{value}' xpath='{xp}'")
+                                return False
+
+                        # Vérification post-clic via getElementById (DOM frais, jamais stale).
+                        # Signaux : inp.checked OU span.fir-icon.selected dans la cellule.
+                        time.sleep(0.05)
+                        ok_decipher = False
                         try:
-                            ok_decipher = _is_decipher_mx_collapsible_checkbox_selected(decipher_cell)
-                            if not ok_decipher:
-                                ok_decipher = driver.execute_script(
-                                    """
-                                    const cell = arguments[0];
-                                    if (!cell) return false;
-                                    const inp = cell.querySelector("input[type='checkbox'].fir-hidden");
+                            if _inp_id_fv:
+                                ok_decipher = bool(driver.evaluate("""(inp_id) => {
+                                    const inp = document.getElementById(inp_id);
                                     if (!inp) return false;
                                     if (inp.checked) return true;
+                                    const cell = inp.closest('.clickableCell, .element');
+                                    if (!cell) return false;
                                     const icon = cell.querySelector('.fir-icon');
-                                    return !!(icon && icon.classList && icon.classList.contains('selected'));
-                                    """,
-                                    decipher_cell,
-                                )
+                                    return !!(icon && icon.classList.contains('selected'));
+}""", _inp_id_fv))
+                            else:
+                                ok_decipher = _is_decipher_mx_collapsible_checkbox_selected(decipher_cell)
                         except Exception:
                             ok_decipher = False
 
@@ -3390,6 +4102,67 @@ def _apply_by_target_id(
 
                         if debug_target:
                             log_debug("[TARGET_DEBUG]", f"decipher clickableCell no checked/selected signal: value='{value}' xpath='{xp}'")
+                        return False
+
+                # Decipher/FocusVision answers-list radio (même layout que checkbox ci-dessus,
+                # mais itype=radio). Guard strict : .clickableCell contenant input[type='radio'].fir-hidden.
+                if resolved_itype == "radio":
+                    try:
+                        decipher_radio_cell = el.evaluate_handle("""(_el) => {
+                            const node = _el;
+                            if (!node || !node.closest) return null;
+                            const cell = node.closest('.clickableCell');
+                            if (!cell) return null;
+                            if (!cell.querySelector("input[type='radio'].fir-hidden")) return null;
+                            return cell;
+}""").as_element()
+                    except Exception:
+                        decipher_radio_cell = None
+
+                    if decipher_radio_cell is not None:
+                        _inp_id_m2 = re.search(r'@id=["\']([^"\']+)["\']', xp)
+                        _inp_id_fv2 = _inp_id_m2.group(1) if _inp_id_m2 else None
+
+                        _clicked_via_label2 = False
+                        if _inp_id_fv2:
+                            try:
+                                _clicked_via_label2 = bool(driver.evaluate("""(inp_id) => {
+                                    const lbl = document.querySelector('label[for="' + inp_id + '"]');
+                                    if (!lbl) return false;
+                                    lbl.click();
+                                    return true;
+}""", _inp_id_fv2))
+                            except Exception:
+                                _clicked_via_label2 = False
+
+                        if not _clicked_via_label2:
+                            clicked = _click_candidate(decipher_radio_cell, "decipher_radio_clickable_cell")
+                            if not clicked:
+                                if debug_target:
+                                    log_debug("[TARGET_DEBUG]", f"decipher radio clickableCell click failed: value='{value}' xpath='{xp}'")
+                                return False
+
+                        time.sleep(0.05)
+                        ok_decipher_radio = False
+                        try:
+                            if _inp_id_fv2:
+                                ok_decipher_radio = bool(driver.evaluate("""(inp_id) => {
+                                    const inp = document.getElementById(inp_id);
+                                    if (!inp) return false;
+                                    if (inp.checked) return true;
+                                    const cell = inp.closest('.clickableCell, .element');
+                                    if (!cell) return false;
+                                    const icon = cell.querySelector('.fir-icon');
+                                    return !!(icon && icon.classList.contains('selected'));
+}""", _inp_id_fv2))
+                        except Exception:
+                            ok_decipher_radio = False
+
+                        if bool(ok_decipher_radio):
+                            return True
+
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"decipher radio clickableCell no checked/selected signal: value='{value}' xpath='{xp}'")
                         return False
 
                 # --- Toluna Runtime AnswerRow (check_box / radio_button custom, sans input natif) ---
@@ -3409,16 +4182,13 @@ def _apply_by_target_id(
                 # Court-circuit avant toluna_runtime_answerrow pour éviter faux négatif.
                 _is_interview_layout_btn = False
                 try:
-                    _is_interview_layout_btn = driver.execute_script(
-                        """
-                        const el = arguments[0];
+                    _is_interview_layout_btn = el.evaluate("""(_el) => {
+                        const el = _el;
                         if (!el || !el.closest) return false;
                         if ((el.tagName || '').toLowerCase() !== 'button') return false;
                         if ((el.getAttribute('role') || '').toLowerCase() !== 'option') return false;
                         return el.closest('ul[data-test-id="ChoiceMultiple_ChoiceFields"]') !== null;
-                        """,
-                        el,
-                    )
+}""")
                 except Exception:
                     _is_interview_layout_btn = False
 
@@ -3444,9 +4214,8 @@ def _apply_by_target_id(
                 if not (_toluna_neg and _toluna_neg.get("kind") == "no_runtime_rows"):
                     log_info("[TARGET]", "toluna_runtime_answerrow: entering block")
                     try:
-                        _toluna_guard = driver.execute_script(
-                            """
-                            const el = arguments[0];
+                        _toluna_guard = el.evaluate("""(_el) => {
+                            const el = _el;
                             if (!el || !el.closest) return null;
                             if (!el.closest("[data-aut='Runtime_AnswerRow']")) return null;
                             const wrapper = el.querySelector("[data-aut='Runtime_Wrapper']");
@@ -3457,9 +4226,7 @@ def _apply_by_target_id(
                             );
                             if (!inner) return null;
                             return { cls: inner.className || '', rowId: el.id || '' };
-                            """,
-                            el,
-                        )
+}""")
                     except Exception:
                         pass
                     log_info("[TARGET]", f"toluna_runtime_answerrow: guard={_toluna_guard!r}")
@@ -3481,14 +4248,11 @@ def _apply_by_target_id(
                     # Re-fetch par ID pour survivre au re-render React qui invalide el.
                     _toluna_clicked = False
                     try:
-                        driver.execute_script(
-                            """
-                            var row = document.getElementById(arguments[0]);
-                            if (!row) throw new Error('row not found: ' + arguments[0]);
+                        _toluna_row_id.evaluate("""(_el) => {
+                            var row = document.getElementById(_el);
+                            if (!row) throw new Error('row not found: ' + _el);
                             row.querySelector("[data-aut='Runtime_Wrapper']").click();
-                            """,
-                            _toluna_row_id,
-                        )
+}""")
                         _toluna_clicked = True
                     except Exception:
                         try:
@@ -3506,9 +4270,8 @@ def _apply_by_target_id(
                 if resolved_itype == "checkbox":
                     label_anchor_guard_active = False
                     try:
-                        label_anchor_guard_active = (el.tag_name or "").lower() == "label" and bool(
-                            el.find_elements(By.TAG_NAME, "a")
-                        )
+                        tag = el.evaluate("(e) => (e.tagName || '').toLowerCase()")
+                        label_anchor_guard_active = tag == "label" and bool(el.query_selector_all("a"))
                     except Exception:
                         label_anchor_guard_active = False
 
@@ -3523,7 +4286,7 @@ def _apply_by_target_id(
                         try:
                             fid = (el.get_attribute("for") or "").strip()
                             if fid:
-                                inp_guard = driver.find_element(By.ID, fid)
+                                inp_guard = driver.query_selector(f"[id='{fid}']")
                         except Exception:
                             inp_guard = None
 
@@ -3551,7 +4314,7 @@ def _apply_by_target_id(
                                     inp_guard.click()
                                 except Exception:
                                     try:
-                                        driver.execute_script("arguments[0].click();", inp_guard)
+                                        driver.evaluate("(e) => e.click()",inp_guard)
                                     except Exception:
                                         pass
                             else:
@@ -3578,9 +4341,8 @@ def _apply_by_target_id(
                 # Vérification stricte via input.checked après action.
                 # Ne pas modifier le chemin générique (fall-through si flag absent).
                 if payload.get("askia_responsive_table_checkbox") and resolved_itype == "checkbox":
-                    _artc_ok = bool(driver.execute_script(
-                        """
-                        var node = arguments[0];
+                    _artc_ok = bool(el.evaluate("""(_el) => {
+                        var node = _el;
                         if (!node) return false;
 
                         // Remonter à l'input si node est un label ou un wrapper
@@ -3612,15 +4374,99 @@ def _apply_by_target_id(
                             try { input.dispatchEvent(new Event('change', { bubbles: true })); } catch(e) {}
                         }
                         return !!input.checked;
-                        """,
-                        el,
-                    ))
+}"""))
                     if _artc_ok:
                         log_info("[TARGET]", "apply ok=true strategy=askia_responsive_table_checkbox reason=label_js_click")
                         _maybe_advance_mx_vertical_carousel_after_answer()
                         return True
                     if debug_target:
                         log_debug("[TARGET_DEBUG]", f"askia_responsive_table_checkbox: input.checked=false after label click value='{value}' xpath='{xp}'")
+                    return False
+
+                # --- Ipsos/mrIWeb Sharky "CategoricalClickImages" + "CustomPopup" (logos cliquables) ---
+                # Guard DOM strict : ancêtre .question-container.CategoricalClickImages.CustomPopup
+                # ET label[for] contenant à la fois l'input checkbox natif ET un <img style*="cursor:
+                # pointer"> (déclencheur d'agrandissement CustomPopup, cf. customJSONproperties
+                # AdditionalQuestion.Popups[].Trigger="#picN"). Un clic réel (par coordonnées, via
+                # _click_candidate ci-dessous) sur ce label atteint visuellement l'image plutôt que
+                # l'input masqué dessous, ce qui déclenche EN PLUS l'ouverture de la fenêtre
+                # d'agrandissement (div.CustomPopup-modalWindow.image-enlarge). Cette fenêtre reste
+                # ouverte au premier plan et bloque tout clic ultérieur (options suivantes ET bouton
+                # CTA Suivant, cause du CTA_FOUND CLICK_IMPOSSIBLE / progressed=false observé).
+                # Stratégie unique : ne jamais cliquer le label/l'image, forcer uniquement
+                # checked=true + input/change sur l'<input> natif via _dispatch_check_events
+                # (aucun clic synthétique, donc aucun risque de déclencher le Trigger de l'image).
+                if resolved_itype == "checkbox":
+                    try:
+                        _cci_input = el.evaluate_handle("""(_el) => {
+                            const node = _el;
+                            if (!node || !node.closest) return null;
+                            const qc = node.closest('.question-container.CategoricalClickImages.CustomPopup');
+                            if (!qc) return null;
+                            const label = (node.tagName || '').toLowerCase() === 'label' ? node : node.closest('label[for]');
+                            if (!label) return null;
+                            if (!label.querySelector('img[style*="cursor: pointer"], img[style*="cursor:pointer"]')) return null;
+                            const fid = label.getAttribute('for');
+                            if (!fid) return null;
+                            const inp = document.getElementById(fid);
+                            if (!inp || (inp.type || '').toLowerCase() !== 'checkbox') return null;
+                            return inp;
+}""").as_element()
+                    except Exception:
+                        _cci_input = None
+
+                    if _cci_input is not None:
+                        if not _is_selected(_cci_input):
+                            _dispatch_check_events(_cci_input)
+                        if _is_selected(_cci_input):
+                            log_info("[TARGET]", "apply ok=true strategy=ipsos_sharky_categorical_click_images_checkbox reason=checked_no_click")
+                            return True
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"ipsos_sharky_categorical_click_images_checkbox: not checked after force value='{value}'")
+                        return False
+
+                # --- Decipher sq-atm1d (widget imagé avec table de secours answers-table
+                # cachée en CSS) : `el` cible désormais le <li class="sq-atm1d-button"> visible
+                # du widget (cf. dom_extractors_decipher.py, atm1d_buttons), donc le clic natif
+                # aboutit quasi immédiatement. La vérification générique plus bas (`.checked`
+                # sur l'input décoratif du widget, jamais synchronisé de façon fiable par le
+                # site) donnait un faux échec malgré une sélection visuellement bien appliquée.
+                # On vérifie ici le signal DOM que Decipher applique lui-même sur sélection
+                # réelle : classe `sq-atm1d-selected` sur le <li> ciblé (cf. <style> inline de
+                # la question : `.sq-atm1d-selected{border-color:...}`).
+                # Guard DOM strict : meta.source == "sq-atm1d" (posé uniquement par l'extracteur
+                # dédié atm1d_buttons). Signal partagé radio/checkbox : Decipher applique la même
+                # classe `sq-atm1d-selected` sur le <li> ciblé quel que soit l'itype (bug confirmé
+                # aussi en checkbox : la vérification générique cherche un input id/name sous le
+                # <li>, n'en trouve pas — décoratif, sans id/name — et enchaîne les stratégies
+                # génériques d'autres plateformes jusqu'à l'abandon, alors que la sélection est
+                # visuellement correcte).
+                if (payload.get("meta") or {}).get("source") == "sq-atm1d" and resolved_itype in ("radio", "checkbox"):
+                    _sq_atm1d_clicked = _click_candidate(el, "sq_atm1d_widget")
+                    if not _sq_atm1d_clicked:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"sq_atm1d_widget: click failed value='{value}' xpath='{xp}'")
+                        return False
+
+                    _sq_atm1d_end = time.time() + 1.0
+                    _sq_atm1d_selected = False
+                    while time.time() < _sq_atm1d_end:
+                        try:
+                            if el.evaluate("""(_el) => {
+                                const li = _el.closest ? _el.closest('li.sq-atm1d-button') : null;
+                                return !!(li && li.classList.contains('sq-atm1d-selected'));
+                            }"""):
+                                _sq_atm1d_selected = True
+                                break
+                        except Exception:
+                            pass
+                        time.sleep(0.05)
+
+                    if _sq_atm1d_selected:
+                        log_info("[TARGET]", "apply ok=true strategy=sq_atm1d_widget reason=li_selected_class")
+                        return True
+                    if debug_target:
+                        log_debug("[TARGET_DEBUG]", f"sq_atm1d_widget: no sq-atm1d-selected class after click value='{value}' xpath='{xp}'")
                     return False
 
                 _click_candidate(el, "target")
@@ -3635,10 +4481,9 @@ def _apply_by_target_id(
                     if not exp:
                         return False
                     try:
-                        ok = driver.execute_script(
-                            """
-                            const marker = arguments[0];
-                            const expected = String(arguments[1] || '').trim();
+                        ok = ta.evaluate("""(_el) => {
+                            const marker = _el;
+                            const expected = String(_arg1 || '').trim();
                             if (!expected) return false;
 
                             let container = marker;
@@ -3662,10 +4507,7 @@ def _apply_by_target_id(
                             const handle = scope.querySelector && scope.querySelector('.slider-handle[aria-valuenow]');
                             const ariaNow = handle ? String(handle.getAttribute('aria-valuenow') || '').trim() : '';
                             return ariaNow === expected;
-                            """,
-                            node,
-                            exp,
-                        )
+}""", [node, exp])
                         return bool(ok)
                     except Exception:
                         return False
@@ -3683,10 +4525,9 @@ def _apply_by_target_id(
                     if ayn_name and ayn_map:
                         exp = ayn_map.get(v_norm) or (ayn_map.get(v_fold) if v_fold else None)
                         if exp is not None and exp != '':
-                            ok = driver.execute_script(
-                                """
-                                const name = arguments[0];
-                                const exp  = arguments[1];
+                            ok = driver.evaluate("""([_el, _arg1]) => {
+                                const name = _el;
+                                const exp  = _arg1;
                                 const els = document.getElementsByName(name);
                                 for (const e of els) {
                                   if (!e) continue;
@@ -3702,14 +4543,95 @@ def _apply_by_target_id(
                 except Exception:
                     pass
 
-                # NEW: si la cible est un <label for="...">, forcer l'input associé
+                # NEW: si la cible est un <label for="..."> OU un descendant d'un tel label
+                # (ex. GfK/mrIWeb mrMultipleText : _find_best_visible peut retenir le label
+                # lui-même, mais un clic natif sur n'importe quel descendant d'un label déclenche
+                # le même comportement de bascule sur l'input référencé par for=), forcer l'input
+                # associé et vérifier dessus.
                 try:
-                    if (el.tag_name or "").lower() == "label":
-                        fid = (el.get_attribute("for") or "").strip()
+                    _lbl_el = el
+                    if (el.evaluate("e => (e.tagName || '').toLowerCase()") or "") != "label":
+                        _lbl_el = el.query_selector("xpath=ancestor::label[@for][1]")
+                    if _lbl_el is not None:
+                        fid = (_lbl_el.get_attribute("for") or "").strip()
                         if fid:
-                            inp_for = driver.find_element(By.ID, fid)
+                            # Résout le contexte de frame actif (même convention que
+                            # _find_best_visible/_search_ctx et _verify_ctx plus haut dans
+                            # cette fonction) : driver.query_selector interroge toujours le
+                            # document racine, indépendamment de driver._current_frame. Sur
+                            # un frameset (Ipsos/mrIWeb, label et input dans des sous-arbres
+                            # séparés — cf. commentaire ci-dessus), l'input référencé par
+                            # for="..." vit dans le frame enfant et n'était donc jamais
+                            # trouvé (inp_for_found=False systématique), quelle que soit
+                            # l'option ciblée.
+                            _lbl_ctx = getattr(driver, "_current_frame", driver)
+                            inp_for = _lbl_ctx.query_selector(f"[id='{fid}']")
+                            if debug_target:
+                                log_debug(
+                                    "[TARGET_DEBUG]",
+                                    f"label-for resolve: fid={fid!r} inp_for_found={inp_for is not None} "
+                                    f"selected_before={_is_selected(inp_for)}",
+                                )
                             if not _is_selected(inp_for):
-                                _dispatch_check_events(inp_for)
+                                # [DIAG_CHECK_FORCE] instrumentation temporaire (diagnostic
+                                # uniquement) : capturer explicitement toute exception levée
+                                # pendant l'appel de forçage au lieu de la laisser remonter
+                                # silencieusement dans le try/except englobant ce bloc.
+                                try:
+                                    _dispatch_check_events(inp_for)
+                                except Exception as _diag_lbl_exc:
+                                    if debug_target:
+                                        log_debug(
+                                            "[DIAG_CHECK_FORCE]",
+                                            f"label-for _dispatch_check_events raised fid={fid!r} "
+                                            f"{type(_diag_lbl_exc).__name__}: {_short_exc(_diag_lbl_exc)}",
+                                        )
+                            if debug_target:
+                                # Seconde vérification indépendante : nouvelle requête DOM par id,
+                                # sans réutiliser la référence inp_for utilisée pour le forçage.
+                                try:
+                                    _diag_lbl_fresh = _lbl_ctx.query_selector(f"[id='{fid}']")
+                                    _diag_lbl_same_node = bool(
+                                        _diag_lbl_fresh is not None
+                                        and inp_for is not None
+                                        and _lbl_ctx.evaluate(
+                                            "([a, b]) => a === b", [inp_for, _diag_lbl_fresh]
+                                        )
+                                    )
+                                    _diag_lbl_state = (
+                                        _diag_lbl_fresh.evaluate(
+                                            "(_el) => ({attr: _el.getAttribute('checked'), prop: !!_el.checked})"
+                                        )
+                                        if _diag_lbl_fresh is not None
+                                        else None
+                                    )
+                                    log_debug(
+                                        "[DIAG_CHECK_FORCE]",
+                                        f"label-for post-force fresh requery fid={fid!r} "
+                                        f"found={_diag_lbl_fresh is not None} same_node={_diag_lbl_same_node} "
+                                        f"attr/prop={_diag_lbl_state!r} selected_via_is_selected={_is_selected(inp_for)}",
+                                    )
+                                except Exception as _diag_lbl_exc2:
+                                    log_debug(
+                                        "[DIAG_CHECK_FORCE]",
+                                        f"label-for post-force fresh requery failed fid={fid!r} "
+                                        f"{type(_diag_lbl_exc2).__name__}: {_short_exc(_diag_lbl_exc2)}",
+                                    )
+                            # Court-circuit indispensable ici : quand l'input ciblé par
+                            # for="..." n'est PAS un descendant du label (ex. GfK/mrIWeb
+                            # span|mrquestiontable, label et input dans des sous-arbres
+                            # séparés), _first_input_under(el) ci-dessous ne le trouve
+                            # jamais et retourne None. Sans ce retour anticipé, le code
+                            # tombe sur le fallback "span" (cible un enfant du même
+                            # label) qui redéclenche le comportement natif du label et
+                            # décoche la case déjà cochée par le clic initial.
+                            if _is_selected(inp_for):
+                                return True
+                            if debug_target:
+                                log_debug(
+                                    "[TARGET_DEBUG]",
+                                    f"label-for resolve: still unselected after force fid={fid!r}",
+                                )
                 except Exception:
                     pass
 
@@ -3721,15 +4643,14 @@ def _apply_by_target_id(
                 # Le <label> peut etre 0x0 / non-interactif. On clique le conteneur mat-radio-button,
                 # puis on valide via mat-radio-checked (plus fiable que input.checked après re-render).
                 try:
-                    mr = el.find_element(
-                        By.XPATH,
-                        "ancestor-or-self::*[self::mat-radio-button or contains(@class,'mat-radio-button')][1]",
-                    )
+                    mr = el.query_selector("xpath=ancestor-or-self::*[self::mat-radio-button or contains(@class,'mat-radio-button')][1]")
+                    if mr is None:
+                        raise Exception("not found")
                     _click_candidate(mr, "mat-radio-button")
                     if _wait_selected_like(mr, timeout_s=0.8):
                         return True
                     try:
-                        mc = mr.find_element(By.XPATH, ".//span[contains(@class,'mat-radio-container')][1]")
+                        mc = mr.query_selector(".//span[contains(@class,'mat-radio-container')][1]")
                         _click_candidate(mc, "mat-radio-container")
                         if _wait_selected_like(mr, timeout_s=0.8):
                             return True
@@ -3740,7 +4661,7 @@ def _apply_by_target_id(
 
                 # 3) si on a cliqué un label non interactif (pointer-events, overlay), tenter le span
                 try:
-                    sp = el.find_element(By.XPATH, ".//span[1]")
+                    sp = el.query_selector(".//span[1]")
                     _click_candidate(sp, "span")
                 except Exception:
                     pass
@@ -3767,7 +4688,7 @@ def _apply_by_target_id(
 
                 try:
                     # si label[for] => input id
-                    if (el.tag_name or "").lower() == "label":
+                    if (el.evaluate("e => (e.tagName || '').toLowerCase()") or "") == "label":
                         _for = (el.get_attribute("for") or "").strip()
                         if _for:
                             inp_id = _for
@@ -3776,7 +4697,7 @@ def _apply_by_target_id(
 
                 try:
                     if not inp_id:
-                        if (el.tag_name or "").lower() == "input":
+                        if (el.evaluate("e => (e.tagName || '').toLowerCase()") or "") == "input":
                             inp_id = (el.get_attribute("id") or "").strip() or None
                             inp_name = (el.get_attribute("name") or "").strip() or None
                 except Exception:
@@ -3801,7 +4722,7 @@ def _apply_by_target_id(
                 # inp_id reste None. Vérifier via src de l'<img> (check_up → check_down).
                 if (payload.get("confirmit_wix_fieldset_radio") or payload.get("confirmit_wix_checkbox_grid")) and resolved_itype == "checkbox":
                     try:
-                        img = el.find_element(By.XPATH, ".//img[1]")
+                        img = el.query_selector(".//img[1]")
                         src = (img.get_attribute("src") or "").lower()
                         if "check_down" in src:
                             return True
@@ -3831,9 +4752,9 @@ def _apply_by_target_id(
                     nm = (fld.get("name") or "").strip()
                     if nm:
                         try:
-                            for c in driver.find_elements(By.NAME, nm):
+                            for c in driver.query_selector_all(f"[name='{nm}']"):
                                 try:
-                                    if c.is_displayed():
+                                    if c.is_visible():
                                         return c
                                 except Exception:
                                     continue
@@ -3843,9 +4764,9 @@ def _apply_by_target_id(
                     fid = (fld.get("id") or "").strip()
                     if fid:
                         try:
-                            for c in driver.find_elements(By.ID, fid):
+                            for c in driver.query_selector_all(f"[id='{fid}']"):
                                 try:
-                                    if c.is_displayed():
+                                    if c.is_visible():
                                         return c
                                 except Exception:
                                     continue
@@ -3866,16 +4787,16 @@ def _apply_by_target_id(
                         except Exception:
                             pass
 
-                        cur = (elx.get_attribute("value") or "").strip()
+                        cur = (driver.evaluate("(e) => e.value", elx) or "").strip()
                         if cur:
                             continue
 
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", elx)
+                        driver.evaluate("(e) => e.scrollIntoView({block:'center'})",elx)
                         try:
                             elx.clear()
                         except Exception:
                             pass
-                        elx.send_keys(value or "")
+                        elx.type(value or "")
                         return True
                     except Exception:
                         continue
@@ -3891,13 +4812,13 @@ def _apply_by_target_id(
 
                 if resolved_itype in ("text", "textarea", "number"):
                     try:
-                        el = driver.find_element(By.XPATH, xp)
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                        el = driver.query_selector(xp)
+                        driver.evaluate("(e) => e.scrollIntoView({block:'center'})",el)
                         try:
                             el.clear()
                         except Exception:
                             pass
-                        el.send_keys(value or "")
+                        el.type(value or "")
                         return True
                     except Exception:
                         return False
@@ -3913,7 +4834,7 @@ def _apply_by_target_id(
                         def _add(elems):
                             for e in elems or []:
                                 try:
-                                    if (e.tag_name or "").lower() == "select":
+                                    if (e.evaluate("el => (el.tagName || '').toLowerCase()") or "") == "select":
                                         cands.append(e)
                                 except Exception:
                                     continue
@@ -3921,29 +4842,29 @@ def _apply_by_target_id(
                         # 1) xpath principal
                         if xp:
                             try:
-                                _add(driver.find_elements(By.XPATH, xp))
+                                _add(driver.query_selector_all(xp))
                             except Exception:
                                 pass
 
                         # 2) alt_xpaths (ex: //select[@name='...'])
                         for ax in (payload.get("alt_xpaths") or []):
                             try:
-                                _add(driver.find_elements(By.XPATH, ax))
+                                _add(driver.query_selector_all(ax))
                             except Exception:
                                 pass
 
-                        # 3) By.NAME / By.ID (au cas où)
+                        # 3) name / id (au cas où)
                         nm = (payload.get("name") or "").strip()
                         if nm:
                             try:
-                                _add(driver.find_elements(By.NAME, nm))
+                                _add(driver.query_selector_all(f"[name='{nm}']"))
                             except Exception:
                                 pass
 
                         eid = (payload.get("id") or "").strip()
                         if eid:
                             try:
-                                _add(driver.find_elements(By.ID, eid))
+                                _add(driver.query_selector_all(f"[id='{eid}']"))
                             except Exception:
                                 pass
 
@@ -3951,7 +4872,7 @@ def _apply_by_target_id(
                         #    Le filtrage se fera plus bas via la présence de l'option demandée.
                         if not cands:
                             try:
-                                _add(driver.find_elements(By.CSS_SELECTOR, "select"))
+                                _add(driver.query_selector_all("select"))
                             except Exception:
                                 pass
 
@@ -4003,13 +4924,13 @@ def _apply_by_target_id(
                     for sel in _iter_dropdown_candidates():
                         # Best-effort: amener le select dans le viewport (meme s'il est masqué)
                         try:
-                            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sel)
+                            driver.evaluate("(e) => e.scrollIntoView({block:'center'})",sel)
                         except Exception:
                             pass
 
                         # options exploitables (hors placeholder)
                         try:
-                            raw_opts = sel.find_elements(By.TAG_NAME, "option")
+                            raw_opts = sel.query_selector_all("option")
                         except Exception:
                             raw_opts = []
 
@@ -4018,7 +4939,7 @@ def _apply_by_target_id(
                             try:
                                 if (o.get_attribute("disabled") or "").strip():
                                     continue
-                                t = _key(o.text or "")
+                                t = _key(o.inner_text() or "")
                                 if not t:
                                     continue
                                 ov = (o.get_attribute("value") or "").strip()
@@ -4056,10 +4977,9 @@ def _apply_by_target_id(
 
                         # 1) source de vérité: <select>
                         try:
-                            driver.execute_script(
-                                """
-                                const sel = arguments[0];
-                                const val = arguments[1];
+                            driver.evaluate("""() => {
+                                const sel = _el;
+                                const val = _arg1;
                                 sel.value = val;
                                 try { sel.dispatchEvent(new Event('input',  {bubbles:true})); } catch(e) {}
                                 try { sel.dispatchEvent(new Event('change', {bubbles:true})); } catch(e) {}
@@ -4068,10 +4988,7 @@ def _apply_by_target_id(
                                     window.jQuery(sel).selectpicker('refresh');
                                   }
                                 } catch(e) {}
-                                """,
-                                sel,
-                                best_val,
-                            )
+}""", [sel, best_val])
                         except Exception:
                             continue
 
@@ -4086,23 +5003,20 @@ def _apply_by_target_id(
                                 track = None
                                 if sel_id:
                                     try:
-                                        track = driver.find_element(By.ID, f"sliderpoints_{sel_id}")
+                                        track = driver.query_selector(f"[id='sliderpoints_{sel_id}']")
                                     except Exception:
                                         track = None
 
                                 if track is None:
                                     try:
-                                        container = sel.find_element(
-                                            By.XPATH,
-                                            "ancestor::*[contains(@class,'sq-sliderpoints-container') or contains(@class,'sq-sliderpoints-element')][1]",
-                                        )
-                                        track = container.find_element(By.CSS_SELECTOR, ".ui-slider-horizontal")
+                                        container = sel.query_selector("xpath=ancestor::*[contains(@class,'sq-sliderpoints-container') or contains(@class,'sq-sliderpoints-element')][1]")
+                                        track = container.query_selector(".ui-slider-horizontal") if container else None
                                     except Exception:
                                         track = None
 
                                 if track is not None:
-                                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", track)
-                                    r = track.rect or {}
+                                    driver.evaluate("(e) => e.scrollIntoView({block:'center'})",track)
+                                    r = track.bounding_box() or {}
                                     w = int(r.get("width", 0) or 0)
                                     h = int(r.get("height", 0) or 0)
 
@@ -4111,13 +5025,17 @@ def _apply_by_target_id(
                                     y = max(1, h // 2)
 
                                     try:
-                                        ActionChains(driver).move_to_element_with_offset(track, x, y).click().perform()
+                                        bb = track.bounding_box() or {}
+                                        abs_x = int((bb.get("x") or 0) + x)
+                                        abs_y = int((bb.get("y") or 0) + y)
+                                        page = driver
+                                        page.mouse.click(abs_x, abs_y)
                                     except Exception:
                                         pass
 
                                     def _handle_offscale() -> bool:
                                         try:
-                                            hnd = track.find_element(By.CSS_SELECTOR, ".ui-slider-handle")
+                                            hnd = track.query_selector(".ui-slider-handle")
                                             st = (hnd.get_attribute("style") or "")
                                             return ("-40" in st) or ("offscale" in st.lower())
                                         except Exception:
@@ -4125,8 +5043,15 @@ def _apply_by_target_id(
 
                                     if _handle_offscale():
                                         try:
-                                            hnd = track.find_element(By.CSS_SELECTOR, ".ui-slider-handle")
-                                            ActionChains(driver).click_and_hold(hnd).move_to_element_with_offset(track, x, y).release().perform()
+                                            hnd = track.query_selector(".ui-slider-handle")
+                                            bb_t = track.bounding_box() or {}
+                                            abs_x = int((bb_t.get("x") or 0) + x)
+                                            abs_y = int((bb_t.get("y") or 0) + y)
+                                            page = driver
+                                            page.mouse.move(*[(hnd.bounding_box() or {}).get(k, 0) for k in ["x", "y"]])
+                                            page.mouse.down()
+                                            page.mouse.move(abs_x, abs_y)
+                                            page.mouse.up()
                                         except Exception:
                                             pass
 
@@ -4148,8 +5073,8 @@ def _apply_by_target_id(
 
                 if resolved_itype == "button":
                     try:
-                        el = driver.find_element(By.XPATH, xp)
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                        el = driver.query_selector(xp)
+                        driver.evaluate("(e) => e.scrollIntoView({block:'center'})",el)
                         el.click()
                         return True
                     except Exception:
@@ -4163,12 +5088,12 @@ def _apply_by_target_id(
                 if not container_id:
                     return False
                 try:
-                    container = driver.find_element(By.ID, container_id)
+                    container = driver.query_selector(f"[id='{container_id}']")
                 except Exception:
                     log_debug("[TARGET_DEBUG]", f"runtime_dropdown container '{container_id}' introuvable")
                     return False
                 try:
-                    wrappers = container.find_elements(By.CSS_SELECTOR, "[data-testid='MultiValueSelectWrapper']")
+                    wrappers = container.query_selector_all("[data-testid='MultiValueSelectWrapper']")
                 except Exception:
                     return False
                 if not wrappers:
@@ -4197,15 +5122,15 @@ def _apply_by_target_id(
                     if part_hint == "month":
                         v_norm = _MONTH_FR.get(v, v_norm)
                     try:
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", wrapper)
+                        driver.evaluate("(e) => e.scrollIntoView({block:'center'})",wrapper)
                         wrapper.click()
                     except Exception:
                         return False
                     menu = None
                     for _ in range(8):
                         try:
-                            menus = driver.find_elements(By.CSS_SELECTOR, "[class*='-menu']")
-                            visible = [m for m in menus if m.is_displayed()]
+                            menus = driver.query_selector_all("[class*='-menu']")
+                            visible = [m for m in menus if m.is_visible()]
                             if visible:
                                 menu = visible[-1]
                                 break
@@ -4216,12 +5141,12 @@ def _apply_by_target_id(
                         log_debug("[TARGET_DEBUG]", f"runtime_dropdown: menu non ouvert pour '{v}'")
                         return False
                     try:
-                        opts = menu.find_elements(By.CSS_SELECTOR, "[class*='-option']")
+                        opts = menu.query_selector_all("[class*='-option']")
                     except Exception:
                         opts = []
                     for opt in opts:
                         try:
-                            t = _nopt(opt.text or "")
+                            t = _nopt(opt.inner_text() or "")
                             if t and (t == v_norm or v_norm in t or t in v_norm):
                                 opt.click()
                                 return True
@@ -4232,8 +5157,8 @@ def _apply_by_target_id(
                         num = int(v)
                         real = [
                             o for o in opts
-                            if _nopt(o.text or "") and not any(
-                                tok in _nopt(o.text or "")
+                            if _nopt(o.inner_text() or "") and not any(
+                                tok in _nopt(o.inner_text() or "")
                                 for tok in ("selectionn", "choisir", "select", "veuillez")
                             )
                         ]
@@ -4244,10 +5169,9 @@ def _apply_by_target_id(
                             except Exception:
                                 pass
                     try:
-                        from selenium.webdriver.common.keys import Keys as _Keys
-                        comboboxes = driver.find_elements(By.CSS_SELECTOR, "input[role='combobox']")
+                        comboboxes = driver.query_selector_all("input[role='combobox']")
                         if comboboxes:
-                            comboboxes[-1].send_keys(_Keys.ESCAPE)
+                            comboboxes[-1].press("Escape")
                     except Exception:
                         pass
                     log_debug("[TARGET_DEBUG]", f"runtime_dropdown: option '{v}' introuvable dans le menu")
@@ -4298,39 +5222,36 @@ def _apply_by_target_id(
                 if not container_id:
                     return False
                 try:
-                    container = driver.find_element(By.ID, container_id)
+                    container = driver.query_selector(f"[id='{container_id}']")
                 except Exception:
                     log_debug("[TARGET_DEBUG]", f"runtime_text container '{container_id}' introuvable")
                     return False
                 try:
-                    ta = container.find_element(By.CSS_SELECTOR, "textarea")
+                    ta = container.query_selector("textarea")
                 except Exception:
                     log_debug("[TARGET_DEBUG]", f"runtime_text: textarea introuvable dans '{container_id}'")
                     return False
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", ta)
+                driver.evaluate("(e) => e.scrollIntoView({block:'center'})",ta)
                 # React contrôle la valeur via son état interne : ta.clear() n'a aucun effet.
                 # On vide via le setter natif + event 'input' pour notifier React, puis on saisit.
                 try:
-                    driver.execute_script(
-                        """
-                        var el = arguments[0];
+                    driver.evaluate("""([_el, _arg1]) => {
+                        var el = _el;
                         var setter = Object.getOwnPropertyDescriptor(
                             window.HTMLTextAreaElement.prototype, 'value'
                         ).set;
                         setter.call(el, '');
                         el.dispatchEvent(new Event('input', {bubbles: true}));
-                        """,
-                        ta,
-                    )
+}
+}""")
                 except Exception:
                     try:
-                        from selenium.webdriver.common.keys import Keys as _Keys
-                        ta.send_keys(_Keys.CONTROL + "a")
-                        ta.send_keys(_Keys.DELETE)
+                        ta.press("Control+a")
+                        ta.press("Delete")
                     except Exception:
                         pass
                 try:
-                    ta.send_keys(value or "")
+                    ta.type(value or "")
                     return True
                 except Exception:
                     return False
@@ -4408,8 +5329,8 @@ def _get_visible_options(driver):
     ]
     for css in sels:
         try:
-            for el in driver.find_elements(By.CSS_SELECTOR, css):
-                t = (el.text or el.get_attribute("innerText") or "").strip()
+            for el in driver.query_selector_all(css):
+                t = (el.inner_text() or "").strip()
                 if t and len(t) >= 2:
                     opts.add(_norm(t))
         except Exception:
@@ -4419,10 +5340,8 @@ def _get_visible_options(driver):
 def _get_page_text_lc(driver):
     try:
         return " ".join(
-            driver.execute_script(
-                "return Array.from(document.querySelectorAll('body *'))"
-                ".filter(e=>getComputedStyle(e).display!=='none' && e.offsetParent!==null)"
-                ".map(e=>(e.innerText||'').trim()).filter(t=>t.length>4);"
+            driver.evaluate(
+                "() => Array.from(document.querySelectorAll('body *')).filter(e=>getComputedStyle(e).display!=='none' && e.offsetParent!==null).map(e=>(e.innerText||'').trim()).filter(t=>t.length>4)"
             )
         ).lower()
     except Exception:
@@ -4579,20 +5498,20 @@ def _wait_for_button_effect(driver, *, timeout=6):
     """
     import time
 
-    start_url = driver.current_url
+    start_url = driver.url
     start_ts = time.time()
 
     while time.time() - start_ts < timeout:
         time.sleep(0.3)
 
         # 1⃣ URL change
-        if driver.current_url != start_url:
+        if driver.url != start_url:
             return True
 
         # 2⃣ Bouton disparu ou disabled
         try:
-            btn = driver.find_element(By.ID, "acceptAndTakeSurveyLink2")
-            if not btn.is_displayed():
+            btn = driver.query_selector("[id='acceptAndTakeSurveyLink2']")
+            if not btn.is_visible():
                 return True
             if btn.get_attribute("aria-disabled") == "true":
                 return True
@@ -4603,13 +5522,13 @@ def _wait_for_button_effect(driver, *, timeout=6):
             return True
 
         # 3⃣ Overlay / spinner
-        overlays = driver.find_elements(By.CSS_SELECTOR, ".loading, .spinner, .overlay")
+        overlays = driver.query_selector_all(".loading, .spinner, .overlay")
         if overlays:
             return True
 
         try:
-            spin = driver.find_element(By.ID, "loadingSpin3")
-            if spin.is_displayed():
+            spin = driver.query_selector("[id='loadingSpin3']")
+            if spin.is_visible():
                 return True
         except Exception:
             pass
@@ -4625,19 +5544,16 @@ def handle_datadiggers_icontrol_final_screen(driver):
     import time
     from Survey.log_utils import log_info, log_debug
 
-    intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+    intercept_only = is_cta_intercept_only()
 
     try:
-        btn = driver.find_element(
-            By.CSS_SELECTOR,
-            "div.wrap.infrmtion button.next_btn[translate='srvyFinal.btnLtsDo']",
-        )
+        btn = driver.query_selector("div.wrap.infrmtion button.next_btn[translate='srvyFinal.btnLtsDo']")
     except Exception:
         log_info("[DD_FINAL]", "CTA introuvable")
         return False
 
     if intercept_only:
-        label = (btn.text or "début").strip() or "début"
+        label = (btn.inner_text() or "début").strip() or "début"
         log_info("[DD_FINAL]", f"CTA_INTERCEPT_ONLY: interception DataDiggers final-screen CTA '{label}'")
         try:
             import Survey.input_handler
@@ -4649,20 +5565,17 @@ def handle_datadiggers_icontrol_final_screen(driver):
 
     log_info("[DD_FINAL]", "CTA trouvé — clic button.next_btn (ng-submit DataDiggers)")
     try:
-        before_url = driver.current_url or ""
+        before_url = driver.url or ""
     except Exception:
         before_url = ""
 
     try:
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+        driver.evaluate("(e) => e.scrollIntoView({block:'center'})",btn)
         time.sleep(0.1)
         btn.click()
     except Exception:
         try:
-            driver.execute_script(
-                "arguments[0].dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));",
-                btn,
-            )
+            btn.evaluate("(_el) => { _el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true})); }")
         except Exception:
             log_info("[DD_FINAL]", "clic échoué — bouton inaccessible")
             return False
@@ -4671,7 +5584,7 @@ def handle_datadiggers_icontrol_final_screen(driver):
     while time.time() < end:
         time.sleep(0.3)
         try:
-            if driver.current_url != before_url:
+            if driver.url != before_url:
                 log_info("[DD_FINAL]", "navigation détectée — redirection OK")
                 return True
         except Exception:
@@ -4692,17 +5605,17 @@ def handle_prodege_data_privacy_screen(driver):
     import time
     from Survey.log_utils import log_info, log_debug
 
-    intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+    intercept_only = is_cta_intercept_only()
 
     # Vérification guard strict
     try:
-        guard_ok = bool(driver.execute_script(r"""
+        guard_ok = bool(driver.evaluate("""() => {
             return !!(
                 document.querySelector('form#dataPrivacyAgreeForm') &&
                 document.querySelector('input.dataPrivacyCheckboxRequired') &&
                 document.querySelector('button#dataPrivacySubmitBtn')
             );
-        """))
+        }"""))
     except Exception:
         guard_ok = False
 
@@ -4714,7 +5627,7 @@ def handle_prodege_data_privacy_screen(driver):
 
     # Clic sur chaque label[for] des cases .dataPrivacyCheckboxRequired
     try:
-        checked_count = int(driver.execute_script(r"""
+        checked_count = int(driver.evaluate("""() => {
             const inputs = Array.from(document.querySelectorAll(
                 'form#dataPrivacyAgreeForm input.dataPrivacyCheckboxRequired'
             ));
@@ -4732,7 +5645,7 @@ def handle_prodege_data_privacy_screen(driver):
                 if (inp.checked) n++;
             }
             return n;
-        """) or 0)
+}""") or 0)
     except Exception:
         checked_count = 0
 
@@ -4740,12 +5653,12 @@ def handle_prodege_data_privacy_screen(driver):
 
     # Vérifier que toutes les cases requises sont cochées
     try:
-        all_checked = bool(driver.execute_script(r"""
+        all_checked = bool(driver.evaluate("""() => {
             const inputs = Array.from(document.querySelectorAll(
                 'form#dataPrivacyAgreeForm input.dataPrivacyCheckboxRequired'
             ));
             return inputs.length > 0 && inputs.every(i => i.checked);
-        """))
+}"""))
     except Exception:
         all_checked = False
 
@@ -4755,7 +5668,7 @@ def handle_prodege_data_privacy_screen(driver):
 
     # Récupération du bouton de soumission
     try:
-        btn = driver.find_element(By.CSS_SELECTOR, "button#dataPrivacySubmitBtn")
+        btn = driver.query_selector("button#dataPrivacySubmitBtn")
     except Exception:
         log_info("[PRODEGE_CONSENT]", "button#dataPrivacySubmitBtn introuvable")
         return False
@@ -4772,20 +5685,17 @@ def handle_prodege_data_privacy_screen(driver):
 
     log_info("[PRODEGE_CONSENT]", "clic button#dataPrivacySubmitBtn")
     try:
-        before_url = driver.current_url or ""
+        before_url = driver.url or ""
     except Exception:
         before_url = ""
 
     try:
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+        driver.evaluate("(e) => e.scrollIntoView({block:'center'})",btn)
         time.sleep(0.1)
         btn.click()
     except Exception:
         try:
-            driver.execute_script(
-                "arguments[0].dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));",
-                btn,
-            )
+            btn.evaluate("(_el) => { _el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true})); }")
         except Exception:
             log_info("[PRODEGE_CONSENT]", "clic bouton échoué")
             return False
@@ -4794,7 +5704,7 @@ def handle_prodege_data_privacy_screen(driver):
     while time.time() < end:
         time.sleep(0.3)
         try:
-            if driver.current_url != before_url:
+            if driver.url != before_url:
                 log_info("[PRODEGE_CONSENT]", "navigation détectée — consentement accepté")
                 return True
         except Exception:
@@ -4813,7 +5723,6 @@ def handle_consent_screen(driver):
     - Ne pas confondre un simple widget cookies non bloquant (ex: Evidon) avec un overlay.
     """
     import time
-    from selenium.webdriver.common.by import By
 
     def _norm_lc(s: str) -> str:
         return " ".join((s or "").lower().split()).strip()
@@ -4822,12 +5731,12 @@ def handle_consent_screen(driver):
     #    IMPORTANT: radios potentiellement cachés (display:none), cliquer le label puis fallback JS.
     def _handle_toluna_consent_modal() -> bool:
         try:
-            detected = bool(driver.execute_script(r"""
+            detected = bool(driver.evaluate("""() => {
                 const confirm = document.querySelector('#consent-button-confirm');
                 const hasRadio = !!document.querySelector("input[name='consent']") || !!document.querySelector('.consent-form-radiogroup');
                 const hasLabel = !!document.querySelector('.consent-option-label');
                 return !!(confirm && hasRadio && hasLabel);
-            """))
+}"""))
         except Exception:
             detected = False
 
@@ -4835,11 +5744,11 @@ def handle_consent_screen(driver):
             return False
 
         print("[CONSENT][TOLUNA] detected")
-        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        intercept_only = is_cta_intercept_only()
 
         for _ in range(2):
             try:
-                checked_ok = bool(driver.execute_script(r"""
+                checked_ok = bool(driver.evaluate("""() => {
                     const norm = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
                     const confirm = document.querySelector('#consent-button-confirm');
                     const accept = document.querySelector('#consent-radio-accept') || document.querySelector("input[type='radio'][name='consent'][value='accept']");
@@ -4866,7 +5775,7 @@ def handle_consent_screen(driver):
                         try { accept.dispatchEvent(new Event('change', { bubbles: true })); } catch(_) {}
                     }
                     return !!accept.checked;
-                """))
+}"""))
             except Exception:
                 checked_ok = False
 
@@ -4880,11 +5789,11 @@ def handle_consent_screen(driver):
                     clicked = False
             else:
                 try:
-                    btn = driver.find_element(By.CSS_SELECTOR, "#consent-button-confirm")
+                    btn = driver.query_selector("#consent-button-confirm")
                     try:
                         btn.click()
                     except Exception:
-                        driver.execute_script("arguments[0].click();", btn)
+                        driver.evaluate("(e) => e.click()",btn)
                     clicked = True
                 except Exception:
                     clicked = False
@@ -4892,14 +5801,14 @@ def handle_consent_screen(driver):
             print(f"[CONSENT][TOLUNA] confirm clicked intercept_only={str(intercept_only).lower()}")
 
             try:
-                err_visible = bool(driver.execute_script(r"""
+                err_visible = bool(driver.evaluate("""() => {
                     const err = document.querySelector('#consent-error-message-container');
                     if (!err) return false;
                     const s = window.getComputedStyle(err);
                     if (!s || s.display === 'none' || s.visibility === 'hidden') return false;
                     const r = err.getBoundingClientRect();
                     return !!(r && r.width > 1 && r.height > 1);
-                """))
+}"""))
             except Exception:
                 err_visible = False
 
@@ -4918,7 +5827,7 @@ def handle_consent_screen(driver):
     #    Ex: input#privacyPolicyCheckbox1 + a#acceptAndTakeSurveyLink2
     def _scroll_center(el) -> None:
         try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", el)
+            driver.evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",el)
         except Exception:
             pass
 
@@ -4932,11 +5841,11 @@ def handle_consent_screen(driver):
             return True
         except Exception:
             try:
-                ActionChains(driver).move_to_element(el).click().perform()
+                el.hover(); el.click()
                 return True
             except Exception:
                 try:
-                    driver.execute_script("arguments[0].click();", el)
+                    driver.evaluate("(e) => e.click()",el)
                     return True
                 except Exception:
                     return False
@@ -4944,13 +5853,12 @@ def handle_consent_screen(driver):
     def _cmp_overlay_present() -> bool:
         """True si un container CMP *bloquant* (grand et visible) est présent."""
         try:
-            return bool(driver.execute_script(
-                r"""
+            return bool(driver.evaluate("""() => {
                 const vw = Math.max(320, window.innerWidth || 0);
                 const vh = Math.max(240, window.innerHeight || 0);
                 const minArea = vw * vh * 0.12;
 
-                const selectors = arguments[0] || [];
+                const selectors = _el || [];
                 const kw = ['cookie','cookies','consent','gdpr','rgpd','privacy','confidential'];
 
                 function isVisible(e){
@@ -4983,29 +5891,28 @@ def handle_consent_screen(driver):
                     return true;
                 }
                 return false;
-                """,
-                CMP_CONTAINER_SELECTORS,
-            ))
+}
+}"""))
         except Exception:
             return False
 
     def _sig() -> str:
         try:
-            url = driver.current_url or ""
+            url = driver.url or ""
         except Exception:
             url = ""
         try:
-            txt_len = int(driver.execute_script("return (document.body && (document.body.innerText||'').length) || 0;") or 0)
+            txt_len = int(driver.evaluate("() => { return (document.body && (document.body.innerText||'').length) || 0; }") or 0)
         except Exception:
             txt_len = 0
         try:
-            n_btn = len(driver.find_elements(By.CSS_SELECTOR, "button, a, [role='button'], input[type='submit'], input[type='button']"))
+            n_btn = len(driver.query_selector_all("button, a, [role='button'], input[type='submit'], input[type='button']"))
         except Exception:
             n_btn = 0
         return f"{url}||{txt_len}||{n_btn}||{int(_cmp_overlay_present())}"
 
     try:
-        before_url = driver.current_url or ""
+        before_url = driver.url or ""
     except Exception:
         before_url = ""
     before_sig = _sig()
@@ -5017,7 +5924,7 @@ def handle_consent_screen(driver):
 
             # 1) URL changée
             try:
-                if driver.current_url != before_url:
+                if driver.url != before_url:
                     return True
             except Exception:
                 pass
@@ -5033,7 +5940,7 @@ def handle_consent_screen(driver):
     # Trigger strictement DOM-first pour éviter tout impact sur les autres providers/pages.
     def _handle_cint_collect_consent_page() -> bool:
         try:
-            detected = bool(driver.execute_script(r"""
+            detected = bool(driver.evaluate("""() => {
                 const mandatory = Array.from(document.querySelectorAll("input.mandatory[type='checkbox'][name='consents']"));
                 if (!mandatory.length) return false;
 
@@ -5044,7 +5951,7 @@ def handle_consent_screen(driver):
 
                 const submit = form.querySelector("input[type='submit'], button[type='submit']");
                 return !!submit;
-            """))
+            }"""))
         except Exception:
             detected = False
 
@@ -5052,12 +5959,12 @@ def handle_consent_screen(driver):
             return False
 
         print("[CONSENT][CINT] detected")
-        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        intercept_only = is_cta_intercept_only()
 
         # Budget anti-boucle: max 2 passes pour forcer l'état checked + événements DOM.
         for _ in range(2):
             try:
-                state = driver.execute_script(r"""
+                state = driver.evaluate("""() => {
                     const mandatory = Array.from(document.querySelectorAll("input.mandatory[type='checkbox'][name='consents']"));
                     let checkedCount = 0;
 
@@ -5091,7 +5998,7 @@ def handle_consent_screen(driver):
                         checked: checkedCount,
                         allChecked: mandatory.length > 0 && checkedCount === mandatory.length,
                     };
-                """) or {}
+}""") or {}
             except Exception:
                 state = {}
 
@@ -5115,12 +6022,8 @@ def handle_consent_screen(driver):
                 print("[CTA_INTERCEPT] cint_collect cta_found intercept_impossible")
                 return False
 
-        try:
-            cta = driver.find_element(
-                By.CSS_SELECTOR,
-                "form[action*='/Consent/Collect/'] input[type='submit'], form[action*='/Consent/Collect/'] button[type='submit']",
-            )
-        except Exception:
+        cta = driver.query_selector("form[action*='/Consent/Collect/'] input[type='submit'], form[action*='/Consent/Collect/'] button[type='submit']")
+        if cta is None:
             print("[CONSENT][CINT] cta_not_found")
             return False
 
@@ -5132,7 +6035,7 @@ def handle_consent_screen(driver):
 
         # Si pas de navigation, vérifier qu'il n'y a plus d'erreurs de validation obligatoires visibles.
         try:
-            validation_visible = bool(driver.execute_script(r"""
+            validation_visible = bool(driver.evaluate("""() => {
                 const box = document.querySelector('.validation-messages.alert-danger, .alert-danger.validation-messages');
                 if (!box) return false;
                 const style = window.getComputedStyle(box);
@@ -5141,7 +6044,7 @@ def handle_consent_screen(driver):
                     .map(li => (li.textContent || '').toLowerCase().trim())
                     .filter(Boolean);
                 return requiredErrors.some(t => t.includes('validationmessage_termsandconditions') || t.includes('validationmessage_takesurveyconsent'));
-            """))
+}"""))
         except Exception:
             validation_visible = False
 
@@ -5197,13 +6100,9 @@ def handle_consent_screen(driver):
 
     def _handle_ipsos_privacy_policy_page() -> bool:
         # Détection volontairement stricte (évite les faux positifs sur d'autres consent screens)
-        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
-        try:
-            cta = driver.find_element(
-                By.CSS_SELECTOR,
-                "a.btn.btn-primary[id^='acceptAndTakeSurveyLink']",
-            )
-        except Exception:
+        intercept_only = is_cta_intercept_only()
+        cta = driver.query_selector("a.btn.btn-primary[id^='acceptAndTakeSurveyLink']")
+        if cta is None:
             if intercept_only:
                 print("[CTA_INTERCEPT] ipsos_privacy_policy cta_not_found")
             return False
@@ -5212,14 +6111,8 @@ def handle_consent_screen(driver):
             # Patterns IPSOS observés:
             # - privacyPolicyCheckbox* (ancien pattern, conservé pour rétrocompatibilité)
             # - consentCheckbox* / consentContainer:* (pattern actuel 2025+)
-            cbs = driver.find_elements(
-                By.CSS_SELECTOR,
-                "input[type='checkbox']#privacyPolicyCheckbox1, "
-                "input[type='checkbox'][name*='privacyPolicyCheckbox'], "
-                "input[type='checkbox'][id*='privacyPolicyCheckbox'], "
-                "input[type='checkbox'][id*='consentCheckbox'], "
-                "input[type='checkbox'][name*='consentCheckbox'], "
-                "input[type='checkbox'][name*='consentContainer']"
+            cbs = driver.query_selector_all(
+                "input[type='checkbox']#privacyPolicyCheckbox1, input[type='checkbox'][name*='privacyPolicyCheckbox'], input[type='checkbox'][id*='privacyPolicyCheckbox'], input[type='checkbox'][id*='consentCheckbox'], input[type='checkbox'][name*='consentCheckbox'], input[type='checkbox'][name*='consentContainer']"
             )
         except Exception:
             cbs = []
@@ -5244,7 +6137,7 @@ def handle_consent_screen(driver):
             clicked = False
             if cb_id:
                 try:
-                    lab = driver.find_element(By.CSS_SELECTOR, f"label[for='{cb_id}']")
+                    lab = driver.query_selector(f"label[for='{cb_id}']")
                     clicked = _click_best_effort(lab)
                 except Exception:
                     clicked = False
@@ -5299,12 +6192,12 @@ def handle_consent_screen(driver):
     # 0bis) Affinnova / NIQ launch gate: CTA "LANCER L'ÉTUDE" (popup + switch main/secondary)
     def _handle_affinnova_launch_gate() -> bool:
         try:
-            launch = driver.find_element(By.CSS_SELECTOR, "a.launchButton[onclick*='showSurvey'], a.launchButton")
+            launch = driver.query_selector("a.launchButton[onclick*='showSurvey'], a.launchButton")
         except Exception:
             return False
 
         try:
-            if not launch.is_displayed():
+            if not launch.is_visible():
                 return False
         except Exception:
             return False
@@ -5330,7 +6223,7 @@ def handle_consent_screen(driver):
                 pass
 
             try:
-                transitioned = bool(driver.execute_script(r"""
+                transitioned = bool(driver.evaluate("""() => {
                     const main = document.querySelector('#main');
                     const secondary = document.querySelector('#secondary');
                     if (!main || !secondary) return false;
@@ -5339,7 +6232,7 @@ def handle_consent_screen(driver):
                     const mainHidden = !!ms && (ms.display === 'none' || ms.visibility === 'hidden');
                     const secondaryShown = !!ss && (ss.display !== 'none' && ss.visibility !== 'hidden');
                     return mainHidden && secondaryShown;
-                """))
+}"""))
                 if transitioned:
                     return True
             except Exception:
@@ -5355,27 +6248,25 @@ def handle_consent_screen(driver):
     def _handle_walr_country_routing_gate() -> bool:
         # Vérifier le signal Walr distinctif (.cRadio + .cRef) avant de chercher #btnNext
         try:
-            has_walr_signal = bool(driver.execute_script(
-                "return document.querySelectorAll('.cRadio').length >= 10 && !!document.querySelector('.cRef');"
-            ))
+            has_walr_signal = bool(driver.evaluate("() => { return document.querySelectorAll('.cRadio').length >= 10 && !!document.querySelector('.cRef'); }"))
         except Exception:
             has_walr_signal = False
         if not has_walr_signal:
             return False
 
         try:
-            btn = driver.find_element(By.CSS_SELECTOR, "#btnNext")
+            btn = driver.query_selector("#btnNext")
         except Exception:
             return False
         try:
-            if not btn.is_displayed():
+            if not btn.is_visible():
                 return False
         except Exception:
             return False
 
-        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        intercept_only = is_cta_intercept_only()
         if intercept_only:
-            label = _norm_lc(btn.get_attribute("value") or btn.text or "suivant")
+            label = _norm_lc(btn.get_attribute("value") or btn.inner_text() or "suivant")
             try:
                 import Survey.input_handler
                 Survey.input_handler.click_cta_strong_any_context(driver, label)
@@ -5394,7 +6285,7 @@ def handle_consent_screen(driver):
     #          Exemple: page "Veuillez cliquer sur Suivant" avant entrée dans l'enquête.
     def _handle_walr_intro_final_gate() -> bool:
         try:
-            has_signal = bool(driver.execute_script(r"""
+            has_signal = bool(driver.evaluate("""() => {
                 const hasWalrFooter = !!document.querySelector('a.logo2link[href*="walr.com"]');
                 const q = document.querySelector('input[type="hidden"]#Q');
                 const btn = document.querySelector('#btnNext');
@@ -5406,20 +6297,20 @@ def handle_consent_screen(driver):
                     return !!(r && r.width > 10 && r.height > 10);
                 };
                 return hasWalrFooter && q && (q.value || '').toUpperCase() === 'FINAL' && isVisible(btn);
-            """))
+}"""))
         except Exception:
             has_signal = False
         if not has_signal:
             return False
 
         try:
-            btn = driver.find_element(By.CSS_SELECTOR, "#btnNext")
+            btn = driver.query_selector("#btnNext")
         except Exception:
             return False
 
-        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        intercept_only = is_cta_intercept_only()
         if intercept_only:
-            label = _norm_lc(btn.get_attribute("value") or btn.text or "suivant")
+            label = _norm_lc(btn.get_attribute("value") or btn.inner_text() or "suivant")
             try:
                 import Survey.input_handler
                 Survey.input_handler.click_cta_strong_any_context(driver, label)
@@ -5438,7 +6329,7 @@ def handle_consent_screen(driver):
     #             DOM: <app-survey-final> + button.next_btn visible + aucun input répondable.
     def _handle_angular_survey_final_gate() -> bool:
         try:
-            btn_sel = driver.execute_script(r"""
+            btn_sel = driver.evaluate("""() => {
                 const isVisible = (el) => {
                     if (!el) return false;
                     const s = window.getComputedStyle(el);
@@ -5456,7 +6347,7 @@ def handle_consent_screen(driver):
                             document.querySelector('button[type="submit"]');
                 if (!btn || !isVisible(btn)) return null;
                 return btn.className || 'button[type="submit"]';
-            """)
+}""")
         except Exception:
             btn_sel = None
         if not btn_sel:
@@ -5467,15 +6358,15 @@ def handle_consent_screen(driver):
 
         try:
             try:
-                btn = driver.find_element(By.CSS_SELECTOR, "button.next_btn")
+                btn = driver.query_selector("button.next_btn")
             except Exception:
-                btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+                btn = driver.query_selector("button[type='submit']")
         except Exception:
             return False
 
-        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        intercept_only = is_cta_intercept_only()
         if intercept_only:
-            label = _norm_lc(btn.text or "allons-y")
+            label = _norm_lc(btn.inner_text() or "allons-y")
             log_info("CONSENT", f"CTA_INTERCEPT_ONLY: interception angular survey-final CTA '{label}'")
             try:
                 import Survey.input_handler
@@ -5497,23 +6388,20 @@ def handle_consent_screen(driver):
     def _has_hidden_ancestor(el) -> bool:
         """Vérifie si un élément est dans un container caché (CookieYes, etc.)."""
         try:
-            return bool(driver.execute_script(
-                "return !!arguments[0].closest('.cky-hide, .ng-hide, [hidden], .hidden')",
-                el
-            ))
+            return bool(el.evaluate("(_el) => { return !!_el.closest('.cky-hide, .ng-hide, [hidden], .hidden') }"))
         except Exception:
             return False
     best = None
     for sel in CMP_CONTAINER_SELECTORS:
         try:
-            for el in driver.find_elements(By.CSS_SELECTOR, sel):
+            for el in driver.query_selector_all(sel):
                 try:
-                    if not el.is_displayed():
+                    if not el.is_visible():
                         continue
                     # NOUVEAU: vérifier si l'élément est dans un container caché
                     if _has_hidden_ancestor(el):
                         continue
-                    r = el.rect or {}
+                    r = el.bounding_box() or {}
                     area = float(r.get('width', 0) or 0) * float(r.get('height', 0) or 0)
                     if area <= 0:
                         continue
@@ -5528,13 +6416,13 @@ def handle_consent_screen(driver):
     if best is not None:
         _, container = best
         try:
-            cands = container.find_elements(By.CSS_SELECTOR, "button, a, [role='button'], input[type='submit'], input[type='button']")
+            cands = container.query_selector_all("button, a, [role='button'], input[type='submit'], input[type='button']")
         except Exception:
             cands = []
 
         def _score(el) -> int:
             try:
-                t = _norm_lc(el.text or el.get_attribute('value') or el.get_attribute('innerText') or "")
+                t = _norm_lc(el.inner_text() or el.get_attribute('value') or "")
             except Exception:
                 t = ""
             if not t:
@@ -5551,10 +6439,10 @@ def handle_consent_screen(driver):
             btn = cands[0]
             # En mode CTA_INTERCEPT_ONLY=1 (tests/non-régression), on force un clic via input_handler
             # pour que le CTA passe par cta_handler et soit intercepté.
-            intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+            intercept_only = is_cta_intercept_only()
             try:
                 if intercept_only:
-                    label = _norm_lc(btn.text or btn.get_attribute('value') or btn.get_attribute('innerText') or "")
+                    label = _norm_lc(btn.inner_text() or btn.get_attribute('value') or "")
                     if label:
                         Survey.input_handler.click_cta_strong_any_context(driver, label)
                     else:
@@ -5564,13 +6452,13 @@ def handle_consent_screen(driver):
             except Exception:
                 try:
                     if intercept_only:
-                        label = _norm_lc(btn.text or btn.get_attribute('value') or btn.get_attribute('innerText') or "")
+                        label = _norm_lc(btn.inner_text() or btn.get_attribute('value') or "")
                         if label:
                             Survey.input_handler.click_cta_strong_any_context(driver, label)
                         else:
-                            driver.execute_script("arguments[0].click();", btn)
+                            driver.evaluate("(e) => e.click()",btn)
                     else:
-                        driver.execute_script("arguments[0].click();", btn)
+                        driver.evaluate("(e) => e.click()",btn)
                 except Exception:
                     pass
 
@@ -5593,13 +6481,10 @@ def handle_consent_screen(driver):
     # 4) Confirmit/Forsta : bouton "Suivant" souvent SANS texte (icône) -> .cf-navigation-next
     # Exemple DOM: <button class="cf-navigation__button cf-navigation-next"><img title="Suivant"></button>
     try:
-        next_buttons = driver.find_elements(
-        By.CSS_SELECTOR,
-        "#navButtons button.cf-navigation-next, button.cf-navigation-next, .cf-navigation__button.cf-navigation-next",
-        )
+        next_buttons = driver.query_selector_all("#navButtons button.cf-navigation-next, button.cf-navigation-next, .cf-navigation__button.cf-navigation-next")
         for nb in next_buttons:
             try:
-                if not nb.is_displayed():
+                if not nb.is_visible():
                     continue
                 if _click_best_effort(nb):
                     if _wait_change(before_sig, before_url, timeout_s=8.0):
@@ -5628,7 +6513,7 @@ def _extract_drag_drop_target_value(instruction_text: str) -> Optional[str]:
 def handle_drag_drop_logic(driver):
     def _el_text(el) -> str:
         for getter in (
-            lambda: el.text,
+            lambda: el.inner_text(),
             lambda: el.get_attribute("innerText"),
             lambda: el.get_attribute("textContent"),
         ):
@@ -5644,7 +6529,7 @@ def handle_drag_drop_logic(driver):
         if not btn:
             return False
         try:
-            if not btn.is_displayed():
+            if not btn.is_visible():
                 return False
         except Exception:
             pass
@@ -5664,10 +6549,10 @@ def handle_drag_drop_logic(driver):
         return True
 
     def _attempt_cta_once() -> bool:
-        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        intercept_only = is_cta_intercept_only()
         cta_found = False
         try:
-            candidates = driver.find_elements(By.CSS_SELECTOR, "button[aria-label='Go to next question']")
+            candidates = driver.query_selector_all("button[aria-label='Go to next question']")
             cta_found = any(_is_enabled(btn) for btn in candidates)
         except Exception:
             cta_found = False
@@ -5701,14 +6586,14 @@ def handle_drag_drop_logic(driver):
         (cas typique d'un chargement incomplet côté Angular CDK).
         """
         try:
-            return bool(driver.execute_script("""
+            return bool(driver.evaluate("""() => {
                 const drags = Array.from(document.querySelectorAll('[cdkdrag], .cdk-drag'));
                 if (!drags.length) return false;
                 return drags.some(function(el) {
                     const r = el.getBoundingClientRect();
                     return r.width > 0 && r.height > 0;
                 });
-            """))
+}"""))
         except Exception:
             return False
 
@@ -5727,12 +6612,9 @@ def handle_drag_drop_logic(driver):
         exécute le drag (CDP ou ActionChains) et valide le résultat.
         Retourne True si le drag a abouti (drop_zone remplie ou bouton Next activé).
         """
-        draggables = driver.find_elements(By.CSS_SELECTOR, "[cdkdrag], .cdk-drag, [draggable='true']")
+        draggables = driver.query_selector_all("[cdkdrag], .cdk-drag, [draggable='true']")
         try:
-            drop_zone = driver.find_element(
-                By.CSS_SELECTOR,
-                "#dropZoneList.cdk-drop-list.drop-zone, #dropZoneList.drop-zone, #dropZoneList",
-            )
+            drop_zone = driver.query_selector("#dropZoneList.cdk-drop-list.drop-zone, #dropZoneList.drop-zone, #dropZoneList")
             print("[DRAGDROP] drop_zone_selected id=dropZoneList ok=true")
         except Exception:
             print("[DRAGDROP] drop_zone_selected id=dropZoneList ok=false")
@@ -5744,7 +6626,7 @@ def handle_drag_drop_logic(driver):
         source_selector = ""
         for drag in draggables:
             try:
-                imgs = drag.find_elements(By.CSS_SELECTOR, f'img[alt="{target_value}"]')
+                imgs = drag.query_selector_all(f'img[alt="{target_value}"]')
                 if imgs:
                     source = drag
                     source_selector = f'img[alt="{target_value}"]'
@@ -5755,7 +6637,7 @@ def handle_drag_drop_logic(driver):
         if source is None:
             for drag in draggables:
                 try:
-                    imgs = drag.find_elements(By.CSS_SELECTOR, "img")
+                    imgs = drag.query_selector_all("img")
                 except Exception:
                     imgs = []
                 for img in imgs:
@@ -5783,47 +6665,59 @@ def handle_drag_drop_logic(driver):
 
         print(f"[DRAGDROP] source_found selector={source_selector}")
 
-        next_buttons = driver.find_elements(By.CSS_SELECTOR, "button[aria-label='Go to next question']")
+        next_buttons = driver.query_selector_all("button[aria-label='Go to next question']")
         next_button = next_buttons[0] if next_buttons else None
 
         offsets = [(0, 0), (15, 0)]
         can_use_cdp = hasattr(driver, "execute_cdp_cmd")
-        is_local_env = (os.getenv("RUN_ENV", "local") or "local").strip().lower() == "local"
+        is_local_env = RUN_ENV.strip().lower() != "prod"
         for idx, (ox, oy) in enumerate(offsets, start=1):
             print(f"[DRAGDROP] attempt={idx} start")
             try:
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", source)
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", drop_zone)
-                points = driver.execute_script(
-                    """
-                    const src = arguments[0];
-                    const dst = arguments[1];
-                    const ox = arguments[2] || 0;
-                    const oy = arguments[3] || 0;
-                    if (!src || !dst) return null;
-                    const srcRect = src.getBoundingClientRect();
-                    const dstRect = dst.getBoundingClientRect();
-                    const endX = Math.floor(dstRect.left + dstRect.width / 2 + ox);
-                    const endY = Math.floor(dstRect.top + dstRect.height / 2 + oy);
-                    const atPoint = document.elementFromPoint(endX, endY);
+                driver.evaluate("(e) => e.scrollIntoView({block:'center'})",source)
+                driver.evaluate("(e) => e.scrollIntoView({block:'center'})",drop_zone)
+                src_rect = driver.evaluate(
+                    "(el) => { const r = el.getBoundingClientRect(); return {left: r.left, top: r.top, width: r.width, height: r.height}; }",
+                    source,
+                )
+                dst_rect = driver.evaluate(
+                    "(el) => { const r = el.getBoundingClientRect(); return {left: r.left, top: r.top, width: r.width, height: r.height}; }",
+                    drop_zone,
+                )
+                if not src_rect or not dst_rect:
+                    raise RuntimeError("drag_points_unavailable")
+                start_x_f = src_rect["left"] + src_rect["width"] / 2
+                start_y_f = src_rect["top"] + src_rect["height"] / 2
+                end_x_f = dst_rect["left"] + dst_rect["width"] / 2 + ox
+                end_y_f = dst_rect["top"] + dst_rect["height"] / 2 + oy
+                _end_x = int(end_x_f)
+                _end_y = int(end_y_f)
+                verify = driver.evaluate(
+                    f"""(dst) => {{
+                    const atPoint = document.elementFromPoint({_end_x}, {_end_y});
                     const insideDropZone = !!(atPoint && (atPoint === dst || dst.contains(atPoint)));
                     const insideDraggable = !!(atPoint && atPoint.closest('[cdkdrag], .cdk-drag, [draggable="true"]'));
-                    return {
-                        startX: Math.floor(srcRect.left + srcRect.width / 2),
-                        startY: Math.floor(srcRect.top + srcRect.height / 2),
-                        endX,
-                        endY,
+                    return {{
                         verified: insideDropZone && !insideDraggable,
                         elementTag: atPoint ? atPoint.tagName.toLowerCase() : '',
                         elementId: atPoint && atPoint.id ? atPoint.id : '',
                         elementClass: atPoint && atPoint.className ? String(atPoint.className) : '',
-                    };
-                    """,
-                    source,
+                    }};
+                    }}""",
                     drop_zone,
-                    ox,
-                    oy,
                 )
+                if not verify:
+                    raise RuntimeError("drag_points_unavailable")
+                points = {
+                    "startX": int(start_x_f),
+                    "startY": int(start_y_f),
+                    "endX": _end_x,
+                    "endY": _end_y,
+                    "verified": verify.get("verified"),
+                    "elementTag": verify.get("elementTag", ""),
+                    "elementId": verify.get("elementId", ""),
+                    "elementClass": verify.get("elementClass", ""),
+                }
                 if not points:
                     raise RuntimeError("drag_points_unavailable")
 
@@ -5834,44 +6728,29 @@ def handle_drag_drop_logic(driver):
                     continue
 
                 drag_done = False
-                if can_use_cdp:
-                    start_x = int(points.get("startX", 0))
-                    start_y = int(points.get("startY", 0))
-                    end_x = int(points.get("endX", 0))
-                    end_y = int(points.get("endY", 0))
+                _page = driver
+                start_x = int(points.get("startX", 0))
+                start_y = int(points.get("startY", 0))
+                end_x = int(points.get("endX", 0))
+                end_y = int(points.get("endY", 0))
 
-                    driver.execute_cdp_cmd(
-                        "Input.dispatchMouseEvent",
-                        {"type": "mouseMoved", "x": start_x, "y": start_y, "button": "none"},
-                    )
-                    driver.execute_cdp_cmd(
-                        "Input.dispatchMouseEvent",
-                        {"type": "mousePressed", "x": start_x, "y": start_y, "button": "left", "clickCount": 1},
-                    )
-
+                try:
+                    _page.mouse.move(start_x, start_y)
+                    _page.mouse.down()
                     steps = 8
                     for step in range(1, steps + 1):
-                        x = int(start_x + ((end_x - start_x) * step) / steps)
-                        y = int(start_y + ((end_y - start_y) * step) / steps)
-                        driver.execute_cdp_cmd(
-                            "Input.dispatchMouseEvent",
-                            {"type": "mouseMoved", "x": x, "y": y, "button": "left", "buttons": 1},
-                        )
+                        ix = int(start_x + ((end_x - start_x) * step) / steps)
+                        iy = int(start_y + ((end_y - start_y) * step) / steps)
+                        _page.mouse.move(ix, iy)
                         time.sleep(0.02)
-
-                    driver.execute_cdp_cmd(
-                        "Input.dispatchMouseEvent",
-                        {"type": "mouseReleased", "x": end_x, "y": end_y, "button": "left", "clickCount": 1},
-                    )
+                    _page.mouse.up()
                     drag_done = True
-                elif is_local_env:
-                    chain = ActionChains(driver).click_and_hold(source).move_to_element(drop_zone)
-                    if ox or oy:
-                        chain = chain.move_by_offset(ox, oy)
-                    chain.release().perform()
-                    drag_done = True
-                else:
-                    raise RuntimeError("cdp_unavailable_non_local")
+                except Exception:
+                    try:
+                        source.drag_to(drop_zone)
+                        drag_done = True
+                    except Exception:
+                        raise RuntimeError("playwright_drag_failed")
 
                 if not drag_done:
                     raise RuntimeError("pointer_drag_failed")
@@ -5886,16 +6765,13 @@ def handle_drag_drop_logic(driver):
             while time.time() < deadline:
                 try:
                     in_drop_zone = bool(
-                        driver.execute_script(
-                            """
-                            const dst = arguments[0];
+                        driver.evaluate("""() => {
+                            const dst = _el;
                             if (!dst) return false;
                             const draggableInZone = dst.querySelector('[cdkdrag], .cdk-drag, [draggable="true"]');
                             const hasVisibleContent = (dst.innerText || '').trim().length > 0;
                             return !!(draggableInZone || hasVisibleContent);
-                            """,
-                            drop_zone,
-                        )
+}""")
                     )
                 except Exception:
                     in_drop_zone = False
@@ -5912,10 +6788,7 @@ def handle_drag_drop_logic(driver):
         return False
 
     # --- Extraction de la valeur cible depuis le titre de la question ---
-    title_candidates = driver.find_elements(
-        By.CSS_SELECTOR,
-        "p.question-title[psquestiontitle], p.question-title, [psquestiontitle]",
-    )
+    title_candidates = driver.query_selector_all("p.question-title[psquestiontitle], p.question-title, [psquestiontitle]")
     instruction = ""
     for title in title_candidates:
         txt = _el_text(title)
@@ -5934,7 +6807,7 @@ def handle_drag_drop_logic(driver):
     # pas encore initialisé), on rafraîchit la page une seule fois et on attend le rendu
     # avant de tenter le drag. Signal discriminant : au moins un [cdkdrag] dans le DOM
     # mais aucun avec getBoundingClientRect().width > 0. ---
-    cards_in_dom = bool(driver.find_elements(By.CSS_SELECTOR, "[cdkdrag], .cdk-drag"))
+    cards_in_dom = bool(driver.query_selector_all("[cdkdrag], .cdk-drag"))
     if cards_in_dom and not _cdkdrag_cards_ready():
         print("[DRAGDROP] cards_not_ready=true → refresh + wait (max 8s)")
         try:
@@ -5985,17 +6858,17 @@ def handle_error_recovery_screen(driver):
 
     TAG = "error_recovery"
 
-    intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in ("1", "true", "yes", "on")
+    intercept_only = is_cta_intercept_only()
 
     try:
-        btn = driver.find_element("id", "confirmation-button")
+        btn = driver.query_selector("#confirmation-button")
     except Exception:
         log_info(TAG, "CTA introuvable (#confirmation-button absent)")
         return False
 
     if intercept_only:
         try:
-            driver.execute_script("arguments[0].dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}));", btn)
+            btn.evaluate("(_el) => { _el.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); }")
             log_info(TAG, "CTA trouvé + interception OK (CTA_INTERCEPT_ONLY)")
         except Exception as exc:
             log_info(TAG, f"CTA trouvé + interception impossible : {exc}")
@@ -6007,7 +6880,7 @@ def handle_error_recovery_screen(driver):
         except Exception as exc:
             log_debug(TAG, f"click() échoué, fallback JS : {exc}")
             try:
-                driver.execute_script("arguments[0].click();", btn)
+                driver.evaluate("(e) => e.click()",btn)
             except Exception:
                 return False
 
@@ -6045,26 +6918,11 @@ def handle_captcha_guard(driver):
 
     # ── Tencent CAPTCHA (slider puzzle) ── résolution automatique via 2Captcha
     try:
-        is_tencent = bool(driver.execute_script(
-            "var r = document.querySelector('#sliderpanel');"
-            "if (!r) return false;"
-            "return !!(r.querySelector('.verify-img-panel') || r.querySelector('.verify-gap') || r.querySelector('.verify-bar-area'));"
+        is_tencent = bool(driver.evaluate(
+            "() => { var r = document.querySelector('#sliderpanel');if (!r) return false;return !!(r.querySelector('.verify-img-panel') || r.querySelector('.verify-gap') || r.querySelector('.verify-bar-area')); }"
         ))
     except Exception:
         is_tencent = False
-
-    if is_tencent:
-        from Survey.log_utils import log_info as _log_info
-        try:
-            from captcha.tencent_handler import solve_tencent_auto
-            _solved = solve_tencent_auto(driver)
-        except Exception as _te:
-            _log_info("CAPTCHA_GUARD", f"Exception inattendue tencent_handler : {_te}")
-            _solved = False
-        if not _solved:
-            from Management.guards.runtime_guard import get_guard
-            get_guard().signal_strict_survey("slider_captcha_unresolvable")
-        return _solved
 
     # PROD/DOCKER: arret controlé (pas de bypass)
     if captcha_behavior == "restart":
@@ -6091,10 +6949,10 @@ def handle_captcha_guard(driver):
             get_guard().signal_strict_survey("captcha_auto_failed")
             return False
 
-    # AWS/non-local : soft-restart même si auto_2captcha échoue (pas de terminal interactif)
-    from config import is_local_env
-    if not is_local_env():
-        print("[GUARD] CAPTCHA détecté ; soft-restart (aws/non-local)")
+    # En prod (pas attach) : soft-restart si auto_2captcha échoue (pas de terminal interactif)
+    from config import is_attach_mode
+    if not is_attach_mode():
+        print("[GUARD] CAPTCHA détecté ; soft-restart (prod)")
         from Management.guards.runtime_guard import get_guard
         get_guard().signal_strict_survey("captcha_guard_aws")
         return False
@@ -6112,7 +6970,7 @@ def handle_captcha_guard(driver):
 
     # Après rsolution: attendre que (1) l'URL change OU (2) le widget disparaisse
     try:
-        before_url = driver.current_url
+        before_url = driver.url
     except Exception:
         before_url = ""
 
@@ -6120,7 +6978,7 @@ def handle_captcha_guard(driver):
 
     while time.time() < deadline:
         try:
-            cur_url = driver.current_url
+            cur_url = driver.url
         except Exception:
             cur_url = ""
 
@@ -6129,7 +6987,7 @@ def handle_captcha_guard(driver):
             return True
 
         try:
-            still_there = bool(driver.execute_script(r"""
+            still_there = bool(driver.evaluate("""() => {
                 const isVisible = (e) => {
                   try{
                     const cs = getComputedStyle(e);
@@ -6242,10 +7100,7 @@ def _aa__contains(hay: str, needle: str) -> bool:
 
 def _aa__safe_scroll_center(driver, el) -> None:
     try:
-        driver.execute_script(
-            "arguments[0].scrollIntoView({block:'center', inline:'center'});",
-            el
-        )
+        el.evaluate("(_el) => { _el.scrollIntoView({block:'center', inline:'center'}); }")
     except Exception:
         pass
 
@@ -6269,14 +7124,14 @@ def _aa__safe_click(driver, el) -> bool:
         pass
 
     try:
-        from selenium.webdriver.common.action_chains import ActionChains
-        ActionChains(driver).move_to_element(el).click().perform()
+        el.hover()
+        el.click()
         return True
     except Exception:
         pass
 
     try:
-        driver.execute_script("arguments[0].click();", el)
+        driver.evaluate("(e) => e.click()",el)
         return True
     except Exception:
         return False
@@ -6293,11 +7148,6 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
     Résout le cas Ask&Answer MATRIX Angular Material, en évitant les éléments cachés.
     Retourne True si l'action a bien été appliquée.
     """
-    try:
-        from selenium.webdriver.common.by import By
-    except Exception:
-        return False
-
     q = full_question or ""
     choice = _aa__norm_ws(choice_text)
     if not choice:
@@ -6305,7 +7155,7 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
 
     # Garde-fou : on n'active ce helper que si on détecte app-matrix-question (Ask&Answer)
     try:
-        if not driver.find_elements(By.XPATH, "//app-matrix-question"):
+        if not driver.query_selector_all("//app-matrix-question"):
             return False
     except Exception:
         return False
@@ -6321,14 +7171,14 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
 
     # ========== 1) Desktop table visible ==========
     try:
-        tables = driver.find_elements(By.XPATH, "//app-matrix-question//table[contains(@class,'mat-table')]")
+        tables = driver.query_selector_all("//app-matrix-question//table[contains(@class,'mat-table')]")
     except Exception:
         tables = []
 
     table = None
     for t in tables:
         try:
-            if t.is_displayed():
+            if t.is_visible():
                 table = t
                 break
         except Exception:
@@ -6338,15 +7188,15 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
         # Trouver la matrixId via le header (texte == choix)
         mid = None
         try:
-            headers = table.find_elements(By.XPATH, ".//thead//th[contains(@class,'matrixId-')]")
+            headers = table.query_selector_all(".//thead//th[contains(@class,'matrixId-')]")
         except Exception:
             headers = []
 
         for th in headers:
             try:
-                if not th.is_displayed():
+                if not th.is_visible():
                     continue
-                txt = _aa__norm_ws(th.text)
+                txt = _aa__norm_ws(th.inner_text())
                 if txt and _aa__contains(txt, choice):
                     cls = th.get_attribute("class") or ""
                     m = re.search(r"matrixId-(\d+)", cls)
@@ -6359,34 +7209,31 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
         if mid:
             # Trouver la ligne correspondant au statement (colonne "statement")
             try:
-                rows = table.find_elements(By.XPATH, ".//tbody//tr")
+                rows = table.query_selector_all(".//tbody//tr")
             except Exception:
                 rows = []
 
             for row in rows:
                 try:
-                    if not row.is_displayed():
+                    if not row.is_visible():
                         continue
-                    st_cell = row.find_element(By.XPATH, ".//td[contains(@class,'mat-column-statement')]")
-                    st_txt = _aa__norm_ws(st_cell.text)
+                    st_cell = row.query_selector(".//td[contains(@class,'mat-column-statement')]")
+                    st_txt = _aa__norm_ws(st_cell.inner_text())
                     if not _aa__contains(st_txt, statement_key):
                         continue
 
                     # Cellule de la colonne mid
-                    cell = row.find_element(By.XPATH, f".//td[contains(@class,'matrixId-{mid}')]")
+                    cell = row.query_selector(f".//td[contains(@class,'matrixId-{mid}')]")
                     # Cliquer la radio dans cette cellule (uniquement éléments visibles)
                     candidates = []
                     try:
-                        candidates = cell.find_elements(
-                            By.XPATH,
-                            ".//mat-radio-button | .//label[contains(@class,'mat-radio-label')] | .//span[contains(@class,'mat-radio-container')] | .//input[@type='radio']"
-                        )
+                        candidates = cell.query_selector_all(".//mat-radio-button | .//label[contains(@class,'mat-radio-label')] | .//span[contains(@class,'mat-radio-container')] | .//input[@type='radio']")
                     except Exception:
                         candidates = []
 
                     for cand in candidates:
                         try:
-                            if not cand.is_displayed():
+                            if not cand.is_visible():
                                 continue
                         except Exception:
                             continue
@@ -6395,7 +7242,7 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
 
                         # Vérif: mat-radio-button checked dans la cellule
                         try:
-                            mr = cell.find_element(By.XPATH, ".//mat-radio-button[1]")
+                            mr = cell.query_selector(".//mat-radio-button[1]")
                             if _aa__is_mat_checked(mr):
                                 return True
                         except Exception:
@@ -6409,18 +7256,18 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
     # (utile si la table est cachée par responsive)
     if statement_key:
         try:
-            panels = driver.find_elements(By.XPATH, "//app-matrix-question//mat-expansion-panel")
+            panels = driver.query_selector_all("//app-matrix-question//mat-expansion-panel")
         except Exception:
             panels = []
 
         for p in panels:
             try:
-                if not p.is_displayed():
+                if not p.is_visible():
                     continue
 
                 # header contient le statement
-                hdr = p.find_element(By.XPATH, ".//mat-expansion-panel-header")
-                hdr_txt = _aa__norm_ws(hdr.text)
+                hdr = p.query_selector(".//mat-expansion-panel-header")
+                hdr_txt = _aa__norm_ws(hdr.inner_text())
                 if not _aa__contains(hdr_txt, statement_key):
                     continue
 
@@ -6433,20 +7280,17 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
                     _aa__safe_click(driver, hdr)
 
                 # choisir l'option par texte (labels visibles)
-                opts = p.find_elements(
-                    By.XPATH,
-                    ".//mat-radio-button//label[contains(@class,'mat-radio-label')][.//span[contains(@class,'mat-radio-label-content')]]"
-                )
+                opts = p.query_selector_all(".//mat-radio-button//label[contains(@class,'mat-radio-label')][.//span[contains(@class,'mat-radio-label-content')]]")
                 for lab in opts:
                     try:
-                        if not lab.is_displayed():
+                        if not lab.is_visible():
                             continue
-                        txt = _aa__norm_ws(lab.text)
+                        txt = _aa__norm_ws(lab.inner_text())
                         if txt and _aa__contains(txt, choice):
                             _aa__safe_click(driver, lab)
                             # vérifier checked sur mat-radio-button parent
                             try:
-                                mr = lab.find_element(By.XPATH, "ancestor::mat-radio-button[1]")
+                                mr = lab.query_selector("ancestor::mat-radio-button[1]")
                                 if _aa__is_mat_checked(mr):
                                     return True
                             except Exception:
@@ -6656,9 +7500,9 @@ def execute_action(
                             )
                             if _adc_dk_xpath:
                                 try:
-                                    _dk_el = driver.find_element(By.XPATH, _adc_dk_xpath)
-                                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", _dk_el)
-                                    driver.execute_script("arguments[0].click();", _dk_el)
+                                    _dk_el = driver.query_selector(_adc_dk_xpath)
+                                    driver.evaluate("(e) => e.scrollIntoView({block:'center'})",_dk_el)
+                                    driver.evaluate("(e) => e.click()",_dk_el)
                                     log_info("[TARGET]", "apply ok=true strategy=askia_adc_slider_dk reason=applied")
                                     # Cache
                                     _radio_cache_adc = _get_block_strategy_memory(driver).get("radio", {})
@@ -6672,9 +7516,8 @@ def execute_action(
                             _adc_pos = int(_adc_numeric)   # 0–10
                             _adc_ok = False
                             try:
-                                _adc_ok = bool(driver.execute_script(
-                                    """
-                                    var name = arguments[0], pos = arguments[1];
+                                _adc_ok = bool(driver.evaluate("""() => {
+                                    var name = _el, pos = _arg1;
                                     var inp = document.querySelector("input[type='hidden'][name='" + name + "']");
                                     if (!inp) return false;
                                     // Remonter au container adc-slider
@@ -6705,10 +7548,7 @@ def execute_action(
                                     var sc = container.querySelector('.sliderContainer');
                                     if (sc) { sc.classList.add('selected'); }
                                     return true;
-                                    """,
-                                    _adc_input_name,
-                                    _adc_pos,
-                                ))
+}""", [_adc_input_name, _adc_pos]))
                             except Exception as _adc_e:
                                 log_debug("[TARGET_DEBUG]", f"askia_adc_slider JS inject failed: {_short_exc(_adc_e)}")
 
@@ -6732,7 +7572,7 @@ def execute_action(
                     frame_chain = _p.get("frame_chain") or []
                     if not frame_chain:
                         try:
-                            driver.switch_to.default_content()
+                            pass  # Playwright: page is always main frame
                         except Exception:
                             pass
                     else:
@@ -6749,6 +7589,70 @@ def execute_action(
                         log_info("[TARGET]", "apply ok=true strategy=target_id_sliderpoints reason=applied")
                         return True
                     continue
+
+                # Kantar/mrIWeb rowpicker checkbox (choix multiple) : même widget que le
+                # rowpicker radio (flag posé par _extract_kantar_rowpicker_radio_blocks),
+                # mais itype="checkbox" pour ces groupes à choix multiple avec option exclusive.
+                # Court-circuit AVANT _apply_by_target_id : sans ce bypass, le premier clic du
+                # groupe (cache checkbox vide) traverse _apply_toluna_runtime_answerrow_cached()
+                # (probe hors-scope pour ce widget, échoue avec AttributeError car value est un
+                # label str et non un ElementHandle) puis une résolution XPath qui échoue toujours
+                # (input natif dans un conteneur display:none) avant d'atteindre
+                # checkbox_fallback_radio -> click_kantar_rowpicker_radio. Le widget étant déjà
+                # identifiable via le flag du payload, on appelle directement la stratégie dédiée.
+                if _p.get("kantar_rowpicker_radio") and itype == "checkbox":
+                    skip_apply_by_target_id = True
+                    from Survey.input_radio import click_kantar_rowpicker_radio
+                    _rpcb_ok = click_kantar_rowpicker_radio(driver, value)
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        f"kantar_rowpicker_checkbox_dispatch: {'ok' if _rpcb_ok else 'ko'} value={value!r}",
+                    )
+                    if _rpcb_ok:
+                        log_info("[TARGET]", "apply ok=true strategy=kantar_rowpicker_checkbox_direct reason=applied")
+                        return True
+                    return False
+
+                # MUI dialog-question option (ipsos-norm) — variante checkbox : même
+                # widget que mui_dialog_question_option (radio), mais options portant
+                # une case à cocher native. Flag distinct posé par le pipeline
+                # button_group générique (dom_analyzer.py, _is_mui_dialog_checkbox) ;
+                # ne touche jamais au flag/chemin radio ci-dessus. Court-circuit avant
+                # _apply_by_target_id, même schéma que kantar_rowpicker_radio/checkbox :
+                # ce widget n'a ni name partagé ni xpath stable après re-render React.
+                if _p.get("mui_dialog_question_checkbox_option") and itype == "checkbox":
+                    skip_apply_by_target_id = True
+                    from Survey.input_radio import click_mui_dialog_question_checkbox_option
+                    _mdqcb_ok = click_mui_dialog_question_checkbox_option(driver, value)
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        f"mui_dialog_question_checkbox_option_dispatch: {'ok' if _mdqcb_ok else 'ko'} value={value!r}",
+                    )
+                    if _mdqcb_ok:
+                        log_info("[TARGET]", "apply ok=true strategy=mui_dialog_question_checkbox_option_direct reason=applied")
+                        return True
+                    return False
+
+                # QDTech\KuaiJueCe qd-checkbox icon — variante case à cocher (choix
+                # multiple) du widget qdtech_qdradio_icon ci-dessus (radio, non modifié
+                # par ce bloc). Flag distinct posé par
+                # _extract_qdtech_qdcheckbox_icon_choice_blocks (dom_extractors_misc.py) ;
+                # ce widget n'a ni input natif, ni role, ni label[for], et le XPath
+                # positionnel de option_xpath_map ne résout plus rien après re-rendu Vue
+                # (même limite que qdtech_qdradio_icon) : court-circuit avant
+                # _apply_by_target_id, résolution dédiée par texte normalisé.
+                if _p.get("qdtech_qdcheckbox_icon") and itype == "checkbox":
+                    skip_apply_by_target_id = True
+                    from Survey.input_radio import click_qdtech_qdcheckbox_icon
+                    _qdcb_ok = click_qdtech_qdcheckbox_icon(driver, value)
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        f"qdtech_qdcheckbox_icon_dispatch: {'ok' if _qdcb_ok else 'ko'} value={value!r}",
+                    )
+                    if _qdcb_ok:
+                        log_info("[TARGET]", "apply ok=true strategy=qdtech_qdcheckbox_icon_direct reason=applied")
+                        return True
+                    return False
 
             except Exception as e:
                 # meme en exception: pas de fallback générique pour sliderpoints
@@ -6771,9 +7675,8 @@ def execute_action(
                         #   - .option_checkbox.input_on
                         #   - .option_label.input_label_on
                         try:
-                            verified = driver.execute_script(
-                                r"""
-                                const tid = arguments[0];
+                            verified = driver.evaluate(r"""() => {
+                                const tid = _el;
                                 if (!tid) return true;
 
                                 const groups = Array.from(document.querySelectorAll('div.answer_options'));
@@ -6812,9 +7715,7 @@ def execute_action(
                                     }
                                 }
                                 return false;
-                                """,
-                                target_id,
-                            )
+}""")
                         except Exception:
                             verified = False
 
@@ -6843,6 +7744,31 @@ def execute_action(
                 label = safe_label
         except Exception:
             pass
+
+        # Support iframe pour le fallback legacy (label-based) : si le bloc registry
+        # vit dans une iframe enfant (frame_chain non vide), driver._current_frame a
+        # déjà été remis au document racine par le _reset() de sortie du
+        # switch_to_frame_chain utilisé par _apply_by_target_id ci-dessus, alors que ce
+        # bloc continue de vivre dans l'iframe. Les stratégies label-based qui résolvent
+        # getattr(driver, "_current_frame", driver) (ex: click_kantar_rowpicker_radio,
+        # click_ipsos_sharky_grid_progressive_radio) interrogeaient donc le document
+        # racine au lieu de l'iframe où le widget a été extrait/scoré. _run_in_target_frame
+        # ré-exécute la stratégie dans ce frame_chain, même convention que
+        # _apply_by_target_id (switch_to_frame_chain). No-op si frame_chain est vide.
+        _fallback_frame_chain = (target_payload or {}).get("frame_chain") or []
+
+        def _run_in_target_frame(fn):
+            if not _fallback_frame_chain:
+                return fn()
+            try:
+                from Survey.frame_utils import switch_to_frame_chain as _fallback_sfc  # type: ignore
+            except Exception:
+                return fn()
+            try:
+                with _fallback_sfc(driver, _fallback_frame_chain):
+                    return fn()
+            except Exception:
+                return fn()
 
         # ==========================================================
         # 🟦 BUTTON
@@ -6878,6 +7804,24 @@ def execute_action(
         # ==========================================================
         if itype == "dropdown":
 
+            # PureSpectrum ps-select-dropdown (ng-bootstrap, date de naissance mois/année) :
+            # la stratégie dédiée (bloc is_ps_select_dropdown / is_purespectrum_date_dropdown
+            # dans _apply_by_target_id) a déjà été tentée avant d'atteindre ce bloc, et a échoué
+            # (sinon execute_action serait déjà retourné True plus haut). Ce widget n'a aucun
+            # <select> natif (composant custom ps-select-dropdown / div[ngbdropdown]) : le chemin
+            # générique select_option_with_hint()/open_dropdown_generic() appelle `el.tag_name`
+            # (API Selenium absente d'un ElementHandle Playwright) dès qu'aucun <select> n'est
+            # trouvé, provoquant un AttributeError non catché qui fait abandonner toute l'action
+            # (cf. guard analogue tag=="select" ci-dessous, et BOT_EVOLUTION_MEMORY.md). On
+            # rapporte l'échec au lieu de retomber sur un chemin non applicable à ce widget.
+            _tp_dd = target_payload or {}
+            if _tp_dd.get("ps_select_dropdown") or _tp_dd.get("purespectrum_date_dropdown"):
+                log_debug(
+                    "[TARGET_DEBUG]",
+                    f"dropdown ps_select_dropdown: dedicated strategy failed, no generic fallback value={label!r}",
+                )
+                continue
+
             # Guard: sliderpoints are rendered as <select> but behave like Likert sliders.
             # We forbid generic dropdown fallbacks here because they can return True without selecting a value.
             is_sliderpoints_target = False
@@ -6897,6 +7841,24 @@ def execute_action(
                     return True
                 # No other fallback for sliderpoints (avoid false positives).
                 continue
+
+            # Guard DOM strict : <select> natif identifié via le registry (context.tag=="select").
+            # Bypasse select_option_with_hint()/open_dropdown_generic() pour ce cas : leur chemin
+            # custom appelle el.tag_name (API Selenium, absente sur ElementHandle Playwright) ->
+            # AttributeError non catché qui remonte jusqu'au plan d'exécution des actions.
+            if target_payload and (target_payload.get("tag") or "").strip().lower() == "select":
+                if _try(driver, "dropdown_native_by_id", lambda:
+                    Survey.input_handler.select_native_option_by_target(
+                        driver,
+                        target_payload.get("xpath") or "",
+                        target_payload.get("id") or "",
+                        label,
+                        alt_xpaths=target_payload.get("alt_xpaths") or [],
+                        el_name=target_payload.get("name") or "",
+                    )
+                ):
+                    return True
+                log_debug("[TARGET_DEBUG]", f"dropdown_native_by_id échec target_id={target_id!r}")
 
             if ctx and _try(driver, "dropdown_block", lambda:
                 dropdown_block_resolver.try_resolve_dropdown_block(
@@ -6956,9 +7918,9 @@ def execute_action(
 
             def _run_checkbox_strategy(strategy_name: str) -> bool:
                 strategy_map = {
-                    "checkbox_main": lambda: Survey.input_handler.click_checkbox_by_label(driver, label, context_hint=ctx),
-                    "checkbox_buttonish": lambda: Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx),
-                    "checkbox_fallback_radio": lambda: Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx),
+                    "checkbox_main": lambda: _run_in_target_frame(lambda: Survey.input_handler.click_checkbox_by_label(driver, label, context_hint=ctx)),
+                    "checkbox_buttonish": lambda: _run_in_target_frame(lambda: Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx)),
+                    "checkbox_fallback_radio": lambda: _run_in_target_frame(lambda: Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx)),
                 }
                 fn = strategy_map.get(strategy_name)
                 if fn is None:
@@ -7002,6 +7964,61 @@ def execute_action(
 
             radio_cache = _get_block_strategy_memory(driver).get("radio", {})
             _tp = target_payload or {}
+
+            # Kantar/mrIWeb rowpicker radio : la stratégie dédiée (click_kantar_rowpicker_radio)
+            # a déjà été tentée via _apply_by_target_id avant d'atteindre ce bloc, et a échoué
+            # (sinon execute_action serait déjà retourné True plus haut). Sur ce DOM, input.checked
+            # ne reflète jamais l'état React (cf. BOT_EVOLUTION_MEMORY.md) : les stratégies génériques
+            # radio_main/radio_buttonish peuvent donc rapporter un faux succès (checked=true forcé en JS)
+            # sans aucune sélection visible sur la carte. On rapporte l'échec au lieu d'empiler un fallback
+            # non vérifiable sur ce widget.
+            if _tp.get("kantar_rowpicker_radio"):
+                log_debug(
+                    "[TARGET_DEBUG]",
+                    f"radio kantar_rowpicker_radio: dedicated strategy failed, no generic fallback value={label!r}",
+                )
+                return False
+
+            # MUI dialog-question option (ipsos-norm) : même logique que kantar_rowpicker_radio
+            # ci-dessus — la stratégie dédiée (click_mui_dialog_question_option) a déjà été
+            # tentée via _apply_by_target_id et a échoué. Ce widget n'a ni input natif, ni
+            # name, ni label[for] : les stratégies génériques radio_main/radio_buttonish
+            # (recherche par label/input) ne peuvent rien y trouver et retomberaient sur des
+            # stratégies conçues pour d'autres widgets (ex: click_kantar_rowpicker_radio,
+            # premier appel de click_radio_by_label) sans aucune garantie de pertinence.
+            if _tp.get("mui_dialog_question_option"):
+                log_debug(
+                    "[TARGET_DEBUG]",
+                    f"radio mui_dialog_question_option: dedicated strategy failed, no generic fallback value={label!r}",
+                )
+                return False
+
+            # QDTech/KuaiJueCe qd-radio icon : même logique défensive que
+            # kantar_rowpicker_radio/mui_dialog_question_option ci-dessus — la stratégie
+            # dédiée (click_qdtech_qdradio_icon) a déjà été tentée via _apply_by_target_id
+            # et a échoué. Ce widget n'a ni input natif, ni role, ni label[for] : les
+            # stratégies génériques radio_main/radio_buttonish ne peuvent rien y trouver.
+            if _tp.get("qdtech_qdradio_icon"):
+                log_debug(
+                    "[TARGET_DEBUG]",
+                    f"radio qdtech_qdradio_icon: dedicated strategy failed, no generic fallback value={label!r}",
+                )
+                return False
+
+            # PureSpectrum mobile date (roue ps-select-scroll, _extract_purespectrum_mobile_date_blocks) :
+            # aucune stratégie de sélection dédiée n'existe encore pour ce widget (pas d'input/label
+            # natif, sélection via position rotateX/translateZ, mécanisme d'interaction non observé
+            # sur un DOM de référence à ce jour). Les stratégies génériques radio_main/radio_buttonish
+            # chercheraient un input/label inexistant page entière et pourraient cliquer un élément
+            # sans rapport. On rapporte l'échec proprement en attendant un DOM de référence pour
+            # implémenter une stratégie dédiée.
+            if _tp.get("purespectrum_mobile_date"):
+                log_debug(
+                    "[TARGET_DEBUG]",
+                    f"radio purespectrum_mobile_date: no dedicated strategy implemented, no generic fallback value={label!r}",
+                )
+                return False
+
             _tmr_opt_keys = (
                 frozenset((_tp.get("option_xpath_map") or {}).keys())
                 if _tp.get("table_matrix_radio")
@@ -7031,10 +8048,10 @@ def execute_action(
                         Survey.input_handler.set_sliderpoints(driver, label, context_hint=ctx))
                 elif strategy_name == "radio_main":
                     ok = _try(driver, "radio_main", lambda:
-                        Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx))
+                        _run_in_target_frame(lambda: Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx)))
                 elif strategy_name == "radio_buttonish":
                     ok = _try(driver, "radio_buttonish", lambda:
-                        Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx))
+                        _run_in_target_frame(lambda: Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx)))
                 else:
                     return False
                 if ok and radio_cache_key:
@@ -7057,9 +8074,9 @@ def execute_action(
                     return True
 
         # ==========================================================
-        # 🟦 TEXT / NUMBER
+        # 🟦 TEXT / NUMBER / TEXTAREA
         # ==========================================================
-        if itype in ("text", "number"):
+        if itype in ("text", "number", "textarea"):
             try:
                 resolved = Survey.question_block_resolver.try_resolve_number_block(
                     driver,
@@ -7075,10 +8092,167 @@ def execute_action(
             except Exception:
                 pass
 
+            # NB: target_payload == get_target(target_id) (Survey/dom_registry.py) == le
+            # payload enregistré par register_target() dans Survey/dom_analyzer.py (boucle
+            # singles, ~L4207) : tag/name/id sont des clés RACINE de ce dict ("context" est une
+            # sous-clé du bloc GPT distinct envoyé au prompt, absente de ce payload registre).
+            # Corrigé ici (cf. BOT_EVOLUTION_MEMORY.md, diagnostic confirmé sur get_target) :
+            # l'ancienne lecture via target_payload.get("context") retournait invariablement
+            # un dict vide, donc _field_id restait toujours None quel que soit le DOM.
             _field_id = None
             if target_payload:
-                _blk_ctx = target_payload.get("context") or {}
-                _field_id = (_blk_ctx.get("id") or "").strip() or None
+                _field_id = (target_payload.get("id") or "").strip() or None
+
+            # --- Registry miss après rescan intra-plan (execute_actions_plan rebuild
+            # le registry entre deux actions text/number, cf. BOT_EVOLUTION_MEMORY.md) ---
+            # make_target_id() (Survey/dom_registry.py) intègre le texte de question dans
+            # son hash. Sur un DOM sans conteneur sémantique identifiable pour ce champ
+            # (pas de classe 'question'/'form-group', pas de <label>), ce texte est résolu
+            # par l'heuristique de proximité géométrique _find_question_text_near_element
+            # (dom_question_extractor.py, non modifiée ici), non garantie stable d'un scan
+            # à l'autre de la même page. target_payload est alors None bien que le champ DOM
+            # (id/name) n'ait pas changé -> _field_id resterait None -> fill_text_input
+            # retomberait sur son sélecteur générique non scopé, qui ne peut correspondre à
+            # aucun input Angular Material (pas d'attribut HTML "type") -> TimeoutError.
+            # Résolution de secours strictement scopée : uniquement quand target_payload
+            # est absent pour ce target_id précis, via le cache id/name capturé lors du tout
+            # premier enregistrement de ce même target_id (get_stable_text_field_locator).
+            if target_payload is None and itype in ("text", "number", "textarea") and target_id:
+                try:
+                    _stable_loc = get_stable_text_field_locator(target_id)
+                except Exception:
+                    _stable_loc = None
+                if _stable_loc:
+                    _field_id = (_stable_loc.get("id") or "").strip() or None
+                    if not _field_id:
+                        _field_id = (_stable_loc.get("name") or "").strip() or None
+                    if _field_id:
+                        log_info(
+                            "[TARGET]",
+                            f"strategy=text_input_stable_id_fallback target_id={target_id!r} field_id={_field_id!r}",
+                        )
+
+            # --- Textarea sans id, plusieurs textareas homogènes sur la même page
+            # (ex: Askia, 2 questions ouvertes indépendantes <textarea name="S52">/<textarea
+            # name="S53">, aucun attribut id côté DOM) ---
+            # Stratégie dédiée additive : voir BOT_EVOLUTION_MEMORY.md "ASKIA — TEXTAREA
+            # OUVERTE SANS ID, DISCRIMINÉE PAR NAME". Quand id est vide, _field_id reste None
+            # -> fill_text_input (Survey/input_text.py) retombe, si la résolution par
+            # scope/context_hint échoue aussi (consignes de fin de bloc quasi identiques entre
+            # questions), sur driver.wait_for_selector(selector, ...) qui renvoie
+            # systématiquement le PREMIER textarea du DOM, écrasant la réponse déjà saisie de
+            # la question précédente. fill_text_input résout déjà element_id par name en
+            # fallback (après By.ID) si un id est fourni sans correspondre -> transmettre le
+            # name ici ne modifie pas fill_text_input, seule la valeur d'element_id change.
+            _name_field_id = None
+            if not _field_id and target_payload:
+                if (target_payload.get("tag") or "").strip().lower() == "textarea":
+                    _name_field_id = (target_payload.get("name") or "").strip() or None
+
+            if _name_field_id:
+                ok = _try(driver, "textarea_name_fallback", lambda fid=_name_field_id:
+                    Survey.input_handler.fill_text_input(driver, label, context_hint=ctx, element_id=fid))
+                if ok:
+                    return True
+                log_info("[TARGET]", f"apply ok=false reason=textarea_name_fallback_failed target_id={target_id!r}")
+                continue
+
+            # --- Input text/number/tel sans id, plusieurs inputs homogènes partageant le
+            # même préfixe de name (ex: Netrisk/JP survey engine, <input type="tel"
+            # name="a0065n001"> caché display:none + <input type="tel" name="a0065n002">
+            # visible, tous deux sans id) ---
+            # Stratégie dédiée additive, distincte de "textarea_name_fallback" ci-dessus
+            # (même principe : champ sans id HTML, résolution scopée par name unique déjà
+            # discriminé en amont par l'extraction visible/actionnable, cf. target_payload).
+            # Sans cette branche, _field_id reste None (pas d'id HTML) -> fill_text_input
+            # (Survey/input_text.py) retombe sur son sélecteur générique non scopé
+            # (driver.wait_for_selector), qui ne couvre pas input[type='tel'] -> TimeoutError
+            # malgré un champ visible et actionnable (cause racine confirmée, cf.
+            # BOT_EVOLUTION_MEMORY.md). Ne modifie ni le sélecteur ni la logique de scoring
+            # de fill_text_input : résolution directe par name via son fallback element_id
+            # existant (driver.query_selector(f'[name="{element_id}"]')).
+            _input_name_field_id = None
+            if not _field_id and not _name_field_id and target_payload:
+                if (target_payload.get("tag") or "").strip().lower() == "input":
+                    _input_name_field_id = (target_payload.get("name") or "").strip() or None
+
+            if _input_name_field_id:
+                ok = _try(driver, "text_input_name_fallback", lambda fid=_input_name_field_id:
+                    Survey.input_handler.fill_text_input(driver, label, context_hint=ctx, element_id=fid))
+                if ok:
+                    return True
+                log_info("[TARGET]", f"apply ok=false reason=text_input_name_fallback_failed target_id={target_id!r}")
+                continue
+
+            # --- Champ date natif (input[type="date"], ex: Confirmit cf-question--date) ---
+            # Stratégie dédiée additive : voir BOT_EVOLUTION_MEMORY.md "CHAMP DATE NATIF".
+            # target_payload est ici le registre DOM_REGISTRY flat (dom_analyzer.py, boucle
+            # singles), pas le context du bloc GPT -> le flag/id/frame_chain sont lus à la
+            # racine, pas sous "context". frame_chain transmis pour rester cohérent avec les
+            # autres branches dédiées de ce fichier (_apply_by_target_id, sq-sliderpoints, ...)
+            # qui se repositionnent dans l'iframe du registry avant d'agir sur l'élément.
+            # Ne retombe JAMAIS sur fill_text_input générique en cas d'échec (son selector ne
+            # couvre pas input[type=date] et son fallback page-entière peut cibler un autre
+            # champ texte de la page) : une seule stratégie, pas de fallback empilé.
+            _native_date_id = None
+            _native_date_frame_chain = None
+            if target_payload and target_payload.get("native_date_input"):
+                _native_date_id = (target_payload.get("id") or "").strip() or None
+                _native_date_frame_chain = target_payload.get("frame_chain") or None
+            if _native_date_id:
+                ok = _try(driver, "native_date_input", lambda fid=_native_date_id, fc=_native_date_frame_chain:
+                    Survey.input_handler.fill_native_date_input(driver, label, element_id=fid, frame_chain=fc))
+                if ok:
+                    return True
+                log_info("[TARGET]", f"apply ok=false reason=native_date_input_failed target_id={target_id!r}")
+                continue
+
+            # --- Widget zip2city Ifop (input[type="search"].jz2c-input, s2.ifoponline.com) ---
+            # Stratégie dédiée additive : voir BOT_EVOLUTION_MEMORY.md "IFOP ZIP2CITY".
+            # Même convention que le bloc native_date_input ci-dessus (flag/xpath/frame_chain
+            # lus à la racine du registre DOM_REGISTRY, pas sous "context"). Interaction en
+            # 2 temps (saisie code postal -> attente dropdown -> clic ville), incompatible
+            # avec fill_text_input générique (pas d'id, pas de sélection de ville) : ne
+            # retombe JAMAIS dessus en cas d'échec, une seule stratégie.
+            _z2c_xpath = None
+            _z2c_frame_chain = None
+            if target_payload and target_payload.get("ifop_zip2city_widget"):
+                _z2c_xpath = target_payload.get("xpath") or None
+                _z2c_frame_chain = target_payload.get("frame_chain") or None
+            if _z2c_xpath:
+                ok = _try(driver, "ifop_zip2city_widget", lambda xp=_z2c_xpath, fc=_z2c_frame_chain:
+                    Survey.input_handler.fill_ifop_zip2city_widget(driver, label, xpath=xp, frame_chain=fc))
+                if ok:
+                    return True
+                log_info("[TARGET]", f"apply ok=false reason=ifop_zip2city_widget_failed target_id={target_id!r}")
+                continue
+
+            # --- Champ text/number résolu dans un frame_chain du registry ---
+            # Stratégie dédiée additive : voir BOT_EVOLUTION_MEMORY.md "IPSOS / mrIWeb —
+            # GRID/NUM PAR LIGNE" / "CHAMP TEXT/NUMBER RÉSOLU DANS UN FRAME_CHAIN DU
+            # REGISTRY". target_payload est ici le registre DOM_REGISTRY flat -> id/name/
+            # frame_chain lus à la racine, même convention que les blocs native_date_input
+            # et ifop_zip2city_widget ci-dessus. fill_text_input générique résout id/name
+            # via driver.query_selector directement sur `driver` (Page racine), qui ignore
+            # l'attribut _current_frame posé par switch_to_frame_chain -> résolution dans
+            # le mauvais contexte de frame quand frame_chain est non vide (TimeoutError sur
+            # le fallback générique malgré un champ visible). Ne retombe pas sur
+            # fill_text_input générique en cas d'échec (une seule stratégie, pas de
+            # fallback empilé) : ce dernier resterait dans le mauvais contexte de frame.
+            _framed_frame_chain = target_payload.get("frame_chain") if target_payload else None
+            if _framed_frame_chain:
+                _framed_id = (target_payload.get("id") or "").strip() or None
+                _framed_name = (target_payload.get("name") or "").strip() or None
+                if _framed_id or _framed_name:
+                    ok = _try(driver, "text_input_framed",
+                        lambda fid=_framed_id, fname=_framed_name, fc=_framed_frame_chain:
+                        Survey.input_handler.fill_text_input_by_id_in_frame(
+                            driver, label, element_id=fid, element_name=fname, frame_chain=fc))
+                    if ok:
+                        return True
+                    log_info("[TARGET]", f"apply ok=false reason=text_input_framed_failed target_id={target_id!r}")
+                    continue
+
             if _try(driver, "text_input", lambda fid=_field_id:
                 Survey.input_handler.fill_text_input(driver, label, context_hint=ctx, element_id=fid)
             ):
@@ -7197,8 +8371,16 @@ def execute_actions_plan(
     driver._decipher_ranksort_counts = {}
     driver._decipher_ranksort_ordinal = 1
 
+    # Compteurs ordinaux alchemer_rank_dragdrop : réinitialisés à chaque plan (par qid)
+    driver._alchemer_rank_dragdrop_counts = {}
+    driver._alchemer_rank_dragdrop_ordinal = 1
+
+    # Compteurs ordinaux aa_ranking_dragdrop : réinitialisés à chaque plan (par qid)
+    driver._aa_ranking_dragdrop_counts = {}
+    driver._aa_ranking_dragdrop_ordinal = 1
+
     try:
-        url_before = driver.current_url
+        url_before = driver.url
     except Exception:
         url_before = ""
 
@@ -7311,6 +8493,40 @@ def execute_actions_plan(
                 except Exception:
                     driver._decipher_ranksort_ordinal = 1
 
+            # Alchemer rank_dragdrop: rang ordinal (1-based) pour cette action dans le plan
+            if tid:
+                try:
+                    _ar_p = get_target(tid) or {}
+                    if _ar_p.get("alchemer_rank_dragdrop"):
+                        _ar_key = qid or tid
+                        if not hasattr(driver, "_alchemer_rank_dragdrop_counts"):
+                            driver._alchemer_rank_dragdrop_counts = {}
+                        driver._alchemer_rank_dragdrop_counts[_ar_key] = (
+                            driver._alchemer_rank_dragdrop_counts.get(_ar_key, 0) + 1
+                        )
+                        driver._alchemer_rank_dragdrop_ordinal = driver._alchemer_rank_dragdrop_counts[_ar_key]
+                    else:
+                        driver._alchemer_rank_dragdrop_ordinal = 1
+                except Exception:
+                    driver._alchemer_rank_dragdrop_ordinal = 1
+
+            # AA ranking_dragdrop (Ask&Answer cdkDrag) : rang ordinal (1-based) pour cette action dans le plan
+            if tid:
+                try:
+                    _ard_p = get_target(tid) or {}
+                    if _ard_p.get("aa_ranking_dragdrop"):
+                        _ard_key = qid or tid
+                        if not hasattr(driver, "_aa_ranking_dragdrop_counts"):
+                            driver._aa_ranking_dragdrop_counts = {}
+                        driver._aa_ranking_dragdrop_counts[_ard_key] = (
+                            driver._aa_ranking_dragdrop_counts.get(_ard_key, 0) + 1
+                        )
+                        driver._aa_ranking_dragdrop_ordinal = driver._aa_ranking_dragdrop_counts[_ard_key]
+                    else:
+                        driver._aa_ranking_dragdrop_ordinal = 1
+                except Exception:
+                    driver._aa_ranking_dragdrop_ordinal = 1
+
             if tid and qid:
                 instruction = f"{qid} //// {tid} //// {value} //// {itype} //// {context}"
             elif qid:
@@ -7324,14 +8540,14 @@ def execute_actions_plan(
                 if (itype or "").strip().lower() == "dropdown":
                     rs = ""
                     try:
-                        rs = driver.execute_script("return document.readyState") or ""
+                        rs = driver.evaluate("() => { return document.readyState }") or ""
                     except Exception:
                         rs = ""
                     try:
-                        html_len = int(driver.execute_script("return document.documentElement.outerHTML.length") or 0)
+                        html_len = int(driver.evaluate("() => { return document.documentElement.outerHTML.length }") or 0)
                     except Exception:
                         html_len = 0
-                    before_sig = f"{driver.current_url}|{rs}|{html_len}"
+                    before_sig = f"{driver.url}|{rs}|{html_len}"
             except Exception:
                 before_sig = None
 
@@ -7342,7 +8558,7 @@ def execute_actions_plan(
                 try:
                     if (itype or "").strip().lower() in ("radio", "checkbox"):
                         _body_len_before = int(
-                            driver.execute_script("return document.body.innerHTML.length") or 0
+                            driver.evaluate("() => { return document.body.innerHTML.length }") or 0
                         )
                 except Exception:
                     _body_len_before = None
@@ -7373,14 +8589,14 @@ def execute_actions_plan(
                     stable_hits = 0
                     while time.time() - t0 < 10.0:
                         try:
-                            rs = driver.execute_script("return document.readyState") or ""
+                            rs = driver.evaluate("() => { return document.readyState }") or ""
                         except Exception:
                             rs = ""
                         try:
-                            html_len = int(driver.execute_script("return document.documentElement.outerHTML.length") or 0)
+                            html_len = int(driver.evaluate("() => { return document.documentElement.outerHTML.length }") or 0)
                         except Exception:
                             html_len = 0
-                        sig = f"{driver.current_url}|{rs}|{html_len}"
+                        sig = f"{driver.url}|{rs}|{html_len}"
 
                         # on veut au minimum: readyState complete ET un DOM non trivial
                         if rs == "complete" and html_len > 500:
@@ -7397,7 +8613,7 @@ def execute_actions_plan(
 
             if stop_on_navigation:
                 try:
-                    if driver.current_url != url_before:
+                    if driver.url != url_before:
                         break
                 except Exception:
                     pass
@@ -7445,10 +8661,22 @@ def execute_actions_plan(
                                 and tid == next_tid:
                             same_question_block = True
                             _skip_reason = f"same multi_text target_id={tid!r}"
+                        # Deux <select> natifs consécutifs (ex: mois puis année d'une même date
+                        # de naissance) : itype="dropdown" ne porte pas de qid partagé comme
+                        # radio/checkbox (chaque champ est un QID GPT distinct) ni de target_id
+                        # commun. Le contexte GPT (texte de question statique, non re-extrait du
+                        # DOM) est en revanche identique pour les deux champs d'une même question
+                        # à deux dropdowns — signal stable, contrairement au texte "question" du
+                        # registry qui embarque la valeur déjà sélectionnée (ex: "... Juillet
+                        # Année") et fait dériver le target_id du second champ après un rescan.
+                        if not same_question_block and itype_lower == "dropdown" and next_itype == "dropdown" \
+                                and context and (next_act.get("context") or "").strip() == context:
+                            same_question_block = True
+                            _skip_reason = f"same dropdown question context={context!r}"
                         if not same_question_block and _body_len_before is not None:
                             try:
                                 _body_len_after = int(
-                                    driver.execute_script("return document.body.innerHTML.length") or 0
+                                    driver.evaluate("() => { return document.body.innerHTML.length }") or 0
                                 )
                                 if _body_len_after == _body_len_before and _body_len_before > 0:
                                     same_question_block = True

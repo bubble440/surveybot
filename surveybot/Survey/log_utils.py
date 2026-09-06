@@ -26,7 +26,7 @@ def is_debug() -> bool:
 
 
 def is_step_summary_enabled() -> bool:
-    raw = os.getenv("LOG_STEP_SUMMARY", "1")
+    raw = os.getenv("LOG_STEP_SUMMARY", "0")
     return _truthy(raw)
 
 

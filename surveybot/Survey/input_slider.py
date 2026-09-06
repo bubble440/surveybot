@@ -10,8 +10,11 @@ Dépendances:
 - input_utils pour les fonctions utilitaires
 """
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import Select
+
+
+
+
+
 import unicodedata
 import re
 import time
@@ -46,7 +49,9 @@ def _normalize_slider_text(s: str) -> str:
 def _handle_left_pct(track) -> float | None:
     """Retourne le pourcentage de position du handle slider."""
     try:
-        h = track.find_element(By.CSS_SELECTOR, "a.ui-slider-handle")
+        h = track.query_selector("a.ui-slider-handle")
+        if h is None:
+            return None
         style = (h.get_attribute("style") or "").lower()
         m = re.search(r"left\s*:\s*([0-9.]+)%", style)
         if m:
@@ -105,7 +110,7 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
 
     # IMPORTANT: utiliser les *containers* (1 ligne = 1 container).
     try:
-        blocks_all = root.find_elements(By.CSS_SELECTOR, ".sq-sliderpoints-container")
+        blocks_all = root.query_selector_all(".sq-sliderpoints-container")
     except Exception:
         blocks_all = []
 
@@ -120,7 +125,8 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
         saw_any_label = False
         for c in blocks_all:
             try:
-                lbl = _normalize_slider_text(c.find_element(By.CSS_SELECTOR, ".sq-sliderpoints-row-legend").text)
+                _leg = c.query_selector(".sq-sliderpoints-row-legend")
+                lbl = _normalize_slider_text(_leg.inner_text() if _leg else "")
             except Exception:
                 lbl = ""
             if lbl:
@@ -137,8 +143,8 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
 
     for b in blocks:
         try:
-            legends = b.find_elements(By.CSS_SELECTOR, ".sliderpoints_legend .sliderpoints-legenditem")
-            legend_txts = [_normalize_slider_text(x.text) for x in legends if (x.text or "").strip()]
+            legends = b.query_selector_all(".sliderpoints_legend .sliderpoints-legenditem")
+            legend_txts = [_normalize_slider_text(x.inner_text()) for x in legends if (x.inner_text() or "").strip()]
             if not legend_txts:
                 continue
 
@@ -149,17 +155,14 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
             if idx < 0:
                 continue
 
-            try:
-                track = b.find_element(By.CSS_SELECTOR, ".ui-slider-horizontal")
-            except Exception:
-                track = None
+            track = b.query_selector(".ui-slider-horizontal")
             if not track:
                 continue
 
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", track)
+            driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", track)
 
             # calcule position (fallback seulement)
-            r = track.rect or {}
+            r = track.bounding_box() or {}
             w = int(r.get("width", 0) or 0)
             h = int(r.get("height", 0) or 0)
             steps = max(1, len(legend_txts) - 1)
@@ -171,34 +174,29 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
             desired_val: str | None = None
             real_idx = idx
             try:
-                sel = b.find_element(By.TAG_NAME, "select")
-                S = Select(sel)
+                sel = b.query_selector("select")
+                if sel is None:
+                    raise Exception("no select")
+                _sel_el_sl = sel
 
                 def _is_placeholder(opt) -> bool:
                     v = (opt.get_attribute("value") or "").strip()
-                    t = _normalize_slider_text(opt.text)
+                    t = _normalize_slider_text(opt["text"])
                     return (v in ("", "-1")) or any(k in t for k in ("selection", "select", "choose", "sélection"))
 
-                offset = 1 if S.options and _is_placeholder(S.options[0]) else 0
+                offset = 1 if driver.evaluate("el => Array.from(el.options).map(o => ({value:o.value,text:o.text.trim()}))", _sel_el_sl) and _is_placeholder(driver.evaluate("el => Array.from(el.options).map(o => ({value:o.value,text:o.text.trim()}))", _sel_el_sl)[0]) else 0
                 real_idx = idx + offset
-                real_idx = min(len(S.options) - 1, max(0, real_idx))
-                opt = S.options[real_idx]
-                desired_val = (opt.get_attribute("value") or "").strip() or None
+                real_idx = min(len(driver.evaluate("el => Array.from(el.options).map(o => ({value:o.value,text:o.text.trim()}))", _sel_el_sl)) - 1, max(0, real_idx))
+                opt = driver.evaluate("el => Array.from(el.options).map(o => ({value:o.value,text:o.text.trim()}))", _sel_el_sl)[real_idx]
+                desired_val = (opt.get("value") or "").strip() or None
             except Exception:
                 sel = None
                 desired_val = None
 
             def _dispatch_select_events(el) -> None:
                 try:
-                    driver.execute_script(
-                        """
-                        const s = arguments[0];
-                        for (const t of ['input','change','blur']) {
-                          try { s.dispatchEvent(new Event(t, {bubbles:true})); } catch(e) {}
-                        }
-                        """,
-                        el,
-                    )
+                    el.evaluate("(s) => { for (const t of ['input','change','blur']) "
+                                "{ try { s.dispatchEvent(new Event(t, {bubbles:true})); } catch(e) {} } }")
                 except Exception:
                     pass
 
@@ -207,8 +205,7 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
                 clicked = False
                 circles = []
                 try:
-                    circles = b.find_elements(
-                        By.CSS_SELECTOR,
+                    circles = b.query_selector_all(
                         ".sliderpoints_circleLegend span.fa-icon-circle, .sliderpoints_circleLegend span"
                     )
                 except Exception:
@@ -216,8 +213,8 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
 
                 try:
                     if 0 <= idx < len(circles):
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", circles[idx])
-                        driver.execute_script("arguments[0].click();", circles[idx])
+                        driver.evaluate("(el) => el.scrollIntoView({block:'center'})", circles[idx])
+                        driver.evaluate("(el) => el.click()", circles[idx])
                         clicked = True
                 except Exception:
                     clicked = False
@@ -226,8 +223,8 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
                 if not clicked:
                     try:
                         if 0 <= idx < len(legends):
-                            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", legends[idx])
-                            driver.execute_script("arguments[0].click();", legends[idx])
+                            driver.evaluate("(el) => el.scrollIntoView({block:'center'})", legends[idx])
+                            driver.evaluate("(el) => el.click()", legends[idx])
                     except Exception:
                         pass
 
@@ -236,9 +233,9 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
                     try:
                         cur = (sel.get_attribute("value") or "").strip()
                         if desired_val is not None and cur != desired_val:
-                            driver.execute_script("arguments[0].value = arguments[1];", sel, desired_val)
+                            driver.evaluate("([e,v]) => { e.value = v; }", [sel, desired_val])
                         elif desired_val is None:
-                            driver.execute_script("arguments[0].selectedIndex = arguments[1];", sel, int(real_idx))
+                            driver.evaluate("([e,i]) => { e.selectedIndex = i; }", [sel, int(real_idx)])
                         _dispatch_select_events(sel)
                     except Exception:
                         pass
@@ -246,20 +243,12 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
                 # 3) jQuery-UI slider('value', ...) si dispo
                 try:
                     v = int(desired_val) if desired_val is not None and str(desired_val).lstrip("-").isdigit() else int(idx)
-                    driver.execute_script(
-                        """
-                        const root = arguments[0];
-                        const v = arguments[1];
-                        const slider = root.querySelector('.ui-slider-horizontal, .ui-slider');
-                        if (slider && window.jQuery && window.jQuery(slider).slider) {
-                          try { window.jQuery(slider).slider('value', v); } catch(e) {}
-                          try { window.jQuery(slider).trigger('change'); } catch(e) {}
-                          try { window.jQuery(slider).trigger('slidechange'); } catch(e) {}
-                        }
-                        """,
-                        b,
-                        v,
-                    )
+                    b.evaluate("([root, v]) => { const s = root.querySelector('.ui-slider-horizontal,.ui-slider');"
+                               " if (s && window.jQuery && window.jQuery(s).slider) {"
+                               " try { window.jQuery(s).slider('value', v); } catch(e) {}"
+                               " try { window.jQuery(s).trigger('change'); } catch(e) {}"
+                               " try { window.jQuery(s).trigger('slidechange'); } catch(e) {} } }",
+                               [b, v])
                 except Exception:
                     pass
 
@@ -274,7 +263,9 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
                     ok_val = True
 
                 try:
-                    t2 = b.find_element(By.CSS_SELECTOR, ".ui-slider-horizontal")
+                    t2 = b.query_selector(".ui-slider-horizontal")
+                    if t2 is None:
+                        raise Exception("no slider")
                     ok_scale = not _is_off_scale(t2)
                 except Exception:
                     ok_scale = False
@@ -296,29 +287,13 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
             # Tentative 2: clic piste (fallback)
             try:
                 if w > 4:
-                    driver.execute_script(
-                        """
-                        const track = arguments[0];
-                        const x = arguments[1];
-                        const y = arguments[2];
-                        const r = track.getBoundingClientRect();
-
-                        const cx = Math.min(r.right - 2, Math.max(r.left + 2, r.left + x));
-                        const cy = Math.min(r.bottom - 2, Math.max(r.top + 2, r.top + y));
-
-                        const ev = (type) => new MouseEvent(type, {
-                        bubbles: true,
-                        cancelable: true,
-                        clientX: cx,
-                        clientY: cy
-                        });
-
-                        track.dispatchEvent(ev('mousemove'));
-                        track.dispatchEvent(ev('mousedown'));
-                        track.dispatchEvent(ev('mouseup'));
-                        track.dispatchEvent(ev('click'));
-                        """,
-                        track, int(x), int(y)
+                    track.evaluate(
+                        "([track, x, y]) => { const r = track.getBoundingClientRect();"
+                        " const cx = Math.min(r.right-2, Math.max(r.left+2, r.left+x));"
+                        " const cy = Math.min(r.bottom-2, Math.max(r.top+2, r.top+y));"
+                        " const ev = (t) => new MouseEvent(t,{bubbles:true,cancelable:true,clientX:cx,clientY:cy});"
+                        " ['mousemove','mousedown','mouseup','click'].forEach(t => track.dispatchEvent(ev(t))); }",
+                        [track, int(x), int(y)]
                     )
                     time.sleep(0.10)
             except Exception:

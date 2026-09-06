@@ -7,12 +7,14 @@ Flow:
   3. handle_captcha(driver)         → orchestrateur complet (détect → résout → saisit → soumet)
                                       retourne True si un CAPTCHA a été traité, False sinon (no-op)
 """
+import base64
 import time
-from selenium.webdriver.common.by import By
 
 # Mots-clés qui signalent un élément CAPTCHA dans ses attributs DOM
 _CAPTCHA_ATTRS = ("id", "class", "alt", "name", "aria-label")
 _CAPTCHA_KEYWORDS = frozenset({"captcha", "cap_img", "securecode", "security-code", "verif-img"})
+
+
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -48,11 +50,11 @@ def detect_normal_captcha(driver) -> dict | None:
     Retourne un dict {"img_el": el, "input_el": el} ou None si rien trouvé.
     """
     try:
-        candidates = driver.find_elements(By.CSS_SELECTOR, "img, canvas")
+        candidates = driver.query_selector_all("img, canvas")
         captcha_img = None
         for el in candidates:
             try:
-                if not el.is_displayed():
+                if not el.is_visible():
                     continue
             except Exception:
                 continue
@@ -64,30 +66,33 @@ def detect_normal_captcha(driver) -> dict | None:
             return None
 
         # Cherche le champ de saisie de la réponse — d'abord dans le même conteneur
-        input_el = driver.execute_script(
-            """
-            var img = arguments[0];
-            var el = img;
-            for (var i = 0; i < 8; i++) {
-                el = el.parentElement;
-                if (!el) break;
-                var inp = el.querySelector(
-                    "input[type='text'], input[type='tel'], input:not([type]), input[type='']"
-                );
-                if (inp) return inp;
-            }
-            return null;
-            """,
-            captcha_img,
+        # evaluate_handle retourne un JSHandle ; as_element() donne un ElementHandle utilisable
+        # PATCH: la parenthèse fermante de l'arrow function "(e => { ... })" manquait,
+        # ce qui produisait un JS syntaxiquement invalide (SyntaxError: Unexpected end
+        # of input) silencieusement avalé par le except englobant → faux négatif de
+        # détection. Chaîne reconstruite avec parenthésage explicite et correct.
+        input_handle = captcha_img.evaluate_handle(
+            "(e => {"
+            " let n = e;"
+            " for (let i = 0; i < 8; i++) {"
+            "  n = n.parentElement;"
+            "  if (!n) break;"
+            "  const inp = n.querySelector(\"input[type='text'], input[type='tel'],"
+            " input:not([type]), input[type='']\");"
+            "  if (inp) return inp;"
+            " }"
+            " return null;"
+            "})"
         )
+        input_el = input_handle.as_element() if input_handle else None
 
         if input_el is None:
             # Fallback : premier <input type="text"> visible sur la page
-            for inp in driver.find_elements(
-                By.CSS_SELECTOR, "input[type='text'], input[type='tel'], input:not([type])"
+            for inp in driver.query_selector_all(
+                "input[type='text'], input[type='tel'], input:not([type])"
             ):
                 try:
-                    if inp.is_displayed():
+                    if inp.is_visible():
                         input_el = inp
                         break
                 except Exception:
@@ -151,7 +156,7 @@ def handle_captcha(driver) -> bool:
 
     # 1) Capture de l'image CAPTCHA en base64 (screenshot de l'élément DOM)
     try:
-        image_b64 = img_el.screenshot_as_base64
+        image_b64 = base64.b64encode(img_el.screenshot()).decode()
     except Exception as exc:
         print(f"[CAPTCHA] Impossible de capturer l'image CAPTCHA : {exc}")
         return True  # CAPTCHA détecté mais non résolu — signaler quand même

@@ -4,13 +4,16 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List
 
-from selenium.webdriver.common.by import By
-
 from Survey.dom_registry import make_target_id, register_target
 
 
+# ---------------------------------------------------------------------------
+# Playwright page helper
+# ---------------------------------------------------------------------------
+
+
 def _norm_space(s: str) -> str:
-    s = (s or "").replace("\u00a0", " ").strip()
+    s = (s or "").replace(" ", " ").strip()
     s = re.sub(r"\s+", " ", s)
     return s
 
@@ -30,14 +33,13 @@ def _xpath_by_id(dom_id: str) -> str:
 def _extract_legend_options(root) -> List[str]:
     opts: List[str] = []
     try:
-        lis = root.find_elements(
-            By.CSS_SELECTOR,
+        lis = root.query_selector_all(
             ".sq-sliderpoints-legend li, .sliderpoints_legend .sliderpoints-legenditem"
         )
     except Exception:
         lis = []
     for li in lis:
-        t = _norm_space(li.text)
+        t = _norm_space(li.inner_text())
         if t and t not in opts:
             opts.append(t)
     return opts
@@ -46,7 +48,7 @@ def _extract_legend_options(root) -> List[str]:
 def _extract_select_options(sel) -> List[str]:
     out: List[str] = []
     try:
-        options = sel.find_elements(By.CSS_SELECTOR, "option")
+        options = sel.query_selector_all("option")
     except Exception:
         options = []
     for o in options:
@@ -55,14 +57,14 @@ def _extract_select_options(sel) -> List[str]:
                 continue
         except Exception:
             pass
-        t = _norm_space(o.text)
+        t = _norm_space(o.inner_text())
         if t and t not in out:
             out.append(t)
     return out
 
 
 def _extract_continue_button(driver) -> List[Dict[str, Any]]:
-    # best-effort : on ne “force” pas si absent
+    # best-effort : on ne "force" pas si absent
     selectors = [
         "#btn_continue",
         "input#btn_continue",
@@ -71,10 +73,12 @@ def _extract_continue_button(driver) -> List[Dict[str, Any]]:
     ]
     for css in selectors:
         try:
-            el = driver.find_element(By.CSS_SELECTOR, css)
+            el = driver.query_selector(css)
+            if el is None:
+                continue
             dom_id = (el.get_attribute("id") or "").strip()
             name = (el.get_attribute("name") or "").strip()
-            label = _norm_space(el.get_attribute("value") or el.text or "Continuer")
+            label = _norm_space(el.get_attribute("value") or el.inner_text() or "Continuer")
             if dom_id:
                 xp = _xpath_by_id(dom_id)
             else:
@@ -120,7 +124,7 @@ def extract_sliderpoints_question_blocks(driver) -> List[Dict[str, Any]]:
     - ignore sliderpoints_OO (checkboxes internes)
     """
     try:
-        roots = driver.find_elements(By.CSS_SELECTOR, ".sq-sliderpoints")
+        roots = driver.query_selector_all(".sq-sliderpoints")
     except Exception:
         roots = []
 
@@ -132,30 +136,31 @@ def extract_sliderpoints_question_blocks(driver) -> List[Dict[str, Any]]:
     for root in roots:
         group_question = ""
         try:
-            group_question = _norm_space(
-                root.find_element(By.CSS_SELECTOR, ".sq-question-text, h1.question-text, .question-text").text
-            )
+            qel = root.query_selector(".sq-question-text, h1.question-text, .question-text")
+            if qel is not None:
+                group_question = _norm_space(qel.inner_text())
         except Exception:
             group_question = ""
 
         legend_opts = _extract_legend_options(root)
 
         try:
-            containers = root.find_elements(By.CSS_SELECTOR, ".sq-sliderpoints-container")
+            containers = root.query_selector_all(".sq-sliderpoints-container")
         except Exception:
             containers = []
 
         for c in containers:
             # chaque ligne doit avoir un select
-            try:
-                sel = c.find_element(By.CSS_SELECTOR, "select")
-            except Exception:
+            sel = c.query_selector("select")
+            if sel is None:
                 continue
 
             # texte ligne (row label)
             row_label = ""
             try:
-                row_label = _norm_space(c.find_element(By.CSS_SELECTOR, ".sq-sliderpoints-row-legend").text)
+                rel = c.query_selector(".sq-sliderpoints-row-legend")
+                if rel is not None:
+                    row_label = _norm_space(rel.inner_text())
             except Exception:
                 row_label = ""
 

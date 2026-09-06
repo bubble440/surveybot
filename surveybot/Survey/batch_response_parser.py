@@ -22,11 +22,10 @@ La fonction filter_exclusive_conflicts() élimine ces conflits AVANT exécution.
 from __future__ import annotations
 import re, datetime
 import difflib
-import os
 import math
 import unicodedata
 from typing import Dict, Optional, List, Any
-from .log_utils import log_debug, log_info
+from .log_utils import is_debug, log_debug, log_info
 from .dom_selection_rules import is_sector_activity_question
 _ALLOWED_ITYPES = {"radio", "checkbox", "dropdown", "text", "textarea", "button", "number", "matrix", "cardsort"}
 _QID_RE = re.compile(r"\bQ\d+\b", re.IGNORECASE)
@@ -384,8 +383,7 @@ _MONTHS_FR = {
 
 
 def _debug_enabled() -> bool:
-    lvl = (os.getenv("LOG_LEVEL") or "").strip().lower()
-    return lvl == "debug"
+    return is_debug()
 
 
 def _debug_log(msg: str) -> None:
@@ -570,6 +568,31 @@ def _normalize_multi_text_month_segments(value: str) -> str:
         else:
             out.append(s)
     return "|".join(out) if changed else value
+
+
+def _normalize_native_date_single(value: str) -> str | None:
+    """
+    Filet de sécurité pour un bloc kind=single flaggé context.native_date_input=True
+    (ex: <input type="date"> Confirmit cf-question--date).
+
+    Le prompt (build_batch_prompt) demande explicitement 1 valeur unique au format
+    AAAA-MM-JJ sans "|" pour ce type de bloc. Si le modèle suit malgré tout la RÈGLE
+    CHAMP MULTI-CASES générale (DOB décomposé MM|DD|YYYY, prévue pour context.kind=multi_text),
+    cette fonction réassemble les 3 segments en une seule chaîne ISO au lieu de les laisser
+    tronquer à 1 seul segment par la dédup single-target de la boucle principale.
+    Retourne None si la valeur ne matche pas un triplet MM|DD|YYYY exploitable (aucune
+    normalisation appliquée, comportement inchangé).
+    """
+    parts = [p.strip() for p in (value or "").split("|") if p.strip()]
+    if len(parts) != 3:
+        return None
+    mm, dd, yyyy = parts
+    if not (mm.isdigit() and dd.isdigit() and yyyy.isdigit()) or len(yyyy) != 4:
+        return None
+    mm_i, dd_i = int(mm), int(dd)
+    if not (1 <= mm_i <= 12 and 1 <= dd_i <= 31):
+        return None
+    return f"{yyyy}-{mm_i:02d}-{dd_i:02d}"
 
 
 def _is_matrix_action(itype: str, qid: str | None, target_id: str | None, qid_meta: dict | None) -> bool:
@@ -794,6 +817,19 @@ def _find_best_option_match(value: str, options: list[str], threshold: float = 0
             )
             return (suffix_candidates[0], False, 0.95)
 
+        # Résolution préfixe numérique exact (échelles bornées type "0 - Très négative" / "10 - Très positive")
+        # où les valeurs intermédiaires (1..9) sont des chiffres bruts mais les extrêmes portent un libellé complet.
+        # Guard : valeur reçue = entier pur ET exactement une option commence par ce chiffre suivi d'un non-chiffre.
+        prefix_candidates = [
+            opt for opt in options
+            if re.match(r"^" + num_str + r"(?!\d)", _fold_lc(opt))
+        ]
+        if len(prefix_candidates) == 1:
+            _debug_log(
+                f"numeric_prefix_match: {value!r} -> {prefix_candidates[0]!r}"
+            )
+            return (prefix_candidates[0], False, 0.95)
+
     return None
 
 
@@ -884,6 +920,35 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
                 target_id = target_id or qid
                 qid = recovered_qid
 
+        # Chemin de résolution distinct (additif) — variante observée où OpenAI inverse
+        # l'ordre des champs du format 5 colonnes : colonne 1 = liste des valeurs
+        # sélectionnées (au lieu du QID), colonne 2 = target_id correct, colonne 3 =
+        # la même liste de valeurs sous une autre forme, colonne 4 = itype, colonne 5 =
+        # texte de question. Ne se déclenche que si la récupération standard ci-dessus a
+        # échoué (qid toujours absent de constraints) ET si la colonne 2 correspond
+        # exactement à un target_id connu ET si l'itype déclaré en colonne 4 correspond à
+        # l'itype attendu pour la question ainsi retrouvée (double discriminant, pour ne
+        # jamais capturer une ligne au format standard dont le QID serait simplement
+        # inconnu). `value` (déjà affecté depuis parts[2] par la branche 5-champs
+        # standard ci-dessus) n'est pas modifié : parts[2] porte la même liste de valeurs
+        # que parts[0] dans cette variante.
+        if (
+            constraints is not None
+            and (not qid or qid not in constraints)
+            and len(parts) >= 5
+            and target_id
+            and target_id in target_to_qid
+        ):
+            _alt_qid = target_to_qid[target_id]
+            _alt_meta = (qid_meta or {}).get(_alt_qid) if isinstance(qid_meta, dict) else None
+            _alt_itype = str((_alt_meta or {}).get("itype") or "").strip().lower() if isinstance(_alt_meta, dict) else ""
+            if _alt_itype and itype and _alt_itype == itype:
+                _debug_log(
+                    f"[swapped_5field_recovery] target_id={target_id!r} -> qid={_alt_qid!r} "
+                    f"(colonne QID initiale={qid!r})"
+                )
+                qid = _alt_qid
+
         # mode batch strict
         if constraints is not None:
             if not qid:
@@ -927,21 +992,90 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
                 _debug_log(f"normalized multi_text month segments: {value!r} -> {normalized!r}")
                 value = normalized
 
+        is_native_date_single_target = (
+            itype in {"text", "textarea", "number"}
+            and str(kind or "") == "single"
+            and bool(((qmeta or {}).get("context") or {}).get("native_date_input"))
+        )
+        if is_native_date_single_target and "|" in value:
+            normalized = _normalize_native_date_single(value)
+            if normalized:
+                _debug_log(f"normalized native_date_input segments: {value!r} -> {normalized!r}")
+                value = normalized
+
         is_matrix = _is_matrix_action(itype=itype, qid=qid, target_id=target_id, qid_meta=qid_meta)
         is_cardsort = itype == "cardsort"
 
         cardsort_assignments: list[tuple[str, str]] = []
         if is_cardsort:
-            chunks = [c.strip() for c in re.split(r"\s*;\s*", value) if c.strip()]
-            for chunk in chunks:
-                if "=>" not in chunk:
-                    continue
-                card_label, bucket_blob = chunk.split("=>", 1)
-                card_label = card_label.strip()
-                bucket_blob = bucket_blob.strip()
-                if not card_label or not bucket_blob:
-                    continue
-                cardsort_assignments.append((card_label, bucket_blob))
+            known_cards = [str(c or "").strip() for c in ((qmeta or {}).get("cards") or []) if str(c or "").strip()]
+            known_buckets = [str(b or "").strip() for b in ((qmeta or {}).get("buckets") or []) if str(b or "").strip()]
+
+            if known_cards:
+                # Découpage par ancrage sur les card_label CONNUS (buckets_cardsort/cards_cardsort
+                # transmis dans le prompt), au lieu d'un split rigide sur " ; ". Le modèle dévie parfois
+                # du séparateur demandé (observé: "|" utilisé pour tout, y compris entre cartes) — en
+                # repérant les positions réelles de "card_label connu =>" dans la réponse, le découpage
+                # reste correct quel que soit le caractère utilisé entre deux affectations.
+                anchors: list[tuple[int, int, str]] = []
+                for c in known_cards:
+                    for m in re.finditer(re.escape(c) + r"\s*=>", value, flags=re.IGNORECASE):
+                        anchors.append((m.start(), m.end(), c))
+                anchors.sort(key=lambda t: t[0])
+                dedup: list[tuple[int, int, str]] = []
+                last_end = -1
+                for start, end, c in anchors:
+                    if start < last_end:
+                        continue
+                    dedup.append((start, end, c))
+                    last_end = end
+                for i, (start, end, card_label) in enumerate(dedup):
+                    next_start = dedup[i + 1][0] if i + 1 < len(dedup) else len(value)
+                    bucket_blob = re.sub(r"[;|\s]+$", "", value[end:next_start]).strip()
+                    if not bucket_blob:
+                        continue
+                    cardsort_assignments.append((card_label, bucket_blob))
+            else:
+                # Dernier recours si aucune liste de cartes connue n'est disponible (ne devrait pas
+                # arriver: qid_meta transporte toujours "cards" pour un bloc cardsort, cf. survey_executor.py).
+                chunks = [c.strip() for c in re.split(r"\s*;\s*", value) if c.strip()]
+                for chunk in chunks:
+                    if "=>" not in chunk:
+                        continue
+                    card_label, bucket_blob = chunk.split("=>", 1)
+                    card_label = card_label.strip()
+                    bucket_blob = bucket_blob.strip()
+                    if not card_label or not bucket_blob:
+                        continue
+                    cardsort_assignments.append((card_label, bucket_blob))
+
+            # ✅ Validation des bucket labels contre buckets_cardsort connu (anti-hallucination LLM),
+            # même mécanisme que pour radio/checkbox/dropdown (_find_best_option_match). Une carte dont
+            # aucun bucket ne peut être fiabilisé est écartée seule, sans affecter les autres cartes.
+            if known_buckets:
+                validated: list[tuple[str, str]] = []
+                for card_label, bucket_blob in cardsort_assignments:
+                    sub_labels = [s.strip() for s in bucket_blob.split("|") if s.strip()]
+                    matched_labels = []
+                    for s in sub_labels:
+                        match = _find_best_option_match(s, known_buckets)
+                        if match is None:
+                            log_info("[batch_response_parser]",
+                                     f"qid={qid} cardsort bucket rejeté (hors buckets_cardsort): "
+                                     f"card={card_label!r} bucket={s!r} buckets={known_buckets}")
+                            continue
+                        matched_val, is_exact, score = match
+                        if not is_exact:
+                            log_debug("[batch_response_parser]",
+                                      f"qid={qid} cardsort bucket substitué fuzzy (score={score:.2f}): {s!r} -> {matched_val!r}")
+                        matched_labels.append(matched_val)
+                    if not matched_labels:
+                        log_info("[batch_response_parser]",
+                                 f"qid={qid} cardsort affectation écartée (carte={card_label!r}): aucun bucket valide")
+                        continue
+                    validated.append((card_label, "|".join(matched_labels)))
+                cardsort_assignments = validated
+
             if not cardsort_assignments:
                 continue
 
@@ -1006,7 +1140,13 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
                 kept_count.setdefault(qid, 0)
                 kept_values.setdefault(qid, set())
 
-                keyv = v.strip().lower()
+                # Cardsort: 2 cartes différentes peuvent légitimement partager le même bucket
+                # (ex: Café et Thé tous deux => "Chaud") — la clé de dédup doit inclure la carte,
+                # sinon la 2e affectation est éliminée à tort comme "valeur déjà vue" pour ce QID.
+                if is_cardsort:
+                    keyv = f"{cardsort_assignments[idx_v][0].strip().lower()}\x1f{v.strip().lower()}"
+                else:
+                    keyv = v.strip().lower()
                 if keyv in kept_values[qid]:
                     continue
                 kept_values[qid].add(keyv)
@@ -1027,55 +1167,49 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
                 }
             )
 
-    # --- Fallback : ligne brute sans //// pour bloc multi_text unique (mode batch strict) ---
-    # Déclenché quand GPT renvoie les valeurs | sans enveloppe QID //// target_id //// ...
+    # --- Fallback : ligne brute sans //// pour QID unique (mode batch strict) ---
+    # Déclenché quand GPT renvoie la valeur nue sans enveloppe QID //// target_id //// ...
     # Conditions strictes :
     #   1. mode batch strict (constraints non None)
-    #   2. exactement 1 QID dans constraints avec context.kind=multi_text
-    #   3. ce QID n'a encore aucune action générée
-    #   4. le raw brut contient exactement 1 ligne sans "////"
+    #   2. exactement 1 QID dans constraints sans action générée
+    #   3. le raw brut contient exactement 1 ligne sans "////"
     if constraints is not None:
-        _mt_qids: list[str] = []
-        for _qid_c in constraints:
-            _qmeta_c = (qid_meta or {}).get(_qid_c) if isinstance(qid_meta, dict) else None
-            if not isinstance(_qmeta_c, dict):
-                continue
-            _ctx_c = _qmeta_c.get("context") if isinstance(_qmeta_c.get("context"), dict) else {}
-            if str((_ctx_c or {}).get("kind") or "") == "multi_text":
-                _mt_qids.append(_qid_c)
+        _answered_set = {(a.get("qid") or "").upper() for a in actions}
+        _mt_qids: list[str] = [
+            _qid_c for _qid_c in constraints
+            if _qid_c.upper() not in _answered_set
+        ]
         if len(_mt_qids) == 1:
             _qid_mt = _mt_qids[0]
-            _answered = {(a.get("qid") or "").upper() for a in actions}
-            if _qid_mt not in _answered:
-                _bare_lines = [l.strip() for l in raw.splitlines() if l.strip() and "////" not in l]
-                if len(_bare_lines) == 1:
-                    _bare_val = _bare_lines[0]
-                    _mx_mt = int(constraints.get(_qid_mt, 1) or 1)
-                    _qmeta_mt: dict = (qid_meta or {}).get(_qid_mt) or {}  # type: ignore[assignment]
-                    _tid_mt = str(_qmeta_mt.get("target_id") or "").strip()
-                    _itype_mt = str(_qmeta_mt.get("itype") or "text").strip().lower() or "text"
-                    _ctx_mt_str = str(_qmeta_mt.get("question") or "")
-                    _vals_mt = _split_values(_bare_val, itype=_itype_mt, max_select=_mx_mt)
-                    _debug_log(
-                        f"multi_text_bare_fallback: qid={_qid_mt} target_id={_tid_mt!r} "
-                        f"segments={len(_vals_mt)} raw={_bare_val!r}"
-                    )
-                    for _v in _vals_mt:
-                        _v = (_v or "").strip()
-                        if not _v:
-                            continue
-                        actions.append({
-                            "qid": _qid_mt,
-                            "target_id": _tid_mt,
-                            "value": _v,
-                            "itype": _itype_mt,
-                            "context": _ctx_mt_str,
-                            "matrix_row_label": None,
-                            "matrix_col_label": None,
-                            "cardsort_card_label": None,
-                            "cardsort_bucket_labels": None,
-                            "raw": _bare_val,
-                        })
+            _bare_lines = [l.strip() for l in raw.splitlines() if l.strip() and "////" not in l]
+            if len(_bare_lines) == 1:
+                _bare_val = _bare_lines[0]
+                _mx_mt = int(constraints.get(_qid_mt, 1) or 1)
+                _qmeta_mt: dict = (qid_meta or {}).get(_qid_mt) or {}  # type: ignore[assignment]
+                _tid_mt = str(_qmeta_mt.get("target_id") or "").strip()
+                _itype_mt = str(_qmeta_mt.get("itype") or "text").strip().lower() or "text"
+                _ctx_mt_str = str(_qmeta_mt.get("question") or "")
+                _vals_mt = _split_values(_bare_val, itype=_itype_mt, max_select=_mx_mt)
+                _debug_log(
+                    f"bare_single_qid_fallback: qid={_qid_mt} target_id={_tid_mt!r} "
+                    f"itype={_itype_mt!r} segments={len(_vals_mt)} raw={_bare_val!r}"
+                )
+                for _v in _vals_mt:
+                    _v = (_v or "").strip()
+                    if not _v:
+                        continue
+                    actions.append({
+                        "qid": _qid_mt,
+                        "target_id": _tid_mt,
+                        "value": _v,
+                        "itype": _itype_mt,
+                        "context": _ctx_mt_str,
+                        "matrix_row_label": None,
+                        "matrix_col_label": None,
+                        "cardsort_card_label": None,
+                        "cardsort_bucket_labels": None,
+                        "raw": _bare_val,
+                    })
 
     actions = _coerce_to_negative_frequency_option(actions, qid_meta=qid_meta)
 

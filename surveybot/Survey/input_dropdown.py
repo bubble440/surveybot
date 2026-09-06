@@ -11,10 +11,11 @@ Dépendances:
 - input_utils pour les fonctions de normalisation et constantes
 """
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support.ui import Select
-from selenium.webdriver.common.keys import Keys
+
+
+
+
+
 import time
 import re
 
@@ -35,7 +36,7 @@ from Survey.log_utils import log_debug
 
 def has_native_selects(driver) -> bool:
     """Vérifie si la page contient des <select> natifs."""
-    return bool(driver.find_elements(By.TAG_NAME, "select"))
+    return bool(driver.query_selector_all("select"))
 
 
 def select_like_elements(driver):
@@ -44,25 +45,13 @@ def select_like_elements(driver):
     Inclut: <select>, role=combobox, aria-haspopup=listbox, .select classes.
     """
     els = []
-    els += driver.find_elements(By.TAG_NAME, "select")
-    els += driver.find_elements(
-        By.CSS_SELECTOR, "[role='combobox'], [aria-haspopup='listbox']"
-    )
+    els += driver.query_selector_all("select")
+    els += driver.query_selector_all("[role='combobox'], [aria-haspopup='listbox']")
     # togglers fréquents (custom selects)
-    els += driver.find_elements(
-        By.XPATH,
-        "//*[contains(@class,'select') and (self::div or self::button or self::span)]",
+    els += driver.query_selector_all(
+        "xpath=//*[contains(@class,'select') and (self::div or self::button or self::span)]"
     )
-    # éviter les doublons
-    seen, uniq = set(), []
-    for e in els:
-        try:
-            if e._id not in seen and e.is_displayed():
-                seen.add(e._id)
-                uniq.append(e)
-        except Exception:
-            continue
-    return uniq
+    return [e for e in els if e is not None]
 
 
 def element_signature_text(driver, el) -> str:
@@ -75,12 +64,11 @@ def element_signature_text(driver, el) -> str:
         # label for=…
         eid = el.get_attribute("id")
         if eid:
-            try:
-                lbl = driver.find_element(By.XPATH, f"//label[@for='{eid}']")
-                if lbl.text.strip():
-                    bits.append(lbl.text)
-            except Exception:
-                pass
+            lbl = driver.query_selector(f"label[for='{eid}']")
+            if lbl:
+                t = (lbl.inner_text() or "").strip()
+                if t:
+                    bits.append(t)
         # aria-label / labelledby
         a = (el.get_attribute("aria-label") or "").strip()
         if a:
@@ -88,13 +76,11 @@ def element_signature_text(driver, el) -> str:
         labby = (el.get_attribute("aria-labelledby") or "").strip()
         if labby:
             for ref in labby.split():
-                try:
-                    n = driver.find_element(By.ID, ref)
-                    t = (n.text or n.get_attribute("innerText") or "").strip()
+                n = driver.query_selector(f"#{ref}")
+                if n:
+                    t = (n.inner_text() or n.get_attribute("innerText") or "").strip()
                     if t:
                         bits.append(t)
-                except Exception:
-                    continue
         # placeholder
         ph = (el.get_attribute("placeholder") or "").strip()
         if ph:
@@ -102,7 +88,7 @@ def element_signature_text(driver, el) -> str:
         # texte du conteneur question
         try:
             q = el.find_element(
-                By.XPATH,
+                "xpath",
                 "ancestor::*[contains(@class,'Question') or contains(@class,'question') or contains(@class,'body') or self::fieldset][1]",
             )
             t = (q.text or "").strip()
@@ -122,11 +108,11 @@ def viewport_penalty(driver, el) -> float:
     Retourne un score négatif pour ces zones.
     """
     try:
-        r = el.rect
+        r = el.bounding_box() or {}
         y = r.get("y", 0)
         htot = (
-            driver.execute_script(
-                "return Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, window.innerHeight);"
+            driver.evaluate(
+                "() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, window.innerHeight)"
             )
             or 2000
         )
@@ -224,15 +210,15 @@ def dropdown_visible_value(driver, ctrl) -> str:
     try:
         if ctrl.tag_name.lower() == "select":
             try:
-                sel = Select(ctrl)
+                _sel_el = ctrl  # Playwright: use .select_option() and .evaluate() for options
                 if sel.first_selected_option:
                     return sel.first_selected_option.text or ""
             except Exception:
                 val = ctrl.get_attribute("value") or ""
                 if val:
                     try:
-                        opt = ctrl.find_element(By.XPATH, f".//option[@value={repr(val)}]")
-                        return opt.text or val
+                        opt = ctrl.find_element("xpath", f".//option[@value={repr(val)}]")
+                        return opt["text"] or val
                     except Exception:
                         return val
     except Exception:
@@ -244,7 +230,7 @@ def dropdown_visible_value(driver, ctrl) -> str:
         ".//span[contains(@class,'mat-select-value-text')]",
     ]:
         try:
-            el = ctrl.find_element(By.XPATH, xp)
+            el = ctrl.find_element("xpath", xp)
             txt = (el.text or el.get_attribute("innerText") or "").strip()
             if txt:
                 return txt
@@ -257,7 +243,7 @@ def dropdown_visible_value(driver, ctrl) -> str:
         ".//*[contains(@class,'MuiSelect-select') and @role='button']",
     ]:
         try:
-            el = ctrl.find_element(By.XPATH, xp)
+            el = ctrl.find_element("xpath", xp)
             txt = (el.text or el.get_attribute("innerText") or "").strip()
             if txt:
                 return txt
@@ -267,7 +253,7 @@ def dropdown_visible_value(driver, ctrl) -> str:
     # 4) Select2
     for xp in [".//span[contains(@class,'select2-selection__rendered')]"]:
         try:
-            el = ctrl.find_element(By.XPATH, xp)
+            el = ctrl.find_element("xpath", xp)
             txt = (el.get_attribute("title") or el.text or "").strip()
             if txt:
                 return txt
@@ -278,7 +264,7 @@ def dropdown_visible_value(driver, ctrl) -> str:
     try:
         btn = ctrl
         if btn.get_attribute("role") != "button":
-            btn = ctrl.find_element(By.XPATH, ".//*[@role='button' or @aria-haspopup='listbox']")
+            btn = ctrl.find_element("xpath", ".//*[@role='button' or @aria-haspopup='listbox']")
         txt = (btn.text or btn.get_attribute("innerText") or "").strip()
         if txt:
             return txt
@@ -305,7 +291,7 @@ def is_dropdown_filled(driver, ctrl) -> bool:
             if val and norm_txt(val) not in DROPDOWN_PLACEHOLDERS:
                 return True
             try:
-                sel = Select(ctrl)
+                _sel_el = ctrl  # Playwright: use .select_option() and .evaluate() for options
                 txt = norm_txt(sel.first_selected_option.text or "")
                 return bool(txt and txt not in DROPDOWN_PLACEHOLDERS)
             except Exception:
@@ -340,11 +326,11 @@ def open_first_dropdown(driver) -> bool:
     Ne sélectionne pas d'option ici ; juste « abaisser » le menu.
     """
     # 1) <select> natif
-    selects = driver.find_elements(By.TAG_NAME, "select")
+    selects = driver.query_selector_all("select")
     for s in selects:
         try:
-            if s.is_displayed():
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", s)
+            if s.is_visible():
+                driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", s)
                 time.sleep(0.1)
                 s.click()
                 print("🔒 Dropdown (natif) ouvert... source: input_dropdown.py")
@@ -354,21 +340,21 @@ def open_first_dropdown(driver) -> bool:
 
     # 2) Dropdowns customs
     togglers = []
-    togglers += driver.find_elements(By.CSS_SELECTOR, "[role='combobox']")
-    togglers += driver.find_elements(By.CSS_SELECTOR, "[aria-haspopup='listbox']")
-    togglers += driver.find_elements(
-        By.XPATH,
-        "//*[contains(@class,'select') and (self::div or self::button or self::span)]",
+    togglers += driver.query_selector_all("[role='combobox']")
+    togglers += driver.query_selector_all("[aria-haspopup='listbox']")
+    togglers += driver.query_selector_all(
+        "xpath=//*[contains(@class,'select') and (self::div or self::button or self::span)]"
     )
     for t in togglers:
         try:
-            if t.is_displayed() and t.rect.get("width", 0) > 20 and t.rect.get("height", 0) > 15:
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", t)
+            _bb = t.bounding_box() or {}
+            if t.is_visible() and _bb.get("width", 0) > 20 and _bb.get("height", 0) > 15:
+                driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", t)
                 time.sleep(0.1)
                 try:
                     t.click()
                 except Exception:
-                    ActionChains(driver).move_to_element(t).click().perform()
+                    t.hover(); t.click()
                 time.sleep(0.2)
                 print("🔒 Dropdown (custom) ouvert. source: input_dropdown.py")
                 return True
@@ -408,7 +394,7 @@ def open_dropdown_generic(driver, hint: str | None = None, context_hint: str | N
             except Exception:
                 already_filled = False
 
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
             try:
                 driver._ui_overlay_opened = {
                     "type": "dropdown",
@@ -433,14 +419,14 @@ def open_dropdown_generic(driver, hint: str | None = None, context_hint: str | N
         except Exception:
             already_filled = False
 
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+        driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
         try:
             el.click()
         except Exception:
-            ActionChains(driver).move_to_element(el).click().perform()
+            el.hover(); el.click()
         time.sleep(0.05)
         try:
-            el.send_keys(Keys.ARROW_DOWN)
+            driver.keyboard.press("ArrowDown")
         except Exception:
             pass
         try:
@@ -481,7 +467,7 @@ def select_option_with_hint(driver, option_text: str, field_hint: str | None = N
         return False
 
     # A) <select> natif
-    selects = driver.find_elements(By.TAG_NAME, "select")
+    selects = driver.query_selector_all("select")
     for s in selects:
         try:
             # Sélection via JS (robuste même si <select> hidden / bootstrap-select)
@@ -492,13 +478,13 @@ def select_option_with_hint(driver, option_text: str, field_hint: str | None = N
                         """
                         const sel = arguments[0];
                         const target = arguments[1];
-                        if (!sel || !sel.options) return false;
+                        if (!sel || !driver.evaluate("el => Array.from(el.options).map(o => ({value:o.value,text:o.text.trim()}))", _sel_el)) return false;
 
                         const norm = (x) => (x || "").toString().trim().toLowerCase();
                         const tgt = norm(target);
 
                         let found = null;
-                        for (const opt of sel.options) {
+                        for (const opt of driver.evaluate("el => Array.from(el.options).map(o => ({value:o.value,text:o.text.trim()}))", _sel_el)) {
                             const t = norm(opt.textContent);
                             if (!t) continue;
                             if (t === tgt || t.includes(tgt)) { found = opt; break; }
@@ -534,17 +520,17 @@ def select_option_with_hint(driver, option_text: str, field_hint: str | None = N
                 return True
 
             # fallback Selenium Select
-            sel = Select(s)
-            for opt in sel.options:
-                ot = norm_txt(opt.text)
+            _sel_el = s  # Playwright: use .select_option() and .evaluate() for options
+            for opt in driver.evaluate("el => Array.from(el.options).map(o => ({value:o.value,text:o.text.trim()}))", _sel_el):
+                ot = norm_txt(opt["text"])
                 if target and (target == ot or target in ot):
-                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", s)
+                    driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", s)
                     time.sleep(0.1)
                     try:
-                        sel.select_by_visible_text(opt.text)
+                        _sel_el.select_option(label=opt["text"])
                     except Exception:
-                        if opt.get_attribute("value"):
-                            sel.select_by_value(opt.get_attribute("value"))
+                        if opt.get("value"):
+                            _sel_el.select_option(value=opt.get_attribute("value"))
                         else:
                             opt.click()
 
@@ -554,19 +540,19 @@ def select_option_with_hint(driver, option_text: str, field_hint: str | None = N
                       try { s.dispatchEvent(new Event('change',{bubbles:true})); } catch(e){}
                       try { s.dispatchEvent(new Event('blur',  {bubbles:true})); } catch(e){}
                     """, s)
-                    print(f"✓ Option sélectionnée (natif) : {opt.text}. source: input_dropdown.py")
+                    print(f"✓ Option sélectionnée (natif) : {opt['text']}. source: input_dropdown.py")
                     try:
                         driver._ui_overlay_opened = None
                     except:
                         pass
                     return True
             # match value
-            for opt in sel.options:
+            for opt in driver.evaluate("el => Array.from(el.options).map(o => ({value:o.value,text:o.text.trim()}))", _sel_el):
                 ov = norm_txt(opt.get_attribute("value") or "")
                 if target and target == ov:
-                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", s)
+                    driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", s)
                     time.sleep(0.1)
-                    sel.select_by_value(opt.get_attribute("value"))
+                    _sel_el.select_option(value=opt.get_attribute("value"))
                     print(f"✓ Option sélectionnée (natif/value) : {opt.get_attribute('value')}. source: input_dropdown.py")
                     return True
         except Exception:
@@ -574,10 +560,10 @@ def select_option_with_hint(driver, option_text: str, field_hint: str | None = N
 
     # B) Dropdown custom : suppose menu déjà ouvert
     candidates = []
-    candidates += driver.find_elements(By.XPATH, "//li[normalize-space(.)!='']")
-    candidates += driver.find_elements(By.CSS_SELECTOR, "[role='option']")
-    candidates += driver.find_elements(
-        By.XPATH, "//*[contains(@class,'option') and normalize-space(text())!='']"
+    candidates += driver.query_selector_all("xpath=//li[normalize-space(.)!='']")
+    candidates += driver.query_selector_all("[role='option']")
+    candidates += driver.query_selector_all(
+        "xpath=//*[contains(@class,'option') and normalize-space(text())!='']"
     )
     for c in candidates:
         try:
@@ -585,7 +571,7 @@ def select_option_with_hint(driver, option_text: str, field_hint: str | None = N
             if not txt:
                 continue
             if target and (target == txt or target in txt):
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", c)
+                driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", c)
                 time.sleep(0.1)
                 c.click()
                 time.sleep(0.2)
@@ -600,6 +586,209 @@ def select_option_with_hint(driver, option_text: str, field_hint: str | None = N
 
     print(f"❌ Option '{option_text}' introuvable dans dropdown. source: input_dropdown.py")
     return False
+
+
+# =============================================================================
+# SÉLECTION NATIVE PAR TARGET_ID (registry) — bypass select_option_with_hint()
+# =============================================================================
+#
+# Guard DOM strict : appelée uniquement si target_payload.context.tag == "select"
+# (résolution par xpath/id du registry, cf. Survey/dom_analyzer.py register_target()).
+#
+# Corrige : select_option_with_hint() (fallback custom, section "CUSTOM: ouvrir puis
+# sélectionner") appelle open_dropdown_generic(), qui lit `el.tag_name` — attribut
+# Selenium (WebElement), inexistant sur ElementHandle Playwright. Cet AttributeError
+# n'est catché nulle part sur ce chemin et remonte jusqu'à execute_action()/_try(),
+# qui ne catch pas non plus -> l'exception atteint le plan d'exécution des actions.
+# Cette fonction résout et sélectionne le <select> directement via l'API Playwright
+# (query_selector/evaluate/select_option), sans jamais appeler open_dropdown_generic()
+# ni select_option_with_hint().
+def select_native_option_by_target(
+    driver,
+    xpath: str,
+    el_id: str,
+    option_text: str,
+    alt_xpaths=None,
+    el_name: str = "",
+) -> bool:
+    """
+    Sélectionne option_text dans le <select> natif résolu via xpath/id/alt_xpaths/name
+    du registry (target_payload d'un bloc itype=dropdown, context.tag=="select").
+
+    Résolution en 4 étapes (chacune vérifie tagName=="select" avant de servir) :
+    1) xpath principal du registry
+    2) #id du registry
+    3) alt_xpaths du registry (ex: //select[@name='...'])
+    4) dernier recours: tous les <select> visibles de la page, filtré par la
+       présence d'une option correspondant à option_text — nécessaire quand le
+       xpath absolu (position DOM) et l'id sont devenus stales (re-render Wicket/AJAX
+       entre l'extraction et l'exécution de l'action).
+    """
+    def _is_select(cand) -> bool:
+        try:
+            return (cand.evaluate("e => e.tagName.toLowerCase()") or "") == "select"
+        except Exception:
+            return False
+
+    el = None
+    if xpath:
+        try:
+            cand = driver.query_selector(f"xpath={xpath}")
+            if cand is not None and _is_select(cand):
+                el = cand
+        except Exception:
+            pass
+
+    if el is None and el_id:
+        try:
+            cand = driver.query_selector(f"#{el_id}")
+            if cand is not None and _is_select(cand):
+                el = cand
+        except Exception:
+            pass
+
+    if el is None:
+        for ax in (alt_xpaths or []):
+            if not ax:
+                continue
+            try:
+                cand = driver.query_selector(f"xpath={ax}")
+                if cand is not None and _is_select(cand):
+                    el = cand
+                    break
+            except Exception:
+                continue
+
+    target = norm_txt(option_text)
+    if not target:
+        log_debug("dropdown-native", "select_native_option_by_target: option_text vide")
+        return False
+
+    if el is None:
+        # Dernier recours: scanner tous les <select> visibles et matcher par option.
+        # Fait en UN SEUL aller-retour navigateur (evaluate_handle côté JS) au lieu
+        # d'un query_selector_all() + is_visible()/evaluate() par élément : sur une
+        # page avec de nombreux <select> (ex. champs techniques Wicket cachés), le
+        # coût par-élément (2 aller-retours Playwright chacun) faisait dériver cette
+        # résolution à plusieurs dizaines de secondes. Le budget (300 selects, cap
+        # dur côté JS) protège contre un DOM pathologique sans coût réseau ajouté.
+        try:
+            handle = driver.evaluate_handle(
+                """(tgt) => {
+                    const MAX = 300;
+                    const norm = (s) => (s || '').normalize('NFKD')
+                        .replace(/[\\u0300-\\u036f]/g, '')
+                        .trim().toLowerCase();
+                    const t = norm(tgt);
+                    if (!t) return null;
+                    const selects = Array.from(document.querySelectorAll('select')).slice(0, MAX);
+                    for (const s of selects) {
+                        const r = s.getBoundingClientRect();
+                        if (r.width <= 0 || r.height <= 0) continue;
+                        const opts = s.options;
+                        for (let i = 0; i < opts.length; i++) {
+                            if (norm(opts[i].text) === t) return s;
+                        }
+                    }
+                    return null;
+                }""",
+                option_text,
+            )
+            cand = handle.as_element() if handle else None
+            if cand is not None:
+                el = cand
+        except Exception:
+            el = None
+
+    if el is None:
+        log_debug(
+            "dropdown-native",
+            f"select_native_option_by_target: <select> introuvable (id={el_id!r} name={el_name!r})",
+        )
+        return False
+
+    try:
+        opts = driver.evaluate(
+            "el => Array.from(el.options).map(o => ({value: o.value, text: o.text.trim()}))",
+            el,
+        ) or []
+    except Exception:
+        opts = []
+
+    matched = None
+    for o in opts:
+        ot = norm_txt(o.get("text") or "")
+        ov = norm_txt(o.get("value") or "")
+        if target == ot or target == ov:
+            matched = o
+            break
+    if matched is None:
+        for o in opts:
+            ot = norm_txt(o.get("text") or "")
+            if ot and target in ot:
+                matched = o
+                break
+    if matched is None:
+        log_debug(
+            "dropdown-native",
+            f"select_native_option_by_target: option {option_text!r} absente des <option> (n={len(opts)})",
+        )
+        return False
+
+    try:
+        driver.evaluate("(e) => e.scrollIntoView({block:'center'})", el)
+    except Exception:
+        pass
+
+    # Assignation JS directe (sel.value + dispatch input/change), PAS el.select_option().
+    # select_option() applique les vérifications d'actionability Playwright, dont la
+    # visibilité — or ce <select> peut être rendu volontairement invisible au profit
+    # d'un widget de substitution visuel (ex. bootstrap-select : classe bs-select-hidden,
+    # menu <ul class="dropdown-menu inner"> cliquable en superposition). select_option()
+    # échoue alors proprement (timeout catché, pas d'exception qui remonte) sans jamais
+    # appliquer la valeur. L'assignation JS fonctionne indépendamment de la visibilité et
+    # déclenche le refresh du widget (jQuery selectpicker) quand il est présent, même
+    # pattern déjà utilisé pour ce cas dans Survey/action_dispatcher.py (_apply_by_target_id,
+    # branche kind="single"/dropdown).
+    try:
+        driver.evaluate(
+            """(args) => {
+                const [sel, val] = args;
+                sel.value = val;
+                try { sel.dispatchEvent(new Event('input', {bubbles:true})); } catch(e) {}
+                try { sel.dispatchEvent(new Event('change', {bubbles:true})); } catch(e) {}
+                try {
+                    if (window.jQuery && window.jQuery(sel).selectpicker) {
+                        window.jQuery(sel).selectpicker('refresh');
+                    }
+                } catch(e) {}
+            }""",
+            [el, matched.get("value")],
+        )
+    except Exception:
+        return False
+
+    try:
+        applied_txt = norm_txt(
+            driver.evaluate("e => e.options[e.selectedIndex]?.text || ''", el) or ""
+        )
+    except Exception:
+        applied_txt = ""
+
+    if applied_txt != norm_txt(matched.get("text") or ""):
+        log_debug(
+            "dropdown-native",
+            f"select_native_option_by_target: valeur non confirmée après assignation "
+            f"(attendu={matched.get('text')!r} lu={applied_txt!r})",
+        )
+        return False
+
+    print(f"✓ Option sélectionnée (natif/target_id) : {matched['text']}. source: input_dropdown.py")
+    try:
+        driver._ui_overlay_opened = None
+    except Exception:
+        pass
+    return True
 
 
 def select_option_with_hint(
@@ -637,7 +826,7 @@ def select_option_with_hint(
         partial_candidate = None
         for opt in options:
             try:
-                ot = norm_txt(opt.text)
+                ot = norm_txt(opt["text"])
                 ov = norm_txt(opt.get_attribute("value") or "")
             except Exception:
                 continue
@@ -683,14 +872,11 @@ def select_option_with_hint(
             return False
 
         try:
-            menu_anchors = driver.find_elements(
-                By.XPATH,
-                (
-                    "//button[@data-id=" + repr(aid) + "]"
-                    "/following-sibling::div[contains(@class,'dropdown-menu') and contains(@class,'open')]"
-                    "//ul[contains(@class,'dropdown-menu') and contains(@class,'inner')]"
-                    "//li[not(contains(@class,'disabled'))]/a"
-                ),
+            menu_anchors = driver.query_selector_all(
+                "xpath=//button[@data-id=" + repr(aid) + "]"
+                "/following-sibling::div[contains(@class,'dropdown-menu') and contains(@class,'open')]"
+                "//ul[contains(@class,'dropdown-menu') and contains(@class,'inner')]"
+                "//li[not(contains(@class,'disabled'))]/a"
             )
         except Exception:
             menu_anchors = []
@@ -701,7 +887,7 @@ def select_option_with_hint(
                 if not txt:
                     continue
                 if wanted_text == txt or wanted_text in txt:
-                    driver.execute_script("arguments[0].scrollIntoView({block:'nearest'});", a)
+                    driver.evaluate("(el) => el.scrollIntoView({block:'center'})", a)
                     a.click()
                     print(f"✓ Option sélectionnée (bootstrap-select) : {option_text}. source: input_dropdown.py")
                     try:
@@ -715,7 +901,7 @@ def select_option_with_hint(
         return False
 
     # --- NATIF <select>: sélection directe (sans ouvrir)
-    selects = driver.find_elements(By.TAG_NAME, "select")
+    selects = driver.query_selector_all("select")
     if selects:
         s = best_dropdown_for_hint(driver, effective_hint, context_hint=context_hint)
         try_selects = []
@@ -731,57 +917,57 @@ def select_option_with_hint(
                 if "mrdropdown" in sel_classes:
                     # Locate .combo_master: primary — via .acc_ct ancestor; fallback — preceding-sibling of .platform_clone
                     combo_masters = sel_el.find_elements(
-                        By.XPATH,
+                        "xpath",
                         "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' acc_ct ')][1]"
                         "/div[contains(concat(' ',normalize-space(@class),' '),' combo_master ')]",
                     )
                     log_debug("gfk-combo", f"combo_masters via acc_ct: {len(combo_masters)}")
                     if not combo_masters:
                         combo_masters = sel_el.find_elements(
-                            By.XPATH,
+                            "xpath",
                             "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' platform_clone ')][1]"
                             "/preceding-sibling::div[contains(concat(' ',normalize-space(@class),' '),' combo_master ')][1]",
                         )
                         log_debug("gfk-combo", f"combo_masters via preceding-sibling: {len(combo_masters)}")
                     if combo_masters:
                         cm = combo_masters[0]
-                        cb_els = cm.find_elements(By.CSS_SELECTOR, ".cb_el")
+                        cb_els = cm.query_selector_all(".cb_el")
                         if cb_els:
-                            driver.execute_script("arguments[0].click();", cb_els[0])
+                            driver.evaluate("(el) => el.click()", cb_els[0])
                             # Wait for .b_l_ct (Angular ng-show) to become visible
                             deadline = time.time() + 2.0
                             cb_list = None
                             while time.time() < deadline:
-                                b_l_cts = cm.find_elements(By.CSS_SELECTOR, ".b_l_ct")
-                                if b_l_cts and b_l_cts[0].is_displayed():
-                                    lists = b_l_cts[0].find_elements(By.CSS_SELECTOR, ".cb_list")
+                                b_l_cts = cm.query_selector_all(".b_l_ct")
+                                if b_l_cts and b_l_cts[0].is_visible():
+                                    lists = b_l_cts[0].query_selector_all(".cb_list")
                                     if lists:
                                         cb_list = lists[0]
                                         break
                                 time.sleep(0.05)
                             # Fallback: try button.combo_button if .b_l_ct still hidden
                             if cb_list is None:
-                                btns = cb_els[0].find_elements(By.CSS_SELECTOR, "button.combo_button")
+                                btns = cb_els[0].query_selector_all("button.combo_button")
                                 if btns:
-                                    driver.execute_script("arguments[0].click();", btns[0])
+                                    driver.evaluate("(el) => el.click()", btns[0])
                                     deadline2 = time.time() + 2.0
                                     while time.time() < deadline2:
-                                        b_l_cts = cm.find_elements(By.CSS_SELECTOR, ".b_l_ct")
-                                        if b_l_cts and b_l_cts[0].is_displayed():
-                                            lists = b_l_cts[0].find_elements(By.CSS_SELECTOR, ".cb_list")
+                                        b_l_cts = cm.query_selector_all(".b_l_ct")
+                                        if b_l_cts and b_l_cts[0].is_visible():
+                                            lists = b_l_cts[0].query_selector_all(".cb_list")
                                             if lists:
                                                 cb_list = lists[0]
                                                 break
                                         time.sleep(0.05)
                             if cb_list:
-                                for row in cb_list.find_elements(By.CSS_SELECTOR, ".cb_item_row"):
+                                for row in cb_list.query_selector_all(".cb_item_row"):
                                     try:
-                                        items = row.find_elements(By.CSS_SELECTOR, ".cb_item")
+                                        items = row.query_selector_all(".cb_item")
                                         if not items:
                                             continue
                                         txt = norm_txt(items[0].get_attribute("innerText") or items[0].text)
                                         if target == txt or (target and target in txt):
-                                            driver.execute_script("arguments[0].click();", row)
+                                            driver.evaluate("(el) => el.click()", row)
                                             print(f"✓ Option sélectionnée (gfk-combo) : {option_text}. source: input_dropdown.py")
                                             try:
                                                 driver._ui_overlay_opened = None
@@ -794,32 +980,27 @@ def select_option_with_hint(
                     # mrDropdown detected but selection failed — don't fall through to Selenium Select
                     continue
 
-                S = Select(sel_el)
-                opt = _pick_matching_option(S.options, target)
+                _sel_el = sel_el  # Playwright: use .select_option() and .evaluate() for options
+                opt = _pick_matching_option(driver.evaluate("el => Array.from(el.options).map(o => ({value:o.value,text:o.text.trim()}))", _sel_el), target)
                 if not opt:
                     continue
 
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sel_el)
+                driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", sel_el)
                 try:
-                    S.select_by_visible_text(opt.text)
+                    _sel_el.select_option(label=opt["text"])
                 except Exception:
-                    if opt.get_attribute("value"):
-                        S.select_by_value(opt.get_attribute("value"))
+                    if opt.get("value"):
+                        _sel_el.select_option(value=opt.get("value"))
                     else:
                         opt.click()
 
                 try:
-                    driver.execute_script("""
-                      const s = arguments[0];
-                      try { s.dispatchEvent(new Event('input', {bubbles:true})); } catch(e){}
-                      try { s.dispatchEvent(new Event('change',{bubbles:true})); } catch(e){}
-                      try { s.dispatchEvent(new Event('blur',  {bubbles:true})); } catch(e){}
-                      try { s.dispatchEvent(new Event('focusout',{bubbles:true})); } catch(e){}
-                    """, sel_el)
+                    sel_el.evaluate("(s) => { ['input','change','blur','focusout'].forEach(t => "
+                                    "{ try{s.dispatchEvent(new Event(t,{bubbles:true}))}catch(e){} })")
                 except Exception:
                     pass
 
-                print(f"✓ Option sélectionnée (natif) : {opt.text}. source: input_dropdown.py")
+                print(f"✓ Option sélectionnée (natif) : {opt['text']}. source: input_dropdown.py")
                 try:
                     driver._ui_overlay_opened = None
                 except Exception:
@@ -862,20 +1043,19 @@ def select_option_with_hint(
         deadline = time.time() + 1.0
         while time.time() < deadline:
             candidates = []
-            candidates += driver.find_elements(By.CSS_SELECTOR, "[role='option']")
-            candidates += driver.find_elements(By.XPATH, "//li[normalize-space(.)!='']")
-            candidates += driver.find_elements(
-                By.XPATH,
-                "//*[contains(@class,'option') and normalize-space(text())!='']",
+            candidates += driver.query_selector_all("[role='option']")
+            candidates += driver.query_selector_all("xpath=//li[normalize-space(.)!='']")
+            candidates += driver.query_selector_all(
+                "xpath=//*[contains(@class,'option') and normalize-space(text())!='']"
             )
 
             for c in candidates:
                 try:
-                    if not c.is_displayed():
+                    if not c.is_visible():
                         continue
                     txt = norm_txt(c.get_attribute("innerText") or c.text)
                     if target and (target == txt or target in txt):
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", c)
+                        driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", c)
                         c.click()
                         print(f"✓ Option sélectionnée (custom) : {option_text}. source: input_dropdown.py")
                         try:

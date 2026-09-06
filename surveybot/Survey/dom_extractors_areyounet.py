@@ -14,7 +14,6 @@ AreYouNet utilise des patterns DOM particuliers avec des structures
 from __future__ import annotations
 from typing import List, Dict, Any
 import os, re
-from selenium.webdriver.common.by import By
 
 # Import des utilitaires
 try:
@@ -24,6 +23,8 @@ except ImportError:
     # Fallback pour tests locaux
     from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element
     # dom_registry devra être disponible
+
+
 
 
 # ================================================================================
@@ -40,7 +41,7 @@ def _extract_areyounet_matrix_blocks(driver, frame_chain: list[int] | None) -> l
 
     # Pattern spécifique plateforme
     try:
-        matrices = driver.find_elements(By.CSS_SELECTOR, "div.MatriceViewElement")
+        matrices = driver.query_selector_all("div.MatriceViewElement")
     except Exception:
         return []
 
@@ -49,7 +50,7 @@ def _extract_areyounet_matrix_blocks(driver, frame_chain: list[int] | None) -> l
 
     rx_radio = re.compile(r"switch_radio\((?:'|\")(?P<qname>[^'\"]+)(?:'|\")\s*,\s*(?P<idx>\d+)")
     rx_checkbox = re.compile(r"switch_checkbox\((?:'|\")(?P<qname>[^'\"]+)(?:'|\")\s*,\s*(?P<idx>\d+)")
-    
+
     # Pattern spécifique plateforme
     seen_qnames: set[str] = set()
 
@@ -57,19 +58,15 @@ def _extract_areyounet_matrix_blocks(driver, frame_chain: list[int] | None) -> l
         try:
             # 1) Extraire le titre global de la question
             title = ""
-            try:
-                title_el = matrix.find_element(By.CSS_SELECTOR, "span.elementTitle")
-                title = _norm(title_el.text or title_el.get_attribute("innerText") or "")
-            except Exception:
-                pass
+            title_el = matrix.query_selector("span.elementTitle")
+            if title_el is not None:
+                title = _norm(title_el.inner_text())
 
             if not title:
                 # Fallback: chercher dans p.titleQuestionElement
-                try:
-                    title_el = matrix.find_element(By.CSS_SELECTOR, "p.titleQuestionElement")
-                    title = _norm(title_el.text or title_el.get_attribute("innerText") or "")
-                except Exception:
-                    pass
+                title_el = matrix.query_selector("p.titleQuestionElement")
+                if title_el is not None:
+                    title = _norm(title_el.inner_text())
 
             if not title:
                 continue
@@ -77,9 +74,9 @@ def _extract_areyounet_matrix_blocks(driver, frame_chain: list[int] | None) -> l
             # Pattern spécifique plateforme
             col_headers: list[str] = []
             try:
-                header_cells = matrix.find_elements(By.CSS_SELECTOR, "td.tableHeader")
+                header_cells = matrix.query_selector_all("td.tableHeader")
                 for hc in header_cells:
-                    txt = _norm(hc.text or hc.get_attribute("innerText") or "")
+                    txt = _norm(hc.inner_text())
                     if txt:
                         col_headers.append(txt)
             except Exception:
@@ -91,7 +88,7 @@ def _extract_areyounet_matrix_blocks(driver, frame_chain: list[int] | None) -> l
             # 3) Extraire les lignes (chaque ligne = 1 question)
             # Structure: <tr> contenant <td class="tableRow">Label</td> + plusieurs <td onclick="switch_radio(...)">
             try:
-                rows = matrix.find_elements(By.CSS_SELECTOR, "tr")
+                rows = matrix.query_selector_all("tr")
             except Exception:
                 continue
 
@@ -99,20 +96,19 @@ def _extract_areyounet_matrix_blocks(driver, frame_chain: list[int] | None) -> l
                 try:
                     # Chercher le label de ligne (td.tableRow)
                     row_label = ""
-                    try:
-                        row_label_el = row.find_element(By.CSS_SELECTOR, "td.tableRow")
-                        row_label = _norm(row_label_el.text or row_label_el.get_attribute("innerText") or "")
-                    except Exception:
+                    row_label_el = row.query_selector("td.tableRow")
+                    if row_label_el is None:
                         continue
+                    row_label = _norm(row_label_el.inner_text())
 
                     if not row_label:
                         continue
 
                     # Chercher d'abord switch_radio, sinon switch_checkbox
-                    clickables = row.find_elements(By.CSS_SELECTOR, "td[onclick*='switch_radio']")
+                    clickables = row.query_selector_all("td[onclick*='switch_radio']")
                     cell_type = "radio"
                     if len(clickables) < 2:
-                        clickables = row.find_elements(By.CSS_SELECTOR, "td[onclick*='switch_checkbox']")
+                        clickables = row.query_selector_all("td[onclick*='switch_checkbox']")
                         cell_type = "checkbox"
                     if len(clickables) < 2:
                         continue
@@ -158,15 +154,12 @@ def _extract_areyounet_matrix_blocks(driver, frame_chain: list[int] | None) -> l
                         option_xpath_map[_norm_key(header)] = xp
 
                         # Pattern spécifique plateforme
-                        try:
-                            suffix = "rad" if cell_type == "radio" else "chk"
-                            v_name = f"{qname}_{suffix}_{idx}_value"
-                            v_el = clickables[idx].find_element(By.CSS_SELECTOR, f"input[name='{v_name}']")
+                        v_name = f"{qname}_{'rad' if cell_type == 'radio' else 'chk'}_{idx}_value"
+                        v_el = clickables[idx].query_selector(f"input[name='{v_name}']")
+                        if v_el is not None:
                             value = (v_el.get_attribute("value") or "").strip()
                             if value:
                                 ayn_value_map[_norm_key(header)] = value
-                        except Exception:
-                            pass
 
                     if len(option_xpath_map) < 2:
                         continue
@@ -223,7 +216,7 @@ def _extract_areyounet_switch_radio_blocks(driver, frame_chain: list[int] | None
 
     # Pattern spécifique plateforme
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "td[id^='QCB_'], div[id^='QCB_']")
+        containers = driver.query_selector_all("td[id^='QCB_'], div[id^='QCB_']")
     except Exception:
         return []
 
@@ -231,7 +224,7 @@ def _extract_areyounet_switch_radio_blocks(driver, frame_chain: list[int] | None
 
     for cont in containers:
         try:
-            clickables = cont.find_elements(By.CSS_SELECTOR, "[onclick*='switch_radio(']")
+            clickables = cont.query_selector_all("[onclick*='switch_radio(']")
         except Exception:
             continue
 
@@ -246,13 +239,13 @@ def _extract_areyounet_switch_radio_blocks(driver, frame_chain: list[int] | None
 
         # question text
         question = ""
-        try:
-            q_el = cont.find_element(By.CSS_SELECTOR, "p.titleQuestionElement .elementTitle")
-            question = _norm(q_el.text or q_el.get_attribute("innerText") or "")
-        except Exception:
+        q_el = cont.query_selector("p.titleQuestionElement .elementTitle")
+        if q_el is not None:
+            question = _norm(q_el.inner_text())
+        else:
             # Pattern spécifique plateforme
             try:
-                raw = cont.get_attribute("innerText") or cont.text or ""
+                raw = cont.inner_text() or ""
                 for line in (raw.splitlines() if raw else []):
                     t = _norm(line)
                     if _is_question_text(t):
@@ -297,44 +290,43 @@ def _extract_areyounet_switch_radio_blocks(driver, frame_chain: list[int] | None
 
             # Pattern spécifique plateforme
             try:
-                sp = el.find_elements(By.CSS_SELECTOR, "span.elementText")
+                sp = el.query_selector_all("span.elementText")
                 if sp:
-                    label = _norm(sp[0].text or sp[0].get_attribute("innerText") or "")
+                    label = _norm(sp[0].inner_text())
             except Exception:
                 pass
 
             # Pattern spécifique plateforme
             if not label:
-                try:
-                    next_td = el.find_element(By.XPATH, "following-sibling::td[1]")
-                    sp = next_td.find_elements(By.CSS_SELECTOR, "span.elementText")
-                    if sp:
-                        label = _norm(sp[0].text or sp[0].get_attribute("innerText") or "")
-                except Exception:
-                    pass
+                next_td = el.query_selector("xpath=following-sibling::td[1]")
+                if next_td is not None:
+                    try:
+                        sp = next_td.query_selector_all("span.elementText")
+                        if sp:
+                            label = _norm(sp[0].inner_text())
+                    except Exception:
+                        pass
 
             # 3) Fallback: texte brut du TD courant (si pas de span.elementText)
             if not label:
                 try:
-                    raw = el.get_attribute("innerText") or el.text or ""
+                    raw = el.inner_text() or ""
                     label = _norm(raw)
                 except Exception:
                     pass
 
             # Pattern spécifique plateforme
-            # Pattern spécifique plateforme
-            try:
-                v_name = f"{qname}_rad_{idx}_value"
-                v_el = el.find_element(By.CSS_SELECTOR, f"input[name='{v_name}']")
+            v_name = f"{qname}_rad_{idx}_value"
+            v_el = el.query_selector(f"input[name='{v_name}']")
+            if v_el is not None:
                 value = (v_el.get_attribute("value") or "").strip()
-            except Exception:
+            else:
                 # Pattern spécifique plateforme
-                try:
-                    row = el.find_element(By.XPATH, "ancestor::tr[1]")
-                    v_el = row.find_element(By.CSS_SELECTOR, f"input[name='{v_name}']")
-                    value = (v_el.get_attribute("value") or "").strip()
-                except Exception:
-                    value = ""
+                row = el.query_selector("xpath=ancestor::tr[1]")
+                if row is not None:
+                    v_el2 = row.query_selector(f"input[name='{v_name}']")
+                    if v_el2 is not None:
+                        value = (v_el2.get_attribute("value") or "").strip()
 
             if not label:
                 continue
@@ -424,7 +416,7 @@ def _extract_areyounet_switch_checkbox_blocks(driver, frame_chain: list[int] | N
 
     # Pattern spécifique plateforme
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "td[id^='QCB_'], div[id^='QCB_']")
+        containers = driver.query_selector_all("td[id^='QCB_'], div[id^='QCB_']")
     except Exception:
         return []
 
@@ -432,7 +424,7 @@ def _extract_areyounet_switch_checkbox_blocks(driver, frame_chain: list[int] | N
 
     for cont in containers:
         try:
-            clickables = cont.find_elements(By.CSS_SELECTOR, "[onclick*='switch_checkbox(']")
+            clickables = cont.query_selector_all("[onclick*='switch_checkbox(']")
         except Exception:
             continue
 
@@ -447,13 +439,13 @@ def _extract_areyounet_switch_checkbox_blocks(driver, frame_chain: list[int] | N
 
         # question text
         question = ""
-        try:
-            q_el = cont.find_element(By.CSS_SELECTOR, "p.titleQuestionElement .elementTitle")
-            question = _norm(q_el.text or q_el.get_attribute("innerText") or "")
-        except Exception:
+        q_el = cont.query_selector("p.titleQuestionElement .elementTitle")
+        if q_el is not None:
+            question = _norm(q_el.inner_text())
+        else:
             # Pattern spécifique plateforme
             try:
-                raw = cont.get_attribute("innerText") or cont.text or ""
+                raw = cont.inner_text() or ""
                 for line in (raw.splitlines() if raw else []):
                     t = _norm(line)
                     if _is_question_text(t):
@@ -495,43 +487,43 @@ def _extract_areyounet_switch_checkbox_blocks(driver, frame_chain: list[int] | N
 
             # 1) span.elementText dans le TD courant
             try:
-                sp = el.find_elements(By.CSS_SELECTOR, "span.elementText")
+                sp = el.query_selector_all("span.elementText")
                 if sp:
-                    label = _norm(sp[0].text or sp[0].get_attribute("innerText") or "")
+                    label = _norm(sp[0].inner_text())
             except Exception:
                 pass
 
             # Pattern spécifique plateforme
             if not label:
-                try:
-                    next_td = el.find_element(By.XPATH, "following-sibling::td[1]")
-                    sp = next_td.find_elements(By.CSS_SELECTOR, "span.elementText")
-                    if sp:
-                        label = _norm(sp[0].text or sp[0].get_attribute("innerText") or "")
-                except Exception:
-                    pass
+                next_td = el.query_selector("xpath=following-sibling::td[1]")
+                if next_td is not None:
+                    try:
+                        sp = next_td.query_selector_all("span.elementText")
+                        if sp:
+                            label = _norm(sp[0].inner_text())
+                    except Exception:
+                        pass
 
             # 3) Fallback: texte brut du TD courant
             if not label:
                 try:
-                    raw = el.get_attribute("innerText") or el.text or ""
+                    raw = el.inner_text() or ""
                     label = _norm(raw)
                 except Exception:
                     pass
 
             # option value : pattern {qname}_chk_{idx}_value
-            try:
-                v_name = f"{qname}_chk_{idx}_value"
-                v_el = el.find_element(By.CSS_SELECTOR, f"input[name='{v_name}']")
+            v_name = f"{qname}_chk_{idx}_value"
+            v_el = el.query_selector(f"input[name='{v_name}']")
+            if v_el is not None:
                 value = (v_el.get_attribute("value") or "").strip()
-            except Exception:
+            else:
                 # Pattern spécifique plateforme
-                try:
-                    row = el.find_element(By.XPATH, "ancestor::tr[1]")
-                    v_el = row.find_element(By.CSS_SELECTOR, f"input[name='{v_name}']")
-                    value = (v_el.get_attribute("value") or "").strip()
-                except Exception:
-                    value = ""
+                row = el.query_selector("xpath=ancestor::tr[1]")
+                if row is not None:
+                    v_el2 = row.query_selector(f"input[name='{v_name}']")
+                    if v_el2 is not None:
+                        value = (v_el2.get_attribute("value") or "").strip()
 
             if not label:
                 continue

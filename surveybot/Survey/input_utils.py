@@ -10,14 +10,8 @@ Ce module contient:
 Toutes ces fonctions sont utilisées par les autres modules input_*.py
 """
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.common.keys import Keys
-from selenium.common.exceptions import (
-    TimeoutException,
-    StaleElementReferenceException,
-    ElementClickInterceptedException,
-)
+
+
 import unicodedata
 import re
 import time
@@ -256,17 +250,16 @@ def pause_here(msg="Appuie sur Entrée pour continuer…"):
 
 def scroll_into_view(driver, el):
     """Scroll l'élément au centre du viewport."""
-    driver.execute_script(
-        "arguments[0].scrollIntoView({block:'center', inline:'center'})", el
+    driver.evaluate(
+        "(el) => el.scrollIntoView({block:'center', inline:'center'})", el
     )
 
 
 def js_click(driver, el):
     """Scroll + click via JavaScript."""
-    driver.execute_script(
-        "arguments[0].scrollIntoView({block:'center',inline:'center'});", el
-    )
-    driver.execute_script("arguments[0].click();", el)
+    page = driver
+    page.evaluate("(el) => el.scrollIntoView({block:'center',inline:'center'})", el)
+    page.evaluate("(el) => el.click()", el)
 
 
 def safe_click(driver, el, *, trace: str = "") -> bool:
@@ -315,7 +308,8 @@ def safe_click(driver, el, *, trace: str = "") -> bool:
 
     # 2) ActionChains
     try:
-        ActionChains(driver).move_to_element(el).pause(0.05).click().perform()
+        el.hover()
+        el.click()
         _bump("actionchains")
         return True
     except Exception:
@@ -338,7 +332,10 @@ def is_checked(el) -> bool:
     t = (el.get_attribute("type") or "").lower()
     if t in ("checkbox", "radio"):
         try:
-            return el.is_selected()
+            # is_checked() (pas is_selected(), inexistant sur ElementHandle/Locator
+            # Playwright) : lit l'état "checked" réel sans wait de visibilité, valide
+            # aussi pour les inputs natifs masqués en CSS (visibility:hidden, etc.).
+            return el.is_checked()
         except Exception:
             pass
     aria = (el.get_attribute("aria-checked") or "").lower()
@@ -378,14 +375,13 @@ def set_input_value_with_events(driver, el, value: str):
     except Exception:
         pass
     try:
-        el.send_keys(Keys.CONTROL, "a")
-        el.send_keys(Keys.BACKSPACE)
-        el.send_keys(value)
+        driver.keyboard.press("Control+a")
+        driver.keyboard.press("Backspace")
+        el.type(value)
     except Exception:
-        driver.execute_script("arguments[0].value = arguments[1];", el, value)
+        driver.evaluate("([e,v]) => { e.value = v; }", [el, value])
     # Events attendus par les frameworks JS (Vue/React/Angular)
-    driver.execute_script("""
-        const e = arguments[0], v = arguments[1];
+    driver.evaluate("""([e, v]) => {
         if (!e) return;
         try {
           const proto = (e.tagName || '').toLowerCase() === 'textarea'
@@ -401,7 +397,7 @@ def set_input_value_with_events(driver, el, value: str):
         for (const t of ["input","change","blur","focusout"]) {
           try { e.dispatchEvent(new Event(t, {bubbles:true})); } catch(_){}
         }
-    """, el, value)
+    }""", [el, value])
 
 
 def find_inputs_by_hint(driver, kind: str):
@@ -424,7 +420,7 @@ def find_inputs_by_hint(driver, kind: str):
     iid = f"contains(translate(@id,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'{kind}')"
     xp = f"//input[({phs}) or {als} or {nm} or {iid}]"
     try:
-        return driver.find_elements(By.XPATH, xp)
+        return driver.query_selector_all("xpath=" + xp)
     except Exception:
         return []
 
@@ -445,12 +441,12 @@ def find_question_container_by_ctx(driver, context_hint: str):
     if not tokens:
         return None
 
-    candidates = driver.find_elements(By.CSS_SELECTOR, "div.question")
+    candidates = driver.query_selector_all("div.question")
     best, best_score = None, 0
     for c in candidates:
         try:
-            h1 = c.find_element(By.CSS_SELECTOR, "h1.question-text")
-            q = norms_txt(h1.get_attribute("innerText") or h1.text)
+            h1 = c.query_selector("h1.question-text")
+            q = norms_txt(h1.get_attribute("innerText") or h1.inner_text())
         except Exception:
             continue
         score = sum(1 for t in tokens if t in q)
@@ -467,19 +463,16 @@ def find_questions_container(driver, context_hint: str):
     ctx = (context_hint or "").strip()
     if not ctx:
         return None
-    candidates = driver.find_elements(
-        By.XPATH,
-        "//div[contains(@class,'question')][.//h1 or .//h2]"
-    )
+    candidates = driver.query_selector_all("xpath=" + "//div[contains(@class,'question')][.//h1 or .//h2]")
     norm_ctx = normt_txt(ctx)
     for q in candidates:
         try:
             title = ""
             try:
-                title = q.find_element(By.XPATH, ".//h1").text
+                title = q.query_selector("xpath=" + ".//h1").text
             except Exception:
                 try:
-                    title = q.find_element(By.XPATH, ".//h2").text
+                    title = q.query_selector("xpath=" + ".//h2").text
                 except Exception:
                     title = ""
             if normt_txt(title).find(norm_ctx) != -1:
@@ -507,23 +500,20 @@ def has_visible_open_ended_field(container):
     """Vérifie s'il y a déjà un champ 'réponse libre' visible sous cette question."""
     try:
         # 1) textarea visible
-        areas = container.find_elements(By.XPATH, ".//textarea[not(@disabled) and not(@readonly)]")
+        areas = container.query_selector_all("xpath=" + ".//textarea[not(@disabled) and not(@readonly)]")
         for a in areas:
             try:
-                if a.is_displayed() and a.rect.get("height", 0) > 5 and a.rect.get("width", 0) > 20:
+                if a.is_visible() and a.bounding_box() or {}.get("height", 0) > 5 and a.bounding_box() or {}.get("width", 0) > 20:
                     return True
             except Exception:
                 continue
         # 2) input texte 'open-ended' (plus rare)
-        inputs = container.find_elements(
-            By.XPATH,
-            ".//input[(@type='text' or @type='search' or not(@type)) and not(@disabled) and not(@readonly)]"
-        )
+        inputs = container.query_selector_all("xpath=" + ".//input[(@type='text' or @type='search' or not(@type)) and not(@disabled) and not(@readonly)]")
         for i in inputs:
             try:
                 ph = (i.get_attribute("placeholder") or "").lower()
                 nm = (i.get_attribute("name") or "").lower() + " " + (i.get_attribute("id") or "").lower()
-                if i.is_displayed() and (len(ph) > 0 or "open" in nm or "free" in nm or "ended" in nm):
+                if i.is_visible() and (len(ph) > 0 or "open" in nm or "free" in nm or "ended" in nm):
                     return True
             except Exception:
                 continue
@@ -579,7 +569,7 @@ def ensure_open_ended_open(
     candidates = []
     for xp in selectors:
         try:
-            candidates.extend(container.find_elements(By.XPATH, xp))
+            candidates.extend(container.query_selector_all("xpath=" + xp))
         except Exception:
             continue
 
@@ -587,8 +577,8 @@ def ensure_open_ended_open(
     visible = []
     for el in candidates:
         try:
-            if el.is_displayed():
-                box = el.rect or {}
+            if el.is_visible():
+                box = el.bounding_box() or {}
                 if box.get("width", 0) >= 6 and box.get("height", 0) >= 6:
                     visible.append(el)
         except Exception:
@@ -598,12 +588,12 @@ def ensure_open_ended_open(
     def _score(el):
         sc = 0
         try:
-            if el.find_elements(By.TAG_NAME, "i") or el.find_elements(By.TAG_NAME, "svg"):
+            if el.query_selector_all("i") or el.query_selector_all("svg"):
                 sc += 2
         except Exception:
             pass
         try:
-            r = el.rect
+            r = el.bounding_box() or {}
             sc += min(int((r.get("width", 0) * r.get("height", 0)) / 400), 3)
         except Exception:
             pass
@@ -623,12 +613,13 @@ def ensure_open_ended_open(
                             print("✓ Open-ended: champ affiché (postcheck=field). source: input_utils.py")
                             return True
                     else:
-                        if container.find_elements(By.XPATH, ".//i[contains(@class,'fa-chevron-up')]"):
+                        if container.query_selector_all("xpath=" + ".//i[contains(@class,'fa-chevron-up')]"):
                             print("✓ Open-ended: icône passée en 'up' (postcheck=icon). source: input_utils.py")
                             return True
             except Exception:
                 try:
-                    ActionChains(driver).move_to_element(el).pause(0.05).click().perform()
+                    el.hover()
+                    el.click()
                 except Exception:
                     pass
 
@@ -661,11 +652,12 @@ def viewport_penalty(driver, el) -> float:
     Utile pour prioriser les éléments visibles dans le viewport.
     """
     try:
-        r = el.rect
+        r = el.bounding_box() or {}
         if not r:
             return 999.0
-        vp_height = driver.execute_script("return window.innerHeight") or 800
-        vp_width = driver.execute_script("return window.innerWidth") or 1200
+        page = driver
+        vp_height = page.evaluate("() => window.innerHeight") or 800
+        vp_width = page.evaluate("() => window.innerWidth") or 1200
         
         el_center_y = r["y"] + r["height"] / 2
         el_center_x = r["x"] + r["width"] / 2

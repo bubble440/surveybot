@@ -19,11 +19,20 @@
 from __future__ import annotations
 
 import re
+import time
 import unicodedata
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.remote.webelement import WebElement
+from Survey.log_utils import log_debug
+
+# Budget de scan pour les dropdowns custom (sélecteurs CSS génériques susceptibles
+# de matcher un grand nombre d'éléments hors-scope sur une page réelle : navbars,
+# sélecteurs de langue, bannières cookies, etc.). Chaque candidat coûte plusieurs
+# aller-retours navigateur (_visible + _extract_label) ; sans borne, un DOM avec
+# de nombreux éléments `.dropdown`/`.select` peut faire durer la résolution
+# plusieurs dizaines de secondes avant de rendre la main à la stratégie suivante.
+_CUSTOM_DROPDOWN_SCAN_BUDGET = 40
+_CUSTOM_DROPDOWN_SCAN_DEADLINE_S = 3.0
 
 
 # ------------------------------------------------------------
@@ -59,40 +68,82 @@ def _jaccard(a: str, b: str) -> float:
 class DropdownBlock:
     def __init__(
         self,
+        trigger: Any,
         label: str,
-        trigger: WebElement,
-        container: Optional[WebElement],
+        container: Optional[Any],
         options: Optional[List[str]],
+        is_native: bool = False,
     ):
-        self.label = label
         self.trigger = trigger
+        self.label = label
         self.container = container
         self.options = options or []
         self.used = False
+        # True pour les <select> natifs — détermine la branche idempotence et sélection
+        self.is_native = is_native
 
 
-def _visible(el: WebElement) -> bool:
+def _visible(el: Any) -> bool:
     try:
-        return el.is_displayed() and el.rect["width"] > 10 and el.rect["height"] > 10
+        bb = el.bounding_box() or {}
+        return el.is_visible() and bb.get("width", 0) > 10 and bb.get("height", 0) > 10
     except Exception:
         return False
 
 
-def _extract_label(el: WebElement) -> str:
-    """
-    Récupère le label humain d’un dropdown
-    """
-    # label[for=id]
+def _el_is_select(el: Any) -> bool:
+    """Retourne True si l'élément DOM est un <select> natif."""
     try:
-        el_id = el.get_attribute("id")
-        if el_id:
-            labs = el.find_elements(By.XPATH, f"//label[@for='{el_id}']")
-            if labs:
-                return labs[0].text.strip()
+        return el.evaluate("e => e.tagName.toLowerCase()") == "select"
+    except Exception:
+        return False
+
+
+def _extract_label(el: Any, driver: Any = None) -> str:
+    """
+    Récupère le label humain d'un dropdown.
+
+    Ordre de priorité :
+    1. aria-labelledby → texte de l'élément référencé (robuste, Nielsen/Decipher)
+    2. label[for=id]
+    3. aria-label
+    4. placeholder
+    5. name
+    6. texte du conteneur parent immédiat (risqué sur <select> : contient les options)
+
+    La branche (6) est volontairement ignorée pour les <select> natifs car
+    inner_text() sur le parent retourne la concaténation de toutes les options,
+    ce qui pollue le label et fausse le score Jaccard.
+    """
+    is_select = _el_is_select(el)
+
+    # 1. aria-labelledby (ex. Nielsen : aria-labelledby="question_text_S11")
+    try:
+        labelledby = (el.get_attribute("aria-labelledby") or "").strip()
+        if labelledby and driver is not None:
+            for ref_id in labelledby.split():
+                ref = driver.query_selector(f"#{ref_id}")
+                if ref is not None:
+                    t = (ref.inner_text() or "").strip()
+                    if t:
+                        return t
     except Exception:
         pass
 
-    # aria / placeholder / name
+    # 2. label[for=id]
+    try:
+        el_id = el.get_attribute("id")
+        if el_id:
+            # Recherche globale depuis la racine du document
+            labs = (driver or el).query_selector_all(f"xpath=//label[@for='{el_id}']")
+            if labs:
+                t = labs[0].inner_text().strip()
+                if t:
+                    return t
+    except Exception:
+        pass
+
+    # 3–5. attributs scalaires
     for attr in ("aria-label", "placeholder", "name"):
         try:
             v = el.get_attribute(attr)
@@ -101,13 +152,18 @@ def _extract_label(el: WebElement) -> str:
         except Exception:
             pass
 
-    # texte parent proche
-    try:
-        parent = el.find_element(By.XPATH, "ancestor::*[self::div or self::td or self::li][1]")
-        if parent.text and len(parent.text.strip()) > 1:
-            return parent.text.strip()
-    except Exception:
-        pass
+    # 6. texte parent proche — uniquement pour les dropdowns custom (pas les <select>)
+    if not is_select:
+        try:
+            parent = el.query_selector(
+                "xpath=ancestor::*[self::div or self::td or self::li][1]"
+            )
+            if parent is not None:
+                txt = parent.inner_text().strip()
+                if txt and len(txt) > 1:
+                    return txt
+        except Exception:
+            pass
 
     return ""
 
@@ -115,17 +171,17 @@ def _extract_label(el: WebElement) -> str:
 def _collect_dropdown_blocks(driver) -> List[DropdownBlock]:
     blocks: List[DropdownBlock] = []
 
-    # 1) vrais <select>
-    for sel in driver.find_elements(By.TAG_NAME, "select"):
+    # 1) <select> natifs — collectés en premier, marqués is_native=True
+    for sel in driver.query_selector_all("select"):
         if not _visible(sel):
             continue
 
         options = []
         try:
-            for o in sel.find_elements(By.TAG_NAME, "option"):
+            for o in sel.query_selector_all("option"):
                 if o.get_attribute("disabled"):
                     continue
-                t = (o.text or "").strip()
+                t = (o.inner_text() or "").strip()
                 if t:
                     options.append(t)
         except Exception:
@@ -133,29 +189,54 @@ def _collect_dropdown_blocks(driver) -> List[DropdownBlock]:
 
         blocks.append(
             DropdownBlock(
-                label=_extract_label(sel),
                 trigger=sel,
+                label=_extract_label(sel, driver),
                 container=None,
                 options=options,
+                is_native=True,
             )
         )
 
-    # 2) dropdowns custom (combobox / role=listbox / button)
-    customs = driver.find_elements(
-        By.CSS_SELECTOR,
+    # 2) dropdowns custom (combobox / role=listbox / bouton)
+    # Le sélecteur `.dropdown` et `.select` peut matcher des <select> qui portent
+    # ces classes CSS (ex. Nielsen : <select class="input dropdown">).
+    # On exclut tout élément dont le tagName est "select" pour éviter la double collecte.
+    customs = driver.query_selector_all(
         "[role='combobox'], [aria-haspopup='listbox'], .dropdown, .select"
     )
 
-    for el in customs:
+    if len(customs) > _CUSTOM_DROPDOWN_SCAN_BUDGET:
+        log_debug(
+            "dropdown-block",
+            f"_collect_dropdown_blocks: {len(customs)} candidats custom, "
+            f"borné à {_CUSTOM_DROPDOWN_SCAN_BUDGET}",
+        )
+        customs = customs[:_CUSTOM_DROPDOWN_SCAN_BUDGET]
+
+    _scan_deadline = time.monotonic() + _CUSTOM_DROPDOWN_SCAN_DEADLINE_S
+    for i, el in enumerate(customs):
+        if time.monotonic() > _scan_deadline:
+            log_debug(
+                "dropdown-block",
+                f"_collect_dropdown_blocks: deadline {_CUSTOM_DROPDOWN_SCAN_DEADLINE_S}s "
+                f"atteinte, abandon après {i}/{len(customs)} candidats custom",
+            )
+            break
+
+        # Exclure les <select> natifs — déjà collectés ci-dessus
+        if _el_is_select(el):
+            continue
+
         if not _visible(el):
             continue
 
         blocks.append(
             DropdownBlock(
-                label=_extract_label(el),
                 trigger=el,
+                label=_extract_label(el, driver),
                 container=None,
-                options=None,  # options chargées après ouverture
+                options=None,   # options chargées après ouverture
+                is_native=False,
             )
         )
 
@@ -166,6 +247,19 @@ def _collect_dropdown_blocks(driver) -> List[DropdownBlock]:
 # Résolution principale
 # ------------------------------------------------------------
 
+def _selected_text_native(trigger: Any) -> str:
+    """
+    Lit le texte de l'option actuellement sélectionnée dans un <select> natif.
+    N'appelle jamais inner_text() qui retournerait toutes les options concaténées.
+    """
+    try:
+        return (
+            trigger.evaluate("e => e.options[e.selectedIndex]?.text || ''") or ""
+        ).strip()
+    except Exception:
+        return ""
+
+
 def try_resolve_dropdown_block(
     driver,
     *,
@@ -174,9 +268,12 @@ def try_resolve_dropdown_block(
     debug: bool = False,
 ) -> bool:
     """
-    1) Trouve le dropdown correspondant au contexte
-    2) L’ouvre
+    1) Trouve le dropdown correspondant au contexte question
+    2) Vérifie l'idempotence (valeur déjà sélectionnée ?)
     3) Sélectionne la valeur
+
+    Pour les <select> natifs, utilise select_option() Playwright + dispatch events.
+    Pour les dropdowns custom, ouvre puis clique l'option visible.
     """
     ctx = _norm(context_question)
     if not ctx:
@@ -201,48 +298,79 @@ def try_resolve_dropdown_block(
             print("[DROPDOWN] Aucun dropdown pertinent pour ctx:", context_question)
         return False
 
-    # ---- 1️⃣5️⃣ Idempotence: si la valeur est déjà sélectionnée, NE RIEN FAIRE (évite reload)
+    # ---- 1️⃣5️⃣ Idempotence : si la valeur est déjà sélectionnée, NE RIEN FAIRE
+    #
+    # IMPORTANT : ne jamais appeler inner_text() sur un <select> natif.
+    # inner_text() retourne la concaténation de toutes les options (le texte
+    # visible du widget entier), pas seulement l'option sélectionnée.
+    # Pour les natifs, on lit options[selectedIndex].text via evaluate().
     try:
-        cur_txt = ""
-        tag = (best.trigger.tag_name or "").strip().lower()
-        if tag == "select":
-            try:
-                from selenium.webdriver.support.ui import Select
-                cur_txt = (Select(best.trigger).first_selected_option.text or "").strip()
-            except Exception:
-                cur_txt = (best.trigger.get_attribute("value") or "").strip()
+        if best.is_native:
+            cur_txt = _selected_text_native(best.trigger)
         else:
-            # dropdown custom: texte affiché dans le trigger
-            cur_txt = (best.trigger.text or "").strip()
+            cur_txt = (best.trigger.inner_text() or "").strip()
 
-        if cur_txt and _jaccard(_norm(value), cur_txt) >= 0.9:
+        if cur_txt and _jaccard(_norm(value), _norm(cur_txt)) >= 0.9:
             if debug:
                 print(f"[DROPDOWN] (skip) valeur déjà sélectionnée: '{cur_txt}'")
             return True
     except Exception:
         pass
 
-    # ---- 2️⃣ Ouvrir dropdown
-    try:
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", best.trigger)
-        best.trigger.click()
-    except Exception:
+    # ---- 2️⃣ Sélectionner la valeur
+    if best.is_native:
+        # <select> natif : select_option() Playwright (par label) + dispatch events
         try:
-            driver.execute_script("arguments[0].click();", best.trigger)
+            best.trigger.scroll_into_view_if_needed()
+            best.trigger.select_option(label=value)
+            try:
+                best.trigger.evaluate(
+                    "(s) => { ['input','change','blur'].forEach(t => "
+                    "{ try { s.dispatchEvent(new Event(t, {bubbles:true})) } catch(e) {} }) }"
+                )
+            except Exception:
+                pass
+            if debug:
+                print(f"[DROPDOWN] ✅ (natif) '{value}' sélectionné pour '{best.label}'")
+            return True
         except Exception:
+            # Fallback : select_option par valeur d'attribut (fuzzy match sur le texte)
+            try:
+                opts_data = best.trigger.evaluate(
+                    "e => Array.from(e.options).map(o => ({value: o.value, text: o.text.trim()}))"
+                )
+                target = _norm(value)
+                matched_value = None
+                for o in (opts_data or []):
+                    if _jaccard(target, _norm(o.get("text", ""))) >= 0.85:
+                        matched_value = o.get("value")
+                        break
+                if matched_value is not None:
+                    best.trigger.select_option(value=matched_value)
+                    if debug:
+                        print(f"[DROPDOWN] ✅ (natif/value) '{value}' sélectionné pour '{best.label}'")
+                    return True
+            except Exception:
+                pass
             return False
 
-    # ---- 3️⃣ Récupérer options visibles
+    # Custom dropdown : ouvrir puis cliquer l'option visible
+    try:
+        best.trigger.scroll_into_view_if_needed()
+        best.trigger.click()
+    except Exception:
+        return False
+
+    # ---- 3️⃣ Récupérer options visibles après ouverture
     opts = []
     try:
-        items = driver.find_elements(
-            By.CSS_SELECTOR,
+        items = driver.query_selector_all(
             "option, [role='option'], li, .dropdown-item"
         )
         for it in items:
             if not _visible(it):
                 continue
-            t = (it.text or "").strip()
+            t = (it.inner_text() or "").strip()
             if t:
                 opts.append((t, it))
     except Exception:
@@ -271,12 +399,9 @@ def try_resolve_dropdown_block(
     try:
         best_opt.click()
     except Exception:
-        try:
-            driver.execute_script("arguments[0].click();", best_opt)
-        except Exception:
-            return False
+        return False
 
     if debug:
-        print(f"[DROPDOWN] ✅ '{value}' sélectionné pour '{best.label}'")
+        print(f"[DROPDOWN] ✅ (custom) '{value}' sélectionné pour '{best.label}'")
 
     return True

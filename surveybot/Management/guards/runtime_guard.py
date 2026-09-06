@@ -9,12 +9,13 @@ import time, os, signal, threading, traceback
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 from enum import Enum
-from State.account_state import load_state, update_state, touch_heartbeat, _ts_add, _ts_to_unix
+from State.account_state import load_state, update_state, touch_heartbeat, _ts_add, _ts_to_unix, set_platform_cooldown
 from State.daily_target import DAILY_TARGET_EUR
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from Management.pause_policy import PausePolicy, resolve_pause_seconds
+from config import is_cta_intercept_only
+from Management.guards.freeze_gate import freeze_and_wait
+
+
 
 def _is_prod_env() -> bool:
     """
@@ -56,6 +57,7 @@ class RuntimeGuard:
         self,
         *,
         account_id: str,
+        platform_name: str,
         idle_timeout_sec: int = 120,          # 2 minutes
         restart_cooldown_sec: int = 60,      # 1 minute
         max_errors_in_row: int = 3,
@@ -65,6 +67,10 @@ class RuntimeGuard:
         on_soft_restart: Optional[Callable[[str], None]] = None,
     ):
         self.account_id = account_id
+        # Plateforme couramment sélectionnée pour ce process (cf. main.py::
+        # _select_platform_or_exit) — jamais redéterminée ailleurs : pause()
+        # l'utilise pour scoper le cooldown métier sous state["platforms"][nom].
+        self.platform_name = platform_name
         self.driver = None  # sera injecté après le lancement du navigateur
         self.state = RuntimeState()
         self.idle_timeout_sec = idle_timeout_sec
@@ -96,7 +102,7 @@ class RuntimeGuard:
                 return
             self.state.stopped = True
 
-        self._notify(f"🔄 Reset bot : {reason}")
+        self._notify(f"🔄 Reset bot | account_id={self.account_id} | raison={reason}")
 
         if self.on_soft_restart:
             self.on_soft_restart(reason)
@@ -117,23 +123,35 @@ class RuntimeGuard:
         """
 
         try:
-            wait = WebDriverWait(driver, 6)
+            # Playwright ne supporte pas XPath | dans un seul sélecteur :
+            # on tente les deux XPath séquentiellement (3 s chacun = 6 s au total)
+            cta = None
+            for xpath in [
+                "//button[contains(., 'Ouvrir')]",
+                "//a[contains(., 'Ouvrir')]",
+            ]:
+                try:
+                    el = driver.wait_for_selector(
+                        f"xpath={xpath}", state="visible", timeout=3000
+                    )
+                    if el is not None:
+                        cta = el
+                        break
+                except Exception:
+                    continue
 
-            # Sélecteurs volontairement larges pour anticiper les variations UI
-            cta = wait.until(
-                EC.element_to_be_clickable((
-                    By.XPATH,
-                    "//button[contains(., 'Ouvrir')] | //a[contains(., 'Ouvrir')]"
-                ))
-            )
+            if cta is None:
+                raise Exception("CTA 'Ouvrir' non trouvé")
 
-            driver.execute_script(
-                "arguments[0].scrollIntoView({block:'center'});",
-                cta
-            )
+            cta.scroll_into_view_if_needed()
             time.sleep(5)  # laisser le temps à l'UI de réagir après scroll
-            driver.execute_script("arguments[0].click();", cta)
 
+            if is_cta_intercept_only():
+                print("✅ CTA 'Ouvrir l'application' trouvé — interception OK (CTA_INTERCEPT_ONLY actif)")
+                self.record_success()
+                return True
+
+            cta.click()
             print("✅ CTA 'Ouvrir l'application' cliqué avec succès")
             self.record_success()
             return True
@@ -145,6 +163,7 @@ class RuntimeGuard:
     def signal_strict_survey(self, reason: str):
         """Survey trop strict (captcha, drag&drop, etc.) → soft restart direct, sans cooldown."""
         print(f"🔁 Strict survey détecté ({reason}) → soft restart direct")
+        freeze_and_wait(self.account_id, f"signal_strict_survey:{reason}")
         if self.on_soft_restart:
             self.on_soft_restart(reason)
         else:
@@ -169,6 +188,8 @@ class RuntimeGuard:
         if not _is_prod_env():
             print("[RUNTIME_GUARD][LOCAL] restart survey simulé")
             return
+
+        freeze_and_wait(self.account_id, f"request_survey_restart:{reason}")
 
         # 1) CTA best-effort
         cta_clicked = False
@@ -212,6 +233,12 @@ class RuntimeGuard:
     def heartbeat(self):
         with self._lock:
             self.state.last_activity_ts = time.time()
+        # Heartbeat local (détection zombie par check_zombie_bots.ps1)
+        try:
+            from bot_supervisor import write_heartbeat as _wh
+            _wh(self.account_id)
+        except Exception:
+            pass
         # Avec heartbeat ~30s, un TTL plus large évite les expirations en cas de freeze CPU/selenium
         ttl = int(os.getenv("ACCOUNT_LOCK_TTL_SEC", "240") or "240")
         try:
@@ -318,6 +345,7 @@ class RuntimeGuard:
         # 2⃣ Trop d’erreurs consécutives → soft restart
         if errors >= self.max_errors_in_row:
             print(f"[WATCHDOG] Trop d’erreurs ({errors}) → soft restart")
+            freeze_and_wait(self.account_id, "check_conditions:too_many_errors")
             with self._lock:
                 self.state.consecutive_errors = 0
             if self.on_soft_restart:
@@ -352,16 +380,70 @@ class RuntimeGuard:
         """
         Applique une PausePolicy au bot et stoppe l'exécution.
         """
+        # Point de gel unique (cf. Management/guards/freeze_gate.py) : couvre à la
+        # fois les appelants explicites (survey_solver.py, launch.py, auth_handler.py,
+        # payout.py, ...) et le thread de supervision périodique (_check_conditions,
+        # daemon _monitor_loop) — pause() est le seul sink commun aux deux. No-op si
+        # FREEZE_ON_TRIGGER désactivé.
+        freeze_and_wait(self.account_id, f"pause:{reason.value}")
+
+        from bot_supervisor import (
+            EXIT_VOLUNTARY, EXIT_SOFT_RESTART,
+            record_exit as _record_exit,
+        )
+        # Arrêts qui ne doivent PAS déclencher un redémarrage NSSM automatique.
+        _VOLUNTARY_REASONS = {
+            StopReason.DAILY_TARGET_REACHED,
+            StopReason.SESSION_EXPIRED,
+            StopReason.PROXY_EXPIRED,
+        }
+        _exit_code = EXIT_VOLUNTARY if reason in _VOLUNTARY_REASONS else EXIT_SOFT_RESTART
+
+        # Un arrêt externe (nssm stop -> SIGBREAK/SIGINT) est déjà en cours : le
+        # handler de signal (launch.py::_make_stop_handler) tourne dans le thread
+        # principal et peut être retardé (appel natif Selenium/Playwright en cours),
+        # pendant que ce pause() peut être appelé depuis le thread de supervision
+        # (_monitor_loop) et terminer le process en premier via os._exit(). Forcer
+        # EXIT_VOLUNTARY ici garantit que le code de sortie observé par NSSM reste
+        # cohérent avec l'arrêt volontaire demandé, quel que soit le thread qui
+        # termine effectivement le process.
+        try:
+            import launch as _launch
+            if _launch._external_stop_requested.is_set():
+                _exit_code = EXIT_VOLUNTARY
+        except Exception:
+            pass
+
         pause_sec = resolve_pause_seconds(policy)
 
-        self._notify(
-            f"⏸️ Pause bot ({policy.name}) | raison={reason.value} | pause={pause_sec}s"
-        )
+        # NO_SURVEY_AVAILABLE / DAILY_TARGET_REACHED : trop fréquents pour alerter.
+        # SESSION_EXPIRED / PROXY_EXPIRED : l'appelant a déjà notifié explicitement
+        # (avec account_id) juste avant d'appeler pause() — voir
+        # auth_handler.py::handle_proxy_error_page_if_needed et launch.py::safe_get.
+        # Notifier une deuxième fois ici doublonnerait la même alerte.
+        if reason not in {
+            StopReason.NO_SURVEY_AVAILABLE,
+            StopReason.DAILY_TARGET_REACHED,
+            StopReason.SESSION_EXPIRED,
+            StopReason.PROXY_EXPIRED,
+        }:
+            self._notify(
+                f"⏸️ Pause bot ({policy.name}) | account_id={self.account_id} | raison={reason.value}"
+            )
 
         def _apply_pause(st):
-            st["last_stop_reason"] = reason.value
-            st["cooldown_until_ts"] = _ts_add(pause_sec)
+            # Cooldown métier : propre à self.platform_name, distinct du verrou
+            # d'exclusivité racine (cf. State/account_state.py::
+            # set_platform_cooldown). last_stop_reason suit le même changement
+            # de portée — c'est le même événement métier.
+            set_platform_cooldown(st, self.platform_name, _ts_add(pause_sec))
+            st.setdefault("platforms", {}).setdefault(self.platform_name, {})["last_stop_reason"] = reason.value
+            # Verrou d'exclusivité racine : relâché immédiatement (même
+            # convention que main.py/launch.py sur tout arrêt de process), la
+            # RACINE ne portant plus la durée de la pause métier — celle-ci vit
+            # désormais uniquement sous state["platforms"][self.platform_name].
             st["status"] = "idle"
+            st["cooldown_until_ts"] = "1970-01-01T00:00:00"
 
         # try/finally : SystemExit est garanti même si update_state échoue (Postgres down, etc.)
         try:
@@ -373,6 +455,7 @@ class RuntimeGuard:
                 f"le scheduler attendra l'expiration du TTL"
             )
         finally:
+            _record_exit(self.account_id, _exit_code, reason.value)
             # H5: signaler l'arrêt au thread heartbeat avant de quitter
             try:
                 import launch as _launch
@@ -382,11 +465,11 @@ class RuntimeGuard:
             # FIX-B1: SystemExit levé depuis un thread secondaire ne tue que ce thread,
             # laissant le bot tourner en zombie. On force la sortie du processus entier.
             if threading.current_thread() is threading.main_thread():
-                raise SystemExit(reason.value)
+                raise SystemExit(_exit_code)
             else:
                 # os._exit() court-circuite proprement le processus.
                 # L'état Postgres a déjà été écrit dans le bloc try ci-dessus.
-                os._exit(0)
+                os._exit(_exit_code)
 
 # ----------------------------
 # Singleton global (robuste)

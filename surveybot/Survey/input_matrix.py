@@ -11,20 +11,14 @@ Dépendances:
 - input_utils pour les fonctions utilitaires
 """
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support.ui import Select
+
+
+
+
+
 import unicodedata
 import re
 import time
-
-# Import depuis input_utils
-from Survey.input_utils import (
-    norm_txt,
-    norm_soft,
-    find_context_container,
-)
-
 
 # =============================================================================
 # CONSTANTES MATRIX
@@ -72,26 +66,17 @@ def looks_like_matrix(driver) -> bool:
     ou de lignes .q-matrix/.Matrix (Qualtrics).
     """
     # Tables HTML
-    tables = driver.find_elements(
-        By.XPATH, "//table[.//input[@type='radio' or @type='checkbox'] or .//select]"
-    )
+    tables = driver.query_selector_all("xpath=" + "//table[.//input[@type='radio' or @type='checkbox'] or .//select]")
     if tables:
         return True
-    label_tables = driver.find_elements(
-        By.XPATH, "//table[.//thead//th and .//tbody//label[@for]]"
-    )
+    label_tables = driver.query_selector_all("xpath=" + "//table[.//thead//th and .//tbody//label[@for]]")
     if label_tables:
         return True
     # Matrices Qualtrics/dynata styles (div grids)
-    grids = driver.find_elements(
-        By.CSS_SELECTOR, ".q-matrix, .Matrix, .grid, .question-matrix, .matrix"
-    )
+    grids = driver.query_selector_all(".q-matrix, .Matrix, .grid, .question-matrix, .matrix")
     for g in grids:
         try:
-            if g.find_elements(
-                By.CSS_SELECTOR,
-                "input[type='radio'], input[type='checkbox'], select, [role='radio'], [role='checkbox']",
-            ):
+            if g.query_selector_all("input[type='radio'], input[type='checkbox'], select, [role='radio'], [role='checkbox']"):
                 return True
         except:
             continue
@@ -105,22 +90,23 @@ def iter_matrix_rows(driver):
     """
     rows = []
     # try <tr>
-    for tr in driver.find_elements(By.XPATH, "//table//tr"):
+    for tr in driver.query_selector_all("xpath=" + "//table//tr"):
         try:
             # label à gauche, souvent dans th/td[1]
             lbl_el = None
             for css in ["th", "td[1]", "td[1]//label", "td[1]//div"]:
                 try:
-                    lbl_el = tr.find_element(By.XPATH, f".//{css}")
-                    if lbl_el.text.strip():
+                    lbl_el = tr.query_selector("xpath=" + f".//{css}")
+                    if lbl_el.inner_text().strip():
                         break
                 except:
                     continue
-            lbl = (lbl_el.text if lbl_el else "").strip()
+            try:
+                lbl = (lbl_el.inner_text() if lbl_el else "").strip()
+            except Exception:
+                lbl = ""
             # ignorer header row
-            if tr.find_elements(
-                By.XPATH, ".//input[@type='radio' or @type='checkbox'] | .//select"
-            ):
+            if tr.query_selector_all("xpath=" + ".//input[@type='radio' or @type='checkbox'] | .//select"):
                 rows.append((tr, lbl))
         except:
             continue
@@ -129,22 +115,14 @@ def iter_matrix_rows(driver):
         return rows
 
     # fallback div-based
-    grids = driver.find_elements(
-        By.CSS_SELECTOR, ".q-matrix, .Matrix, .grid, .question-matrix, .matrix"
-    )
+    grids = driver.query_selector_all(".q-matrix, .Matrix, .grid, .question-matrix, .matrix")
     for g in grids:
         try:
-            candidates = g.find_elements(
-                By.XPATH,
-                ".//*[self::div or self::li][.//input[@type='radio' or @type='checkbox'] or .//select]",
-            )
+            candidates = g.query_selector_all("xpath=" + ".//*[self::div or self::li][.//input[@type='radio' or @type='checkbox'] or .//select]")
             for row in candidates:
                 lbl = ""
                 try:
-                    lbl = row.find_element(
-                        By.XPATH,
-                        ".//label | .//*[self::div or self::span][normalize-space(.)!='']",
-                    ).text.strip()
+                    lbl = row.query_selector("xpath=" + ".//label | .//*[self::div or self::span][normalize-space(.)!='']").inner_text().strip()
                 except:
                     pass
                 rows.append((row, lbl))
@@ -159,26 +137,30 @@ def get_matrix_columns(driver):
     """
     headers = []
     # head <th>
-    for th in driver.find_elements(By.XPATH, "//table//th[normalize-space(.)!='']"):
+    for th in driver.query_selector_all("xpath=" + "//table//th[normalize-space(.)!='']"):
         try:
-            headers.append(_norm(th.text))
+            headers.append(_norm(th.inner_text()))
         except:
             continue
     if headers:
         return headers
     # fallback: première ligne header simulée
     try:
-        first_row = driver.find_element(By.XPATH, "(//table//tr)[1]")
-        for td in first_row.find_elements(By.XPATH, ".//td[normalize-space(.)!='']"):
-            headers.append(_norm(td.text))
+        first_row = driver.query_selector("xpath=" + "(//table//tr)[1]")
+        for td in first_row.query_selector_all("xpath=" + ".//td[normalize-space(.)!='']"):
+            try:
+                headers.append(_norm(td.inner_text()))
+            except Exception:
+                pass
     except:
         pass
     # div-based header
-    for h in driver.find_elements(
-        By.CSS_SELECTOR, ".matrix thead, .q-matrix thead, .Matrix thead"
-    ):
-        for th in h.find_elements(By.XPATH, ".//*[normalize-space(.)!='']"):
-            headers.append(_norm(th.text))
+    for h in driver.query_selector_all(".matrix thead, .q-matrix thead, .Matrix thead"):
+        for th in h.query_selector_all("xpath=" + ".//*[normalize-space(.)!='']"):
+            try:
+                headers.append(_norm(th.inner_text()))
+            except Exception:
+                pass
     return headers
 
 
@@ -191,7 +173,7 @@ def select_cell_action(cell, preferred_col_norm):
     """
     # radio
     try:
-        r = cell.find_element(By.CSS_SELECTOR, "input[type='radio'], [role='radio']")
+        r = cell.query_selector("input[type='radio'], [role='radio']")
         if hasattr(r, "is_selected") and r.is_selected():
             return True
         try:
@@ -199,11 +181,11 @@ def select_cell_action(cell, preferred_col_norm):
             return True
         except:
             try:
-                ActionChains(cell.parent).move_to_element(r).click().perform()
+                r.hover(); r.click()
                 return True
             except:
                 try:
-                    cell.parent.execute_script("arguments[0].click();", r)
+                    r.click()
                     return True
                 except:
                     pass
@@ -212,9 +194,7 @@ def select_cell_action(cell, preferred_col_norm):
 
     # checkbox
     try:
-        cb = cell.find_element(
-            By.CSS_SELECTOR, "input[type='checkbox'], [role='checkbox']"
-        )
+        cb = cell.query_selector("input[type='checkbox'], [role='checkbox']")
         try:
             checked = False
             try:
@@ -228,11 +208,11 @@ def select_cell_action(cell, preferred_col_norm):
             return True
         except:
             try:
-                ActionChains(cell.parent).move_to_element(cb).click().perform()
+                cb.hover(); cb.click()
                 return True
             except:
                 try:
-                    cell.parent.execute_script("arguments[0].click();", cb)
+                    cb.click()
                     return True
                 except:
                     pass
@@ -241,19 +221,18 @@ def select_cell_action(cell, preferred_col_norm):
 
     # select
     try:
-        sel = cell.find_element(By.TAG_NAME, "select")
-        S = Select(sel)
-        # essai par texte proche du nom de colonne
-        for opt in S.options:
-            if _norm(opt.text) == preferred_col_norm or preferred_col_norm in _norm(
-                opt.text
-            ):
-                S.select_by_visible_text(opt.text)
+        sel = cell.query_selector("select")
+        _sel_el_mx = sel
+        options = _sel_el_mx.evaluate(
+            "el => [...el.options].map(o => ({text: o.inner_text(), value: o.value}))"
+        )
+        for opt in options:
+            if _norm(opt["text"]) == preferred_col_norm or preferred_col_norm in _norm(opt["text"]):
+                _sel_el_mx.select_option(label=opt["text"])
                 return True
-        # essai par value
-        for opt in S.options:
-            if _norm(opt.get_attribute("value") or "") == preferred_col_norm:
-                S.select_by_value(opt.get_attribute("value"))
+        for opt in options:
+            if _norm(opt["value"] or "") == preferred_col_norm:
+                _sel_el_mx.select_option(value=opt["value"])
                 return True
     except:
         pass
@@ -298,7 +277,7 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
 
         for css in ["td.clickableCell", ".clickableCell", "span.fir-icon"]:
             try:
-                return cell.find_element(By.CSS_SELECTOR, css)
+                return cell.query_selector(css)
             except Exception:
                 continue
         return target
@@ -314,18 +293,18 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                 break
         
         # b) trouver la ligne par son label
-        for tr in driver.find_elements(By.XPATH, "//table//tr"):
+        for tr in driver.query_selector_all("xpath=" + "//table//tr"):
             try:
                 lbl = ""
-                tds = tr.find_elements(By.XPATH, "./td")
+                tds = tr.query_selector_all("xpath=" + "./td")
                 if tds:
                     for td in tds[:3]:
                         try:
-                            has_input = bool(td.find_elements(
-                                By.XPATH,
-                                ".//input[@type='radio' or @type='checkbox'] | .//*[@role='radio' or @role='checkbox']"
-                            ))
-                            raw = (td.text or td.get_attribute("innerText") or "").strip()
+                            has_input = bool(td.query_selector_all("xpath=" + ".//input[@type='radio' or @type='checkbox'] | .//*[@role='radio' or @role='checkbox']"))
+                            try:
+                                raw = td.inner_text().strip()
+                            except Exception:
+                                raw = (td.get_attribute("innerText") or "").strip()
                             if raw and not has_input:
                                 lbl = _norm(raw)
                                 break
@@ -335,7 +314,7 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                 if not lbl:
                     for xp in ["./th", "./td[1]", "./td[2]", "./td[1]//label", "./td[2]//label", "./td[1]//div", "./td[2]//div"]:
                         try:
-                            t = tr.find_element(By.XPATH, xp).text.strip()
+                            t = tr.query_selector("xpath=" + xp).inner_text().strip()
                             if t:
                                 lbl = _norm(t)
                                 break
@@ -348,7 +327,7 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                 if not (rneedle == lbl or rneedle in lbl or lbl in rneedle):
                     continue
 
-                tds = tr.find_elements(By.XPATH, "./td")
+                tds = tr.query_selector_all("xpath=" + "./td")
 
                 def _is_most(s: str) -> bool:
                     s = _norm(s).lower()
@@ -377,14 +356,14 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                         inp = None
                         for xp in [".//input[@type='radio']", ".//input[@type='checkbox']", ".//*[@role='radio']", ".//*[@role='checkbox']"]:
                             try:
-                                inp = cell.find_element(By.XPATH, xp)
+                                inp = cell.query_selector("xpath=" + xp)
                                 has_input = True
                                 break
                             except Exception:
                                 continue
                         if not has_input:
                             try:
-                                inp = cell.find_element(By.XPATH, ".//label[@for]")
+                                inp = cell.query_selector("xpath=" + ".//label[@for]")
                             except Exception:
                                 inp = None
                         if inp is None:
@@ -417,18 +396,18 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                         tgt = None
                         for xp in [".//input[@type='radio']", ".//input[@type='checkbox']", ".//*[@role='radio']", ".//*[@role='checkbox']", ".//label[@for]"]:
                             try:
-                                tgt = best_cell.find_element(By.XPATH, xp)
+                                tgt = best_cell.query_selector("xpath=" + xp)
                                 break
                             except Exception:
                                 continue
                         if tgt is not None:
                             click_target = _resolve_click_target(best_cell, tgt)
-                            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", click_target)
+                            driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", click_target)
                             time.sleep(0.05)
                             try:
                                 click_target.click()
                             except Exception:
-                                ActionChains(driver).move_to_element(click_target).click().perform()
+                                click_target.hover(); click_target.click()
                             try:
                                 setattr(driver, "last_action_success", True)
                                 setattr(driver, "_post_action_t0", time.time())
@@ -447,27 +426,34 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
 
     # 2) Grilles "div-based" (Qualtrics/Dynata/SSI…)
     try:
-        grids = driver.find_elements(By.CSS_SELECTOR, ".q-matrix, .Matrix, .grid, .question-matrix, .matrix")
+        grids = driver.query_selector_all(".q-matrix, .Matrix, .grid, .question-matrix, .matrix")
         for g in grids:
             try:
-                rows = g.find_elements(By.XPATH, ".//*[self::div or self::li][.//input[@type='radio' or @type='checkbox'] or .//select]")
+                rows = g.query_selector_all("xpath=" + ".//*[self::div or self::li][.//input[@type='radio' or @type='checkbox'] or .//select]")
                 row = None
                 for r in rows:
-                    txt = (_norm(r.text) if r.text else "").strip()
+                    txt = ""
+                    try:
+                        txt = _norm(r.inner_text()).strip()
+                    except Exception:
+                        txt = ""
                     if txt and (rneedle == txt or rneedle in txt or txt in rneedle):
                         row = r
                         break
                 if row is None:
                     continue
 
-                cells = row.find_elements(By.XPATH, ".//div|.//li|.//span|.//td")
+                cells = row.query_selector_all("xpath=" + ".//div|.//li|.//span|.//td")
                 best = None
                 best_score = -1
                 for cell in cells:
                     try:
-                        sig = _norm(cell.text or cell.get_attribute("innerText") or "")
+                        try:
+                            sig = _norm(cell.inner_text())
+                        except Exception:
+                            sig = _norm(cell.get_attribute("innerText") or "")
                         sc = 1.0 if (cneedle and (cneedle == sig or cneedle in sig or sig in cneedle)) else 0.0
-                        if sc > best_score and cell.find_elements(By.XPATH, ".//input[@type='radio' or @type='checkbox'] | .//*[@role='radio' or @role='checkbox']"):
+                        if sc > best_score and cell.query_selector_all("xpath=" + ".//input[@type='radio' or @type='checkbox'] | .//*[@role='radio' or @role='checkbox']"):
                             best = cell
                             best_score = sc
                     except Exception:
@@ -479,19 +465,19 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                     tgt = None
                     for xp in [".//input[@type='radio']", ".//input[@type='checkbox']", ".//*[@role='radio']", ".//*[@role='checkbox']"]:
                         try:
-                            tgt = best.find_element(By.XPATH, xp)
+                            tgt = best.query_selector("xpath=" + xp)
                             break
                         except Exception:
                             continue
                     if not tgt:
                         continue
                     click_target = _resolve_click_target(best, tgt)
-                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", click_target)
+                    driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", click_target)
                     time.sleep(0.05)
                     try:
                         click_target.click()
                     except Exception:
-                        ActionChains(driver).move_to_element(click_target).click().perform()
+                        click_target.hover(); click_target.click()
                     try:
                         setattr(driver, "last_action_success", True)
                         setattr(driver, "_post_action_t0", time.time())
@@ -548,8 +534,12 @@ def apply_matrix_column_to_all_rows(driver, column_label: str) -> bool:
     success_any = False
     for row_el, _lbl in rows:
         try:
-            if col_idx is not None and row_el.tag_name.lower() == "tr":
-                tds = row_el.find_elements(By.XPATH, ".//td")
+            try:
+                _row_tag = row_el.evaluate("el => el.tagName.toLowerCase()")
+            except Exception:
+                _row_tag = ""
+            if col_idx is not None and _row_tag == "tr":
+                tds = row_el.query_selector_all("xpath=" + ".//td")
                 cell_candidates = []
                 if len(tds) > col_idx:
                     cell_candidates.append(tds[col_idx])
@@ -565,15 +555,10 @@ def apply_matrix_column_to_all_rows(driver, column_label: str) -> bool:
 
             # fallback div-based
             try:
-                label_cell = row_el.find_element(
-                    By.XPATH,
-                    ".//*[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{}')]".format(
-                        target
-                    ),
+                label_cell = row_el.query_selector("xpath=" + ".//*[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{}')]".format(
+                        target),
                 )
-                parent = label_cell.find_element(
-                    By.XPATH, "ancestor::*[self::td or self::div or self::li][1]"
-                )
+                parent = label_cell.query_selector("xpath=" + "ancestor::*[self::td or self::div or self::li][1]")
                 if select_cell_action(parent, target):
                     success_any = True
                     continue
@@ -581,10 +566,7 @@ def apply_matrix_column_to_all_rows(driver, column_label: str) -> bool:
                 pass
 
             try:
-                first_cell = row_el.find_element(
-                    By.XPATH,
-                    ".//td[.//input[@type='radio' or @type='checkbox'] or .//select] | .//*[.//input[@type='radio' or @type='checkbox'] or .//select]",
-                )
+                first_cell = row_el.query_selector("xpath=" + ".//td[.//input[@type='radio' or @type='checkbox'] or .//select] | .//*[.//input[@type='radio' or @type='checkbox'] or .//select]")
                 if select_cell_action(first_cell, target):
                     success_any = True
                     continue

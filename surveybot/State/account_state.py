@@ -1,5 +1,7 @@
 from __future__ import annotations
 import os
+from config import RUN_ENV as _RUN_ENV
+from db_config import get_database_url
 
 # State/account_state.py
 """
@@ -14,9 +16,11 @@ Objectif:
 
 # State/account_state.py
 
-RUN_ENV = os.getenv("RUN_ENV", "local").lower()
-IS_LOCAL = RUN_ENV == "local"
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+RUN_ENV = _RUN_ENV.lower()
+IS_LOCAL = RUN_ENV != "prod"  # True en attach (debug), False en prod
+# Résolution centralisée (partagée avec preselection/license_guard.py et
+# State/survey_memory.py) : _license_config en priorité, os.getenv en dev/attach.
+DATABASE_URL = get_database_url()
 
 # En environnement non-local (prod), le filesystem n'est PAS une source de vérité partagée.
 # Donc: pas de fallback fichier → Postgres doit être correctement configuré.
@@ -36,9 +40,19 @@ log = logging.getLogger("account_state")
 # -----------------------------
 # Config backend
 # -----------------------------
-STATE_BACKEND = os.getenv("STATE_BACKEND", "").strip().lower()  # "postgres" en prod
-STATE_TABLE = os.getenv("STATE_TABLE", "").strip()             # ex: surveybot_account_state
-STATE_TTL_DAYS = int(os.getenv("STATE_TTL_DAYS", "0") or "0")   # 0 = pas de TTL auto
+# STATE_BACKEND / STATE_TABLE / STATE_TTL_DAYS sont des variables GLOBAL_CONFIG : en
+# build compilé (Nuitka), elles proviennent exclusivement de global_config.py, jamais
+# de l'environnement du process (cf. config.py). En dev/attach (global_config.py
+# absent du projet), fallback os.getenv.
+try:
+    from global_config import STATE_BACKEND, STATE_TABLE, STATE_TTL_DAYS  # type: ignore
+    STATE_BACKEND = (STATE_BACKEND or "").strip().lower()
+    STATE_TABLE = (STATE_TABLE or "").strip()
+    STATE_TTL_DAYS = int(STATE_TTL_DAYS or 0)
+except ImportError:
+    STATE_BACKEND = os.getenv("STATE_BACKEND", "").strip().lower()  # "postgres" en prod
+    STATE_TABLE = os.getenv("STATE_TABLE", "").strip()             # ex: surveybot_account_state
+    STATE_TTL_DAYS = int(os.getenv("STATE_TTL_DAYS", "0") or "0")   # 0 = pas de TTL auto
 
 # Fallback fichier (debug seulement)
 _default_state_dir = (
@@ -75,14 +89,22 @@ def _ts_to_unix(ts) -> int:
         return int(datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=tz).timestamp())
     return 0
 
+def _get_license_key() -> str:
+    """Lit LICENSE_KEY depuis _license_config (embarquée dans le compilé). Vide si absent."""
+    try:
+        from _license_config import LICENSE_KEY  # type: ignore
+        return (LICENSE_KEY or "").strip()
+    except ImportError:
+        return ""
+
+
 def _default_state(account_id: str) -> Dict[str, Any]:
     """
-    Structure par défaut: garde ça minimal pour rester compatible avec les évolutions.
+    Structure par défaut : garde ça minimal pour rester compatible avec les évolutions.
     """
     return {
         "account_id": account_id,
         "version": 0,                 # pour optimistic locking
-        "banned": False,
         "cooldown_until_ts": "1970-01-01T00:00:00",
         "status": "idle",
 
@@ -96,8 +118,19 @@ def _default_state(account_id: str) -> Dict[str, Any]:
         "daily_balance_target": {},   # ex: {"2026-04-10": 3.50} — objectif de solde courant pour la journée
         "daily_balance_gained": {},   # ex: {"2026-04-10": 1.00} — gain journalier cumulé (survit aux retraits)
         "total_earned": 0.0,
-        "fivesim_phone": "",
-        "fivesim_order_id": "",
+        # Sous-état par plateforme (rotation multi-plateformes, un même account_id
+        # pouvant tourner sur plusieurs inscriptions distinctes) : chaque clé est un
+        # nom de plateforme (cf. platforms/__init__.py::get_platform), sa valeur
+        # contient au minimum "cooldown_until_ts" (cooldown métier, distinct du
+        # verrou d'exclusivité racine ci-dessus) et les mêmes champs journaliers
+        # que ceux historiquement à la racine. Absent d'un état pré-existant :
+        # normalisé ici via _default_state, jamais de migration Postgres requise.
+        "platforms": {},
+
+        # Clé de licence — permet la jointure avec la table licenses pour supervision.
+        # Lue depuis _license_config.LICENSE_KEY (embarquée dans le compilé PyInstaller).
+        # Vide en mode attach (debug).
+        "license_key": _get_license_key(),
         "updated_ts": _now(),
     }
 
@@ -125,21 +158,35 @@ def _get_pg_conn():
         raise RuntimeError(f"[STATE] Postgres indisponible. err={e}")
 
 def _pg_ensure_table(conn) -> None:
-    """Crée la table si elle n'existe pas encore (idempotent)."""
-    with conn.cursor() as cur:
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS account_state (
-                account_id TEXT PRIMARY KEY,
-                state      JSONB NOT NULL,
-                version    INTEGER NOT NULL DEFAULT 0,
-                updated_ts TIMESTAMPTZ DEFAULT now()
-            )
-        """)
-        cur.execute("""
-            ALTER TABLE account_state
-            ADD COLUMN IF NOT EXISTS datadome_cookies JSONB DEFAULT '{}'
-        """)
-    conn.commit()
+    """
+    Crée la table si elle n'existe pas encore (idempotent).
+    Le rôle surveybot_client n'a volontairement aucun droit DDL (CREATE/ALTER) — voir
+    décision de restriction de rôle, section 3 du doc de suivi. La table doit donc déjà
+    exister (créée manuellement une fois par un rôle privilégié). Un refus de permission
+    ici est attendu dans ce cas et ne doit pas empêcher le bot de démarrer : on le logue
+    et on continue, en supposant que la table existe déjà avec le bon schéma.
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS account_state (
+                    account_id TEXT PRIMARY KEY,
+                    state      JSONB NOT NULL,
+                    version    INTEGER NOT NULL DEFAULT 0,
+                    updated_ts TIMESTAMPTZ DEFAULT now()
+                )
+            """)
+            cur.execute("""
+                ALTER TABLE account_state
+                ADD COLUMN IF NOT EXISTS datadome_cookies JSONB DEFAULT '{}'
+            """)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        log.debug(
+            "[STATE] Impossible de créer/modifier account_state (rôle sans droits DDL, "
+            "attendu si la table existe déjà) : %s", e
+        )
 
 
 def _normalize_state(st: Dict[str, Any], account_id: str) -> Dict[str, Any]:
@@ -158,6 +205,76 @@ def _normalize_state(st: Dict[str, Any], account_id: str) -> Dict[str, Any]:
         base["ttl_ts"] = _ts_add(STATE_TTL_DAYS * 86400)
 
     return base
+
+
+# -----------------------------
+# Rotation multi-plateformes (cooldown métier par plateforme)
+# -----------------------------
+# Ces fonctions sont pures (dict state en paramètre, comme State/daily_target.py)
+# pour rester composables dans une même transaction update_state() par l'appelant
+# (ex: RuntimeGuard.pause() qui doit aussi toucher le verrou racine dans le même
+# appel). Elles ne lisent/écrivent jamais Postgres elles-mêmes.
+
+def select_first_available_platform(state: Dict[str, Any], rotation) -> "str | None":
+    """
+    Retourne le premier nom de plateforme de `rotation` (dans l'ordre de la
+    liste) dont le cooldown métier (state["platforms"][nom]["cooldown_until_ts"])
+    est expiré. None si aucune plateforme n'est disponible.
+    """
+    now_unix = int(time.time())
+    platforms = state.get("platforms") or {}
+    for name in rotation:
+        sub = platforms.get(name) or {}
+        cooldown = sub.get("cooldown_until_ts", "1970-01-01T00:00:00")
+        if _ts_to_unix(cooldown) < now_unix:
+            return name
+    return None
+
+
+def nearest_platform_cooldown_deadline(state: Dict[str, Any], rotation) -> str:
+    """
+    Échéance la plus proche parmi les cooldowns métier des plateformes de
+    `rotation`. Destinée à réarmer le cooldown_until_ts RACINE (verrou
+    d'exclusivité) quand select_first_available_platform() ne retourne rien,
+    pour éviter qu'un superviseur externe ne relance le process en boucle
+    rapprochée tant qu'aucune plateforme n'est réellement prête.
+    """
+    platforms = state.get("platforms") or {}
+    deadlines = [
+        (platforms.get(name) or {}).get("cooldown_until_ts", "1970-01-01T00:00:00")
+        for name in rotation
+    ]
+    deadlines = [d for d in deadlines if d]
+    if not deadlines:
+        return "1970-01-01T00:00:00"
+    return min(deadlines, key=_ts_to_unix)
+
+
+def set_platform_cooldown(state: Dict[str, Any], platform_name: str, cooldown_until_ts: str) -> None:
+    """
+    Écrit le cooldown métier d'une plateforme donnée (state["platforms"][nom]
+    ["cooldown_until_ts"]), sans jamais toucher au verrou d'exclusivité racine
+    (status/cooldown_until_ts au niveau racine de account_state).
+    """
+    state.setdefault("platforms", {}).setdefault(platform_name, {})["cooldown_until_ts"] = cooldown_until_ts
+
+
+def has_notified_balance_today(state: Dict[str, Any], platform_name: str, day: str) -> bool:
+    """
+    Déduplication des notifications Telegram de solde : une seule clé par
+    plateforme et par jour (state["platforms"][nom]["balance_notified_date"]),
+    pas de clé par type de message (seuil atteint / échec claim / etc.).
+    """
+    platforms = state.get("platforms") or {}
+    sub = platforms.get(platform_name) or {}
+    return sub.get("balance_notified_date") == day
+
+
+def mark_notified_balance_today(state: Dict[str, Any], platform_name: str, day: str) -> None:
+    """
+    Marque la plateforme comme notifiée pour `day` (cf. has_notified_balance_today).
+    """
+    state.setdefault("platforms", {}).setdefault(platform_name, {})["balance_notified_date"] = day
 
 
 # -----------------------------
@@ -454,98 +571,3 @@ def try_acquire_cooldown_slot(
     if STRICT_NO_FILE_FALLBACK:
         raise RuntimeError("[STATE] try_acquire_cooldown_slot: STATE_BACKEND (postgresql) requis en environnement non-local")
     return False
-
-
-# -----------------------------
-# 🍪 DataDome cookie persistence
-# -----------------------------
-
-def save_datadome_cookie(account_id: str, domain: str, cookie_value: str) -> None:
-    """
-    Persiste le cookie datadome pour un domaine donné.
-    Plusieurs domaines par compte sont supportés (stockés dans datadome_cookies JSONB).
-    No-op si STATE_BACKEND != postgres ou si un argument est vide.
-    """
-    if not _pg_enabled():
-        return
-    if not account_id or not domain or not cookie_value:
-        return
-    conn = _get_pg_conn()
-    _pg_ensure_table(conn)
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """UPDATE account_state
-                   SET datadome_cookies = COALESCE(datadome_cookies, '{}'::jsonb)
-                                         || jsonb_build_object(%s::text, %s::text),
-                       updated_ts = now()
-                   WHERE account_id = %s""",
-                (domain, cookie_value, account_id)
-            )
-        conn.commit()
-    except Exception as e:
-        log.warning(f"[STATE] save_datadome_cookie: err={e}")
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-    finally:
-        conn.close()
-
-
-def load_cookies(account_id: str) -> Dict[str, list]:
-    """
-    Charge tous les cookies de session depuis la table cookie_store pour ce compte.
-    Retourne un dict {domain: [cookie_objects]}, vide si aucune entrée ou si Postgres indisponible.
-    Ne lève jamais d'exception.
-    """
-    if not _pg_enabled():
-        return {}
-    if not account_id:
-        return {}
-    conn = _get_pg_conn()
-    try:
-        import psycopg2.extras
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT domain, cookies FROM cookie_store WHERE account_id = %s",
-                (account_id,)
-            )
-            rows = cur.fetchall()
-        if not rows:
-            return {}
-        return {row["domain"]: list(row["cookies"]) for row in rows}
-    except Exception as e:
-        log.warning(f"[STATE] load_cookies: err={e}")
-        return {}
-    finally:
-        conn.close()
-
-
-def load_datadome_cookies(account_id: str) -> Dict[str, str]:
-    """
-    Charge les cookies datadome persistés pour ce compte.
-    Retourne un dict {domain: cookie_value}, vide si aucun ou si STATE_BACKEND != postgres.
-    """
-    if not _pg_enabled():
-        return {}
-    if not account_id:
-        return {}
-    conn = _get_pg_conn()
-    _pg_ensure_table(conn)
-    try:
-        import psycopg2.extras
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT datadome_cookies FROM account_state WHERE account_id = %s",
-                (account_id,)
-            )
-            row = cur.fetchone()
-        if not row or not row["datadome_cookies"]:
-            return {}
-        return dict(row["datadome_cookies"])
-    except Exception as e:
-        log.warning(f"[STATE] load_datadome_cookies: err={e}")
-        return {}
-    finally:
-        conn.close()

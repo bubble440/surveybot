@@ -12,10 +12,11 @@ Dépendances:
 - input_utils pour les fonctions utilitaires
 """
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+
+
+
+
+
 import unicodedata
 import re
 import time
@@ -80,23 +81,23 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
 
     # table .grid
     try:
-        table = scope.find_element(By.XPATH, ".//table[contains(@class,'grid')]")
+        table = scope.query_selector("xpath=" + ".//table[contains(@class,'grid')]")
     except Exception:
         return False
 
     # index de colonne à partir des <th>
     col_idx = None
     col_head_id = None
-    heads = table.find_elements(By.XPATH, ".//tr[1]//th[normalize-space(.)!='']")
+    heads = table.query_selector_all("xpath=" + ".//tr[1]//th[normalize-space(.)!='']")
     for i, th in enumerate(heads):
-        t = _n(th.text)
+        t = _n(th.inner_text())
         if t and (t == colneedle or colneedle in t or t in colneedle):
             col_idx = i
             col_head_id = (th.get_attribute("id") or "").strip() or None
             break
 
     # toutes les lignes de réponses
-    rows = table.find_elements(By.XPATH, ".//tr[contains(@class,'row-elements')]")
+    rows = table.query_selector_all("xpath=" + ".//tr[contains(@class,'row-elements')]")
     if len(rows) > 1 and not rowneedle:
         log_debug("[TARGET_DEBUG]", "decipher_grid_radio: row context missing on multi-row grid")
         return False
@@ -107,8 +108,8 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
         row_id = None
         for xp in (".//th", "./td[1]", "./td[2]"):
             try:
-                node = tr.find_element(By.XPATH, xp)
-                raw = node.text
+                node = tr.query_selector("xpath=" + xp)
+                raw = node.inner_text()
                 if raw and raw.strip():
                     row_txt = _n(raw)
                     row_id = (node.get_attribute("id") or "").strip() or None
@@ -120,14 +121,14 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
             continue
 
         # cellule cible
-        tds = tr.find_elements(By.XPATH, "./td")
+        tds = tr.query_selector_all("xpath=" + "./td")
         cell = None
         if col_idx is not None and len(tds) > col_idx:
             cell = tds[col_idx]
         else:
             for td in tds:
                 try:
-                    sig = _n(td.text or td.get_attribute("innerText") or "")
+                    sig = _n(td.inner_text() or td.get_attribute("innerText") or "")
                     if sig and (sig == colneedle or colneedle in sig or sig in colneedle):
                         cell = td
                         break
@@ -140,7 +141,7 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
         inp, lab = None, None
         target_by = "cell"
         try:
-            row_inputs = tr.find_elements(By.XPATH, ".//input[@type='radio']")
+            row_inputs = tr.query_selector_all("xpath=" + ".//input[@type='radio']")
         except Exception:
             row_inputs = []
 
@@ -157,7 +158,7 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
 
         if inp is None:
             try:
-                in_cell = cell.find_elements(By.XPATH, ".//input[@type='radio']")
+                in_cell = cell.query_selector_all("xpath=" + ".//input[@type='radio']")
                 if len(in_cell) == 1:
                     inp = in_cell[0]
             except Exception:
@@ -172,12 +173,12 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
         try:
             inp_id = (inp.get_attribute("id") or "").strip()
             if inp_id:
-                lab = table.find_element(By.XPATH, f".//label[@for={xpath_literal(inp_id)}]")
+                lab = table.query_selector("xpath=" + f".//label[@for={xpath_literal(inp_id)}]")
         except Exception:
             pass
         if lab is None:
             try:
-                lab = cell.find_element(By.XPATH, ".//label")
+                lab = cell.query_selector("xpath=" + ".//label")
             except Exception:
                 pass
 
@@ -185,14 +186,14 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
         log_debug("[TARGET_DEBUG]", f"decipher_grid_radio: target_found row={context_hint!r} col={label!r} by={target_by}")
         try:
             target = lab or inp or cell
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", target)
+            driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", target)
             try:
                 target.click()
             except Exception:
-                ActionChains(driver).move_to_element(target).click().perform()
+                target.hover(); target.click()
         except Exception:
             try:
-                driver.execute_script("arguments[0].click();", target)
+                driver.evaluate("(el) => el.click()", target)
             except Exception:
                 log_debug("[TARGET_DEBUG]", f"decipher_grid_radio: click_failed row={context_hint!r} col={label!r}")
                 if rowneedle:
@@ -205,7 +206,7 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
         # vérification stricte
         if inp is None:
             try:
-                inp = cell.find_element(By.XPATH, ".//input[@type='radio']")
+                inp = cell.query_selector("xpath=" + ".//input[@type='radio']")
             except Exception:
                 inp = None
 
@@ -256,7 +257,7 @@ def click_decipher_grid_radio_strict(driver, label: str, context_hint: str = "")
         scope = None
     scope = scope or driver
 
-    rows = scope.find_elements(By.XPATH, ".//table[contains(@class,'grid')]//tr[contains(@class,'row-elements')]")
+    rows = scope.query_selector_all("xpath=" + ".//table[contains(@class,'grid')]//tr[contains(@class,'row-elements')]")
     if not rows:
         return False
     if len(rows) > 1 and not _n(context_hint or ""):
@@ -267,13 +268,13 @@ def click_decipher_grid_radio_strict(driver, label: str, context_hint: str = "")
         try:
             th_text = ""
             try:
-                th_text = tr.find_element(By.XPATH, ".//th").text
+                th_text = tr.query_selector("xpath=" + ".//th").text
             except Exception:
                 pass
             thn = _n(th_text)
             if not (needle == thn or needle in thn or thn in needle):
                 try:
-                    ltxt = tr.find_element(By.XPATH, ".//td//label").text
+                    ltxt = tr.query_selector("xpath=" + ".//td//label").text
                     if not (needle in _n(ltxt) or _n(ltxt) in needle):
                         continue
                 except Exception:
@@ -284,25 +285,25 @@ def click_decipher_grid_radio_strict(driver, label: str, context_hint: str = "")
             inp = None
             verified = False
             try:
-                lab = tr.find_element(By.XPATH, ".//td[contains(@class,'clickableCell')]//label")
+                lab = tr.query_selector("xpath=" + ".//td[contains(@class,'clickableCell')]//label")
                 try:
                     fid = (lab.get_attribute("for") or "").strip()
                     if fid:
-                        inp = tr.find_element(By.XPATH, f".//input[@type='radio' and @id={xpath_literal(fid)}]")
+                        inp = tr.query_selector("xpath=" + f".//input[@type='radio' and @id={xpath_literal(fid)}]")
                 except Exception:
                     inp = None
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", lab)
+                driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", lab)
                 try:
                     lab.click()
                 except Exception:
-                    driver.execute_script("arguments[0].click();", lab)
+                    driver.evaluate("(el) => el.click()", lab)
                 time.sleep(0.08)
             except Exception:
                 pass
 
             # 2) vérification native stricte
             try:
-                chk = inp or tr.find_element(By.XPATH, ".//input[@type='radio']")
+                chk = inp or tr.query_selector("xpath=" + ".//input[@type='radio']")
                 if chk.is_selected() or (chk.get_attribute("checked") or "").lower() in ("true", "checked"):
                     verified = True
             except Exception:
@@ -355,10 +356,7 @@ def click_decipher_mx_carousel_radio(driver, label: str, context_hint: str = "")
 
     stage = None
     try:
-        stage = driver.find_element(
-            By.XPATH,
-            ".//div[(contains(concat(' ',normalize-space(@class),' '),' mx-stage ') or starts-with(@id,'mx-stage-')) and .//*[contains(concat(' ',normalize-space(@class),' '),' mx-carouselapp-container ')]]",
-        )
+        stage = driver.query_selector("xpath=" + ".//div[(contains(concat(' ',normalize-space(@class),' '),' mx-stage ') or starts-with(@id,'mx-stage-')) and .//*[contains(concat(' ',normalize-space(@class),' '),' mx-carouselapp-container ')]]")
     except Exception:
         stage = None
 
@@ -443,7 +441,7 @@ def click_decipher_mx_carousel_radio(driver, label: str, context_hint: str = "")
     '''
 
     try:
-        click_result = driver.execute_script(js_click, stage, rowneedle, colneedle) or {}
+        click_result = driver.evaluate("(arg) => {" + js_click + "}", stage, rowneedle, colneedle) or {}
     except Exception:
         return False
 
@@ -464,26 +462,31 @@ def click_decipher_mx_carousel_radio(driver, label: str, context_hint: str = "")
     row_token = f"{q_label}_{row_code}_left"
     col_token = f"{q_label}_{col_code}"
 
+    # Verify carousel selection via polling (was WebDriverWait)
     try:
-        WebDriverWait(driver, 1.5).until(
-            lambda d: d.execute_script(
-                r"""
-                const rowToken = arguments[0];
-                const colToken = arguments[1];
-                const inputs = Array.from(document.querySelectorAll('input[type="radio"][aria-labelledby]'));
-                for (const inp of inputs) {
-                    const labelled = (inp.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
-                    if (!labelled.includes(rowToken) || !labelled.includes(colToken)) continue;
-                    if (inp.checked) return true;
-                    const checkedAttr = (inp.getAttribute('checked') || '').toLowerCase();
-                    if (checkedAttr === 'checked' || checkedAttr === 'true' || checkedAttr === '1') return true;
-                }
-                return false;
-                """,
-                row_token,
-                col_token,
-            )
-        )
+        deadline = __import__('time').time() + 1.5
+        verified = False
+        while __import__('time').time() < deadline:
+            try:
+                verified = driver.evaluate(
+                    """([rowToken, colToken]) => {
+                        const inputs = Array.from(document.querySelectorAll('input[type="radio"]'));
+                        for (const inp of inputs) {
+                            const labelled = (inp.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
+                            if (!labelled.includes(rowToken) || !labelled.includes(colToken)) continue;
+                            if (inp.checked) return true;
+                            const checkedAttr = (inp.getAttribute('checked') || '').toLowerCase();
+                            if (checkedAttr === 'checked' || checkedAttr === 'true' || checkedAttr === '1') return true;
+                        }
+                        return false;
+                    }""",
+                    [row_token, col_token]
+                )
+                if verified:
+                    break
+            except Exception:
+                pass
+            __import__('time').sleep(0.1)
     except Exception:
         log_debug(
             "[TARGET_DEBUG]",
@@ -509,14 +512,14 @@ def click_radio_label_in_scope(driver, scope, label_text: str) -> bool:
 
     labels = []
     try:
-        labels = scope.find_elements(By.XPATH, ".//label[@for and normalize-space()!='']")
+        labels = scope.query_selector_all("xpath=" + ".//label[@for and normalize-space()!='']")
     except Exception:
         labels = []
 
     best, sc = None, -1.0
     for lab in labels:
         try:
-            txt = _n(lab.text or lab.get_attribute("innerText") or "")
+            txt = _n(lab.inner_text() or lab.get_attribute("innerText") or "")
             if not txt:
                 continue
             score = 1.0 if (needle == txt or needle in txt or txt in needle) else 0.0
@@ -532,25 +535,25 @@ def click_radio_label_in_scope(driver, scope, label_text: str) -> bool:
     if not fid:
         return False
     try:
-        inp = scope.find_element(By.XPATH, f".//*[@id={repr(fid)} and @type='radio']")
+        inp = scope.query_selector("xpath=" + f".//*[@id={repr(fid)} and @type='radio']")
     except Exception:
         return False
 
     try:
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", best)
+        driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", best)
         try:
             best.click()
         except Exception:
-            ActionChains(driver).move_to_element(best).click().perform()
+            best.hover(); best.click()
         time.sleep(0.05)
         if not getattr(inp, "is_selected", lambda: False)():
-            driver.execute_script("""
-                const r=arguments[0];
+            inp.evaluate("""(_el) => {
+                const r=_el;
                 try{ r.click(); }catch(e){}
                 try{ r.checked=true; }catch(e){}
                 try{ r.dispatchEvent(new Event('input',{bubbles:true})); }catch(e){}
                 try{ r.dispatchEvent(new Event('change',{bubbles:true})); }catch(e){}
-            """, inp)
+}""")
         return True
     except Exception:
         return False
@@ -636,9 +639,200 @@ def fallback_click_radio_js_generic(driver, target_text: str) -> bool:
     return false;
     """
     try:
-        return bool(driver.execute_script(js, target_text))
+        return bool(driver.evaluate("(arg) => {" + js + "}", target_text))
     except Exception:
         return False
+
+
+# =============================================================================
+# MUI DIALOG-QUESTION OPTION (ipsos-norm survey, React/MUI, sans input natif)
+# =============================================================================
+
+def click_mui_dialog_question_option(driver, label: str) -> bool:
+    """
+    Options MUI 'dialog-question' (ex: ipsos-norm survey) : conteneur cliquable
+    div[role='button'] sans input natif, ni name, ni id stable ; libellé porté
+    par un descendant '.option-text'.
+
+    Guard DOM strict : au moins un '.dialog-question .option-text' présent.
+
+    Problème résolu : la résolution par XPath ancré sur normalize-space(text())
+    de '.option-text' (dom_analyzer.py) échouait de façon persistante et
+    reproductible au clic ("element not found for xpath"), malgré une
+    correspondance textuelle apparente avec le DOM au moment du clic — la
+    correspondance exacte de nœud texte enfant direct via XPath text() est
+    fragile sur ce widget (normalisation espaces/accents, structure exacte du
+    nœud texte). Remplacement par le mécanisme déjà éprouvé ailleurs dans le
+    code pour les widgets custom sans input natif (ex: click_kantar_rowpicker_radio
+    ci-dessous) : comparaison de texte normalisée exécutée en JS côté page,
+    insensible à la casse/aux espaces, avant clic — pas de XPath du tout.
+
+    Vérification : classe 'Mui-selected' présente sur le conteneur role='button'
+    après clic (observée sur DOM réel de ce widget lors d'une sélection active).
+    """
+    _JS_FIND = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    if (!needle) return null;
+
+    const nodes = Array.from(document.querySelectorAll('.dialog-question .option-text'));
+    for (const node of nodes) {
+      const txt = norm(node.innerText || node.textContent || '');
+      if (txt !== needle) continue;
+      const btn = node.closest('[role="button"]');
+      if (btn) return btn;
+    }
+    return null;
+    """
+
+    _JS_VERIFY = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    const nodes = Array.from(document.querySelectorAll('.dialog-question .option-text'));
+    for (const node of nodes) {
+      const txt = norm(node.innerText || node.textContent || '');
+      if (txt !== needle) continue;
+      const btn = node.closest('[role="button"]');
+      if (!btn) continue;
+      return (btn.className || '').indexOf('Mui-selected') !== -1;
+    }
+    return false;
+    """
+
+    try:
+        # evaluate_handle().as_element() : retourne un ElementHandle réellement cliquable
+        # (.click()/.hover()), contrairement à evaluate() qui sérialise la valeur de retour.
+        # Même convention que click_kantar_rowpicker_radio / action_dispatcher.py.
+        btn = driver.evaluate_handle("(arg) => {" + _JS_FIND + "}", label).as_element()
+    except Exception as exc:
+        log_debug("[TARGET_DEBUG]", f"mui_dialog_question_option: js_find_exception label={label!r} error={type(exc).__name__}: {exc}")
+        return False
+
+    if btn is None:
+        log_debug("[TARGET_DEBUG]", f"mui_dialog_question_option: option_not_found label={label!r}")
+        return False
+
+    try:
+        btn.scroll_into_view_if_needed()
+    except Exception:
+        pass
+
+    try:
+        btn.click()
+    except Exception as exc_click:
+        try:
+            btn.hover()
+            btn.click()
+        except Exception as exc_hover:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"mui_dialog_question_option: click_failed label={label!r} "
+                f"click_error={type(exc_click).__name__}: {exc_click} "
+                f"hover_click_error={type(exc_hover).__name__}: {exc_hover}",
+            )
+            return False
+
+    time.sleep(0.15)
+
+    try:
+        ok = bool(driver.evaluate("(arg) => {" + _JS_VERIFY + "}", label))
+    except Exception:
+        ok = False
+
+    log_debug("[TARGET_DEBUG]", f"mui_dialog_question_option: native_verify={'ok' if ok else 'ko'} label={label!r}")
+    return ok
+
+
+def click_mui_dialog_question_checkbox_option(driver, label: str) -> bool:
+    """
+    Variante multi-sélection du widget MUI 'dialog-question' (ipsos-norm) : options
+    portant une case à cocher native visible (input[type="checkbox"]), contrairement
+    à la variante radio ci-dessus (click_mui_dialog_question_option) qui n'a pas
+    d'input natif. Fonction distincte, n'affecte jamais le chemin radio existant.
+
+    Guard DOM strict (posé en amont, dom_analyzer.py) : conteneur validé par
+    _is_mui_dialog_question_optimal_container ET au moins un
+    '.dialog-question input[type="checkbox"]' présent.
+
+    Résolution : même mécanisme de comparaison de texte normalisée en JS que
+    click_mui_dialog_question_option (le positionnement DOM/xpath devient invalide
+    après re-render React), mais ciblage direct de l'input natif de l'option (au
+    lieu de l'overlay [role='button']) — vérification déterministe via
+    input.checked, plutôt que la classe 'Mui-selected' (moins fiable sur ce widget,
+    cf. note historique ci-dessus).
+    """
+    _JS_FIND = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    if (!needle) return null;
+
+    const nodes = Array.from(document.querySelectorAll('.dialog-question .option-text'));
+    for (const node of nodes) {
+      const txt = norm(node.innerText || node.textContent || '');
+      if (txt !== needle) continue;
+      const li = node.closest('li');
+      if (!li) continue;
+      const input = li.querySelector('input[type="checkbox"]');
+      if (input) return input;
+    }
+    return null;
+    """
+
+    try:
+        inp = driver.evaluate_handle("(arg) => {" + _JS_FIND + "}", label).as_element()
+    except Exception as exc:
+        log_debug(
+            "[TARGET_DEBUG]",
+            f"mui_dialog_question_checkbox_option: js_find_exception label={label!r} error={type(exc).__name__}: {exc}",
+        )
+        return False
+
+    if inp is None:
+        log_debug("[TARGET_DEBUG]", f"mui_dialog_question_checkbox_option: option_not_found label={label!r}")
+        return False
+
+    try:
+        if bool(driver.evaluate("(el) => el.checked === true", inp)):
+            log_debug("[TARGET_DEBUG]", f"mui_dialog_question_checkbox_option: already_checked label={label!r}")
+            return True
+    except Exception:
+        pass
+
+    try:
+        inp.scroll_into_view_if_needed()
+    except Exception:
+        pass
+
+    try:
+        inp.click()
+    except Exception as exc_click:
+        try:
+            inp.hover()
+            inp.click()
+        except Exception as exc_hover:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"mui_dialog_question_checkbox_option: click_failed label={label!r} "
+                f"click_error={type(exc_click).__name__}: {exc_click} "
+                f"hover_click_error={type(exc_hover).__name__}: {exc_hover}",
+            )
+            return False
+
+    time.sleep(0.15)
+
+    try:
+        ok = bool(driver.evaluate("(el) => el.checked === true", inp))
+    except Exception:
+        ok = False
+
+    log_debug("[TARGET_DEBUG]", f"mui_dialog_question_checkbox_option: native_verify={'ok' if ok else 'ko'} label={label!r}")
+    return ok
 
 
 # =============================================================================
@@ -661,7 +855,7 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
       .replace(/ /g, ' ')
       .replace(/[»«“”"'‘’›→·•:]/g, '')
       .replace(/\s+/g, ' ').trim();
-    const needle = norm(arguments[0]);
+    const needle = norm(arg);
     if (!needle) return null;
 
     const pickers = Array.from(document.querySelectorAll(
@@ -674,11 +868,21 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
         const txt = norm(lab.innerText || lab.textContent || '');
         if (!txt || !(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
 
-        // Remonter au conteneur flex direct parent de l'overlay (div[dir="ltr"] le plus proche)
-        const cardContainer = lab.closest('div[dir="ltr"]');
+        // Remonter au conteneur de carte réel : premier ancestor div[dir="ltr"] SANS
+        // tabindex. Mirroir exact de l'ancestor-axis XPath utilisé par
+        // _extract_kantar_rowpicker_radio_blocks (ancestor::div[@dir='ltr'][not(@tabindex)][1]).
+        // lab.closest('div[dir="ltr"]') seul matche à tort l'overlay lui-même (aussi
+        // div[dir="ltr"][tabindex="0"]) quand le label est nested dedans, ce qui fait
+        // échouer/mal-cibler la recherche d'overlay descendant sur certaines cartes.
+        let cardContainer = lab.parentElement;
+        while (cardContainer && !(cardContainer.tagName === 'DIV' && cardContainer.getAttribute('dir') === 'ltr' && !cardContainer.hasAttribute('tabindex'))) {
+          cardContainer = cardContainer.parentElement;
+        }
         if (!cardContainer) continue;
 
-        const overlay = cardContainer.querySelector('div[tabindex="0"]');
+        // Sélecteur aligné sur l'extracteur : div[dir="ltr"][tabindex="0"], pas un
+        // div[tabindex="0"] générique qui peut matcher un descendant non pertinent.
+        const overlay = cardContainer.querySelector('div[dir="ltr"][tabindex="0"]');
         if (!overlay) continue;
 
         // Vérifier que c'est bien l'overlay interactif (cursor dans le style inline)
@@ -698,7 +902,7 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
       .replace(/ /g, ' ')
       .replace(/[»«“”‘’›→·•:]/g, '')
       .replace(/\s+/g, ' ').trim();
-    const needle = norm(arguments[0]);
+    const needle = norm(arg);
     const pickers = Array.from(document.querySelectorAll(
       "div[id^='container_'] [data-test='main-contain']._rowpicker"
     ));
@@ -706,7 +910,11 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
       for (const lab of Array.from(picker.querySelectorAll('label'))) {
         const txt = norm(lab.innerText || lab.textContent || '');
         if (!txt || !(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
-        const card = lab.closest('div[dir="ltr"]');
+        // Même résolution de carte que _JS_FIND (voir commentaire ci-dessus).
+        let card = lab.parentElement;
+        while (card && !(card.tagName === 'DIV' && card.getAttribute('dir') === 'ltr' && !card.hasAttribute('tabindex'))) {
+          card = card.parentElement;
+        }
         if (!card) continue;
         const transDiv = card.querySelector('div[style*="transition: background-color"]');
         if (!transDiv) continue;
@@ -717,31 +925,477 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
     return false;
     """
 
+    # Résout le frame actif : le caller (_apply_by_target_id / action_dispatcher.py)
+    # positionne driver._current_frame via switch_to_frame_chain avant cet appel, mais
+    # driver.evaluate_handle/evaluate opèrent toujours sur le document racine sinon —
+    # même correctif que _find_best_visible/_wait_checked (action_dispatcher.py).
+    _ctx = getattr(driver, "_current_frame", driver)
+
     try:
-        overlay = driver.execute_script(_JS_FIND, label)
-    except Exception:
+        # evaluate_handle().as_element() : retourne un ElementHandle réellement cliquable
+        # (.click()/.hover()), contrairement à evaluate() qui sérialise la valeur de retour
+        # (un noeud DOM renvoyé par le script redescend alors comme str/dict, sans méthodes
+        # d'interaction). Même convention que action_dispatcher.py (cell_pre/decipher_cell/
+        # decipher_radio_cell via evaluate_handle(...).as_element()).
+        overlay = _ctx.evaluate_handle("(arg) => {" + _JS_FIND + "}", label).as_element()
+    except Exception as exc:
+        log_debug("[TARGET_DEBUG]", f"kantar_rowpicker: js_find_exception label={label!r} error={type(exc).__name__}: {exc}")
         return False
 
     if overlay is None:
+        log_debug("[TARGET_DEBUG]", f"kantar_rowpicker: overlay_not_found label={label!r}")
         return False
 
     try:
         overlay.click()
-    except Exception:
+    except Exception as exc_click:
         try:
-            ActionChains(driver).move_to_element(overlay).click().perform()
-        except Exception:
-            log_debug("[TARGET_DEBUG]", f"kantar_rowpicker: overlay_click_failed label={label!r}")
+            overlay.hover(); overlay.click()
+        except Exception as exc_hover:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"kantar_rowpicker: overlay_click_failed label={label!r} "
+                f"click_error={type(exc_click).__name__}: {exc_click} "
+                f"hover_click_error={type(exc_hover).__name__}: {exc_hover}",
+            )
             return False
 
     time.sleep(0.15)
 
     try:
-        ok = bool(driver.execute_script(_JS_VERIFY, label))
+        ok = bool(_ctx.evaluate("(arg) => {" + _JS_VERIFY + "}", label))
     except Exception:
         ok = False
 
     log_debug("[TARGET_DEBUG]", f"kantar_rowpicker: native_verify={'ok' if ok else 'ko'} label={label!r}")
+    return ok
+
+
+# =============================================================================
+# QDTECH / KUAIJUECE — RADIO ICONE SANS INPUT NATIF (qd-radio)
+# =============================================================================
+
+def click_qdtech_qdradio_icon(driver, label: str) -> bool:
+    """
+    Options QDTech/KuaiJueCe rendues uniquement par une icône `<i class="qd-radio...">`
+    (aucun input natif, aucun role="radio") dans un conteneur `.radio-ctn`.
+
+    Guard DOM strict (posé en amont, dom_extractors_misc.py) : flag
+    `qdtech_qdradio_icon` dans le payload de la cible (kind="group", itype="radio"),
+    posé par `_extract_qdtech_qdradio_icon_choice_blocks`.
+
+    Problème résolu : `option_xpath_map` est peuplé à l'extraction avec un XPath
+    absolu positionnel (`_best_xpath_for_element`) — Vue re-rend l'arborescence
+    (icône unselect/select, wrappers) et ce chemin ne résout plus rien au moment
+    du clic ("element not found for xpath"). Remplacement par une résolution en
+    JS côté page, par comparaison de texte normalisée sur la ligne d'option
+    (icône + libellé), même mécanisme déjà éprouvé que click_kantar_rowpicker_radio /
+    click_mui_dialog_question_option — insensible au ré-rendu positionnel.
+
+    Vérification : après clic, la classe de l'icône correspondante ne contient
+    plus "unselect" (transition `qd-radio-unselect` → état sélectionné).
+    """
+    _JS_FIND = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    if (!needle) return null;
+
+    const icons = Array.from(document.querySelectorAll(".radio-ctn i[class*='qd-radio']"));
+    for (const icon of icons) {
+      let row = icon.parentElement;
+      let txt = norm(row ? (row.innerText || row.textContent || '') : '');
+      if (!txt && row) {
+        const row2 = row.parentElement;
+        const txt2 = norm(row2 ? (row2.innerText || row2.textContent || '') : '');
+        if (txt2) { txt = txt2; row = row2; }
+      }
+      if (txt !== needle) continue;
+      return row || icon;
+    }
+    return null;
+    """
+
+    _JS_VERIFY = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    const icons = Array.from(document.querySelectorAll(".radio-ctn i[class*='qd-radio']"));
+    for (const icon of icons) {
+      let row = icon.parentElement;
+      let txt = norm(row ? (row.innerText || row.textContent || '') : '');
+      if (!txt && row) {
+        const row2 = row.parentElement;
+        const txt2 = norm(row2 ? (row2.innerText || row2.textContent || '') : '');
+        if (txt2) { txt = txt2; row = row2; }
+      }
+      if (txt !== needle) continue;
+      const cls = icon.className || '';
+      return cls.indexOf('unselect') === -1;
+    }
+    return false;
+    """
+
+    _ctx = getattr(driver, "_current_frame", driver)
+
+    try:
+        row_el = _ctx.evaluate_handle("(arg) => {" + _JS_FIND + "}", label).as_element()
+    except Exception as exc:
+        log_debug("[TARGET_DEBUG]", f"qdtech_qdradio: js_find_exception label={label!r} error={type(exc).__name__}: {exc}")
+        return False
+
+    if row_el is None:
+        log_debug("[TARGET_DEBUG]", f"qdtech_qdradio: option_not_found label={label!r}")
+        return False
+
+    try:
+        row_el.scroll_into_view_if_needed()
+    except Exception:
+        pass
+
+    try:
+        row_el.click()
+    except Exception as exc_click:
+        try:
+            row_el.hover()
+            row_el.click()
+        except Exception as exc_hover:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"qdtech_qdradio: click_failed label={label!r} "
+                f"click_error={type(exc_click).__name__}: {exc_click} "
+                f"hover_click_error={type(exc_hover).__name__}: {exc_hover}",
+            )
+            return False
+
+    time.sleep(0.15)
+
+    try:
+        ok = bool(_ctx.evaluate("(arg) => {" + _JS_VERIFY + "}", label))
+    except Exception:
+        ok = False
+
+    log_debug("[TARGET_DEBUG]", f"qdtech_qdradio: native_verify={'ok' if ok else 'ko'} label={label!r}")
+    return ok
+
+
+def click_qdtech_qdcheckbox_icon(driver, label: str) -> bool:
+    """
+    Variante case à cocher (choix multiple) du widget QDTech/KuaiJueCe couvert par
+    click_qdtech_qdradio_icon ci-dessus (non modifiée par cette fonction). Options
+    rendues uniquement par une icône `<i class="qd-checkbox...">` (aucun input natif,
+    aucun role="checkbox") dans un conteneur `.radio-ctn`.
+
+    Guard DOM strict (posé en amont, dom_extractors_misc.py) : flag
+    `qdtech_qdcheckbox_icon` dans le payload de la cible (kind="group",
+    itype="checkbox"), posé par `_extract_qdtech_qdcheckbox_icon_choice_blocks`.
+
+    Résolution du libellé : contrairement à click_qdtech_qdradio_icon (parent puis
+    grand-parent de l'icône), ce DOM comporte des options illustrées par une image où
+    le texte vit dans un conteneur frère distinct de l'icône, hors de sa chaîne
+    d'ascendance directe à 1-2 niveaux. Résolution par l'ancêtre commun borne
+    `.radio-ctn-body-list-item` (conteneur d'une seule option, même sélecteur que
+    l'extracteur), robuste aux deux structures d'option observées sur ce DOM (image ou
+    texte simple).
+
+    Même limite de XPath positionnel après re-rendu Vue que la variante radio :
+    bypass total via résolution JS par texte normalisé sur le conteneur d'option,
+    même mécanisme déjà éprouvé que click_qdtech_qdradio_icon.
+
+    Vérification : après clic, la classe de l'icône correspondante ne contient plus
+    "unselect" (transition `qd-checkbox-unselect` → état sélectionné).
+    """
+    _JS_FIND = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    if (!needle) return null;
+
+    const icons = Array.from(document.querySelectorAll(".radio-ctn i[class*='qd-checkbox']"));
+    for (const icon of icons) {
+      const item = icon.closest('.radio-ctn-body-list-item');
+      if (!item) continue;
+      const txt = norm(item.innerText || item.textContent || '');
+      if (txt !== needle) continue;
+      return item;
+    }
+    return null;
+    """
+
+    _JS_VERIFY = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    const icons = Array.from(document.querySelectorAll(".radio-ctn i[class*='qd-checkbox']"));
+    for (const icon of icons) {
+      const item = icon.closest('.radio-ctn-body-list-item');
+      if (!item) continue;
+      const txt = norm(item.innerText || item.textContent || '');
+      if (txt !== needle) continue;
+      const cur = item.querySelector("i[class*='qd-checkbox']");
+      const cls = (cur && cur.className) || '';
+      return cls.indexOf('unselect') === -1;
+    }
+    return false;
+    """
+
+    _ctx = getattr(driver, "_current_frame", driver)
+
+    try:
+        item_el = _ctx.evaluate_handle("(arg) => {" + _JS_FIND + "}", label).as_element()
+    except Exception as exc:
+        log_debug("[TARGET_DEBUG]", f"qdtech_qdcheckbox: js_find_exception label={label!r} error={type(exc).__name__}: {exc}")
+        return False
+
+    if item_el is None:
+        log_debug("[TARGET_DEBUG]", f"qdtech_qdcheckbox: option_not_found label={label!r}")
+        return False
+
+    try:
+        item_el.scroll_into_view_if_needed()
+    except Exception:
+        pass
+
+    try:
+        item_el.click()
+    except Exception as exc_click:
+        try:
+            item_el.hover()
+            item_el.click()
+        except Exception as exc_hover:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"qdtech_qdcheckbox: click_failed label={label!r} "
+                f"click_error={type(exc_click).__name__}: {exc_click} "
+                f"hover_click_error={type(exc_hover).__name__}: {exc_hover}",
+            )
+            return False
+
+    time.sleep(0.15)
+
+    try:
+        ok = bool(_ctx.evaluate("(arg) => {" + _JS_VERIFY + "}", label))
+    except Exception:
+        ok = False
+
+    log_debug("[TARGET_DEBUG]", f"qdtech_qdcheckbox: native_verify={'ok' if ok else 'ko'} label={label!r}")
+    return ok
+
+
+# =============================================================================
+# IPSOS/mrIWeb SHARKY "GridProgressive" — WIDGET RADIO DIV-BASED (SANS INPUT NATIF)
+# =============================================================================
+
+def click_ipsos_sharky_grid_progressive_radio(driver, label: str) -> bool:
+    """
+    Ipsos/mrIWeb Sharky "GridProgressive" (matrice progressive : une seule ligne
+    affichée à la fois, template iis-sharky). Widget radio graphique : chaque
+    option est un div.prog-the-answer-container[role='radio'] (libellé dans un
+    span.mrQuestionText imbriqué), regroupés dans un div.the-radiogroup
+    [role='radiogroup']. Les <input type="radio" class="mrSingle"> natifs
+    existent bien dans le DOM mais dans une table séparée (.no-display-answers,
+    masquée) — ce ne sont pas les éléments cliqués ni vérifiés ici.
+
+    Voir BOT_EVOLUTION_MEMORY.md ("ipsos_mriweb_grid_progressive", dom_analyzer.py)
+    pour la résolution de la question associée à ce même widget (group_key
+    "radio:name:dom:the-radiogroup").
+
+    Guard DOM strict : div.the-radiogroup[role='radiogroup'] présent, contenant
+    des div.prog-the-answer-container[role='radio'] enfants directs.
+
+    Cible du clic : le div.prog-the-answer-container[role='radio'] lui-même.
+    Vérification : aria-checked="true" reflété sur ce même div après clic (pas
+    de dépendance à l'input natif caché, dont l'état ne reflète pas forcément
+    l'interaction React/JS de ce widget).
+    """
+    _JS_FIND = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    if (!needle) return null;
+
+    const groups = Array.from(document.querySelectorAll("div.the-radiogroup[role='radiogroup']"));
+    if (!groups.length) return null;
+
+    for (const grp of groups) {
+      const opts = Array.from(grp.querySelectorAll(":scope > div.prog-the-answer-container[role='radio']"));
+      for (const opt of opts) {
+        const span = opt.querySelector('span.mrQuestionText');
+        const txt = norm(span ? (span.innerText || span.textContent || '') : '');
+        if (!txt || !(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
+        return opt;
+      }
+    }
+    return null;
+    """
+
+    _JS_VERIFY = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    const groups = Array.from(document.querySelectorAll("div.the-radiogroup[role='radiogroup']"));
+    for (const grp of groups) {
+      const opts = Array.from(grp.querySelectorAll(":scope > div.prog-the-answer-container[role='radio']"));
+      for (const opt of opts) {
+        const span = opt.querySelector('span.mrQuestionText');
+        const txt = norm(span ? (span.innerText || span.textContent || '') : '');
+        if (!txt || !(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
+        return (opt.getAttribute('aria-checked') || '').toLowerCase() === 'true';
+      }
+    }
+    return false;
+    """
+
+    # Résout le frame actif, même convention que click_kantar_rowpicker_radio
+    # (driver.evaluate_handle/evaluate opèrent sur le document racine sinon).
+    _ctx = getattr(driver, "_current_frame", driver)
+
+    try:
+        opt = _ctx.evaluate_handle("(arg) => {" + _JS_FIND + "}", label).as_element()
+    except Exception as exc:
+        log_debug("[TARGET_DEBUG]", f"ipsos_sharky_grid_progressive: js_find_exception label={label!r} error={type(exc).__name__}: {exc}")
+        return False
+
+    if opt is None:
+        log_debug("[TARGET_DEBUG]", f"ipsos_sharky_grid_progressive: option_not_found label={label!r}")
+        return False
+
+    try:
+        opt.scroll_into_view_if_needed()
+    except Exception:
+        pass
+
+    try:
+        opt.click()
+    except Exception as exc_click:
+        try:
+            opt.hover()
+            opt.click()
+        except Exception as exc_hover:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"ipsos_sharky_grid_progressive: click_failed label={label!r} "
+                f"click_error={type(exc_click).__name__}: {exc_click} "
+                f"hover_click_error={type(exc_hover).__name__}: {exc_hover}",
+            )
+            return False
+
+    time.sleep(0.15)
+
+    try:
+        ok = bool(_ctx.evaluate("(arg) => {" + _JS_VERIFY + "}", label))
+    except Exception:
+        ok = False
+
+    log_debug("[TARGET_DEBUG]", f"ipsos_sharky_grid_progressive: native_verify={'ok' if ok else 'ko'} label={label!r}")
+    return ok
+
+
+# =============================================================================
+# VANT (Vue) PICKER COLUMN — WIDGET "ROUE" MOBILE SANS INPUT NATIF (QDTech/mini-apps)
+# =============================================================================
+
+def click_vant_picker_column_radio(driver, label: str) -> bool:
+    """
+    Picker roue Vant (liste verticale scrollable positionnée par
+    transform: translate3d, un seul item "sélectionné" à la fois).
+
+    Guard DOM strict : ul.van-picker-column__wrapper > li.van-picker-column__item
+    (libellé dans .van-ellipsis). Aucun id/name/value exploitable — seuls le
+    texte et la classe van-picker-column__item--selected distinguent les items.
+
+    La résolution par xpath positionnel calculé à l'extraction est instable ici
+    (l'item ciblé n'est pas nécessairement visible/monté au même index au moment
+    du clic) : on retrouve l'item par texte normalisé au moment du clic, comme
+    click_kantar_rowpicker_radio/click_qdtech_qdradio_icon.
+
+    Cible du clic : le <li> lui-même, cliqué en natif via el.click() côté page
+    (et non via l'API d'actionabilité Playwright) car l'item ciblé peut être
+    hors de la fenêtre visible du picker (clip via overflow sur le wrapper),
+    sans que la roue dispose d'un scroll natif permettant un scrollIntoView
+    classique.
+
+    Vérification : la classe van-picker-column__item--selected doit avoir migré
+    sur l'item dont le texte correspond au label demandé.
+    """
+    _JS_FIND_AND_CLICK = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    if (!needle) return false;
+
+    const wrappers = Array.from(document.querySelectorAll('ul.van-picker-column__wrapper'));
+    if (!wrappers.length) return false;
+
+    const textOf = (li) => {
+      const el = li.querySelector('.van-ellipsis');
+      return norm(el ? (el.innerText || el.textContent || '') : (li.innerText || li.textContent || ''));
+    };
+
+    for (const wrapper of wrappers) {
+      const items = Array.from(wrapper.querySelectorAll(':scope > li.van-picker-column__item'));
+      if (!items.length) continue;
+
+      let target = items.find(li => textOf(li) === needle);
+      if (!target) {
+        target = items.find(li => {
+          const txt = textOf(li);
+          return txt && (txt.includes(needle) || needle.includes(txt));
+        });
+      }
+      if (!target) continue;
+
+      target.click();
+      return true;
+    }
+    return false;
+    """
+
+    _JS_VERIFY = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    const wrappers = Array.from(document.querySelectorAll('ul.van-picker-column__wrapper'));
+    for (const wrapper of wrappers) {
+      const items = Array.from(wrapper.querySelectorAll(':scope > li.van-picker-column__item'));
+      for (const li of items) {
+        const el = li.querySelector('.van-ellipsis');
+        const txt = norm(el ? (el.innerText || el.textContent || '') : (li.innerText || li.textContent || ''));
+        if (!txt || !(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
+        return li.classList.contains('van-picker-column__item--selected');
+      }
+    }
+    return false;
+    """
+
+    _ctx = getattr(driver, "_current_frame", driver)
+
+    try:
+        found = bool(_ctx.evaluate("(arg) => {" + _JS_FIND_AND_CLICK + "}", label))
+    except Exception as exc:
+        log_debug("[TARGET_DEBUG]", f"vant_picker_column: js_find_exception label={label!r} error={type(exc).__name__}: {exc}")
+        return False
+
+    if not found:
+        log_debug("[TARGET_DEBUG]", f"vant_picker_column: option_not_found label={label!r}")
+        return False
+
+    time.sleep(0.15)
+
+    try:
+        ok = bool(_ctx.evaluate("(arg) => {" + _JS_VERIFY + "}", label))
+    except Exception:
+        ok = False
+
+    log_debug("[TARGET_DEBUG]", f"vant_picker_column: native_verify={'ok' if ok else 'ko'} label={label!r}")
     return ok
 
 
@@ -785,6 +1439,23 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     except Exception:
         pass
 
+    # Ipsos/mrIWeb Sharky "GridProgressive" (widget radio div-based, sans input
+    # natif exploitable). Guard DOM strict : div.the-radiogroup[role='radiogroup']
+    # > div.prog-the-answer-container[role='radio'].
+    try:
+        if click_ipsos_sharky_grid_progressive_radio(driver, label):
+            return True
+    except Exception:
+        pass
+
+    # Vant (Vue) picker column "roue" mobile (QDTech/mini-apps, sans input natif).
+    # Guard DOM strict : ul.van-picker-column__wrapper > li.van-picker-column__item.
+    try:
+        if click_vant_picker_column_radio(driver, label):
+            return True
+    except Exception:
+        pass
+
     # Confirmit GridClick (échelle à droite, pas de <input>)
     try:
         # Import dynamique pour éviter circular import
@@ -817,8 +1488,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     container = find_question_container_by_ctx(driver, context_hint)
     scope = container if container is not None else driver
 
-    wait = WebDriverWait(driver, 5)
-
+    
     # Cartes Confirmit/Dynata (pas d'<input> visible)
     try:
         from input_handler import click_radio_cardlike_js
@@ -839,39 +1509,30 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
 
     # 1) Cas table (decipherinc)
     try:
-        tr = scope.find_element(
-            By.XPATH,
-            f".//tr[.//th[normalize-space()=\"{label.strip()}\"]]"
-        )
-        lab = tr.find_element(By.XPATH, ".//td[contains(@class,'clickableCell')]//label")
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", lab)
-        wait.until(EC.element_to_be_clickable(lab))
-        driver.execute_script("arguments[0].click();", lab)
+        tr = scope.query_selector("xpath=" + f".//tr[.//th[normalize-space()=\"{label.strip()}\"]]")
+        lab = tr.query_selector("xpath=" + ".//td[contains(@class,'clickableCell')]//label")
+        driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", lab)
+        driver.wait_for_function("el => !el.disabled && el.getBoundingClientRect().width > 0", lab, timeout=5000)
+        driver.evaluate("(el) => el.click()", lab)
         return True
     except Exception:
         pass
 
     # 2) Cas label direct
     try:
-        lab = scope.find_element(
-            By.XPATH,
-            f".//label[normalize-space()=\"{label.strip()}\"]"
-        )
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", lab)
-        wait.until(EC.element_to_be_clickable(lab))
-        driver.execute_script("arguments[0].click();", lab)
+        lab = scope.query_selector("xpath=" + f".//label[normalize-space()=\"{label.strip()}\"]")
+        driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", lab)
+        driver.wait_for_function("el => !el.disabled && el.getBoundingClientRect().width > 0", lab, timeout=5000)
+        driver.evaluate("(el) => el.click()", lab)
         return True
     except Exception:
         pass
 
     # 3) Cas input radio voisin d'un texte
     try:
-        inp = scope.find_element(
-            By.XPATH,
-            f".//input[@type='radio' and not(contains(@class,'disabled'))][ancestor::div[contains(@class,'question')]][following::text()[normalize-space()=\"{label.strip()}\"]]"
-        )
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", inp)
-        driver.execute_script("arguments[0].click();", inp)
+        inp = scope.query_selector("xpath=" + f".//input[@type='radio' and not(contains(@class,'disabled'))][ancestor::div[contains(@class,'question')]][following::text()[normalize-space()=\"{label.strip()}\"]]")
+        driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", inp)
+        driver.evaluate("(el) => el.click()", inp)
         return True
     except Exception:
         pass
@@ -880,8 +1541,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     if not target:
         return False
 
-    wait = WebDriverWait(driver, 4)
-    label, _itype = split_typed_instruction(label)
+        label, _itype = split_typed_instruction(label)
     needle = _norm_radio(label)
     if not needle:
         return False
@@ -901,11 +1561,11 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     anchor_y = None
     if scope is not None:
         try:
-            hdr = scope.find_element(By.XPATH, ".//legend|.//h1|.//h2|.//h3|.//*[contains(@class,'question-text')][1]")
-            anchor_y = hdr.rect.get("y", None)
+            hdr = scope.query_selector("xpath=" + ".//legend|.//h1|.//h2|.//h3|.//*[contains(@class,'question-text')][1]")
+            anchor_y = hdr.bounding_box() or {}.get("y", None)
         except Exception:
             try:
-                anchor_y = scope.rect.get("y", None)
+                anchor_y = scope.bounding_box() or {}.get("y", None)
             except Exception:
                 pass
 
@@ -916,32 +1576,31 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
         xp = ("(.//div[contains(@class,'fr-option') or contains(@class,'cc-radio') or contains(@class,'radio')])"
               f"//label[.//span[contains(@class,'cc-radio__label')] and contains(translate(normalize-space(string(.)),"
               f"'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), {xpath_literal(needle)})]")
-        cands = root.find_elements(By.XPATH, xp)
+        cands = root.query_selector_all("xpath=" + xp)
         best = None
         best_dy = 1e9
         for lbl in cands:
-            y = lbl.rect.get("y", 0)
+            y = lbl.bounding_box() or {}.get("y", 0)
             if anchor_y is not None and y + 1 < anchor_y:
                 continue
             dy = abs((anchor_y or y) - y)
             if dy < best_dy:
                 best, best_dy = lbl, dy
         if best is not None:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", best)
+            driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", best)
             try:
-                wait.until(EC.element_to_be_clickable(best)).click()
+                driver.wait_for_function("el => !el.disabled && el.getBoundingClientRect().width > 0", best, timeout=5000).click()
             except Exception:
-                driver.execute_script("arguments[0].click();", best)
+                driver.evaluate("(el) => el.click()", best)
             try:
                 fid = best.get_attribute("for")
                 if fid:
-                    inp = driver.find_element(By.ID, fid)
+                    inp = driver.query_selector(f"#{fid}")
                     if not getattr(inp, "is_selected", lambda: False)():
-                        driver.execute_script(
-                            "arguments[0].checked=true;"
-                            "try{arguments[0].dispatchEvent(new Event('input',{bubbles:true}));}catch(e){}"
-                            "try{arguments[0].dispatchEvent(new Event('change',{bubbles:true}));}catch(e){}",
-                            inp
+                        inp.evaluate(
+                            "(_el) => { _el.checked=true;"
+                            "try{_el.dispatchEvent(new Event('input',{bubbles:true}));}catch(e){}"
+                            "try{_el.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){} }"
                         )
             except Exception:
                 pass
@@ -952,16 +1611,16 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     # Recherche générale ancrée dans le scope
     if scope is not None:
         cands = []
-        cands += root.find_elements(By.XPATH, ".//label[normalize-space()!='']")
-        cands += root.find_elements(By.XPATH, ".//*[@role='radio']")
-        cands += root.find_elements(By.XPATH, ".//*[contains(@class,'answer') or contains(@class,'option') or contains(@class,'choice') or self::li]")
+        cands += root.query_selector_all("xpath=" + ".//label[normalize-space()!='']")
+        cands += root.query_selector_all("xpath=" + ".//*[@role='radio']")
+        cands += root.query_selector_all("xpath=" + ".//*[contains(@class,'answer') or contains(@class,'option') or contains(@class,'choice') or self::li]")
         best, best_dy = None, 1e9
         for el in cands:
             try:
-                txt = _norm_radio(el.text or el.get_attribute("innerText") or "")
+                txt = _norm_radio(el.inner_text() or el.get_attribute("innerText") or "")
                 if not (needle == txt or needle in txt or txt in needle):
                     continue
-                y = el.rect.get("y", 0)
+                y = el.bounding_box() or {}.get("y", 0)
                 if anchor_y is not None and y + 1 < anchor_y:
                     continue
                 dy = abs((anchor_y or y) - y)
@@ -970,11 +1629,11 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
             except Exception:
                 continue
         if best is not None:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", best)
+            driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", best)
             try:
                 best.click()
             except Exception:
-                ActionChains(driver).move_to_element(best).click().perform()
+                best.hover(); best.click()
             return True
 
         # si on avait un scope mais rien de valide dedans, on STOP

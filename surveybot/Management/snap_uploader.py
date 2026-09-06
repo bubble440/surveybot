@@ -28,6 +28,14 @@ Compteurs :
 import os
 import time
 
+# SNAP_ENABLED est une variable GLOBAL_CONFIG : en build compilé (Nuitka), elle provient
+# exclusivement de global_config.py, jamais de l'environnement du process (cf. config.py).
+# En dev/attach (global_config.py absent du projet), fallback os.getenv.
+try:
+    from global_config import SNAP_ENABLED  # type: ignore
+except ImportError:
+    SNAP_ENABLED = os.getenv("SNAP_ENABLED", "")
+
 _TAG = "SNAP_R2"
 
 # Identifiant de session fixé une seule fois à l'import du module
@@ -50,7 +58,7 @@ def new_survey() -> None:
 
 
 def _is_enabled() -> bool:
-    return os.getenv("SNAP_ENABLED", "").strip() == "1"
+    return SNAP_ENABLED.strip() == "1"
 
 
 def _get_account_id() -> str:
@@ -77,13 +85,8 @@ def _build_client():
 
 def _capture_png(driver) -> bytes:
     """
-    Capture l'intégralité du bureau virtuel Xvfb (pas seulement le viewport Chrome).
-    Cela inclut la barre d'adresse, les flags/icônes du navigateur, les notifications OS, etc.
-
-    Stratégie :
-      1. scrot via $DISPLAY  → capture bureau complet (préféré)
-      2. driver.get_screenshot_as_png() → fallback viewport Selenium
-      3. driver.save_screenshot()       → fallback fichier Selenium
+    Capture l'intégralité du bureau virtuel Xvfb via scrot.
+    Lève une exception si scrot échoue — aucun fallback Playwright.
     """
     import subprocess
     import tempfile
@@ -91,7 +94,9 @@ def _capture_png(driver) -> bytes:
 
     display = os.getenv("DISPLAY", ":99")
 
-    # 1. Tentative capture bureau complet via scrot
+    if not os.getenv("DISPLAY"):
+        raise RuntimeError("DISPLAY non défini, scrot impossible")
+
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         path = tmp.name
     try:
@@ -99,39 +104,25 @@ def _capture_png(driver) -> bytes:
     except Exception:
         pass
     try:
+        import time
+        time.sleep(0.3)  # laisse Chrome relâcher le lock X11 avant scrot
         result = subprocess.run(
             ["scrot", path],
             env={**os.environ, "DISPLAY": display},
             timeout=5,
             capture_output=True,
         )
-        log_info(_TAG, f"scrot returncode={result.returncode} stderr={result.stderr.decode(errors='replace')!r}")
         if result.returncode == 0:
             with open(path, "rb") as f:
                 return f.read()
+        raise RuntimeError(f"scrot returncode={result.returncode} stderr={result.stderr!r}")
     except Exception as e:
-        log_info(_TAG, f"scrot EXCEPTION {type(e).__name__}: {e}")
-    finally:
+        log_info(_TAG, f"scrot failed {type(e).__name__}: {e} — fallback driver.screenshot()")
         try:
-            os.remove(path)
-        except Exception:
-            pass
-        
-    # 2. Fallback Selenium — viewport uniquement
-    try:
-        png = driver.get_screenshot_as_png()
-        if png and len(png) > 0:
-            return png
-    except Exception:
-        pass
-
-    # 3. Fallback Selenium — via fichier
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-        path = tmp.name
-    try:
-        driver.save_screenshot(path)
-        with open(path, "rb") as f:
-            return f.read()
+            return driver.screenshot(timeout=5000)
+        except Exception as fe:
+            log_info(_TAG, f"driver.screenshot() fallback failed: {type(fe).__name__}: {fe}")
+            raise e
     finally:
         try:
             os.remove(path)
@@ -143,6 +134,7 @@ def capture_and_upload(driver, label: str) -> None:
     Capture un screenshot depuis driver et l'uploade vers R2.
     No-op silencieux si SNAP_ENABLED != "1".
     """
+
     if not _is_enabled():
         return
 

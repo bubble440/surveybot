@@ -19,6 +19,123 @@
 
 ---
 
+## MODULE TRANSVERSAL : SWITCH_TO_FRAME_CHAIN — ARGUMENT frame_chain MANQUANT + ROBUSTESSE THROW() DANS LE CONTEXT MANAGER
+
+### analyze_dom — argument frame_chain manquant sur _extract_focusvision_answers_list_groups (2e point d'appel)
+Fichier : Survey/dom_analyzer.py
+Emplacement : bloc de repli (ligne ~4179), à l'intérieur de `with switch_to_frame_chain(driver, []) as ok:`.
+Bug corrigé : l'appel `_extract_focusvision_answers_list_groups(driver)` ne transmettait pas l'argument
+positionnel requis `frame_chain`, provoquant un `TypeError` systématique dès que ce chemin de repli était
+atteint (n'importe quelle plateforme, pas spécifique à Ipsos/FocusVision). Ce `TypeError`, levé pendant que
+le générateur `switch_to_frame_chain` était suspendu au `yield`, se propageait sous forme de
+`RuntimeError: generator didn't stop after throw()` (contextlib), masquant totalement l'erreur d'origine.
+Correction : ajout de `frame_chain=None` à cet appel (contexte racine à ce point du code, cohérent avec les
+autres appels du même bloc de repli déjà en `frame_chain=None`).
+Patterns exclus : le 1er point d'appel (ligne ~4166, bloc `best_chain`) passait déjà correctement
+`frame_chain=chain` — non concerné, non modifié.
+
+### switch_to_frame_chain — séparation résolution de chaîne / bloc yield (throw-safety)
+Fichier : Survey/frame_utils.py
+Problème résolu : la résolution de la chaîne d'iframes (navigation dans `child_frames`) était auparavant
+susceptible d'être fusionnée avec le `try/except` entourant le `yield` du context manager. Si une exception
+survient dans le corps du `with` (ex. le `TypeError` ci-dessus), Python la relance dans le générateur via
+`throw()` au point du `yield` ; un `except Exception` trop large à cet endroit peut intercepter cette
+relance et, en tentant de continuer/yield à nouveau, provoque `RuntimeError("generator didn't stop after
+throw()")` côté contextlib — masquant l'exception réelle du corps du `with`.
+Correction : la résolution de la chaîne (recherche des `child_frames`, calcul de `ok`/`target`) est
+effectuée entièrement AVANT le `yield`, dans son propre `try/except Exception: ok = False` isolé. Le bloc
+`try/finally` autour du `yield` ne contient plus que `_reset()` en `finally` — aucun `except` autour du
+`yield` lui-même, donc toute exception levée dans le corps du `with` remonte immédiatement et proprement.
+Patterns couverts :
+- Tout appel à `switch_to_frame_chain` où le corps du `with` peut lever une exception (signature manquante,
+  erreur DOM, etc.) — l'exception d'origine reste visible dans la stack trace, plus de `RuntimeError`
+  masquante.
+Patterns exclus :
+- Aucun changement du comportement fonctionnel (résolution de chaîne, mise à jour de `_current_frame`,
+  retour au contexte racine via `_reset()` en sortie) — patch défensif sur la gestion d'exception uniquement.
+
+Diagnostic associé : le symptôme observable avant ce patch était `RuntimeError: generator didn't stop after
+throw()` dans la boucle attach (main.py::run_attach_takeover), sans lien apparent avec un extracteur ou une
+plateforme précise, et sans stack trace exploitable (le bloc `except Exception` de la boucle attach
+n'affichait que type+message). Un patch de traceback complet a permis de révéler le `TypeError` réel sous-
+jacent, confirmant que ce n'était pas un problème de connexion CDP partagée ou de concurrence entre threads,
+mais un simple désalignement d'arguments à un point d'appel après évolution de signature.
+
+Statut : patch validé.
+
+### switch_to_frame_chain — assignation inconditionnelle de _current_frame (hasattr gate supprimé)
+Fichier : Survey/frame_utils.py
+Bug corrigé : `_reset()` et la mise à jour post-switch de `_current_frame` étaient conditionnées par
+`hasattr(driver, "_current_frame")`. Sur un driver Page Playwright native obtenu via `connect_over_cdp`
+(flux d'attache à un navigateur déjà lancé, main.py::run_attach_takeover), cet attribut n'existait jamais
+au préalable → la condition était toujours fausse → `_current_frame` n'était jamais créé, et
+`getattr(driver, "_current_frame", driver)` retombait en permanence sur le document racine dans tous les
+modules appelants (dom_frame_selector.py, dom_classifier.py), quel que soit le chain sélectionné.
+Correction : assignation inconditionnelle (`try: driver._current_frame = ... except Exception: pass`),
+Playwright Page/Frame supportant l'attribution dynamique d'attributs.
+Patterns couverts :
+- Tout driver Page Playwright natif sans shim préexistant (attache CDP à un navigateur déjà lancé).
+Patterns exclus :
+- Aucun changement pour un driver qui exposait déjà `_current_frame` au préalable (comportement identique).
+
+### analyze_dom / dom_extractors — passage explicite du contexte résolu (_ctx) aux extracteurs
+Fichier : Survey/dom_analyzer.py (bloc principal, ligne ~4156-4186)
+Constat : Page.evaluate/query_selector*/query_selector_all ignorent l'attribut `_current_frame` posé par
+switch_to_frame_chain — seules les fonctions qui résolvent explicitement
+`getattr(driver, "_current_frame", driver)` avant d'interroger le DOM opèrent dans le frame réellement
+sélectionné. Le bloc d'extraction principal calcule `_ctx = getattr(driver, "_current_frame", driver)` une
+fois après le switch, et passe `_ctx` (et non `driver`) à tous les extracteurs de ce bloc.
+Patterns couverts :
+- Frameset classique (`<frameset>` + `<frame>` sœurs, ex. Ipsos/mrIWeb `frame#mainFrame` + `frame#leftFrame`)
+  où le contenu de la question est dans un frame enfant, jamais dans le document racine.
+Patterns exclus :
+- Extracteurs/modules qui reçoivent encore `driver` directement sans résoudre `_current_frame` (ex. couche
+  de sélection/clic action_dispatcher.py / input_radio.py / input_utils.py) — non couverts par ce patch,
+  cause probable d'un échec de sélection malgré une extraction réussie (voir diagnostic en cours).
+
+Diagnostic associé : Ipsos/mrIWeb (insights.ipsosinteractive.com), question SA (single answer) native
+`<input type="radio" name="_QHH__FR01INC_C">` dans `frame#mainFrame`. Avant patch : score de contexte à 0,
+0 bloc extrait malgré 21 options radio visibles. Après patch : score=90, extraction réussie
+(21 options, target_id="group_..." group_key="radio:name:_qhh__fr01inc_c"). La sélection de la réponse
+échoue encore à ce stade — cause suspectée : même classe de bug (résolution de `_current_frame` absente),
+mais localisée dans la couche de clic/dispatch plutôt que d'extraction.
+
+Statut : patch extraction validé (score + blocks_count > 0 confirmés en conditions réelles).
+
+### action_dispatcher / input_radio — résolution du contexte de frame dans la couche de sélection/clic
+Fichier : Survey/action_dispatcher.py (_apply_by_target_id / _apply_in_current_context), Survey/input_radio.py
+(click_radio_by_label et fonctions appelées en cascade), Survey/input_utils.py (find_question_container_by_ctx)
+Bug corrigé : `_apply_by_target_id` lisait bien `frame_chain` depuis le payload du registry et se positionnait
+correctement dans ce contexte via `switch_to_frame_chain`, mais les fonctions de recherche/clic appelées
+ensuite (recherche par xpath du label associé à l'option, recherche de conteneur de question, clic JS)
+interrogeaient l'objet driver directement plutôt que de résoudre le contexte de frame actif au moment de la
+recherche. Sur un driver Page Playwright native (attache CDP), ces recherches s'exécutaient donc toujours sur
+le document racine de la frameset (aucun input) plutôt que dans `frame#mainFrame`, malgré une extraction et un
+scoring de contexte déjà corrigés en amont (cf. entrées précédentes de cette section).
+Correction : la couche de sélection/clic résout désormais le contexte de frame actif de la même manière que
+le module de scoring, avant toute recherche DOM.
+Patterns couverts :
+- Ipsos/mrIWeb (frameset `frame#mainFrame`/`frame#leftFrame`), question SA native
+  (`<input type="radio" name="_QHH__FR01INC_C">`, label `for="_Q0_C{n}"`) — sélection confirmée en run réel
+  (apply ok=true strategy=target_id, option "175 000 euros ou plus" correctement cochée à l'écran).
+Patterns exclus :
+- Aucune modification du contenu des stratégies de clic existantes (xpath, JS, overlay) — seule la résolution
+  du contexte dans lequel elles s'exécutent a été corrigée.
+
+Diagnostic associé : la chaîne complète du bug frame-context (extraction ET sélection) touchait 3 points
+distincts, tous liés à la même cause racine (propagation de `_current_frame` non systématique) :
+1. `switch_to_frame_chain` ne créait jamais `_current_frame` sur un driver qui ne l'avait pas déjà (hasattr
+   gate) — corrigé (entrée précédente).
+2. Les extracteurs de dom_analyzer.py recevaient `driver` au lieu du contexte résolu `_ctx` — corrigé (entrée
+   précédente).
+3. La couche de sélection/clic (action_dispatcher.py, input_radio.py, input_utils.py) recevait/interrogeait
+   `driver` directement au lieu du contexte résolu — corrigé par ce patch.
+
+Statut : patch validé en conditions réelles (log `[TARGET] apply ok=true strategy=target_id reason=applied`,
+confirmation visuelle du radio coché sur la question Ipsos/mrIWeb de test).
+
+---
+
 ## PLATEFORME : ASKIA
 Signature : `<body onload="loadFormAskia();">`, form action `AskiaExt.dll`
 Inputs : schéma `M{N} {value}` (checkbox/radio) ou `U{N}` (hidden slider)
@@ -217,6 +334,31 @@ Patterns exclus :
 | Toluna/Confirmit wix | _extract_confirmit_cf_single_image_choice_blocks | _extract_confirmit_cf_single_choice_blocks | `div.cf-image-answer` + `div.cf-image[role='radio']` présents dans le conteneur (vs `div.cf-radio[role='radio']` standard) |
 | Toluna/Confirmit wix | _extract_confirmit_cf_multi_choice_blocks | extracteurs single/numeric/open | class `cf-question--multi` sur le div parent + `div.cf-checkbox[role='checkbox']` présent |
 
+### _extract_confirmit_cf_numeric_isolated_question
+Fichier : Survey/dom_question_extractor.py
+Appelée depuis : Survey/dom_analyzer.py, chemin "singles" (résolution de `question`, juste après le
+check legend `qualification-text`, gate `not question`).
+Guard : `itype == "text"` ET `input[type="number"]` ET `el.closest('.cf-question--numeric')` non nul
+ET `.cf-question__text` non vide dans ce conteneur (match CSS exact par token — ne matche jamais
+`.cf-question--numeric-list`, comparaison de sous-chaîne exclue).
+Bug corrigé : pour un `input[type="number"]` isolé (pas de `div.cf-numeric-list-answer`, ex: question
+âge), `_nearest_question_container` (chemin singles) remonte au conteneur le plus proche portant
+"question" dans sa classe, càd `div.cf-question__content` — qui ne contient PAS les divs frères
+`cf-question__text` / `cf-question__instruction`. `_extract_question_from_container` échoue donc
+(texte vide), et le fallback `_find_question_text_near_element` (proximité visuelle) retient
+`cf-question__instruction` ("Saisissez votre réponse.") car plus proche visuellement de l'input que
+`cf-question__text` ("Quel âge avez-vous ?"). Le garde-fou SSI/Confirmit existant
+(`_extract_ssi_confirmit_question`) ne se déclenche pas non plus : `_is_validation_instruction()` ne
+reconnaît que des patterns anglais, donc `question` reste non-vide et son bloc est sauté.
+Patterns couverts :
+- Lecture directe `.cf-question__text` + `.cf-question__instruction` via `el.closest('.cf-question--numeric')`
+- Concatène question + instruction (ex: "Quel âge avez-vous ? Saisissez votre réponse.")
+Patterns exclus :
+- `div.cf-question--numeric-list` → `_extract_confirmit_cf_numeric_list_blocks` (chemin séparé, non concerné)
+- Tout input non `type="number"`, ou `itype != "text"`
+Validé en conditions réelles (2026-08-20) : survey.rigourresearch.co.uk, question âge S1_input,
+question résolue = "Quel âge avez-vous ? Saisissez votre réponse.", réponse "25" saisie avec succès.
+
 ---
 
 ## PLATEFORME : CONFIRMIT / FORSTA WIX — RANKING
@@ -290,6 +432,49 @@ Patterns exclus :
   (couvre aussi le cas pure-checkbox 0 radio + ≥2 checkboxes avec `td.confirmit-rankedorderclick`)
 - `table.confirmit-grid` dans le fieldset → `_extract_confirmit_wix_checkbox_grid_blocks`
 
+### _apply_by_target_id — bloc confirmit_wix_fieldset_radio_abtn (variante "AnswerButtons" sans <a>)
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `payload.get("confirmit_wix_fieldset_radio") and resolved_itype == "radio"`, juste après la
+résolution de `xp` (option_xpath_map) et avant la séquence de fallbacks génériques radio_main.
+Guard : le `xp` existant (XPath `//input[@id=...]/ancestor::td[1]//a[1]`) ne résout aucun candidat
+(`driver.query_selector_all(xp)` vide) ET un `label[for="{input_id}"]` est trouvé dans un
+`ancestor::td[contains(@class,'confirmit-abtn')]` — confirmation structurelle de la variante AnswerButtons.
+Patterns couverts :
+- Variante Confirmit/Wix "AnswerButtons" : `td.confirmit-abtn` contenant `<input type="radio" hidden>` +
+  `div.confirmit-abtn-label` + `<label for="{input_id}">`, sans aucun `<a href="javascript:void(0)">`
+  dans le `<td>` (contrairement au layout classique déjà couvert par `_extract_confirmit_wix_fieldset_radio_block`)
+- Sans ce patch : `xp` ne résout jamais rien pour aucune option → fallback générique radio_main non
+  déterministe (clic par recherche de label pleine page, sans garantie de cibler la bonne option)
+- Clic : `label.click()` natif, fallback `driver.evaluate("(e) => e.click()", label)` si échec
+- Validation : `_wait_checked(input_id, None)` sur l'input radio masqué
+- Log : `[TARGET_DEBUG] confirmit_wix_fieldset_radio_abtn: ok/ko id={input_id}`
+- Succès : `log_info("[TARGET]", "apply ok=true strategy=confirmit_wix_fieldset_radio_abtn reason=input_checked")`
+Patterns exclus :
+- `xp` classique résolvant au moins un candidat (layout `<a>` déjà couvert) → chemin existant inchangé
+- Structure abtn non confirmée (aucun `label[for]` trouvé dans un `td.confirmit-abtn` ancêtre) → fall through
+  inchangé vers la séquence de fallbacks génériques existante
+
+### _apply_by_target_id — bloc confirmit_wix_fieldset_checkbox_abtn (variante "AnswerButtons" checkbox)
+Fichier : Survey/action_dispatcher.py
+Emplacement : juste après le bloc `confirmit_wix_fieldset_radio_abtn` ci-dessus (radio), avant `_first_input_under`.
+Guard : `payload.get("confirmit_wix_fieldset_radio") and resolved_itype == "checkbox"` ET le `xp` existant
+(XPath `//input[@id=...]/ancestor::td[1]//a[1]`) ne résout aucun candidat ET un `label[for="{input_id}"]` est
+trouvé dans un `ancestor::td[contains(@class,'confirmit-abtn')]`.
+Patterns couverts :
+- Même structure DOM "AnswerButtons" que le bloc radio équivalent (`td.confirmit-abtn` : `<input type="checkbox"
+  hidden>` + `div.confirmit-abtn-label` + `<label for="{input_id}">`, sans `<a>`), mais pour un groupe checkbox
+  (multi-select). Sans ce patch : le `xp` hérité de `_extract_confirmit_wix_fieldset_radio_block` suppose
+  toujours un `<a>` → aucune option ne pouvait être cochée, échec systématique sur chaque option du groupe.
+- Fonction nommée distincte, purement additive : ne modifie pas le bloc radio existant.
+- Clic : `label.click()` natif, fallback `driver.evaluate("(e) => e.click()", label)` si échec
+- Validation : `_wait_checked(input_id, None)` sur l'input checkbox masqué
+- Log : `[TARGET_DEBUG] confirmit_wix_fieldset_checkbox_abtn: ok/ko id={input_id}`
+- Succès : `log_info("[TARGET]", "apply ok=true strategy=confirmit_wix_fieldset_checkbox_abtn reason=input_checked")`
+Patterns exclus :
+- `xp` classique résolvant au moins un candidat (layout `<a>` déjà couvert) → chemin existant inchangé
+- Structure abtn non confirmée (aucun `label[for]` trouvé dans un `td.confirmit-abtn` ancêtre) → fall through
+  inchangé vers la séquence de fallbacks génériques checkbox existante
+
 ### _apply_by_target_id — cache de stratégie gagnante (_cm_strategy_cache)
 Fichier : Survey/action_dispatcher.py
 Emplacement : bloc `toluna_runtime_answerrow` dans `_click_candidate`, avant la séquence de fallbacks.
@@ -303,6 +488,23 @@ Patterns couverts :
 Patterns exclus :
 - Blocs sans `cm_key` → séquence complète inchangée
 - Structures avec un seul item (cache inutile) → skip_to=0, comportement identique à avant
+
+### _click_candidate — pré-détection label-intercept (skip vers CDP)
+Fichier : Survey/action_dispatcher.py
+Emplacement : dans `_click_candidate`, juste après le calcul de `_first` via le cache, avant la méthode 1 (click natif).
+Guard : `_first == 1` (premier appel, cache vide pour ce `cm_key`) ET le noeud est un `<input id=...>` dont le
+`parentElement` contient un `label[for="{id}"]` (sibling direct) — générique, pas lié à une plateforme précise.
+Patterns couverts :
+- Inputs natifs `<input type="checkbox">`/`radio` immédiatement suivis d'un `<label for=...>` dans le même parent
+  (ex. Alchemer/Gizmo) : le label recouvre visuellement l'input → méthodes 1 (click natif) et 2 (ActionChains
+  hover+click) échouent quasi systématiquement après 30s de timeout chacune ("intercepts pointer events")
+- Sans ce patch : ~60s perdues sur le tout premier clic d'un groupe avant de retomber sur la méthode 3 (CDP)
+  qui elle réussit et alimente normalement le cache pour les clics suivants du même `cm_key`
+- Avec le patch : `_first` est forcé à 3 dès la détection, sans jamais toucher au corps des méthodes 1/2/3/4
+- Log : `[TARGET_DEBUG] _click_candidate: label-intercept detected on {label!r}, skip to CDP`
+Patterns exclus :
+- Inputs sans `id`, ou label absent/non-sibling direct du parent → séquence complète inchangée (1→2→3→4)
+- Appels avec `_first > 1` (cache déjà résolu) → pré-détection non exécutée, skip_to standard s'applique
 
 ### _extract_confirmit_wix_rankedorderclick_block
 Fichier : Survey/dom_extractors_misc.py
@@ -410,9 +612,79 @@ Patterns exclus :
 
 ---
 
-## PLATEFORME : KANTAR / mrIWeb — ROWPICKER RADIO (REACT OVERLAY)
+## CHAMP DATE NATIF (input type="date") — CONFIRMIT/FORSTA ET GÉNÉRIQUE
+Signature DOM : `<input type="date">` natif (ex : Confirmit/Forsta `cf-question--date`,
+`cf-date-answer__input`). Détecté via l'attribut `type` de l'input, indépendamment de la
+plateforme — pas une classe CSS spécifique à Confirmit.
+
+### dom_analyzer.py — flag native_date_input (boucle singles)
+Fichier : Survey/dom_analyzer.py
+Guard : `el_tag == "input"` ET `el.get_attribute("type") == "date"`
+Patterns couverts :
+- Ajoute `native_date_input: bool` dans le registre DOM_REGISTRY (register_target, clé
+  racine) et dans `context` du bloc GPT, sans changer `itype` (reste "text") ni toucher
+  `_detect_itype()` (dom_utils.py).
+Patterns exclus :
+- Aucun changement pour les inputs type="text"/"number"/etc. — flag additif, `False` par défaut.
+
+### prompt_builder.py — selection_rule dédiée date native
+Fichier : Survey/prompt_builder.py
+Guard : `context.native_date_input is True`
+Patterns couverts :
+- Consigne dédiée demandant une date complète au format AAAA-MM-JJ (ISO), remplaçant la
+  règle générique "renvoyer EXACTEMENT 1 valeur" pour ce bloc précis.
+Patterns exclus :
+- Champs text/textarea/number sans ce flag → règle générique inchangée.
+
+### batch_response_parser.py — préservation valeur composite date
+Fichier : Survey/batch_response_parser.py
+Guard : bloc correspondant à `native_date_input=True`
+Patterns couverts :
+- La valeur ISO complète (AAAA-MM-JJ) est conservée telle quelle, sans troncature par la
+  logique min_select/max_select générique (pensée pour les séparateurs "|" multi-select).
+Patterns exclus :
+- Toute autre question text à valeur unique → logique min_select/max_select inchangée.
+
+### action_dispatcher.py — branche dédiée native_date_input
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `itype in ("text","number","textarea")`, avant le fallback générique
+`fill_text_input`.
+Guard : `target_payload.get("native_date_input") is True` (lu à la racine du registre
+DOM_REGISTRY flat, pas sous "context" — registre construit par dom_analyzer.py)
+Patterns couverts :
+- Appelle `Survey.input_handler.fill_native_date_input(driver, label, element_id=fid,
+  frame_chain=...)`, stratégie dédiée et unique pour ce type de champ.
+- En cas d'échec : `continue` explicite, AUCUN retour vers `fill_text_input` générique
+  (son sélecteur ne couvre pas input[type=date] et son fallback page-entière peut cibler
+  un autre champ texte de la page — cause racine historique de l'écrasement croisé zipcode/DOB).
+Patterns exclus :
+- Champs text sans ce flag → chemin générique `fill_text_input` inchangé.
+
+### input_text.py — fill_native_date_input
+Fichier : Survey/input_text.py
+Guard : `element_id` non vide ; résolution stricte par id uniquement (jamais par
+contexte/texte de question).
+Patterns couverts :
+- Résolution de l'élément via `driver.query_selector(f"#{element_id}")` (API Playwright
+  native) — PAS `driver.find_element(...)` (API Selenium absente de l'objet Page au
+  runtime → AttributeError silencieuse ; cause racine du bug "date jamais saisie").
+- Support iframe : si `frame_chain` est renseigné (porté par le registry DOM_REGISTRY),
+  résolution/saisie/vérification s'exécutent dans ce contexte, même convention que
+  `_apply_by_target_id` (switch_to_frame_chain, action_dispatcher.py).
+- Assignation directe `el.value = iso` + dispatch input/change (pattern déjà validé pour
+  `select_native_option_by_target`, input_dropdown.py) — PAS `react_set_value_and_fire`.
+- Formats d'entrée acceptés : AAAA-MM-JJ (ISO) ou JJ/MM/AAAA, normalisés en ISO.
+Patterns exclus :
+- Champs text/textarea classiques → `fill_text_input` inchangé, non appelé depuis cette fonction.
+- Aucun repli en cas d'échec de résolution/assignation (pas de fallback empilé) : retourne
+  `False`, laisse action_dispatcher.py logguer l'échec sans dérive vers un autre champ.
+
+---
+
+## PLATEFORME : KANTAR / mrIWeb — ROWPICKER RADIO / CHECKBOX (REACT OVERLAY)
 Signature DOM : `form[name="mrForm"]` (sa.ktrmr.com), `metaType="rowpicker"` dans le SEJson.
 Double couche : `div.questionContainer[questionname][display:none]` (inputs natifs non interactables) + `div#container_{questionname}._rowpicker` (cartes React cliquables).
+Le même conteneur `_rowpicker` sert aussi bien des questions à choix unique que des questions à choix multiple (avec éventuellement une option exclusive) — la couche visuelle est identique dans les deux cas, seule la couche native cachée distingue les deux.
 
 ### _extract_kantar_rowpicker_radio_blocks
 Fichier : Survey/dom_extractors_misc.py
@@ -422,12 +694,15 @@ Patterns couverts :
 - Question : `#qc_{q_suffix} span.mrQuestionText` ; variante : `.questionContainer[questionname$='.{q_suffix}'] span.mrQuestionText`
 - Cartes : itération sur les overlays `div[dir='ltr'][tabindex='0']` dans le picker ; remontée au conteneur de carte via `ancestor::div[@dir='ltr'][not(@tabindex)][1]` ; label depuis `label span`
 - `option_xpath_map` pointe sur l'overlay (seul élément interactable), pas sur les inputs natifs
-- Flag payload : `kantar_rowpicker_radio=True` ; `group_key` : `kantar_rowpicker:radio:{q_suffix}`
+- Distinction radio/checkbox : lecture de `input[questionname='{q_suffix}']` dans la couche native cachée. ≥2 inputs `type="checkbox"` (classe `mrMultiple`) → `itype="checkbox"` ; sinon `itype="radio"`.
+- Option exclusive (checkbox uniquement) : détectée via `isexclusive="true"` sur l'input natif ; le label correspondant est résolu via `label[for={input_id}] .mrMultipleText` et stocké normalisé dans `payload["meta"]["exclusive_options_norm"]`. `max_select = nb_inputs_checkbox - nb_exclusifs` (min 1).
+- Flag payload : `kantar_rowpicker_radio=True` dans les deux cas (radio ET checkbox) ; `group_key` : `kantar_rowpicker:{itype}:{q_suffix}`
 Note DOM : l'overlay `div[dir='ltr'][tabindex='0']` est séparé de la carte `div[dir='ltr']` par un div intermédiaire sans attribut `dir` — `div[@tabindex='0']` (enfant direct) ne matche pas ; il faut itérer sur les overlays et remonter.
+Note DOM : le flag `kantar_rowpicker_radio` reste nommé ainsi même pour les blocs `itype="checkbox"` — c'est le nom du widget (rowpicker), pas le type de sélection ; ne pas le renommer sans mettre à jour tous les guards dispatcher qui le lisent.
 Patterns exclus :
 - `div[id^='sq-QARTS-container-']` (Decipher/LifePoints QARTS) → extracteur séparé
 - `_rowrank` (metaType=rowrank) → `_extract_kantar_rowrank_blocks`
-- Inputs natifs `input[type=radio][class*="mrSingle"]` dans `div.questionContainer` → jamais ciblés
+- Inputs natifs `input[type=radio][class*="mrSingle"]` / `input[type=checkbox][class*="mrMultiple"]` dans `div.questionContainer` → jamais ciblés directement (uniquement lus pour déterminer itype/exclusivité)
 
 ### kantar_rowpicker_radio — guard dispatcher
 Fichier : Survey/action_dispatcher.py
@@ -443,12 +718,35 @@ Patterns exclus :
 Fichier : Survey/input_radio.py
 Guard : appelée uniquement depuis le guard `kantar_rowpicker_radio` du dispatcher.
 Patterns couverts :
-- `_JS_FIND` : cherche l'overlay par label dans `._rowpicker`, via `closest('div[dir="ltr"]')` + `querySelector('div[tabindex="0"]')` avec vérification `cursor` dans le style
-- Clic : `overlay.click()`, fallback `ActionChains`
+- `_JS_FIND` : cherche le label par texte dans `._rowpicker`, remonte au conteneur de carte réel via boucle `parentElement` jusqu'au premier `div[dir="ltr"]` SANS `tabindex` (mirroir exact de l'ancestor-axis XPath de `_extract_kantar_rowpicker_radio_blocks` : `ancestor::div[@dir='ltr'][not(@tabindex)][1]`), puis cible l'overlay `div[dir="ltr"][tabindex="0"]` descendant avec `cursor` dans le style inline
+- Résolution d'élément cliquable : `driver.evaluate_handle("(arg) => {...}", label).as_element()` — PAS `driver.evaluate(...)`. `evaluate()` sérialise la valeur de retour (un noeud DOM renvoyé par le script redescend en Python comme `str`/`dict` sans méthodes d'interaction, échec silencieux `AttributeError` sur `.click()`) ; `evaluate_handle().as_element()` retourne un véritable ElementHandle cliquable. Même convention que `action_dispatcher.py` (`cell_pre`/`decipher_cell`/`decipher_radio_cell` via `evaluate_handle(...).as_element()`).
+- Clic : `overlay.click()`, fallback `overlay.hover(); overlay.click()`
 - `_JS_VERIFY` : changement de `background-color` sur `div[style*="transition: background-color"]` de la carte
+- Logging de diagnostic à chaque branche de retour anticipé (`js_find_exception` avec type+message, `overlay_not_found`, `overlay_click_failed` avec les deux exceptions click/hover séparées, `native_verify=ok/ko`) — indispensable ici car les échecs précédents (JS cassé, mauvais mécanisme de résolution) étaient totalement silencieux sans ces logs.
 Note DOM : `input.checked` toujours `false` sur ce DOM — les inputs natifs dans `display:none` ne sont jamais synchronisés par React. Vérification obligatoirement via background-color de la carte.
+Note historique (piège à ne pas réintroduire) : les scripts `_JS_FIND`/`_JS_VERIFY` sont enveloppés en fonction fléchée `(arg) => {...}` au point d'appel — ne jamais référencer `arguments[0]` dans leur corps (une fonction fléchée n'a pas d'objet `arguments`), toujours utiliser le nom du paramètre (`arg`).
 Patterns exclus :
 - `div[id^='sq-QARTS-container-']` → guard DOM distinct
+
+### execute_action — bloc radio : pas de fallback générique après échec kantar_rowpicker_radio
+Fichier : Survey/action_dispatcher.py
+Emplacement : section `if itype == "radio":`, juste après `_tp = target_payload or {}`, avant le calcul de `_tmr_opt_keys`.
+Guard : `_tp.get("kantar_rowpicker_radio")` truthy (payload posé par `_extract_kantar_rowpicker_radio_blocks`).
+Problème résolu : quand `_apply_by_target_id()` échoue pour un bloc `kantar_rowpicker_radio` (ex. option "Homme"), `execute_action` retombait sur la séquence générique `radio_main` (`click_radio_by_label`) / `radio_buttonish`. Ces stratégies génériques forcent `input.checked = true` en JS et rapportent un succès même quand l'overlay React n'a reçu aucun clic effectif — aucune sélection visible sur la carte, faux positif silencieux.
+Correction : dès l'entrée du bloc radio, si `kantar_rowpicker_radio=True`, retour `False` immédiat (aucune stratégie générique invoquée). L'échec de la stratégie dédiée est donc rapporté tel quel.
+Patterns exclus :
+- Tout bloc radio sans flag `kantar_rowpicker_radio` → séquence `aa_answer_matrix` / `radio_slider` / `radio_main` / `radio_buttonish` inchangée.
+- Détections Kantar rowpicker par scan DOM runtime dans `_apply_by_target_id` (lignes ~2481/2644, sans passer par le payload extrait) → non concernées, elles retournent déjà `bool(_rp_ok)` directement sans tomber dans ce bloc radio générique.
+
+### execute_action — court-circuit dédié pour kantar_rowpicker en itype="checkbox"
+Fichier : Survey/action_dispatcher.py
+Emplacement : juste avant l'appel à `_apply_by_target_id` (bloc `if target_id and not skip_apply_by_target_id`), dans la section qui gère les stratégies dépendant du payload `_p`.
+Guard : `_p.get("kantar_rowpicker_radio") and itype == "checkbox"`
+Problème résolu : sans ce court-circuit, le premier clic d'un groupe checkbox rowpicker (cache de stratégie checkbox vide) traversait `_apply_toluna_runtime_answerrow_cached()` — sonde hors-scope pour ce widget qui échoue systématiquement avec `AttributeError: 'str' object has no attribute 'evaluate'` (elle appelle `.evaluate()` sur `value`, qui est le label texte de la réponse, pas un ElementHandle) — puis une résolution XPath qui échoue toujours (l'input natif est dans un conteneur `display:none`), avant d'atteindre `checkbox_fallback_radio` → `click_kantar_rowpicker_radio` qui fonctionne réellement. Ce chemin complet (sonde cassée + 2 stratégies génériques en échec avec timeouts) ne s'exécutait que pour la première option du groupe ; les options suivantes réutilisaient directement la stratégie mise en cache.
+Correction : le widget étant déjà identifiable via le flag `kantar_rowpicker_radio` posé par l'extracteur, `execute_action` appelle directement `click_kantar_rowpicker_radio(driver, value)` dès l'entrée, `skip_apply_by_target_id=True`, sans passer par `_apply_by_target_id` ni par la liste ordonnée `checkbox_main`/`checkbox_buttonish`/`checkbox_fallback_radio`. Pas de fallback générique après échec (retour `False` direct), même logique que le bloc radio équivalent.
+Note : `click_kantar_rowpicker_radio` (Survey/input_radio.py, voir entrée ci-dessus) est réutilisée telle quelle pour le cas checkbox — elle clique par label sur l'overlay React, ce qui fonctionne indépendamment du type de sélection sous-jacent.
+Patterns exclus :
+- Tout bloc checkbox sans flag `kantar_rowpicker_radio` → séquence `checkbox_main` / `checkbox_buttonish` / `checkbox_fallback_radio` inchangée (y compris la sonde `_apply_toluna_runtime_answerrow_cached`, non touchée par ce patch).
 
 ---
 
@@ -487,6 +785,81 @@ Correction : après le clic, vérifier `el.find_element(By.XPATH, './/img[1]')` 
 Patterns exclus :
 - Radios Toluna wix (même flag, mais itype=radio) → chemin radio distinct, `_wait_checked` fonctionne sur `input[name]:checked`
 - Tout payload sans `confirmit_wix_fieldset_radio`
+
+---
+
+## PLATEFORME : IPSOS / mrIWeb — GRID/NUM PAR LIGNE (table.mrGridTable, input[type=number] par ligne)
+Signature DOM : `div.question-container.QType-GRID.QSubType-NUM` (script `customJSONproperties`
+`{"QType":"GRID","QSubType":"NUM",...}`) contenant `table.mrGridTable` (aussi classée
+`mrQuestionTable`). Chaque `<tr>` porte son propre `td.mrGridCategoryText` (libellé de ligne)
+et son propre `<input type="number" name="...">`. Le texte de question (`div#question
+.mrQuestionText`) est commun, affiché une seule fois en tête de grille — pas de colonnes
+(`QTopHeaders-false`, pas de `td.mrGridQuestionText`).
+
+### _extract_mriweb_grid_num_row_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py, étape `0h-bis-2a-ter` (juste avant
+`_extract_label_radio_list_blocks`), avec `return` immédiat si blocs produits.
+Guard : `div.question-container.QType-GRID.QSubType-NUM` présent ET `table.mrGridTable` à
+l'intérieur ET au moins une ligne avec `td.mrGridCategoryText` + `input[type='number']`.
+Bug corrigé : sur ce DOM, ni l'extracteur grid texte existant (dom_analyzer.py ~3874, exige
+`input.mrEdit[type='text']` avec name `..._Q__N_QAnswer`) ni l'extracteur DnD radio (exige
+`td.mrGridQuestionText` + radios `colid`) ne se déclenchaient — inputs `type="number"`, suffixe
+de name `_Q__{N}_Q__scale`. Les lignes retombaient sur le chemin générique "singles"
+(itype="text" via `_detect_itype`), et `_dedup_signature` (pas de `group_key`, options vides)
+fusionnait les lignes car leur `question` (texte de grille commun) était identique → une seule
+ligne survivait au dédoublonnage.
+Correction (additive, aucune modification de `_dedupe_question_blocks`) : un bloc
+`single`/`itype="number"` par ligne, `question` = `"{question_grille} — {row_label}"` (le
+libellé de ligne rend le texte de question unique par bloc → aucune collision de signature de
+dédup, aucun besoin de scoper `_dedup_signature`). `context.row_label` porte le libellé brut ;
+flag payload/context : `mriweb_grid_num_row=True`. Payload registry (xpath/alt_xpaths/tag/
+name/id) identique au pattern `confirmit_cf_numeric_list` déjà validé → dispatch fill number
+sans changement dispatcher.
+Patterns couverts :
+- Grilles Ipsos/mrIWeb GRID/NUM à ≥2 lignes, chaque ligne son propre `input[type=number]` +
+  `td.mrGridCategoryText`, question de tête commune.
+- Validé en conditions réelles : 2 blocs distincts extraits (`Comment se compose votre foyer ?
+  — Nombre d'adultes...` / `— Nombre d'enfants...`), 2 itypes "number", GPT a répondu 2 valeurs
+  distinctes, remplissage des 2 inputs confirmé à l'écran (capture bot:9009).
+Patterns exclus :
+- Grid texte `type='text'` + name `_QAnswer` → extracteur existant dom_analyzer.py ~3874
+  (inchangé).
+- Grid avec colonnes (`td.mrGridQuestionText` + radios `colid`) → extracteur DnD matrix
+  existant (inchangé).
+
+Statut : patch validé en conditions réelles (extraction + remplissage confirmés).
+
+### fill_text_input_by_id_in_frame — saisie text/number dans le frame_chain du registry
+Fichiers : Survey/input_text.py (fonction), Survey/input_handler.py (export), Survey/action_dispatcher.py
+(nouvelle branche dédiée, bloc `itype in ("text","number","textarea")`, après `ifop_zip2city_widget`,
+avant le fallback générique `text_input`).
+Bug corrigé : `_extract_mriweb_grid_num_row_blocks` stocke `frame_chain` dans le payload registry
+(cf. entrée ci-dessus), mais le chemin générique `fill_text_input` résout le champ via
+`driver.query_selector`/`driver.wait_for_selector` directement sur `driver` (Page racine), qui ignore
+l'attribut `_current_frame` posé par `switch_to_frame_chain` (même classe de bug que le module transversal
+en tête de ce fichier). Résultat : `TimeoutError` sur le sélecteur générique malgré les inputs visibles à
+l'écran, résolution par id ET fallback générique tentés dans le mauvais contexte de frame dès que
+`frame_chain` est non vide.
+Guard : `payload.get("frame_chain")` non vide (registry DOM_REGISTRY flat, racine — pas sous "context")
+ET `payload.get("id")` ou `payload.get("name")` présent.
+Patterns couverts :
+- Tout bloc text/number dont le registry porte un `frame_chain` non vide (ex : grilles Ipsos/mrIWeb
+  GRID/NUM par ligne, `mriweb_grid_num_row=True`, mais guard générique sur la présence de `frame_chain`,
+  pas sur ce flag précis).
+- Résolution id puis name dans le contexte de frame (`switch_to_frame_chain` + `getattr(driver,
+  "_current_frame", driver)`), application via `react_set_value_and_fire` (setter natif + dispatch
+  input/change), filtrage chiffres si champ numérique.
+- Validé en conditions réelles : Ipsos/mrIWeb GRID/NUM (2 lignes, `frame_chain=[0]`), logs
+  `[TEXT_FRAMED] id=... before='' target='1' after='1' frame_chain=[0]` /
+  `apply ok=true strategy=text_input_framed reason=applied` pour les 2 champs, valeurs 1 et 0 confirmées
+  à l'écran (capture bot:9009).
+- En cas d'échec : `continue` explicite, AUCUN retour vers `fill_text_input` générique (résolution racine
+  incompatible avec un frame_chain non vide — même principe que la branche `native_date_input`).
+Patterns exclus :
+- Blocs sans `frame_chain` dans le registry (cas majoritaire) → chemin générique `fill_text_input`
+  inchangé, non impacté par ce patch.
+- Aucune modification du corps de `fill_text_input` (stratégie distincte, additive).
 
 ---
 
@@ -562,6 +935,7 @@ Patterns couverts :
 Patterns exclus :
 - `ul.profilerAnswer[data-type!="radio"]` (non observé, guard passif)
 
+---
 
 ## PLATEFORME : DECIPHER / FOCUSVISION — DROPDOWN + CHAMP "AUTRE" FRÈRE
 
@@ -753,23 +1127,37 @@ Apparaît quand le lien de suivi est invalide ou expiré (paramètre psid manqua
 Fichier : Survey/survey_solver.py
 Emplacement : boucle solve_full_survey, après le bloc errorPage/errorpage-wrapper,
 avant l'appel à execute_survey_page().
-Guard : `div.survey-error` visible (is_displayed()) dans le DOM courant.
-Patterns couverts :
-- Détecte et logue : URL courante + texte du premier élément (tronqué 200 chars)
-- Déclenche guard.record_success() + guard.request_survey_restart("decipher_survey_error")
+Guard primaire : `div.survey-error` visible (is_displayed()) dans le DOM courant.
+Guard secondaire (anti faux-positif, validé en prod) : `_has_actionable_q` — présence d'au
+moins un élément parmi `div.question input[type='radio']`, `div.question input[type='checkbox']`,
+`div.question input[type='text']`, `div.question textarea`, `div.question select` dans le DOM
+(élargi 2026-08-29 : le guard initial radio/checkbox-only donnait un faux-positif sur une page
+avec une question ouverte textarea seule, ex. rappel publicitaire libre Philips — sélecteur repris
+tel quel de la liste d'inputs "actionnables" déjà utilisée ligne ~281 de survey_solver.py).
+- Si `_has_actionable_q` est vrai → le `div.survey-error` visible est un simple message de
+  validation inline (ex. "Veuillez sélectionner au moins 1 réponse(s)", "Veuillez fournir une
+  réponse") ; la page continue normalement dans le pipeline, pas de log, pas de restart.
+- Si `_has_actionable_q` est faux → vraie page d'erreur applicative bloquante :
+  détecte et logue URL courante + texte du premier élément (tronqué 200 chars),
+  déclenche guard.record_success() + guard.request_survey_restart("decipher_survey_error").
 Patterns exclus :
 - div.errorPage, div.errorpage-wrapper → bloc précédent inchangé
-- Pages Decipher avec questions valides → aucun div.survey-error visible
+- Pages Decipher avec questions valides (choix ou saisie libre, avec ou sans message de
+  validation inline) → jamais de restart tant qu'un input radio/checkbox/text/textarea/select
+  exploitable est présent
 
 ### Détection div.survey-error — main.py (route attach)
 Fichier : main.py
 Emplacement : boucle run_attach_takeover, après le bloc errorPage/errorpage-wrapper,
 avant l'appel à execute_survey_page().
-Guard : même guard DOM que survey_solver.py
+État : guard secondaire `_has_actionable_q` répliqué et aligné avec survey_solver.py (route prod)
+— même sélecteur élargi (radio/checkbox/text/textarea/select), même comportement.
 Patterns couverts :
-- Logue via print : [PLATFORM-ERR] step + url + texte (tronqué 200 chars) → break
+- Logue via print : [PLATFORM-ERR] step + url + texte (tronqué 200 chars) → break, uniquement
+  si `_has_actionable_q` est faux.
 Patterns exclus :
-- Identiques à la route prod ci-dessus
+- Identiques à la route prod ci-dessus (div.survey-error avec question exploitable présente
+  ne déclenche jamais le break)
 
 ---
 
@@ -924,6 +1312,40 @@ Patterns exclus :
 - Éléments div[data-testid^="option-"] non visibles ou < 2 visibles
 ---
 
+## PLATEFORME : ELEMENT HUMAN (SurveyJS classic, framework sv_*)
+Signature DOM : `sv_main sv_default_css` (framework SurveyJS classique), questions dans
+`div.sv_q.sv_qstn` / `[id^="sq_"]`, choix unique via `fieldset.sv_qcbc[role="radiogroup"]`
++ `input.sv_q_radiogroup_control_item[type="radio"]`.
+Domaine observé : activityv2.elementhuman.com
+
+### _is_formal_survey_question_page — hard guard SurveyJS classic (sv_qcbc radiogroup)
+Fichier : Survey/dom_classifier.py
+Emplacement : bloc JS de _is_formal_survey_question_page, après le guard Toluna/Confirmit
+Wix natif, avant le `return false` final.
+Guard (tous requis) :
+  1. `fieldset.sv_qcbc[role="radiogroup"]` présent
+  2. ≥2 `input.sv_q_radiogroup_control_item[type="radio"]` dans ce fieldset
+  3. ≥2 de ces radios ont un `aria-label` texte exploitable (>3 caractères après suppression des balises HTML)
+  4. Le conteneur question (`.sv_q.sv_qstn` ou `[id^="sq_"]` ancêtre du fieldset) contient un
+     bloc de validation obligatoire (`.sv_q_erbox` ou `[role="alert"]`)
+Patterns couverts :
+- Question de sondage SurveyJS à choix unique dont le libellé ou le `name` du champ contient
+  un vocabulaire de consentement (ex. question "consentez-vous...", `name="consent_0_sq_101"`)
+  — sans ce guard, `is_consent_screen` classait ces pages comme écran de consentement bloquant
+  (faux positif déclenché par le mot "consent" dans le texte/attributs, alors qu'il s'agit d'une
+  question de contenu du sondage, pas d'un bandeau cookie/RGPD)
+- Le bloc de validation obligatoire est utilisé comme signal discriminant : une vraie question
+  de sondage impose une réponse (message d'erreur affiché tant qu'aucune option n'est cochée),
+  contrairement à un simple écran d'info
+Patterns exclus :
+- Pages SurveyJS sans `fieldset.sv_qcbc[role="radiogroup"]` → guard inactif
+- Fieldset avec <2 radios ou <2 aria-label texte exploitables → non couvert
+- Absence de bloc de validation (`.sv_q_erbox`/`[role="alert"]`) dans le conteneur question →
+  non couvert (évite de qualifier une page d'info SurveyJS sans contrainte de réponse comme
+  question formelle)
+
+---
+
 ## PLATEFORME : DECIPHER — ATMRATING (sq-atmrating, boutons 1..N sur inputs text cachés)
 Signature DOM : `div.question.sq-atmrating.hasRows` > N `div.sq-atmrating-container`
 Chaque container : `div.sq-atmrating-row-legend` (texte sous-question) + `input[type="text" name="ans{Q}.0.{N}"]` (caché) + `div.atmrating_input > span.atmrating-btn` (1..5, cliquables).
@@ -949,6 +1371,519 @@ Patterns exclus :
 
 ---
 
+## PLATEFORME : DECIPHER / FOCUSVISION — ANSWERS-LIST CHECKBOX (fir-hidden)
+Signature DOM : `div.answers.answers-list` > N `div.element.clickableCell`
+Chaque cellule : `input[type="checkbox"].fir-hidden` (CSS-masqué) + `span.fir-icon` + `label[for=inputId]`
+Signal de sélection : `span.fir-icon.selected` dans la cellule (PAS `input.checked` — non mis à jour par Decipher).
+Domaine observé : selfserve Nielsen (selfserve/540/…), extrait par `_extract_focusvision_answers_list_groups`.
+Flag payload : `focusvision_answers_list=True`.
+
+### _apply_by_target_id — bloc decipher_clickable_cell checkbox
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `if resolved_itype == "checkbox":`, après idempotence, avant Toluna Runtime.
+Guard (double) :
+  1. `el.evaluate_handle(closest('.clickableCell')).as_element()` retourne un ElementHandle non-null
+  2. `cell.querySelector("input[type='checkbox'].fir-hidden")` présent dans la cellule
+Patterns couverts :
+- Extraction de l'input id depuis le XPath via `re.search(r'@id=["\']([^"\']+)["\']', xp)`
+- Clic via `label[for=inp_id].click()` JS — déclenche les handlers natifs Decipher (fir-icon toggle)
+- Fallback si label absent : `_click_candidate(decipher_cell, "decipher_clickable_cell")`
+- Vérification post-clic via `document.getElementById(inp_id)` (DOM frais, jamais stale) :
+  `inp.checked` OU `cell.querySelector('.fir-icon').classList.contains('selected')`
+- Fallback vérif si pas d'id extractible : `_is_decipher_mx_collapsible_checkbox_selected(decipher_cell)`
+Note DOM critique : `_click_candidate` sur `.clickableCell` est inopérant (pas d'event listener JS sur ce wrapper).
+  Le clic doit impérativement cibler `label[for=id]` pour activer les handlers Decipher.
+  Le handle `decipher_cell` peut être stale après clic (re-render DOM) — vérification via getElementById obligatoire.
+Patterns exclus :
+- `div.mx-stage .mx-collapsible-container` présent → `_is_decipher_mx_collapsible_checkbox_selected` (branche MX)
+- `input[type='radio']` → chemin radio distinct (`decipher_radio_clickable_cell`, cf. ci-dessous)
+- Inputs natifs interactables (non fir-hidden) → chemin générique `_click_candidate`
+
+### _apply_by_target_id — bloc decipher_radio_clickable_cell (radio)
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `if resolved_itype == "radio":`, juste après le bloc checkbox `decipher_clickable_cell` ci-dessus.
+Guard : `el.closest('.clickableCell')` non-null ET `cell.querySelector("input[type='radio'].fir-hidden")` présent.
+Problème résolu : même layout answers-list que la variante checkbox (input natif masqué CSS dans `.clickableCell`, label sibling), mais en `itype=radio`. Avant ce patch, aucun bloc dispatcher dédié ne couvrait ce cas : le clic retombait sur le chemin générique `radio_main`, dont `_first_input_under()` ne trouve pas l'input (masqué), et qui rapportait malgré tout `apply ok=true` sans vérification DOM fiable — l'option réellement sélectionnée restait alors celle par défaut (1ère de la liste) au lieu de la valeur demandée.
+Patterns couverts :
+- Extraction de l'input id depuis le XPath via `re.search(r'@id=["\']([^"\']+)["\']', xp)`
+- Clic via `label[for=inp_id].click()` JS — déclenche les handlers natifs Decipher (fir-icon toggle), même logique que la variante checkbox
+- Fallback si label absent : `_click_candidate(decipher_radio_cell, "decipher_radio_clickable_cell")`
+- Vérification post-clic via `document.getElementById(inp_id)` (DOM frais) : `inp.checked` OU `cell.querySelector('.fir-icon').classList.contains('selected')`
+- Aucun succès rapporté sans que cette vérification passe (pas de faux positif comme avec `radio_main`)
+Patterns exclus :
+- `input[type='checkbox'].fir-hidden` → bloc `decipher_clickable_cell` (checkbox, ci-dessus)
+- Inputs natifs interactables (non fir-hidden) → chemin générique `_click_candidate` / `radio_main`
+
+---
+
+## PLATEFORME : ALCHEMER / SURVEYGIZMO (sg-question, table.sg-table)
+Signature DOM : conteneur `div.sg-question-*` / `table.sg-table`, inputs `id`/`name` de forme `sgE-{surveyId}-{...}`.
+Cas observé : liste de champs texte ("un item par case", ex. rappel de marques), question et instruction de saisie
+concaténées dans le même bloc texte (ex. `<div>...question...?<br><em>Please enter one brand per box...</em></div>`).
+
+### Filtre "validation_instruction" — exception chaîne mixte question+instruction
+Fichier : Survey/dom_analyzer.py
+Emplacement : bloc `# --- [PATCH SSI/Confirmit] Filtrer les instructions de validation ---`, branche
+`elif _is_validation_instruction(question):`, avant le `continue` / log `[SINGLES_SKIP] validation_instruction`.
+Guard : `"?" in question` sur la chaîne concaténée déjà classée `_is_validation_instruction=True`.
+Patterns couverts :
+- Chaînes mixtes où un intitulé de question réel (terminé par `?`) précède une instruction de saisie
+  (ex. "Please enter one brand per box...") — la présence de `?` signale un contenu question exploitable,
+  le rejet total est annulé (`pass` au lieu de `continue`).
+- Sans ce guard : les N inputs texte de la liste étaient tous skippés (`[SINGLES_SKIP] validation_instruction`),
+  puis `[DOM_ONLY_ABORT] detector_no_match` → page entière non extraite, clic CTA "Next" sans réponse saisie.
+Patterns exclus :
+- Chaînes composées uniquement d'une instruction de validation, sans `?` (aucun contenu question détectable)
+  → rejet maintenu via `continue` (comportement inchangé).
+- Ne couvre pas les cas où l'instruction elle-même contiendrait un `?` sans question réelle associée
+  (non rencontré à ce jour — signal `?` traité comme heuristique généraliste, pas un cas Alchemer-only).
+
+### _extract_table_matrix_radio_rows — guard table sge_like masquée + dédup exact
+Fichier : Survey/dom_extractors_misc.py (guard), Survey/dom_analyzer.py (consommation `table_matrix_sge_exact_names`)
+Cas observé : page à questions séquentielles dans le même DOM (ex. Q18 NPS actif + Q19 matrice
+sge_like 13 lignes/5 colonnes encore `display:none`, révélée plus tard sans rechargement).
+Guard : `getBoundingClientRect()` de la table + siblings du parent. Si aucune surface visible :
+`_is_hidden_dedup_only=True` — la branche `sge_like_matrix` émet alors un bloc marqueur
+`{"_sge_dedup_only": True, "sge_row_names": [...]}` (noms EXACTS des radios, pas le préfixe)
+au lieu du bloc `itype=matrix` envoyé à l'IA. `dom_analyzer.py` route ce marqueur vers
+`table_matrix_sge_exact_names` (jamais dans `question_blocks`), utilisé plus loin pour bloquer
+le pipeline générique radio-par-name sur ces mêmes lignes.
+Patterns couverts :
+- Table sge_like visible → bloc `itype=matrix` unique inchangé (comportement historique)
+- Table sge_like masquée sans contexte visible → 0 bloc exposé à l'IA, mais ses noms de radio
+  exacts bloquent le groupement générique (évite les 13 blocs radio "row: col" parasites)
+Patterns exclus :
+- Noms EXACTS utilisés (pas le préfixe `sge-<survey>-<qid>`) pour ne pas bloquer une autre
+  question sge_like du même préfixe sur la même page (ex. Q18 NPS)
+- Table sge_like visible avec sibling visible dans le parent (ex. BankedSA customChoice) →
+  jamais marquée dedup-only, chemin normal inchangé
+
+### _extract_alchemer_sg_table_checkbox_matrix_block
+Fichier : Survey/dom_extractors_misc.py (extraction), Survey/dom_analyzer.py (appel avant le
+pipeline générique, ajout des préfixes de ligne à `table_matrix_sge_prefixes` pour bloquer le
+groupement générique checkbox par name).
+Cas observé : matrice checkbox Alchemer/SurveyGizmo (`fieldset.sg-question.sg-type-table.sg-type-table-checkbox`
+> `table.sg-table`), lignes = attributs, colonnes = marques, chaque cellule un `<input type="checkbox">`
+avec un `name` unique par cellule (`sge-<surveyId>-<pageId>-<rowId>-<colId>`, 4 groupes de chiffres).
+Sans ce guard : `_extract_table_matrix_radio_rows` ne matche que `input[type='radio']` par ligne,
+donc cette matrice checkbox lui est invisible ; elle retombait dans le pipeline générique checkbox
+par name (chaque cellule = un name unique = un groupe), produisant un bloc `itype=checkbox` par
+cellule (N lignes × M colonnes blocs), chacun avec `question` polluée par la concaténation de
+toute la table (texte de tous les libellés de lignes et colonnes) via `_find_question_text_near_element`.
+Guard : `fieldset.sg-type-table-checkbox` (sélecteur CSS strict, distinct de `sg-type-table-radio`
+implicitement couvert par l'extracteur radio existant)
+Patterns couverts :
+- Question de la matrice lue depuis `legend` du fieldset (nettoyage numéro + mention required),
+  jamais depuis `_find_question_text_near_element` (évite la pollution par le contenu de la table)
+- Par ligne (`tbody tr` avec `th.sg-first-cell` pour le libellé) : 1 bloc `itype=checkbox` avec
+  toutes les colonnes comme options, `question` = "{question matrice} | {libellé ligne}"
+- Guard supplémentaire par ligne : le `name` du premier checkbox doit matcher `^sge-\d+-\d+-\d+-\d+$`
+- `option_xpath_map` ancré sur `input[@id]` (1 XPath par colonne), consommé par le dispatcher
+  via le chemin générique `option_xpath_map` (pas de stratégie de clic dédiée nécessaire)
+- `sge_row_name_prefix` (préfixe `sge-N-N-N` sans le dernier `-colId`) exposé dans `context`,
+  consommé par `dom_analyzer.py` pour peupler `table_matrix_sge_prefixes` et bloquer le
+  groupement générique checkbox sur ces mêmes lignes (même mécanisme que `table_matrix_sge`
+  pour les matrices radio cachées)
+Patterns exclus :
+- Matrices radio du même type de page (`sg-type-table-radio` ou équivalent) → `_extract_table_matrix_radio_rows`
+  / branche `sge_like_matrix` existante, non modifiée
+- Lignes avec moins de 2 checkboxes, ou name ne matchant pas le pattern à 4 groupes de chiffres
+  → ligne ignorée (pas de bloc émis pour cette ligne)
+
+### _extract_alchemer_rank_dragdrop_block
+Fichier : Survey/dom_extractors_misc.py (extraction), Survey/dom_analyzer.py (étape 0i-nonies,
+appel avant le pipeline générique singles), Survey/action_dispatcher.py (bloc dispatcher
+`payload.get("alchemer_rank_dragdrop") and resolved_itype == "checkbox"`).
+Cas observé : question de classement drag-and-drop (liste origine → liste classée), ex.
+"sélectionnez vos 3 aspects les plus importants". Chaque item de `ul[id$='-origin'] > li`
+contient un `<input type="text" aria-hidden="true">` (helper clavier) + `<label>` ; sans
+ce guard, le pipeline générique singles captait chacun de ces inputs cachés comme une
+question texte indépendante → N blocs fragmentés et incomplets au lieu d'un seul bloc.
+Guard : `div.sg-question.sg-type-rank.sg-type-rank-dragdrop`
+Patterns couverts :
+- Texte de la question depuis `div.sg-question-title` (nettoyage numéro + `*` + mention required)
+- Items depuis `ul[id$='-origin'] > li` (label + input `[type=text][aria-hidden='true']`), un seul
+  bloc `itype=checkbox` avec toutes les options, dans l'ordre DOM d'origine
+- `min_select`/`max_select` = `minimum_response` lu dans `window.SGAPI.surveyData[surveyId].questions[questionId].properties` (fallback 1 si absent)
+- Registry : `item_input_map` (label normalisé → id de l'input caché) consommé par le dispatcher
+- Dispatcher : pour chaque item choisi par l'IA, résout l'input caché via `item_input_map`
+  (lookup direct puis fuzzy), fixe `input.value = ordinal` (position 1-based dans le plan de
+  réponse) + dispatch `input`/`change` — pas de drag-and-drop simulé, Alchemer accepte la
+  valeur numérique directement sur l'input caché sortable
+- Compteur d'ordinal par question (`driver._alchemer_rank_dragdrop_counts` / `_ordinal`), réinitialisé à chaque nouveau plan
+Patterns exclus :
+- Ranking Alchemer non drag-drop (autres `sg-type-rank-*` non rencontrés à ce jour)
+- Tables sge_like matricielles → `_extract_table_matrix_radio_rows`
+
+### _try_table_matrix_sge_set (dispatcher)
+Fichier : Survey/action_dispatcher.py
+Appelé depuis : bloc matrix_intent, après _try_gridclick_matrix_set, avant le fallback visuel
+(dom_context_mapper) et le fallback générique click_matrix_cell_by_row_and_col.
+Guard : target_payload marqué table_matrix_sge (racine ou context), row_label et col_label non vides.
+Patterns couverts :
+- Localisation des `<tr>` contenant des radios `@name` via XPath explicitement préfixé "xpath="
+  (`driver.query_selector_all("xpath=//tr[...]")`) — sans ce préfixe la requête ne matche aucune
+  ligne sur ce driver (convention obligatoire, cf. Survey/input_matrix.py).
+- Matching de ligne : `tr.querySelector('th, td')` comparé à row_label normalisé.
+- Matching de colonne : égalité stricte (pas de sous-chaîne) sur `aria-label` normalisé des radios
+  de la ligne matchée — une comparaison par sous-chaîne confond "Agree"/"Disagree" ou
+  "Agree"/"Strongly Agree".
+- Transmission d'éléments DOM à `evaluate()` : toujours appeler `.evaluate(fn, arg)` directement sur
+  le handle d'élément concerné (ex. `row.evaluate(fn, col_need)`), jamais `driver.evaluate(fn, [handle, arg])`
+  (un handle imbriqué dans une liste n'est pas résolu côté JS) ni `driver.evaluate(fn)` sans transmettre
+  l'élément trouvé à l'étape précédente (sinon `_el` est `undefined` et le clic échoue silencieusement).
+Patterns exclus :
+- Pages sans flag table_matrix_sge sur le target_id → fonction retourne False immédiatement.
+
+---
+
+## UTILITAIRE : DROPDOWN BLOCK RESOLVER
+Fichier : Survey/dropdown_block_resolver.py
+Appelé depuis : Survey/action_dispatcher.py, bloc `itype == "dropdown"`, stratégie `dropdown_block` (avant `dropdown_select`).
+Rôle : associer un contexte-question → bon `<select>` ou dropdown custom → sélectionner la valeur.
+
+### _collect_dropdown_blocks
+Guard : collecte en deux passes strictement séparées.
+  Passe 1 — `<select>` natifs : `driver.query_selector_all("select")`, marqués `is_native=True`.
+  Passe 2 — customs : `[role='combobox'], [aria-haspopup='listbox'], .dropdown, .select` avec
+             exclusion immédiate de tout élément dont `tagName == "select"` (via `_el_is_select()`).
+Patterns couverts :
+- `<select>` natifs (Nielsen, Decipher, Forsta…) : options lues depuis `<option>` enfants
+- Dropdowns custom ARIA (combobox, listbox) : options lues après ouverture
+Patterns exclus :
+- `<select class="... dropdown ...">` ne doit PAS être collecté deux fois :
+  la classe CSS `.dropdown` peut matcher le sélecteur custom — `_el_is_select()` l'exclut.
+
+### _extract_label — ordre de priorité
+1. `aria-labelledby` → texte de l'élément référencé (robuste Nielsen/Decipher)
+2. `label[for=id]` — recherche globale depuis la racine
+3. `aria-label`, `placeholder`, `name` (scalaires)
+4. texte parent immédiat — UNIQUEMENT pour les dropdowns custom (jamais pour `<select>`)
+Note critique : `inner_text()` sur le parent d'un `<select>` retourne la concaténation de
+toutes les options — ce label pollué fausse le score Jaccard. La branche 4 est donc
+conditionnée à `not is_select`.
+
+### Idempotence — _selected_text_native
+Pour `is_native=True` : lit `options[selectedIndex].text` via `evaluate()`.
+NE PAS appeler `inner_text()` sur un `<select>` : retourne le texte de toutes les options.
+Pour custom (`is_native=False`) : `inner_text()` du trigger (texte visible affiché).
+
+### Sélection natif
+`select_option(label=value)` Playwright + dispatch events `input/change/blur`.
+Fallback : fuzzy match sur `Array.from(el.options)` → `select_option(value=matched_value)`.
+
+### _collect_dropdown_blocks — budget/deadline sur le scan des customs
+Constantes : `_CUSTOM_DROPDOWN_SCAN_BUDGET = 40`, `_CUSTOM_DROPDOWN_SCAN_DEADLINE_S = 3.0`.
+Problème résolu : les sélecteurs CSS de la passe 2 (`.dropdown`, `.select`) sont génériques et peuvent matcher un grand nombre d'éléments hors-scope (navbars, sélecteurs de langue, bannières cookies…). Chaque candidat coûte plusieurs aller-retours navigateur (`_visible` + `_extract_label`) ; sans borne, un DOM avec de nombreux éléments correspondants pouvait faire durer la résolution plusieurs dizaines de secondes avant de rendre la main à la stratégie suivante — aucun `time.sleep`/deadline codé en dur nulle part dans ce chemin, le coût venait uniquement du nombre d'aller-retours cumulés (accentué par la latence réseau du proxy ISP par bot).
+Fix : liste `customs` tronquée à `_CUSTOM_DROPDOWN_SCAN_BUDGET` éléments (log si dépassement), puis boucle de collecte bornée par une deadline `time.monotonic()` de `_CUSTOM_DROPDOWN_SCAN_DEADLINE_S` secondes avec abandon contrôlé et log.
+Patterns exclus :
+- Ne change rien à la passe 1 (`<select>` natifs) : pas de budget ni de deadline dessus (nombre de `<select>` par page toujours faible en pratique).
+
+---
+
+## PLATEFORME : IPSOS / WICKET — DROPDOWN NATIF BOOTSTRAP-SELECT (bs-select-hidden)
+Contexte DOM : formulaires Wicket (ex. enter.ipsosinteractive.com), champ date de naissance
+à deux `<select>` natifs (mois, année) côte à côte. Chaque `<select>` porte la classe
+`bs-select-hidden` et est rendu invisible au profit d'un widget bootstrap-select
+(bouton `.filter-option` + menu `<ul class="dropdown-menu inner">` de `<li><a>` cliquables)
+qui est le seul élément réellement visible/interactif pour l'utilisateur.
+
+### select_native_option_by_target — assignation JS directe (bypass actionability Playwright)
+Fichier : Survey/input_dropdown.py
+Guard : appelé depuis action_dispatcher.py, branche `itype == "dropdown"`, quand
+`target_payload.get("tag") == "select"` (résolution par xpath/id/alt_xpaths/name du registry).
+Bug corrigé : `el.select_option(label=...)` applique les vérifications d'actionability
+Playwright, dont la visibilité. Sur un `<select class="bs-select-hidden">`, l'élément n'est
+jamais visible au sens Playwright (le widget de substitution l'est, lui) → `select_option()`
+échoue proprement (pas d'exception qui remonte) sans jamais appliquer la valeur → la fonction
+retournait `False` ("dropdown_native_by_id échec"), et le dispatch retombait alors sur le
+chemin générique (`select_option_with_hint` → `open_dropdown_generic`), qui lui plantait sur
+`el.tag_name` (API Selenium absente d'un ElementHandle Playwright).
+Fix : remplacement de `select_option()` par une assignation JS directe via `evaluate()`
+(`sel.value = val` + dispatch `input`/`change` + `jQuery(sel).selectpicker('refresh')` si
+présent) — fonctionne indépendamment de l'état de visibilité du `<select>` et rafraîchit le
+widget bootstrap-select. Vérification post-assignation via lecture de
+`options[selectedIndex].text`.
+Patterns couverts :
+- `<select>` natif résolu par target_id du registry, visible ou non (bs-select-hidden inclus)
+Patterns exclus :
+- Ne touche pas au chemin générique `select_option_with_hint`/`open_dropdown_generic`
+  (toujours vulnérable à `el.tag_name` si jamais atteint — cf entrée dédiée plus haut) ; cette
+  fonction est un contournement en amont, pas un correctif de ce chemin-là.
+
+### execute_actions_plan — skip rescan same_qblock pour deux dropdowns consécutifs de même contexte GPT
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `rescan_between_actions`, condition `same_question_block`.
+Bug corrigé : pour une question à deux `<select>` liés (mois + année), chaque champ est un
+QID GPT distinct (pas de qid partagé comme radio/checkbox) et n'a pas de target_id commun
+(contrairement au multi_text). Le rescan DOM se déclenchait donc entre les deux actions. Or le
+texte "question" du registry embarque la valeur déjà sélectionnée du premier champ (ex.
+"... Juillet Année" après application du mois) — le rescan qui suit régénère un nouveau
+target_id pour le second champ à partir de ce texte modifié, target_id que
+`select_native_option_by_target` ne retrouve alors plus dans le registry (aucune tentative de
+résolution même journalisée), et le dispatch retombe sur le chemin générique fautif.
+Fix : `same_question_block = True` quand `itype_lower == next_itype == "dropdown"` ET le texte
+de contexte GPT (`context`, statique, non re-extrait du DOM) est identique entre les deux
+actions consécutives — signal stable contrairement au texte "question" du registry.
+Patterns exclus :
+- Deux dropdowns consécutifs de contexte différent (questions distinctes) → rescan maintenu.
+
+---
+
+## DISPATCHER GÉNÉRIQUE : MULTI_TEXT (kind="multi_text") — DÉTECTION CHAMP VIDE
+
+### _apply_by_target_id — bloc multi_text : lecture valeur DOM live
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `if kind == "multi_text" ...`, boucle `for fld in fields`, juste avant `elx.clear()` / `elx.type()`.
+Bug corrigé : `cur = elx.get_attribute("value")` lit l'attribut HTML statique, qui ne reflète pas la valeur réellement saisie via `.type()` sur le champ (reste vide après saisie) → le champ suivant du groupe était jugé "vide" à tort à chaque itération, donc toutes les valeurs retombaient sur le 1er champ, produisant une concaténation de toutes les réponses dans une seule case.
+Fix : lecture de la propriété DOM live via `driver.evaluate("(e) => e.value", elx)` au lieu de `get_attribute("value")`.
+Patterns couverts :
+- Tout bloc `kind=multi_text` générique (N champs texte indépendants partageant un même target_id de groupe), quel que soit le fournisseur — confirmé sur FocusVision/Decipher (inputs `name="ansXXX.N.M"`, ex: question "marques de luxe" à 10 champs).
+Patterns exclus :
+- N'affecte pas les extracteurs Qualtrics dédiés (`_extract_qualtrics_form_multi_text_blocks`, `_extract_qualtrics_te_matrix_multi_text_blocks`), qui ont leur propre chemin d'extraction mais partagent ce même bloc d'application dans `_apply_by_target_id`.
+
+---
+
+## PARSER OPENAI : FALLBACK LIGNE BRUTE QID UNIQUE
+Fichier : Survey/batch_response_parser.py
+Fonction : `parse_batch_response`, bloc situé après la boucle principale de parsing (avant `_coerce_to_negative_frequency_option`).
+Contexte : quand le batch ne contient qu'une seule question en attente, OpenAI répond parfois
+par une valeur nue ("9") sans l'enveloppe `QID //// target_id //// valeur //// itype //// contexte`
+et sans aucun séparateur `////`. Sans ce fallback, la ligne est ignorée : `received=0 final_count=0`,
+aucune action générée, le champ reste vide et le bot bloque en attente de saisie.
+
+### bare_single_qid_fallback
+Guard : `constraints is not None`, exactement 1 QID de `constraints` encore sans action générée,
+ET le `raw` contient exactement 1 ligne sans `////`.
+Patterns couverts :
+- N'importe quel `itype` (text, number, etc.) — pas restreint à `kind=multi_text`
+  (généralisation de l'ancien `multi_text_bare_fallback`, qui ne couvrait que ce cas).
+- Valeur récupérée depuis `qid_meta[qid]` (`target_id`, `itype`, `question`), split via `_split_values`
+  (supporte le séparateur `|` si plusieurs segments).
+Patterns exclus :
+- Plusieurs QID encore sans réponse → fallback non déclenché (ambiguïté sur la question ciblée).
+- Raw contenant plusieurs lignes sans `////` → fallback non déclenché (ambiguïté sur la ligne à utiliser).
+- Toute ligne contenant déjà `////` → traitée par le parsing principal, hors scope de ce fallback.
+
+---
+
+## TRI POST-EXTRACTION : ORDRE DOM RÉEL + PROMOTION DU BLOC VISIBLE
+Contexte : pages prescreener multi-fieldsets où plusieurs blocs coexistent dans le DOM
+(ex. surveys.insights-today.com/v1/survey/prescreener) mais où un seul est visible/actionnable
+à la fois. Sans ce tri, les blocs "groupe" (radio/checkbox) et les blocs "single" (text/dropdown)
+étaient concaténés par famille de type selon l'ordre des passes d'extraction (tous les groupes
+d'abord, puis tous les singles), et non selon leur position réelle dans le document — un bloc
+single intercalé entre deux blocs groupe dans le DOM se retrouvait systématiquement rejeté en fin
+de liste, provoquant une résolution dans le désordre (ex. la question d'âge en dropdown, positionnée
+dans le DOM entre "genre" et "revenu du foyer", extraite en tout dernier).
+
+### Tri par position DOM (`_block_dom_pos` + `sorted(...)`) — étape avant promote_visible_block
+Fichier : Survey/dom_analyzer.py
+Emplacement : juste avant le bloc `# Promote the currently visible/actionable block to position 0.`
+Guard : `len(blocks) > 1` ; collecte JS unique (`driver.evaluate`) de tous les
+`input:not([type="hidden"]), select, textarea` du document dans leur ordre DOM (`domIndex`),
+mappés par `name`/`id` (premier index rencontré conservé).
+Patterns couverts :
+- Blocs `kind=single` : position = index DOM du `name`/`id` du champ (`context.name` / `context.id`)
+- Blocs `kind=group` : position = index DOM du premier champ dont le `name` correspond au
+  suffixe de `group_key` (ex. `radio:name:household_income` → `household_income`)
+- Tri stable (`sorted` avec position d'origine en clé secondaire) : les blocs sans position
+  résolue (`2**31`) gardent leur ordre relatif d'origine, jamais projetés arbitrairement en tête
+- Ce tri s'applique sur la liste déjà extraite (post-extraction), aucune modification des
+  extracteurs individuels
+Patterns exclus :
+- Pages à un seul bloc (`len(blocks) <= 1`) → tri non déclenché
+- Blocs `kind` autre que `single`/`group` (ex. `multi_text`, `date`) → position non résolue,
+  restent dans leur ordre relatif d'origine (fallback `2**31`)
+
+### Promotion du bloc visible (`promote_visible_block`) — inchangé, exécuté après le tri
+Fichier : Survey/dom_analyzer.py
+Guard : signal `visible` de la même collecte JS — premier `fieldset` visible
+(`display`/`visibility`/`opacity`/`getBoundingClientRect`) contenant un champ interactif visible.
+Patterns couverts :
+- Repêche le bloc correspondant au champ actuellement visible/actionnable et le place en
+  position 0, après que le tri par position DOM a déjà remis le reste de la liste dans l'ordre
+  réel du document — les deux mécanismes sont complémentaires, pas redondants
+Patterns exclus :
+- Aucun `fieldset` visible détecté (`visible=None`) → position 0 déterminée uniquement par le tri DOM
+
+---
+
+## PLATEFORME : DECIPHER / FOCUSVISION — WIDGET CARD RATING (sq-cardrating)
+Signature DOM : `div.sq-cardrating-widget[data-uid]` avec bloc de configuration JS embarqué
+(`cardrating:completion`, `rows`, `cols`, `title`) dans un `<script>` frère du widget.
+Carrousel de cartes (une carte affichée à la fois, ex. logo de marque), avec un jeu unique de
+3 boutons de réponse (`.sq-cardrating-button`) partagé et réutilisé à chaque étape ; défilement
+automatique vers la carte suivante déclenché par le site après chaque sélection.
+Le widget expose également une vue de contrôle/QA cachée (`div.sq-cardrating-qa-view`,
+explicitement documentée "shown only when QA Codes are turned on"), non destinée à l'utilisateur
+final, contenant une table listant tous les éléments (rows) avec des inputs radio réels.
+
+### _extract_decipher_cardrating_blocks (nom de fonction à confirmer dans le code)
+Fichier : Survey/dom_extractors_decipher.py
+Enregistré dans : dom_analyzer.py (étape additive, avant/après le pipeline générique button_group
+et avant l'extracteur générique de groupes answers-list/matrice — ordre à confirmer dans le diff)
+Guard : présence de `div.sq-cardrating-widget[data-uid]` avec configuration `rows`/`cardrating:completion`
+lisible dans le `<script>` associé.
+Problème résolu :
+1. Le pipeline générique `button_group` produisait un bloc unique dont l'intitulé de question était
+   pollué par le texte du message de fin de séquence (`cardrating:completion`, ex. "C'est terminé !
+   Veuillez cliquer sur le bouton « Continuer »..."), normalement affiché uniquement une fois toutes
+   les cartes notées — ce message n'est pas une question et ne doit jamais être extrait.
+2. L'extracteur générique de groupes answers-list/matrice (lecture de la vue QA cachée) ne produisait
+   qu'un seul bloc fusionné pour l'ensemble des cartes (le libellé de chaque ligne, porté uniquement
+   par une image `<img alt/title>` sans texte, n'était pas différencié), au lieu d'un bloc par carte.
+Patterns couverts :
+- Un bloc `itype=radio` par élément (row) listé dans la configuration DOM du widget au moment de
+  l'extraction, avec la même question/mêmes options pour chacun, ancré sur le jeu unique de 3 boutons
+  de réponse partagé (`.sq-cardrating-button`)
+- `question` = intitulé réel de la question + instruction, suffixé par le libellé de l'élément
+  courant (`cardrating_card_label`, dérivé de l'`alt`/`title` de l'image de la carte)
+- `context.decipher_cardrating = True`, `cardrating_step_index`, `cardrating_total_steps`,
+  `cardrating_card_label`, `cardrating_widget_uid`, `is_last_carousel_item`
+- `group_key = decipher_cardrating:{uid}:card:{card_label normalisé}` (fallback `:step:{index}`
+  si `card_label` vide) — garantit un target_id distinct par carte malgré la réutilisation du même
+  jeu de boutons DOM, et surtout un target_id **stable** entre deux scans DOM successifs
+- Le nombre d'éléments extraits reflète l'état courant de la configuration DOM au moment du scan
+  (peut diminuer entre deux scans si le site retire les cartes déjà notées de sa configuration —
+  confirmé en usage réel : 5 éléments au premier scan, 4 au scan suivant après une première sélection)
+
+Correctif (clé par carte, pas par position) :
+Problème résolu : `group_key` utilisait initialement `:step:{index}`, l'index de position parmi
+les cartes *restantes*. Après application d'une réponse et retrait de la carte notée de la
+configuration DOM, les cartes suivantes glissent d'un cran (`step:1` → `step:0`, etc.). Comme
+`target_id = sha1(kind|group_key|question)`, ce glissement change le hash du target_id d'une carte
+déjà pré-calculée par le batch parser (une seule extraction en amont produit tous les target_id
+Q1..Qn), alors que la carte elle-même (et sa `question`, déjà suffixée par `card_label`) n'a pas
+changé. Conséquence observée en prod : `_apply_by_target_id` échoue silencieusement (payload absent
+du DOM_REGISTRY) dès la 2e étape du widget → fallback vers la chaîne générique radio
+(`click_decipher_grid_radio_strict` puis `radio_main`), qui rapporte `apply ok=true` malgré un
+`native_verify=ko` explicite juste avant (cf. entrée `_apply_by_target_id — cache de stratégie
+gagnante` : même symptôme de fond que le faux positif `radio_main` déjà documenté, mais cause
+différente — ici absence de resolution target_id, pas un défaut de `radio_main` lui-même).
+Correction : clé par `card_label` (identité stable de la carte) au lieu de la position `step_i`.
+Fallback conservé sur `step_i` si `card_label` est vide (évite une régression de garantie
+d'unicité dans ce cas rare, au prix de la même instabilité qu'avant pour ce cas précis uniquement).
+Patterns exclus :
+- Bloc de message de fin (`cardrating:completion`) → jamais extrait, ni par cet extracteur ni par
+  le pipeline générique button_group (guard négatif ajouté sur ce dernier)
+- Bloc issu de la vue QA cachée (`div.sq-cardrating-qa-view`, group_key `radio:name:{uid}`) → supprimé
+  par guard négatif additif dès lors que cet extracteur a produit des blocs pour le même `data-uid`
+- Widgets `sq-cardrating` sans configuration `rows`/`cardrating:completion` lisible → non couverts,
+  chemin générique inchangé
+
+---
+
+## LEÇON TRANSVERSALE : RÉSOLUTION D'ÉLÉMENT DOM DEPUIS UN SCRIPT — evaluate() vs evaluate_handle().as_element()
+Quand un script exécuté dans la page doit **retourner un élément DOM** pour qu'on agisse dessus
+ensuite côté Python (`.click()`, `.hover()`, etc.), utiliser `driver.evaluate_handle(js, arg).as_element()`,
+jamais `driver.evaluate(js, arg)`. `evaluate()` sérialise la valeur de retour : un noeud DOM redescend
+alors comme `str`/`dict` sans méthode d'interaction → `AttributeError` silencieuse dès le premier
+`.click()`, souvent absorbée par un `try/except` englobant sans log détaillé, et donc invisible sans
+diagnostic explicite. `evaluate()` reste correct pour un retour de valeur simple (bool/str/number),
+comme dans `_JS_VERIFY` de `click_kantar_rowpicker_radio`. Convention correcte déjà en usage dans
+`action_dispatcher.py` (`cell_pre`/`decipher_cell`/`decipher_radio_cell`).
+Cas confirmé et corrigé : `click_kantar_rowpicker_radio` (Survey/input_radio.py).
+Cas signalés (même convention suspectée, **non confirmés ni corrigés** — à valider individuellement
+sur DOM de référence avant tout patch, un par un) :
+- `fallback_click_radio_js_generic` (Survey/input_radio.py)
+- Bloc `decipher_ranksort_dropdown` (Survey/action_dispatcher.py)
+- Résolution `<select>` natif (Survey/input_dropdown.py) — probablement code mort post-migration
+  (mélange `execute_script`/`arguments[0]`/`evaluate` imbriqué)
+
+Cas confirmé et corrigé : bloc `DRAGDROP` (Survey/action_dispatcher.py, `handle_drag_drop_logic`) —
+voir entrée dédiée `handle_drag_drop_logic — evaluate() multi-arguments invalide` (section PureSpectrum
+drag & drop) en fin de fichier.
+Note associée (piège récurrent, même famille de bug) : ne jamais référencer `arguments[0]` dans un
+corps de script enveloppé en fonction fléchée `(arg) => {...}` — utiliser le nom du paramètre.
+
+---
+
+## LEÇON TRANSVERSALE : CONTENEUR TECHNIQUE `aria-hidden="true"` HORS-VIEWPORT (honeypot / champs QA GfK mrIWeb)
+Plateforme observée : GfK / mrIWeb (SPSSMR/HTMLPlayer), page NielsenIQ — mais le guard est
+transversal (utilisé par les chemins texte ET radio/checkbox), pas un extracteur de plateforme.
+
+### _is_hidden_offscreen_ariahidden_container
+Fichier : Survey/dom_utils.py
+Problème résolu : deux blocs parasites étaient extraits en plus de la question réellement
+affichée (un radio de consentement) — un champ texte libre ("What is your name?") et un groupe
+de 2 checkboxes ("Yes"/"No"), tous deux logés dans un conteneur `aria-hidden="true"` positionné
+en `position:fixed`/`absolute` à des coordonnées très hors du viewport (ex. `top:-999px`). Ce
+conteneur n'est ni `display:none` ni `visibility:hidden`, donc les vérifications de visibilité
+existantes (bounding rect > 0, computed style display/visibility/opacity) le laissaient passer
+comme "visible".
+Guard : remonte les ancêtres de l'élément ; si un ancêtre porte `aria-hidden="true"` ET a un
+`position` calculé `fixed` ou `absolute` ET un `getBoundingClientRect()` avec `top` ou `left`
+inférieur à -300, retourne `True` (élément à ignorer).
+Patterns couverts :
+- Champs techniques/honeypot GfK mrIWeb rendus dans le DOM mais explicitement sortis de l'arbre
+  d'accessibilité et du viewport visuel (ex. `_Q2` type=text, `_Q3` checkboxes de contrôle qualité
+  dans `<div aria-hidden="true" style="position:fixed;top:-999px;left:-999px;">`)
+Patterns exclus :
+- Techniques "visually-hidden" d'accessibilité classiques (ex. classes sr-only) : ne posent
+  jamais `aria-hidden="true"` sur ce type de conteneur, car cela les cacherait aussi aux lecteurs
+  d'écran — donc pas de faux positif attendu sur ce pattern
+- Conteneurs `display:none` (ex. `#HiddenBanners`) : déjà exclus par ailleurs (`hidden_or_system`),
+  non concernés par ce guard
+
+Deux points d'appel (additifs, un guard, deux entrées) :
+- `Survey/dom_utils.py` → `_is_actionable_visible` : appelé en tête de fonction (étape 0-bis),
+  avant les autres vérifications ; couvre le chemin "autres inputs" (texte/textarea/select/bouton)
+  dans `Survey/dom_analyzer.py`.
+- `Survey/dom_analyzer.py` → `_choice_has_visible_proxy` (fonction interne à la boucle de
+  collecte des inputs radio/checkbox) : appelé avant le fallback JS de détection de proxy visible ;
+  couvre le chemin radio/checkbox.
+
+---
+
+## PLATEFORME : IPSOS / SIMSTORE (MUI REACT) — CHOIX MULTIPLE IMAGE-ONLY (aria-labelledby)
+Signature DOM : `<ul>` MUI (`MuiList*`) contenant N `<li>` > `div[role="button"].MuiListItemButton-root`
+> `input[type="checkbox"]` (SANS `name` ni `id`, `tabindex="-1"`, `aria-labelledby="{id}"`)
++ `div[id="{id}"].MuiListItemText-root` frère contenant uniquement une `<img alt="...">` (aucun texte).
+Domaine observé : field.simstore.ipsos.com. Le libellé de chaque option n'existe qu'à travers l'`alt`
+de l'image référencée par `aria-labelledby` — aucun `label[for]`, aucun `name` partagé, aucun `id` sur l'input.
+
+### _image_labelledby_option_alt / _image_labelledby_container_sig
+Fichier : Survey/dom_extractors_misc.py
+Rôle : résolution du libellé d'une option via `aria-labelledby` → élément référencé → `img[alt]`
+(rejette si l'élément référencé contient un autre texte que l'alt) ; signature de groupement basée
+sur le plus proche ancêtre `ul/ol/[role='listbox']/[role='group']/fieldset` (substitut au `name`
+partagé, absent sur ce DOM).
+Patterns exclus : options avec `label[for]` ou texte wrapper classique → pipeline générique existant.
+
+### _extract_image_labelledby_choice_checkbox_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py (après `_extract_image_only_choice_checkbox_blocks`)
+Guard (tous requis) :
+1. `input[type='checkbox'][aria-labelledby]` sans `name`
+2. `aria-labelledby` résolu vers un élément ne contenant qu'une `img[alt]` non vide
+3. ≥2 tels inputs partageant le même conteneur ancêtre stable (signature ci-dessus)
+Patterns couverts :
+- Groupe checkbox complet extrait sans recours Vision : question + options (`alt` des images)
+- Sans cet extracteur : `options=[]` → page classée `image_selection_challenge` par
+  `_detect_image_only_unresolvable_dom` (survey_executor.py) → dom_only_abort → disqualification
+- `group_key = checkbox:image_labelledby:{group_idx}` ; flag payload : `image_only_choice_checkbox=True`
+Patterns exclus :
+- Inputs avec `name` → `_extract_image_only_choice_checkbox_blocks`
+- Libellé porté par `label[for]` ou texte wrapper → pipeline générique existant
+- Radios (non checkbox) → hors scope
+
+### option_xpath_map — résolution de clic par contenu (alt), pas par position DOM
+Fichier : Survey/dom_extractors_misc.py, fonction `_extract_image_labelledby_choice_checkbox_blocks`
+Problème résolu : l'input n'ayant ni `id` ni `name`, le repli initial vers un XPath absolu positionnel
+(`_best_xpath_for_element`, basé sur les index de `<li>`/`<div>`) ne résolvait plus rien au moment du
+clic — React re-render les indices de la liste, et l'input `tabindex="-1"` n'est de toute façon pas la
+cible cliquable réelle (widget MUI stylé, clic géré par le `div[role="button"]` ancêtre).
+Fix : XPath ancré sur le contenu, pas la position : `//img[@alt='{alt}']/ancestor::*[@role='button'][1]`
+— cible directement le conteneur cliquable (MuiListItemButton) portant l'image de l'option choisie.
+Patterns couverts :
+- Toute option dont l'`alt` est unique dans la page au sein de ce groupe (garanti par le guard 2 ci-dessus)
+Patterns exclus :
+- Aucune modification du chemin `option_xpath_map` générique existant pour les autres extracteurs
+  (`_extract_image_only_choice_checkbox_blocks` conserve son XPath par `id`/`_best_xpath_for_element`)
+
+---
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
@@ -966,3 +1901,3439 @@ Patterns exclus :
 | ResearchNow | _extract_researchnow_autoscreener_radio_blocks | extracteur générique radio | `[ng-controller*="autoScreenerController"]` + `div.parameter-rendered.single_select.tooBigForDropdown` (step 0i-octies, retour immédiat si match) |
 | Qualtrics BankedSA | _extract_table_matrix_radio_rows (patch caption/legend) | chemin _find_question_text_near_element | `table.ChoiceStructure` avec `display:none` + `caption.QuestionText` ou `fieldset > legend > .QuestionText` |
 | Qualtrics BankedSA | _extract_qualtrics_bankedsa_single_row_radio_blocks | _extract_qualtrics_choice_structure_radio_blocks | `div.customChoice` présent + exactement 1 tr.ChoiceRow (single-row) vs ≥2 ChoiceRow même name (multi-lignes Likert) || Decipher | _extract_decipher_atmrating_blocks | extracteur générique singles/text | `div.question.sq-atmrating` + `div.sq-atmrating-container span.atmrating-btn` — inputs text cachés rejetés par pipeline générique |
+| Decipher/FocusVision answers-list | decipher_radio_clickable_cell (dispatcher) | decipher_clickable_cell (dispatcher, checkbox) / radio_main générique | `input[type='radio'].fir-hidden` dans `.clickableCell` (vs `input[type='checkbox'].fir-hidden` pour la variante checkbox) — guard strict avant tout fallback générique |
+| Decipher/FocusVision card rating | _extract_decipher_cardrating_blocks | button_group générique | `div.sq-cardrating-widget[data-uid]` avec config `rows`/`cardrating:completion` lisible — retour immédiat si match, guard négatif additif sur button_group pour ce widget |
+| Decipher/FocusVision card rating | _extract_decipher_cardrating_blocks | extracteur générique answers-list/matrice (vue QA) | même `data-uid` de widget déjà couvert par `_extract_decipher_cardrating_blocks` → bloc `radio:name:{uid}` de la vue QA cachée supprimé par guard négatif additif |
+| Ipsos/simstore MUI | _extract_image_labelledby_choice_checkbox_blocks | _extract_image_only_choice_checkbox_blocks | inputs SANS `name` + libellé résolu via `aria-labelledby` (vs inputs avec `name` + wrapper label/parent direct) |
+| Ask&Answer/FirstInsight | _extract_askandanswer_ranking_dragdrop_blocks | _extract_askandanswer_selection_list_questions | `data-question-type='RANKING_DRAG_AND_DROP'` + `div.cdk-drop-list`/`div.cdk-drag` (vs `mat-selection-list`/`mat-radio-group`) — les deux sont fusionnés (non exclusifs) par dom_analyzer.py étape 0c, pas de retour anticipé |
+| QDTech/KuaiJueCe | _extract_qdtech_qdradio_icon_choice_blocks | extracteur générique input/role radio-checkbox | `.radio-ctn` + `i[class*='qd-radio']` sans input natif ni role (vs input[type=radio/checkbox]/[role=radio/checkbox] pour le chemin générique) — retour anticipé si match |
+| QDTech/KuaiJueCe | _extract_qdtech_qdcheckbox_icon_choice_blocks | _extract_qdtech_qdradio_icon_choice_blocks | `i[class*='qd-checkbox']` (choix multiple) vs `i[class*='qd-radio']` (sélection unique) sous le même conteneur `.radio-ctn` — sélecteurs d'icône disjoints, aucun recouvrement ; libellé résolu via l'ancêtre commun `.radio-ctn-body-list-item` (vs parent/grand-parent direct pour la variante radio) |
+
+---
+
+## PLATEFORME : GfK / mrIWeb (HTMLPlayer) — QUESTION TEXTAREA SINGLE
+Signature DOM : `form#mrForm` (SPSSMR/mrIWeb.dll), question single dans `div.que_txa` contenant
+un unique `<textarea name="_QQSeqMatchQuestion" id="_Q{N}">` (ex. question anti-inattention
+"tapez le texte exactement tel qu'il est affiché").
+
+### execute_action — inclusion itype "textarea" dans le dispatch générique TEXT/NUMBER
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `# 🟦 TEXT / NUMBER / TEXTAREA`, juste avant le log terminal `no_strategy`.
+Guard : `itype in ("text", "number", "textarea")` (avant le patch : `("text", "number")` seul).
+Problème résolu : pour un bloc résolu `itype="textarea"` (question single avec un unique
+`<textarea>`), une valeur de réponse valide et non vide était bien résolue en amont, mais
+`execute_action` ne reconnaissait "textarea" dans aucun itype de son dispatch générique — le
+pipeline tombait directement sur `log_info("apply ok=false reason=no_strategy ...")` sans jamais
+appeler `fill_text_input`, alors que `_apply_by_target_id()` gérait déjà en interne
+`resolved_itype in ("text", "textarea", "number")` (lignes ~3775/3851) pour les chemins qui en
+dépendent (ex. `multi_text`). Le chemin générique post-`_apply_by_target_id` (celui qui appelle
+directement `fill_text_input`) était le seul encore fermé à "textarea".
+Correction : ajout de `"textarea"` au tuple d'entrée du bloc générique. `fill_text_input`
+(Survey/input_text.py) ciblait déjà `textarea` dans son sélecteur DOM (`selector` inclut
+`textarea`) — aucune modification de `fill_text_input` ni d'aucun extracteur existant.
+Patterns couverts :
+- Tout bloc `itype="textarea"`, kind `single`, dont le `target_id`/`_apply_by_target_id` ne
+  résout rien (pas d'option map applicable) → retombe sur `fill_text_input` via `context.id`
+  (même mécanisme que text/number, cf. entrée `execute_action — passage context.id →
+  fill_text_input` plus haut dans ce fichier)
+Patterns exclus :
+- Aucun changement de comportement pour "text"/"number" (tuple additif, pas de retrait)
+- Blocs textarea déjà résolus en amont par `_apply_by_target_id` (ex. `multi_text`) → chemin
+  inchangé, ce patch ne concerne que le fallback générique post-target_id
+Note : aucun CTA touché par ce patch (saisie de champ uniquement).
+
+---
+
+## LEÇON TRANSVERSALE : `is_selected()` INEXISTANT SUR PLAYWRIGHT — FAUX NÉGATIF SILENCIEUX SUR CHECKBOX/RADIO MASQUÉS EN CSS
+
+Détecté sur : GfK / mrIWeb (HTMLPlayer/SPSSMR), widget "mrMultiple", checkbox à choix multiple
+(conteneur `dom_container:span|mrquestiontable`, target_id de groupe). Le guard transversal
+ci-dessous n'est pas limité à cette plateforme : toute question radio/checkbox dont l'`<input>`
+natif est stylé `visibility:hidden`/masqué en CSS (widget custom re-stylé visuellement, très
+courant) était concernée.
+
+### `_is_selected` (Survey/action_dispatcher.py) et `is_checked` (Survey/input_utils.py)
+Problème résolu : les deux fonctions appelaient `el.is_selected()` — méthode Selenium, jamais
+migrée lors du passage à Playwright, **inexistante** sur `ElementHandle`/`Locator` Playwright.
+L'appel levait donc systématiquement une `AttributeError`, avalée par un `try/except` qui
+retournait `False` par défaut — indépendamment de l'état réel de l'input. Résultat observé :
+un `<input type="checkbox">` réellement coché (propriété DOM live `checked=true` confirmée par
+instrumentation, sur un nœud vérifié non-stale) était en permanence rapporté comme non coché.
+Toutes les stratégies de clic ultérieures considéraient donc l'action comme un échec et
+enchaînaient des fallbacks génériques (ex. `click_radio_by_label` en repli checkbox, tentative
+`kantar_rowpicker`) qui finissaient par décocher la case déjà correctement cochée — symptôme
+observable : case cochée puis décochée à chaque option, `apply ok=false reason=no_strategy` final
+pour chaque option du groupe, alors que le tout premier clic avait réellement fonctionné.
+Correction : remplacement de `el.is_selected()` par `el.is_checked()` (méthode Playwright native
+qui lit l'état "checked" réel sans wait d'actionability/visibilité — valide donc aussi pour les
+inputs masqués en CSS). Aucune autre stratégie de clic ni logique de fallback modifiée.
+Patterns couverts :
+- Tout `input[type=checkbox|radio]` dont l'état "checked" doit être vérifié après une tentative
+  de sélection, y compris quand l'input est natif mais masqué visuellement (`visibility:hidden`,
+  `position:absolute` hors-écran, etc.) et remplacé par un widget stylé (icône/`span` séparé).
+Patterns exclus :
+- Éléments `role="checkbox"` sans `<input>` natif sous-jacent (ARIA custom) : toujours couverts
+  par le fallback `aria-checked` existant dans ces mêmes fonctions, chemin inchangé.
+- Éléments avec état porté uniquement par des classes CSS (ex. `is-checked`) sans `checked`
+  natif ni `aria-checked` : fallback classes existant inchangé.
+Note diagnostic : ce bug ne se manifeste jamais par une exception visible — le faux `False`
+silencieux ressemble en tout point à un problème de stratégie de clic ou de résolution DOM,
+ce qui a nécessité une instrumentation dédiée (log de l'état "checked" via requête DOM fraîche,
+indépendante de toute référence potentiellement obsolète) pour être distingué d'un problème de
+clic. Si un futur bug checkbox/radio montre un premier clic visuellement réussi suivi d'un
+décochage en cascade sur d'autres plateformes, vérifier en priorité l'état réel du DOM avant de
+suspecter la stratégie de clic elle-même.
+
+---
+
+## MODULE TRANSVERSAL : CTA_HANDLER.PY — DÉTECTION/CLIC NAVIGATION GÉNÉRIQUE
+
+### try_click_navigation_cta — exclusion structurelle des conteneurs de réponse radio/checkbox
+Fichier : Survey/cta_handler.py
+Emplacement : boucle de constitution des candidats CTA génériques (XPath `nav_xpath`), juste après
+le filtre d'exclusion `ancestor::ps-footer` et avant le filtre `disabled_patterns`.
+Guard : `el.query_selector_all("input[type='radio'], input[type='checkbox']")` non vide — le candidat
+encapsule au moins un input radio/checkbox descendant.
+Patterns couverts :
+- Faux positif générique : `nav_xpath` inclut l'alternative `//*[@tabindex and not(self::input or
+  self::textarea or self::select)]`, qui matche tout conteneur focusable non-input — y compris les
+  widgets de réponse à une question stylés en bouton (ex. `td.confirmit-abtn[tabindex="0"]` enveloppant
+  un `input[type=radio]` masqué + `label`, pattern Confirmit/Wix "AnswerButtons")
+- Ces conteneurs portent un texte lisible (le label de l'option, ex. "Un homme"), ce qui leur permet de
+  passer le filtre "doit contenir un mot-clé de navigation" (ce filtre ne s'applique que si le texte est
+  vide) sans jamais être vérifiés comme candidats de navigation légitimes
+- Ils accumulent ensuite un score suffisant (classe contenant la sous-chaîne "btn", `tabindex="0"`,
+  `ancestor::form`) pour dépasser le score du vrai bouton de navigation quand celui-ci n'a ni id/name/texte
+  correspondant aux mots-clés de scoring reconnus
+- Symptôme observé : le clic CTA cible de façon répétée l'option de réponse au lieu du bouton de
+  navigation réel — la sélection déjà validée bascule entre les options à chaque tentative de clic CTA,
+  sans jamais progresser vers la page suivante (`PROGRESSED=false` en boucle, URL inchangée)
+- Un vrai CTA de navigation (button/input[submit]/a) n'encapsule jamais un input radio/checkbox de
+  réponse à une question ; ce signal structurel exclut donc précisément ce cas
+Patterns exclus :
+- Candidats sans input radio/checkbox descendant → filtre inopérant, scoring et sélection inchangés
+- Aucun changement au scoring ni aux autres filtres existants (Askia, Forsta, Toluna nav wrapper,
+  AreYouNet, Decipher, IntelliSurvey, MRIWeb, ps-next-button, etc.) — patch additif, exclusion structurelle
+  uniquement
+
+### try_click_navigation_cta — résolution du contexte de frame actif (_resolve_ctx) avant recherche de candidats
+Fichier : Survey/cta_handler.py
+Bug corrigé : la fonction interrogeait `driver.query_selector_all(...)` directement (recherche de CTA
+Askia/MetrixLab/Forsta/Toluna/AreYouNet/Decipher/RSCH, filtre encuesta, et surtout la boucle générique
+`nav_xpath`), sans jamais résoudre le contexte de frame actif. Sur un frameset (ex. Ipsos/mrIWeb,
+`frame#mainFrame` + `frame#leftFrame`), ces requêtes portaient donc systématiquement sur le document
+racine de la frameset — même quand `switch_to_frame_chain` (frame_utils.py) avait positionné
+`driver._current_frame` sur `frame#mainFrame` — et n'atteignaient jamais le document enfant contenant
+le vrai bouton de navigation.
+Symptôme observé : `[CTA_NAV] CTA_FOUND CLICK_IMPOSSIBLE candidates=1 tried=0` en boucle (une fois par
+chaîne de frame explorée par `try_click_navigation_cta_any_context`/`_in_each_frame_recursive`), sans
+qu'aucun clic ne soit jamais tenté, alors que la sélection radio en amont (action_dispatcher.py déjà
+corrigé, cf. entrée précédente de ce fichier) réussissait normalement. Cause : le xpath générique
+`//*[@tabindex and not(self::input or self::textarea or self::select)]` matchait `frame#leftFrame`
+(porteur d'un `tabindex="-1"` dans le document racine), seul candidat retenu, avec un score de 0
+(aucun mot-clé de navigation, aucun signal structurel) — donc rejeté par le seuil minimal avant tout
+clic. Le vrai bouton (`input[type=submit].mrNext` value="Suivant") dans `frame#mainFrame` n'était
+jamais interrogé.
+Correction : ajout de `_ctx = _resolve_ctx(driver)` en tête de fonction (helper déjà utilisé ailleurs
+dans le fichier, `getattr(driver, "_current_frame", driver)`), et remplacement de tous les appels
+`driver.query_selector_all(...)` du corps de la fonction par `_ctx.query_selector_all(...)` — y compris
+la requête `nav_xpath` principale. Le scroll précédant le clic (`el.evaluate(...)` au lieu de
+`driver.evaluate(..., el)`) s'appuie désormais sur le handle d'élément lui-même, intrinsèquement lié à
+son frame d'origine, donc correct quel que soit le contexte au moment du clic.
+Patterns couverts :
+- Tout DOM avec frameset/frame où le CTA de navigation réel est situé dans un document enfant distinct
+  du document racine (Ipsos/mrIWeb confirmé ; même mécanisme que pour l'extraction/sélection déjà
+  documentée plus haut dans ce fichier).
+Patterns exclus :
+- Hors contexte multi-frame, `_current_frame` est absent → `_resolve_ctx` retombe sur `driver` :
+  comportement strictement identique à avant ce patch pour toutes les plateformes sans frameset.
+- Aucun changement au scoring, aux filtres d'exclusion existants, ni à l'ordre des motifs
+  spécifiques (Askia, MetrixLab/Toluna, Forsta, AreYouNet, Decipher, RSCH, encuesta) — patch
+  uniquement sur le document interrogé, pas sur la logique de sélection du candidat.
+
+Diagnostic associé : confirmé en conditions réelles sur insights.ipsosinteractive.com (Ipsos/mrIWeb),
+question SA native dans `frame#mainFrame`. Avant patch : `CTA_FOUND CLICK_IMPOSSIBLE candidates=1
+tried=0` en boucle, aucune progression. Après patch : candidat `input[type=submit].mrNext` détecté et
+cliqué dans le bon contexte de frame, progression confirmée vers la page suivante.
+
+Statut : patch validé.
+
+---
+
+## PLATEFORME : IPSOS-NORM MUI REACT (dialog-question)
+Signature DOM : bandeau technique `<div id="tr-check" style="display:none">This is an ipsos-norm survey</div>`.
+Question rendue dans `div.dialog-question[-vertical]` contenant `div.text-container.question-text`
+(texte de question) ET `ul` d'options bouton, tous deux enfants directs du même conteneur.
+Options : `li` > conteneur cliquable (`role="button"` `tabindex="0"`, sans input radio/checkbox natif,
+sans `name` partagé) > 2 niveaux imbriqués > `div.option-text` (texte affiché).
+
+### _is_mui_dialog_question_optimal_container
+Fichier : Survey/dom_analyzer.py
+Emplacement : boucle `for b in btn_like`, juste avant l'appel à `_resolve_button_group_container`.
+Guard : `cont.get_attribute("class")` contient `dialog-question` ET `cont.query_selector(".text-container.question-text")` non null.
+Problème résolu : sans ce guard, `_resolve_button_group_container` remontait le conteneur résolu
+jusqu'au `<ul>` d'options seul (premier ancêtre où ≥2 boutons visibles sont trouvés) — ce `<ul>`
+exclut le texte de question, sibling du `<ul>` et non de ses ancêtres directs. `_extract_question_from_container(ul)`
+ne trouvait alors que les options (filtrées comme telles) → question vide → bloc entier abandonné silencieusement.
+Patterns couverts :
+- Conteneur `div.dialog-question[-vertical|-text]` déjà optimal (question + options dans le même scope) : le patch court-circuite `_resolve_button_group_container` et conserve `cont` tel quel.
+Patterns exclus :
+- Conteneurs sans classe `dialog-question` → `_resolve_button_group_container` inchangé
+- `div.dialog-question` sans `.text-container.question-text` descendant (cas non rencontré à ce jour) → non couvert, chemin existant
+
+### _mui_dialog_question_option_text_xpath
+Fichier : Survey/dom_analyzer.py
+Emplacement : construction de `option_xpath_map`, boucle `for b in btns`, juste après le calcul de `xp` via `_best_xpath_for_element`, avant l'affectation dans le dict. Appelée uniquement si `_is_mui_dialog_question_optimal_container(cont)` est vrai.
+Guard : `b.query_selector(".option-text")` non vide (texte affiché de l'option lisible).
+Problème résolu : `_best_xpath_for_element` produit un xpath absolu positionnel (`/html/body/.../ul/li[2]/div`).
+Cet index devient invalide après un re-render React (ex. réponse déjà appliquée sur une autre question de la page,
+ou classe `Mui-selected` togglée sur une autre option) → "element not found for xpath" au moment du clic,
+alors que l'extraction avait réussi. Le fallback générique suivant (`click_kantar_rowpicker_radio`, cherche un
+"overlay" par label dans une structure de carte/rowpicker) est structurellement inadapté à ce DOM et échoue aussi
+("overlay_not_found") → `apply ok=false reason=no_strategy` malgré une extraction correcte.
+Fix : xpath ancré sur le contenu (`div.option-text` avec le texte exact de l'option), remontée à l'ancêtre
+`[@role='button'][1]` (conteneur cliquable réel) — même famille de correctif que
+`_extract_image_labelledby_choice_checkbox_blocks` (résolution par `alt`, pas par position).
+Patterns couverts :
+- Options dans un conteneur validé par `_is_mui_dialog_question_optimal_container`, avec un `.option-text` non vide et un texte stable entre extraction et clic
+Patterns exclus :
+- Conteneurs non `dialog-question` (guard parent) → `xp` reste le xpath positionnel `_best_xpath_for_element` d'origine, chemin générique inchangé
+- Lignes `tr` (lookup tables) → hors scope (`_btns_are_tr` exclu explicitement)
+- Options sans `.option-text` descendant → `xp` reste positionnel (pas de dégradation, juste pas d'amélioration)
+
+---
+
+## MISE A JOUR : IPSOS-NORM MUI REACT (dialog-question) — clic
+Statut : la résolution par XPath ancré sur `.option-text` (`_mui_dialog_question_option_text_xpath`,
+section précédente) reste utilisée pour peupler `option_xpath_map` à l'extraction, mais n'est plus
+le mécanisme réellement emprunté au clic pour les blocs radio de ce widget : le dispatcher court-circuite
+ce chemin via le flag `mui_dialog_question_option` (voir ci-dessous). Le XPath text()-based s'est révélé
+non fiable au clic ("element not found for xpath") malgré une correspondance textuelle apparente et un
+préfixe "xpath=" correct — cause exacte non isolée avec certitude (nœud texte/normalisation), non retestée
+depuis le remplacement.
+
+### click_mui_dialog_question_option (Survey/input_radio.py)
+Fichier : Survey/input_radio.py (fonction), déclenchement additif dans Survey/dom_analyzer.py et
+Survey/action_dispatcher.py.
+Guard DOM strict : au moins un `.dialog-question .option-text` présent dans le document.
+Mécanisme : résolution par comparaison de texte normalisée exécutée en JS côté page
+(`document.querySelectorAll('.dialog-question .option-text')`, normalisation casse/espaces/NFKC),
+`node.closest('[role="button"]')` pour remonter au conteneur cliquable réel — aucun XPath. Récupération
+via `evaluate_handle(...).as_element()` (ElementHandle cliquable), même convention que
+`click_kantar_rowpicker_radio`. Vérification post-clic : présence de la classe `Mui-selected` sur le
+conteneur `role='button'` correspondant au libellé.
+Déclenchement (additif, ordre de priorité) :
+- dom_analyzer.py : à l'enregistrement du bloc, si `_block_itype == "radio"` et
+  `_is_mui_dialog_question_optimal_container(cont)` est vrai → `_reg_ctx["mui_dialog_question_option"] = True`
+  (registry), en plus de `option_xpath_map` (toujours peuplé, non utilisé au clic pour ce flag).
+- action_dispatcher.py, chemin générique radio (avant résolution XPath) : si
+  `payload.get("mui_dialog_question_option")` et `resolved_itype == "radio"` → appel direct de
+  `click_mui_dialog_question_option`, retour immédiat (bypass total du chemin XPath/option_xpath_map).
+- action_dispatcher.py, bloc `itype == "radio"` (fallback générique après échec de la stratégie dédiée) :
+  si `_tp.get("mui_dialog_question_option")` → retour `False` direct, pas de fallback générique
+  (`radio_main`/`radio_buttonish`/`click_kantar_rowpicker_radio`) — même logique defensive que
+  `kantar_rowpicker_radio` (éviter un faux positif d'une stratégie générique non fiable sur ce DOM).
+Patterns couverts :
+- Bloc radio dont le conteneur est validé par `_is_mui_dialog_question_optimal_container` — options
+  `div[role="button"]` sans input natif, libellé porté par `.option-text`
+Patterns exclus :
+- Blocs non radio (checkbox notamment) sur ce même widget — non couverts par ce flag, chemin générique
+  inchangé
+- Conteneurs non validés par `_is_mui_dialog_question_optimal_container` → chemin XPath/option_xpath_map
+  générique inchangé
+Validé sur run réel (clic + navigation CTA) le 24/07/2026.
+
+---
+
+## MISE A JOUR : IPSOS-NORM MUI REACT (dialog-question) — variante checkbox
+
+Statut : le même widget `dialog-question` peut aussi se présenter en sélection multiple, avec
+une case à cocher native (`input[type="checkbox"]`) visible dans chaque option — signal absent
+de la variante radio décrite dans les sections précédentes. Sans ce patch, ce cas était détecté
+comme itype=radio/max_select=1 (comportement par défaut du bloc button_group générique), ce qui
+limitait artificiellement le nombre de valeurs renvoyables alors que la question autorisait
+plusieurs sélections.
+
+### Détection itype checkbox — `_is_mui_dialog_checkbox`
+Fichier : Survey/dom_analyzer.py
+Emplacement : boucle btn_groups, juste après le calcul de `_is_choice_multiple` (guard
+interview-layout `ChoiceMultiple_ChoiceFields` / `image-select`), avant l'affectation de
+`_block_itype`/`_block_max_select`.
+Guard DOM strict : `_is_mui_dialog_question_optimal_container(cont)` vrai ET au moins un
+`input[type="checkbox"]` présent dans le conteneur `.dialog-question` (évalué uniquement si
+`_is_choice_multiple` est faux, donc jamais concurrent avec le guard interview-layout).
+Mécanisme : `_block_itype` devient `"checkbox"` (et `_block_max_select = len(options)`) si
+`_is_choice_multiple` OU `_is_mui_dialog_checkbox` est vrai — extension additive de la condition
+existante, aucune branche radio existante modifiée.
+Patterns couverts :
+- Widget `dialog-question` avec options portant un `input[type="checkbox"]` natif visible
+  (ex. question "Veuillez sélectionner toutes les réponses qui s'appliquent")
+Patterns exclus :
+- Widget `dialog-question` variante radio (options `div[role="button"]` sans input natif) →
+  `_is_mui_dialog_checkbox` reste faux, chemin radio existant inchangé
+- Tout conteneur non validé par `_is_mui_dialog_question_optimal_container` → non évalué
+
+### Flag registry — `mui_dialog_question_checkbox_option`
+Fichier : Survey/dom_analyzer.py
+Emplacement : juste après l'enregistrement du flag `mui_dialog_question_option` (variante radio),
+dans le même bloc `_reg_ctx`.
+Guard : `_block_itype == "checkbox" and _is_mui_dialog_checkbox`.
+Flag strictement distinct du flag radio existant — jamais posé simultanément (mutuellement
+exclusifs via `_block_itype`).
+
+### click_mui_dialog_question_checkbox_option (Survey/input_radio.py)
+Fichier : Survey/input_radio.py (fonction distincte, n'affecte jamais `click_mui_dialog_question_option`).
+Guard DOM strict : conteneur validé par `_is_mui_dialog_question_optimal_container` ET au moins un
+`.dialog-question input[type="checkbox"]` présent (posé en amont dans dom_analyzer.py).
+Mécanisme : même résolution par comparaison de texte normalisée en JS que la variante radio
+(`.dialog-question .option-text`, le XPath positionnel étant invalidé par le re-render React),
+mais ciblage direct de l'`input[type="checkbox"]` de l'option (via `li.querySelector('input[type="checkbox"]')`)
+au lieu de l'overlay `[role="button"]`. Vérification déterministe via `input.checked === true`
+(plus fiable sur ce widget que la classe `Mui-selected` utilisée côté radio). Court-circuite si
+l'option est déjà cochée (`already_checked`, idempotent pour les dispatchs multi-valeurs).
+Déclenchement (additif, ordre de priorité) :
+- action_dispatcher.py, chemin dédié checkbox (avant `_apply_by_target_id`, même schéma que
+  `kantar_rowpicker_checkbox`) : si `_p.get("mui_dialog_question_checkbox_option") and itype ==
+  "checkbox"` → `skip_apply_by_target_id = True`, appel direct de
+  `click_mui_dialog_question_checkbox_option`, retour immédiat (pas de fallback générique sur échec —
+  même logique défensive que la variante radio et que `kantar_rowpicker_checkbox`).
+Patterns couverts :
+- Bloc checkbox dont le conteneur est validé par `_is_mui_dialog_question_optimal_container`, avec
+  options portant un `input[type="checkbox"]` natif dans leur `li`
+Patterns exclus :
+- Bloc radio du même widget (`mui_dialog_question_option`) → chemin dédié radio inchangé
+- Conteneurs non validés par `_is_mui_dialog_question_optimal_container` → chemin générique checkbox
+  inchangé (`_apply_by_target_id` / stratégies génériques)
+Validé sur run réel (sélection multiple + navigation CTA) le 24/07/2026.
+
+### _handle_topsurveys_genial_reward_popup
+
+Fichier : Survey/functions.py
+
+Rôle : détecte et ferme un popup de récompense/remerciement TopSurveys dont le
+bouton de validation affiche "Genial", sans forcer de navigation après
+fermeture (le flux appelant reprend son cours normal).
+
+Garde DOM (strict) : bouton visible dont le texte normalisé (accents retirés,
+minuscule, espaces de bord retirés) == "genial". Recherche prioritaire via
+button[data-test-id='ps-common-actions-button'], fallback sur tous les
+boutons visibles de la page si le sélecteur ciblé ne matche pas.
+
+Intégration pipeline : appelée en priorité 0 (avant Mystery boxes et
+"Bon travail !") depuis _handle_topsurveys_exclusion_popup, elle-même
+invoquée depuis :
+  - main.py → run_attach_takeover() (mode ATTACH)
+  - Survey/survey_executor.py
+  - Survey/survey_handler.py
+aux moments de chargement de la page listing TopSurveys, de retour dessus,
+ou de retour après clic sur un sondage.
+
+Patterns couverts : popup de bonus périodique / remerciement avec bouton
+libellé "Genial" (DOM de référence : classe periodic-bonus-popup,
+data-test-id="ps-periodic-bonus-popup" / "ps-periodic-bonus-close").
+
+Patterns exclus (gérés par les branches existantes, non modifiées) :
+  - Mystery box popup (data-test-id^="ps-mystery-box-item-button")
+  - Popup "Bon travail !" (texte "bon travail" / "tu as partiellement
+    repondu" / "credite ton compte")
+
+CTA : clic conditionné par is_cta_intercept_only() (config.py). Comportement
+vérifié identique en mode attach et en mode prod : False par défaut dans les
+deux cas, sauf activation explicite de CTA_INTERCEPT_ONLY par variable
+d'environnement.
+
+Compatibilité mode ATTACH : validée. driver est le même objet Page Playwright
+qu'en mode normal (obtenu via connect_over_cdp dans
+attach_browser_playwright), et la fonction n'utilise que des méthodes
+Playwright standard (query_selector_all, is_visible, inner_text, click).
+Aucune divergence de comportement entre les deux modes.
+
+Budget : 1 scan de détection, 1 tentative de clic (timeout clic explicite
+3000ms — ajouté ultérieurement, cf. module TOPSURVEYS_POPUP_RESOLVE ci-dessous ;
+absent à l'origine, c'était la cause racine du blocage sur popups superposés).
+Retourne False si le bouton n'est pas trouvé.
+
+Statut : patch validé. Appel unitaire (1 scan, 1 clic) conservé tel quel —
+c'est désormais _resolve_topsurveys_popups qui la ré-invoque en boucle pour
+gérer le cas des popups superposés (voir module ci-dessous).
+
+---
+
+## MODULE TRANSVERSAL : TOPSURVEYS_POPUP_RESOLVE — RE-SCAN BORNÉ POUR POPUPS SUPERPOSÉS
+
+Contexte : au retour sur app.topsurveys.app, deux popups peuvent s'afficher
+simultanément et superposés (ex. récompense "Genial" + résultat de sondage
+"Bon travail !"/"Complète"), dans un ordre d'apparition non déterministe
+d'une session à l'autre. L'ancienne logique (scan + 1 tentative de clic par
+type de popup, sans re-scan après échec/succès) restait bloquée quand le
+popup détecté en premier n'était pas celui au premier plan : clic intercepté
+("element intercepts pointer events") jusqu'au timeout par défaut Playwright
+(~30s, aucun timeout explicite sur le chemin "Genial"), et le popup
+réellement visible n'était jamais traité.
+
+### _resolve_topsurveys_popups
+
+Fichier : Survey/functions.py
+
+Rôle : boucle de re-scan bornée (budget `_TOPSURVEYS_POPUP_RESOLVE_MAX_ATTEMPTS
+= 5`) qui, à chaque itération, réévalue l'état de la page et tente de fermer
+UN popup connu (ordre de priorité par itération : popup de qualification
+["Participer"] → arrêt immédiat, pas notre responsabilité ; sinon "Genial" ;
+sinon boîte mystère ; sinon "Bon travail !"/"Complète"), puis boucle à
+nouveau — que la tentative ait réussi ou échoué. S'arrête dès qu'aucun popup
+connu n'est détectable (état stable) ou si la page quitte topsurveys.app.
+Abandon contrôlé avec log `[TOPSURVEYS_POPUP_RESOLVE]` (via `for...else`) si
+le budget est épuisé sans état stable atteint. Ne navigue jamais elle-même —
+retourne un dict `{genial_closed, mystery_box_closed, bon_travail_closed}` à
+l'appelant, qui décide de la navigation (une seule fois, après stabilisation).
+
+Patterns couverts :
+- Tout enchaînement/superposition des 3 popups connus (Genial, boîte mystère,
+  Bon travail), quel que soit l'ordre d'apparition.
+
+Patterns exclus :
+- Popup de qualification ("Participer", div.popup.integration-script-popup)
+  → jamais fermé par ce mécanisme, cf. _topsurveys_qualification_popup_active
+  ci-dessous (décision : garde dédiée conservée en parallèle, non absorbée).
+
+### _close_topsurveys_bon_travail_popup_once
+
+Fichier : Survey/functions.py
+
+Rôle : une seule tentative de détection+fermeture du popup "Bon travail !"
+(bouton "Complete", data-test-id='ps-common-actions-button'), extraite telle
+quelle de l'ancienne priorité 2 de _handle_topsurveys_exclusion_popup.
+Appelée à chaque itération de _resolve_topsurveys_popups.
+
+Garde course DOM inchangée : re-vérifie _topsurveys_qualification_popup_active
+juste avant le clic (micro-fenêtre entre "bouton trouvé" et "clic exécuté"
+au sein de CETTE itération — non couverte par le check en tête de boucle de
+_resolve_topsurveys_popups, qui protège l'inter-itération).
+
+CTA : timeout clic réduit de 5000ms à 3000ms (délai court, cf. règle "un clic
+obstrué ne doit jamais bloquer au-delà d'un délai court"), conditionné par
+is_cta_intercept_only() (inchangé).
+
+### _topsurveys_qualification_popup_active — décision de conservation
+
+Non absorbée par _resolve_topsurveys_popups malgré le chevauchement de rôle
+apparent (les deux "surveillent" l'état popup de la page). Raison : elle
+protège une fenêtre temporelle plus fine (intra-itération, entre la détection
+du bouton "Complete" et l'exécution du clic) que celle du re-scan global
+(inter-itération, après chaque tentative complète). Elle reste donc appelée
+à deux niveaux distincts et complémentaires : en tête de boucle de
+_resolve_topsurveys_popups (évite de gaspiller une itération sur un popup
+qui a déjà été remplacé par l'écran de qualification) ET juste avant le clic
+dans _close_topsurveys_bon_travail_popup_once (protège la race originale
+documentée). Fonction elle-même non modifiée (lecture seule, inchangée).
+
+### _handle_topsurveys_exclusion_popup — refactor délégation
+
+Fichier : Survey/functions.py
+
+Rôle inchangé dans ses grandes lignes (3 priorités : boîte mystère+payout,
+"Bon travail !"+navigation+check disqualification, "Genial" seul sans
+navigation forcée), mais la phase de détection/fermeture est désormais
+entièrement déléguée à _resolve_topsurveys_popups (au lieu d'un scan+clic
+unique par branche). La navigation vers le sondage suivant
+(go_to_best_value_survey) est déclenchée une seule fois, après stabilisation
+du popup — jamais à chaque itération de résolution.
+
+Patterns exclus : aucun changement de comportement par type de popup fermé
+(payout/navigation/disqualification identiques à l'implémentation d'origine)
+— seule la robustesse de la phase de fermeture face aux popups superposés a
+changé.
+
+### go_to_best_value_survey — consolidation de la duplication
+
+Fichier : preselection/survey_navigator.py
+
+L'ancien bloc dupliqué (_handle_mystery_box_popup puis
+_handle_topsurveys_genial_reward_popup, chacun en 1 seul passage sans
+re-scan, indépendant du mécanisme de Survey/functions.py) est remplacé par un
+appel unique à _resolve_topsurveys_popups (Survey/functions.py), éliminant la
+duplication de mécanisme et bénéficiant du même re-scan borné pour les
+popups superposés au chargement/retour sur le listing.
+
+Statut : patch validé (compile-check OK). Non re-testé en conditions réelles
+au moment de cette entrée — à confirmer sur un run réel présentant la
+superposition Genial/Complète avant de considérer le diagnostic clos.
+
+### _handle_topsurveys_streak_complete_popup
+
+Fichier : Survey/functions.py
+
+Rôle : détecte et ferme la modale de fin de série quotidienne TopSurveys
+("La série est terminée"), dont le bouton de validation unique affiche aussi
+"Genial" mais dans un conteneur structurellement disjoint du popup de
+récompense périodique déjà couvert par _handle_topsurveys_genial_reward_popup
+(aucune fusion des deux, guards indépendants).
+
+Garde DOM (stricte, scopée) : conteneur `[data-test-id='streak_complete_modal']`
+visible, contenant le bouton `[data-test-id='streak-complete-modal-button']`
+visible (recherche du bouton scopée au conteneur, pas de scan page entière).
+
+Intégration pipeline : enregistrée dans _resolve_topsurveys_popups
+(Survey/functions.py), en dernière priorité additive (après Genial, boîte
+mystère, "Bon travail !"), clé de résultat `streak_complete_closed`. Aucune
+navigation forcée après fermeture — comportement identique au popup "Genial"
+seul dans _handle_topsurveys_exclusion_popup (fallthrough générique existant,
+non modifié).
+
+CTA : clic conditionné par is_cta_intercept_only() (timeout explicite 3000ms,
+même convention que _handle_topsurveys_genial_reward_popup).
+
+Statut : patch validé en conditions réelles (fermeture confirmée sur un run
+réel présentant la superposition récompense périodique + fin de série
+quotidienne, cf. entrée run_attach_preselection_takeover ci-dessous).
+
+### go_to_best_value_survey — attente bornée streak_complete_modal avant resolve
+
+Fichier : preselection/survey_navigator.py
+
+Diagnostic : sur le chemin post-login (SPA froide), la modale
+streak_complete_modal se monte via un appel API asynchrone distinct du rendu
+initial, avec un délai plus marqué qu'après un simple changement d'onglet
+(SPA déjà chaude). _resolve_topsurveys_popups ne re-scanne qu'après avoir
+fermé un popup — si aucun popup connu n'est détecté au tout premier passage,
+la boucle sort immédiatement sans revenir. Sans attente, le passage unique
+s'exécutait avant le montage de la modale et ne la voyait jamais.
+
+Correction : `page.wait_for_selector("[data-test-id='streak_complete_modal']",
+state="attached", timeout=2000)` (best-effort, silencieux si absent) juste
+avant l'appel existant à _resolve_topsurveys_popups. Lecture seule — ne ferme
+rien elle-même, aucune duplication du mécanisme centralisé. Timeout aligné
+sur celui déjà utilisé pour le bouton "Complete" dans
+_close_topsurveys_bon_travail_popup_once (2000ms).
+
+Patterns exclus : n'affecte pas la détection des autres popups (Genial,
+boîte mystère, "Bon travail !"), qui suivent le même appel _resolve_topsurveys_popups
+inchangé juste après.
+
+Statut : patch validé (compile-check OK + confirmé indirectement par le run
+réel ayant validé run_attach_preselection_takeover ci-dessous).
+
+### run_attach_preselection_takeover — résolution popups avant abandon popup_not_detected
+
+Fichier : preselection/survey_handler.py
+
+Bug corrigé : en mode ATTACH route "preselection", la fonction attendait
+uniquement le bouton d'action de présélection (best-effort 10s) puis testait
+is_topsurveys_preselection_popup(driver) ; si ce test échouait (popup
+TopSurveys connu — récompense périodique et/ou fin de série quotidienne —
+au premier plan, obstruant le popup de présélection), elle retournait
+immédiatement `False, "popup_not_detected"` sans jamais invoquer
+_resolve_topsurveys_popups ni aucun de ses handlers enregistrés. Route
+jamais couverte par le pipeline de résolution, contrairement aux routes
+"login" (go_to_best_value_survey) et "resolution"
+(_handle_topsurveys_exclusion_popup).
+
+Correction : si is_topsurveys_preselection_popup(driver) échoue une première
+fois, appel unique à _resolve_topsurveys_popups(driver) (Survey/functions.py,
+réutilisée telle quelle, non dupliquée, non modifiée) puis re-test avant de
+conclure à "popup_not_detected". Diff minimal validé explicitement avant
+application (fonction de flux, pas un extracteur).
+
+Patterns exclus : cas nominal (popup de présélection déjà seul au premier
+plan, sans popup TopSurveys superposé) — _resolve_topsurveys_popups sort au
+premier passage sans rien fermer (aucun guard de ses handlers ne matche le
+popup de présélection), surcoût négligeable, comportement inchangé.
+
+Statut : patch validé en conditions réelles (log `popup_not_detected` +
+capture montrant récompense périodique/"Genial" superposée à
+streak_complete_modal — les deux popups sont désormais fermés et la
+présélection reprend normalement).
+
+---
+
+## MODULE TRANSVERSAL : RELOAD_RETRY — RÉCUPÉRATION PAGE BLOQUÉE SANS ÉLÉMENT ACTIONNABLE (execute_survey_page)
+
+### RELOAD_RETRY (bloc inline en fin de Survey/survey_executor.py::execute_survey_page)
+
+Fichier : Survey/survey_executor.py
+
+Rôle : quand aucune stratégie de clic CTA ni aucun élément actionnable n'a pu
+être trouvé sur la page courante (fin de la cascade CTA_FALLBACK), tente un
+rechargement borné de la page en cours et relance la détection DOM
+(dom_analyzer.analyze_dom) avant d'abandonner définitivement. Cible
+principalement les pages de redirection intermédiaire figées sur un loader
+(spinner) sans contenu exploitable, y compris quand aucun signal texte
+("please wait", "veuillez patienter"...) n'est présent — c'est un mécanisme
+générique, pas basé sur du texte.
+
+Garde : `page.is_closed()` vérifié avant chaque tentative de reload — n'agit
+pas si la page/contexte est déjà fermé (reload garanti en échec dans ce cas,
+cf. TargetClosedError déjà observé sur d'autres fallbacks de navigation dans
+preselection/survey_navigator.py).
+
+Intégration pipeline : dernier recours dans execute_survey_page, après
+l'échec de toutes les phases CTA_FALLBACK (texte, ID, structurel), avant le
+retour False final (abort_reason=dom_no_match_abort). Ne modifie aucune
+stratégie CTA existante — bloc additif en fin de fonction.
+
+Budget : 2 tentatives de reload max (`_RELOAD_RETRY_MAX = 2`), 2s d'attente
+après chaque reload avant re-détection. Si un bloc actionnable est détecté
+après reload → return True (reprise normale du flux). Si les 2 tentatives
+échouent ou si la page est fermée → poursuite vers l'abandon existant
+(inchangé).
+
+Validation : mécanisme équivalent déjà validé indépendamment dans
+preselection/survey_navigator.py::_reload_and_retry_surveys_tab (même
+principe : reload borné + re-détection, sans signal texte), confirmé en
+conditions réelles sur une page de redirection tierce (new.surveylion.com)
+qui restait bloquée à 0% et a progressé normalement vers le sondage cible
+après reload.
+
+Remplace : l'ancien bloc WAIT_PAGE conditionné par la variable d'environnement
+PROXY_LATENCY_MODE (détection par signaux texte, désactivée par défaut,
+ne couvrait pas les pages bloquées sans texte identifiable). PROXY_LATENCY_MODE
+a été retiré du projet — ne plus le chercher ni le référencer dans un
+diagnostic futur.
+
+---
+
+## MODULE TRANSVERSAL : CONSENT_SCREEN_STUCK_RELOAD — RECHARGEMENT BORNÉ SUR ÉCRAN DE CONSENTEMENT BLOQUÉ (execute_survey_page)
+
+### _consent_screen_stuck_reload_retry (Survey/survey_executor.py)
+
+Fichier : Survey/survey_executor.py
+
+Rôle : couvre un cas distinct de RELOAD_RETRY (ci-dessus). Quand le
+dom_classifier détecte itype="consent_screen" à chaque itération et que le
+handler correspondant (handle_consent_screen, via action_dispatcher) retourne
+False de façon répétée sur un DOM inchangé — checkbox de consentement cochée,
+boutons CTA visibles, mais clic sans effet observable (pas de navigation, pas
+de changement DOM) — déclenche un reload borné de la page pour tenter de
+débloquer l'état. RELOAD_RETRY ne couvre pas ce cas car il ne s'invoque que
+lorsqu'aucun élément actionnable n'est détecté ; ici un consent_screen valide
+est détecté à chaque passage, donc cette branche n'est jamais atteinte.
+
+Garde : état conservé par instance driver (`id(driver)` comme clé, dict module
+`_CONSENT_SCREEN_STUCK_STATE`) car execute_survey_page est ré-invoquée à
+chaque step avec des locals réinitialisés. Signature DOM légère comparée via
+`cta_handler._dom_progress_marker(driver)` — reload déclenché seulement si la
+signature reste identique `_CONSENT_SCREEN_STUCK_BUDGET` fois consécutives
+(= 3). `driver.is_closed()` vérifié avant tout reload.
+
+Intégration pipeline : dans execute_survey_page, immédiatement après l'appel
+du handler quand `itype == "consent_screen" and not handler_result` — ne
+modifie ni handle_consent_screen ni aucune stratégie de clic CTA existante
+(bloc additif, appelé seulement en cas d'échec du handler).
+
+Budget : 3 échecs consécutifs sur la même signature DOM avant reload
+(`_CONSENT_SCREEN_STUCK_BUDGET = 3`), 2s d'attente après reload. Retourne
+toujours False (le step courant reste un échec ; la reprise se fait au step
+suivant sur un DOM frais après reload, ou retente normalement sinon). Compteur
+réinitialisé après déclenchement du reload.
+
+Contexte de détection : observé sur écran de consentement Ipsos
+(enter.ipsosinteractive.com) — logs montrant strategy=press_click_release en
+boucle avec wait_reason=timeout, target_changed=false, progressed=false,
+malgré un rendu visuel apparemment normal (checkbox cochée, CTA visibles).
+
+Statut : patch validé.
+
+---
+
+## MODULE TRANSVERSAL : CTA_NAV_BAD_KEYWORD_SUBSTRING_FALSE_POSITIVE — FAUX POSITIF FILTRE ANTI-RETOUR SUR SOUS-CHAÎNE "BACK"
+
+### try_click_navigation_cta — faux positif du filtre anti-bouton-retour sur substring "back"
+
+Fichier : Survey/cta_handler.py (boucle générique de collecte de candidats, vérification bad_keyword_check)
+
+Bug corrigé : le filtre destiné à exclure les boutons "retour/annuler/quitter/précédent"
+testait la présence des mots de la liste `bad` comme simple sous-chaîne (`in signature`)
+dans la signature de l'élément (texte + id + name + classes + href + role concaténés).
+Sur une page Ifop/SSI (s2.ifoponline.com), le seul CTA réel de la page
+(`div#next_button`, role="button") porte une classe CSS `background_primary_color`
+(couleur de fond), qui contient la sous-chaîne "back" issue de "background" — sans
+rapport avec un bouton "retour". Le filtre l'excluait donc à tort, ne laissant plus
+aucun candidat ("CTA_NOT_FOUND (no candidates)").
+
+Correction : remplacement du test de sous-chaîne par un match sur mot entier
+(`re.search(rf"\b{re.escape(b)}\b", signature)`), pour chaque mot de `bad`. `\b` s'appuie
+sur les frontières `\w` (lettres/chiffres/underscore, y compris accents Unicode) : "back"
+dans "background" n'a pas de frontière après (suivi de "g"), donc n'est plus détecté,
+tandis qu'un vrai token "back"/"retour"/"précédent" isolé (espace, tiret, début/fin de
+chaîne) reste détecté normalement.
+
+Patterns couverts :
+- Tout CTA dont un attribut (classe CSS notamment) contient accidentellement une des
+  sous-chaînes de `bad` sans former un mot entier (ex. "background", et par extension
+  tout autre attribut composé où un des mots de `bad` apparaît comme fragment interne).
+
+Patterns exclus :
+- Aucune régression sur la détection de vrais boutons "retour/annuler/quitter/précédent" :
+  ceux-ci restent détectés tant que le mot apparaît isolé (espace, tiret, ponctuation,
+  début/fin de chaîne) dans la signature.
+
+Diagnostic associé : confirmé via instrumentation temporaire [CTA_NAV_DIAG]
+(nav_xpath_matched count=5, no_candidates matched=5 retained=0
+exclusions=[bad_keyword_match=1 no_text_no_nav_keyword=3 not_visible_or_disabled=1]),
+isolant précisément le candidat exclu à tort avant correction. Après patch :
+CTA_FOUND candidate score=110, clic réussi (strategy=press_click_release), navigation
+détectée après CTA (confirmé en conditions réelles sur s2.ifoponline.com, page
+"Vous êtes... ?" → "Dans quelle tranche d'âge vous vous situez ?").
+
+Statut : patch validé.
+
+---
+
+## PLATEFORME : IFOP / SSI — WIDGET ZIP2CITY (input[type="search"].jz2c-input)
+
+Signature DOM : `div.question.text` contenant un unique `<input type="search" class="jz2c-input"
+data-prefix="{prefix}">` (sans `id` ni `name`), un `<div class="{prefix}-box">` frère vide au
+chargement, et un `<script src=".../zip2city.ifop.com/z2c.js">` dans le même conteneur `.question`.
+Widget tiers de résolution code postal → ville (host observé : s2.ifoponline.com). Des champs
+satellites cachés (`display:none`) suivent dans le DOM (ex. `{prefix}insee`, `{prefix}cp`,
+`{prefix}dep`, `{prefix}tuu`, `{prefix}tailcom`, `{prefix}typcom`) et ne sont peuplés qu'après
+sélection d'une ville dans le dropdown AJAX.
+
+### _is_ifop_zip2city_input + réclassification locale — Survey/dom_analyzer.py
+Emplacement : fonction `_is_ifop_zip2city_input` (garde-fou), appelée dans la boucle générique
+"Autres inputs" juste après `itype = _detect_itype(el)`.
+Problème résolu : `Survey/dom_utils.py::_detect_itype` ne reconnaît que
+`input_type in ("text", "email", "tel", "number", "date")` comme `itype="text"`. Le type
+`"search"` n'y figure pas → `_detect_itype` retournait `"unknown"` pour `input.jz2c-input`,
+ce qui déclenchait un `continue` silencieux (aucun log) dans le filtre
+`if itype in ("radio", "checkbox", "unknown"): continue`. Résultat : la question "code postal +
+ville" n'était jamais extraite (`question_len=0`, `extracted_blocks count=0`), malgré un champ
+visible et interactif à l'écran.
+Correction : `_detect_itype` (dom_utils.py, fonction partagée à large surface d'impact) n'est PAS
+modifiée. Réclassification strictement locale et scopée : si `itype == "unknown"`,
+`_is_ifop_zip2city_input(el)` vérifie 4 critères DOM cumulatifs (tag `input`, classe `jz2c-input`,
+`type="search"`, attribut `data-prefix` non vide, présence d'un `<script src*="zip2city.ifop.com">`
+dans l'ancêtre `.question`) ; si tous confirmés, `itype` est réassigné à `"text"` localement pour
+cet élément seulement, et un flag `ifop_zip2city_widget=True` est posé dans le registry
+(`register_target`) et dans `context` du bloc question.
+Log discriminant : `[SINGLES_DETECT] ifop_zip2city_input_detected data_prefix='{prefix}'`
+
+### selection_rule dédiée — Survey/prompt_builder.py
+Emplacement : bloc `elif ctx.get("ifop_zip2city_widget")`, au même niveau que `native_date_input`.
+Rôle : la question affichée demande "code postal + ville", mais le seul champ saisissable est le
+code postal — la ville est résolue et sélectionnée ensuite par la couche d'application, pas par le
+texte libre. Consigne renvoyée à GPT : exactement 1 valeur, code postal français 5 chiffres, sans
+séparateur `|`, sans nom de ville.
+
+### fill_ifop_zip2city_widget — Survey/input_text.py
+Rôle : stratégie de saisie dédiée (PAS `fill_text_input` générique, cet input n'a ni `id` ni
+`name` : résolution strictement par xpath via le registry). Interaction en 2 temps :
+1. Saisie du code postal (5 chiffres) dans `input.jz2c-input` via `set_input_value_with_events`
+   (déclenche la résolution AJAX du widget).
+2. Poll du `div.{prefix}-box` frère (budget `_IFOP_Z2C_DROPDOWN_MAX_POLLS=15`, intervalle
+   `_IFOP_Z2C_DROPDOWN_POLL_DELAY_S=0.3s`, soit ~4.5s) pour détecter l'apparition d'une suggestion
+   de ville (premier nœud feuille visible avec texte), puis clic dessus.
+3. Vérification du succès réel : poll du champ caché `#{prefix}cp` jusqu'à ce qu'il soit peuplé
+   (et non simplement "le clic a été exécuté sans erreur").
+Une seule stratégie, pas de fallback empilé : en cas d'échec à n'importe quelle étape (input
+introuvable, guard DOM non satisfait, div box introuvable, aucune suggestion après budget, clic
+échoué, champ caché toujours vide après clic), retourne `False` sans retomber sur
+`fill_text_input`.
+Log discriminant : `[IFOP_Z2C]` (raison précise à chaque point de sortie possible).
+
+### execute_action — routage dédié — Survey/action_dispatcher.py
+Emplacement : bloc dédié au widget zip2city Ifop, avant le dispatch générique TEXT/NUMBER/TEXTAREA.
+Guard : `target_payload.get("ifop_zip2city_widget")` truthy → appelle
+`Survey.input_handler.fill_ifop_zip2city_widget(...)` au lieu du chemin générique
+`fill_text_input`. Échec → `log_info("[TARGET]", "apply ok=false
+reason=ifop_zip2city_widget_failed ...")`, pas de fallback vers une autre stratégie de saisie.
+
+Patterns couverts :
+- Tout `input[type="search"]` portant la classe `jz2c-input`, un `data-prefix` non vide, situé
+  dans un conteneur `.question` contenant un `<script src*="zip2city.ifop.com">` (host Ifop/SSI,
+  ex. s2.ifoponline.com). Widget observé sur une question "code postal + ville".
+
+Patterns exclus :
+- Tout autre `input[type="search"]` du projet ne matchant pas les 4 critères DOM cumulatifs reste
+  classé `"unknown"` par `_detect_itype` (comportement générique inchangé — `_detect_itype`
+  elle-même n'a reçu aucune modification).
+- Les 6 champs satellites cachés (`{prefix}insee`, `{prefix}cp`, `{prefix}dep`, `{prefix}tuu`,
+  `{prefix}tailcom`, `{prefix}typcom`) restent ignorés par le chemin générique (`display:none`,
+  correctement filtrés comme `not_actionable_visible`) — ils ne sont jamais des cibles directes,
+  seulement des indicateurs de succès post-clic pour `fill_ifop_zip2city_widget`.
+
+Note diagnostic : si le dropdown ne propose aucune ville après le budget de 15 polls
+(`[IFOP_Z2C] aucune ville proposée après N polls, cp=...`), vérifier en priorité si le code postal
+transmis par GPT est un code réellement existant/résolu par le service zip2city avant de suspecter
+la mécanique de polling elle-même (le poll technique fonctionne : cause probable côté valeur
+plutôt que côté DOM/timing dans ce cas).
+
+Statut : patch validé (extraction + détection confirmées en conditions réelles sur
+s2.ifoponline.com — `[SINGLES_DETECT] ifop_zip2city_input_detected data_prefix='jz2c'`,
+`extracted_blocks count=1 itypes=['text']`, prompt GPT généré et réponse `75001` correctement
+appliquée au champ). La résolution de ville en aval (clic dropdown → champs cachés peuplés) reste
+à surveiller au cas par cas selon la validité du code postal transmis.
+
+---
+
+## PLATEFORME : IFOP / SSI CONFIRMIT — QUESTION "SELECT" NATIVE À CHECKBOXES NOMMÉES INDIVIDUELLEMENT (hid_list_)
+
+### _group_key_for_choice — regroupement via hid_list_{prefix} (ssi_confirmit_rs1_hid_list_group)
+Fichier : Survey/dom_question_extractor.py
+Guard : conteneur `div.question.select` (id `Q{n}_div`) contenant plusieurs `response_row` avec
+`div.graphical_select.checkbox` + `input[type="checkbox"]` dont le `name` est distinct par option
+(ex. `Q2_11`, `Q2_10`), ET présence d'un `input[type="hidden"][name^="hid_list_{prefix}"]` frère du
+conteneur listant les identifiants de toutes les options de la question.
+Problème résolu : sans ce guard, `_group_key_for_choice` retombait sur le `name` individuel de
+chaque checkbox (`checkbox:name:q2_11`, `checkbox:name:q2_10`), cassant une question physique unique
+en autant de blocs mono-option (`max_select=1` chacun) que d'options réelles.
+Correction : détection du `hid_list_{prefix}` (ex. `hid_list_Q2` → prefix=`q2`), vérification que
+≥2 checkboxes du conteneur partagent ce préfixe, puis retour d'une clé de groupement unique basée
+sur le préfixe commun (`checkbox:name:q2`), fusionnant toutes les options en un seul bloc.
+Log discriminant : `[DOM_GROUPING] ssi_confirmit_rs1_hid_list_group prefix={prefix} matching={n}`
+Patterns couverts :
+- Questions Ifop/SSI Confirmit natives de type `div.question.select` (non-grid) où chaque option
+  checkbox porte un `name` propre suffixé (ex. `Q{n}_{option_id}`), avec `hid_list_Q{n}` présent
+  comme marqueur DOM du regroupement logique des options.
+- `max_select` correctement dérivé pour permettre une sélection multiple (confirmé ici à 2, cf.
+  texte d'aide "Vous pouvez sélectionner jusqu'à 2 réponses").
+Patterns exclus :
+- Questions sans `hid_list_` (autres plateformes/structures) → comportement de `_group_key_for_choice`
+  inchangé pour tous les autres guards déjà en place (SPSSMR/HTMLPlayer, LimeSurvey, etc.).
+- `div.question.grid` (variante grid Decipher/SSI déjà couverte par un extracteur dédié) — non
+  concerné par ce guard.
+
+Diagnostic associé : confirmé en conditions réelles sur s2.ifoponline.com, page "Avec quel(s)
+assureur(s) avez-vous été en contact lors des 12 derniers mois ?" — avant patch : 2 blocs distincts
+(`group_8a84a03777e5` / `group_2f047f80a151`, max_select=1 chacun) ; après patch : 1 seul bloc
+(`group_d9960ff963df`, options=['Abeille', 'Un autre assureur'], max_select=2), réponse GPT correcte
+(`Abeille|Un autre assureur`) et application des 2 sélections réussie (`apply ok=true strategy=target_id`
+sur `Q2_11` et `Q2_10`, même `target_id`, rescan `same_qblock=True`).
+
+Statut : patch validé.
+
+
+---
+
+## PLATEFORME : IPSOS / mrIWeb (SHARKY) — EXTRACTION DÉCLENCHÉE AVANT FIN DE TRANSITION VISUELLE (rendu dédoublé/fantôme)
+
+### _wait_for_mriweb_ready — attente de la classe `everythingReady` sur `document.body`
+Fichier : Survey/dom_frame_selector.py (nouvelle fonction, appelée dans dom_analyzer.py::analyze_dom
+juste après `_wait_for_survey_dom`, avant `_select_best_frame_chain`).
+Guard DOM strict : n'attend QUE si `form[name="mrForm"]` est présent dans le contexte courant
+(signature mrIWeb déjà référencée dans ce fichier). Sur toute autre plateforme, retour immédiat
+sans attente ni effet de bord.
+Problème résolu : sur une page Ipsos/mrIWeb (SavePoint=NEWPARENTQUESTION, question MA à checkboxes
+`mrMultiple`/`.mrQuestionTable`), `analyze_dom()` et le détecteur de repli DOM-only de
+`survey_executor.py` retournaient tous deux zéro sur l'intégralité de leurs compteurs
+simultanément (score de contexte, choice_groups, inputs, wrappers, groups...), alors que la page
+contenait bien 6 checkboxes natives visibles et un bouton "Suivant". Cause confirmée : la page
+était encore en transition visuelle (fondu CSS opacity/transform, rendu dédoublé/fantôme observé
+à l'écran au moment précis de l'extraction) lorsque l'extraction DOM s'est déclenchée.
+`_wait_for_survey_dom` (non modifiée) ne détecte que l'absence de mutation DOM pendant `step_s` —
+un fondu CSS pur sans mutation d'attribut ni de structure après la fin du chargement peut donc être
+déclaré "stable" avant la fin réelle de la transition visuelle du template Ipsos/Sharky.
+Correction : nouvelle fonction additive qui attend, avec budget borné (timeout_s=1.5s, poll 0.1s),
+l'apparition de la classe `everythingReady` sur `document.body` (marqueur de fin de transition
+propre au template Ipsos/Sharky, ex. `class="progress-bar-minimal prevent-select no-touch
+direction-ltr everythingReady"`) avant de laisser `_select_best_frame_chain`/les extracteurs
+s'exécuter. Abandon contrôlé avec log `[DOM_CONTEXT_DEBUG] mriweb_ready_timeout` si la classe
+n'apparaît jamais dans le budget imparti (comportement alors identique à avant ce patch : pas de
+blocage).
+Log discriminant : `[DOM_CONTEXT_DEBUG] mriweb_ready_timeout timeout_s={timeout_s}` (uniquement en
+cas d'abandon).
+Patterns couverts :
+- Toute page portant `form[name="mrForm"]` (Ipsos/mrIWeb, template Sharky) où l'extraction peut se
+  déclencher pendant la transition visuelle de changement de question (fondu CSS sans mutation DOM
+  détectable), avant l'ajout de la classe `everythingReady` sur `document.body`.
+Patterns exclus :
+- Toute page sans `form[name="mrForm"]` → retour immédiat, aucun effet (`_wait_for_survey_dom`
+  seule reste inchangée pour toutes les autres plateformes).
+- `_wait_for_survey_dom` elle-même : non modifiée, aucun changement de son mécanisme de détection
+  de mutation DOM ; ce patch ajoute uniquement une attente additionnelle après son retour.
+
+Diagnostic associé : confirmé en conditions réelles sur insights.ipsosinteractive.com (Ipsos/mrIWeb),
+question MA checkbox (SavePoint=NEWPARENTQUESTION). Avant patch : `analyze_dom` et le détecteur
+DOM-only de repli retournaient 0 sur tous leurs compteurs de façon simultanée, malgré 6 checkboxes
+natives visibles à l'écran (rendu dédoublé/fantôme observé). Après patch : extraction réussie sur
+cette page.
+
+Statut : patch validé.
+
+### _find_ipsos_sharky_grid_progressive_option_label — libellé d'option pour le widget GridProgressive Ipsos/Sharky
+Fichier : Survey/dom_question_extractor.py (nouvelle fonction), appelée en complément dans
+Survey/dom_analyzer.py (bloc de construction des options, ligne ~2191-2200), uniquement si
+_find_associated_label(driver, e) n'a rien résolu pour cet élément.
+Guard DOM strict : el porte role="radio" ET classe "prog-the-answer-container" ET est un enfant
+direct de div.the-radiogroup[role="radiogroup"]. Libellé lu dans le premier span.mrQuestionText
+descendant.
+Problème résolu : sur ce widget (Ipsos/mrIWeb Sharky "GridProgressive", template iis-sharky, matrice
+progressive une ligne à la fois), aucune des stratégies existantes de _find_associated_label ne
+couvrait ce cas (pas de for=id, pas de label ancêtre/sibling, pas de .answer_options/.option_label,
+span non sibling direct — descendant imbriqué). Résultat avant patch : options=[] pour ce group_key
+("radio:name:dom:the-radiogroup"), le modèle recevait "options: (champ ouvert)" au lieu de la liste
+fermée et répondait un texte non garanti de correspondre à un libellé DOM réel.
+Correction : nouvelle fonction additive, appelée uniquement en fallback (jamais à la place de
+_find_associated_label), qui lit le span.mrQuestionText descendant du div.prog-the-answer-container.
+Patterns couverts :
+- div.the-radiogroup[role="radiogroup"] > div.prog-the-answer-container[role="radio"] avec libellé
+  dans un span.mrQuestionText descendant (Ipsos/mrIWeb Sharky "GridProgressive").
+Patterns exclus :
+- _find_associated_label : non modifiée, aucune de ses stratégies existantes touchée.
+- Tout élément role="radio" sans classe "prog-the-answer-container", ou non enfant direct de
+  div.the-radiogroup[role="radiogroup"] — retombe sur le comportement existant (options vides si
+  aucune autre stratégie ne matche).
+
+Diagnostic associé : confirmé en conditions réelles sur insights.ipsosinteractive.com (Ipsos/Sharky),
+question "À quelle fréquence est-ce que vous regardez... ChatGPT ou d'une autre IA" (target_id
+group_a2d7901b9f45). Avant patch : options_count=0, réponse GPT ("Chaque jour") non garantie de
+correspondre à un libellé DOM. Après patch : options_count=5 (options réelles transmises au modèle),
+réponse GPT ("Tous les jours") correspondant à un libellé DOM exact, sélection appliquée avec succès
+(apply ok=true strategy=radio_main, ipsos_sharky_grid_progressive: native_verify=ok).
+
+Statut : patch validé.
+
+### Variante checkbox (multi-réponses) du widget GridProgressive Ipsos/Sharky — question + libellés d'option + clic
+Fichiers :
+- Survey/dom_analyzer.py (bloc `if not question and group_key.startswith("checkbox:name:dom:")`, juste après le bloc radio équivalent)
+- Survey/dom_question_extractor.py (`_find_ipsos_sharky_grid_progressive_checkbox_option_label`, appelée en complément dans le bloc de construction des options, uniquement si `_find_associated_label` et la variante radio n'ont rien résolu)
+- Survey/input_checkbox.py (`click_ipsos_sharky_grid_progressive_checkbox`, enregistrée en position 0c dans `click_checkbox_by_label`, avant les fallbacks génériques)
+
+Guard DOM strict (identique aux trois couches) : ancêtre `.GridProgressive` portant `QSubType-MA` / `prog-type-checkbox` ; options = `div.prog-the-answer-container[role="checkbox"]` enfants directs de `div.clearfix.prog-answers-row` (pas de `div.the-radiogroup`, contrairement à la variante radio) ; libellé dans un `span.mrQuestionText` descendant.
+
+Problème résolu : sur cette variante multi-réponses du même widget Ipsos/mrIWeb Sharky "GridProgressive" que la variante radio déjà couverte, aucun des guards existants (question ni libellé d'option) n'était scopé au `group_key` `checkbox:name:dom:*` — seul `radio:name:dom:*` était couvert. Résultat avant patch : question polluée (concaténation nav "Précédent Suivant" + statement + 8 libellés d'options dupliqués + libellés de barre de progression), `options=[]` (`options_count=0`), et échec de sélection en aval (`kantar_rowpicker: overlay_not_found`, `ipsos_sharky_grid_progressive: option_not_found` — ces deux stratégies étant elles-mêmes scopées à d'autres widgets/variantes).
+
+Correction : trois branches additives strictement scopées au préfixe `checkbox:name:dom:` / `role="checkbox"`, mirroir de la variante radio, sans aucune modification des fonctions radio existantes.
+
+Patterns couverts :
+- Grille progressive Ipsos/mrIWeb Sharky, conteneur `.question-container.GridProgressive` portant `QSubType-MA`/`prog-type-checkbox`, options `div.prog-the-answer-container[role="checkbox"]` sous `div.clearfix.prog-answers-row`.
+
+Patterns exclus :
+- La variante radio (`div.the-radiogroup[role="radiogroup"]` > `div.prog-the-answer-container[role="radio"]`) : non modifiée, guards et fonctions séparés.
+- Tout élément `role="checkbox"` hors de ce guard DOM strict (pas d'ancêtre `.GridProgressive`, ou pas enfant direct de `div.clearfix.prog-answers-row`) : comportement inchangé, retombe sur les stratégies existantes.
+
+Diagnostic associé : confirmé sur une page Ipsos/mrIWeb Sharky, question "Parmi les produits suivants, lesquels avez-vous achetés..." (grille progressive, ligne "AU COURS DES 3 DERNIERS MOIS", 8 catégories de produits en options, target_id `group_04a3aca29a74`). Avant patch : `options_count=0`, question polluée par duplication, `apply ok=false reason=no_strategy`. Après patch (relecture DOM) : question résolue proprement (consigne + statement de ligne, sans doublon), 8 options extraites individuellement, stratégie de clic dédiée disponible en position 0c.
+
+Statut : patch en place — à valider explicitement en conditions réelles (prochain run sur ce type de page), notamment le calcul de `max_select` (non revu, dépend de `_compute_max_select` en dehors du périmètre de ce patch), avant de retirer cette réserve.
+
+### _should_skip_post_actions_navigation / analyze_dom — signal auto-advance pour éviter un clic CTA superflu
+Fichier : Survey/dom_analyzer.py (émission du flag, bloc de construction `_block_ctx`, group_key
+`radio:name:dom:*`), Survey/survey_executor.py (`_should_skip_post_actions_navigation`, consommation).
+Bug corrigé : sur la grille progressive Ipsos/mrIWeb "GridProgressive", le clic sur une option du
+widget radio graphique (`div.the-radiogroup`) déclenche déjà l'avance automatique vers la
+ligne/question suivante (AutoAdvanced côté page). `_should_skip_post_actions_navigation` ne
+reconnaissait pas ce pattern : sa détection générique de changement de DOM après clic radio était
+gardée par un cas de formulaire spécifique (Askia) qui ne couvre pas cette structure. Le pipeline
+tentait donc quand même un clic CTA post-réponse, sur un DOM potentiellement déjà obsolète (ligne
+suivante déjà chargée), avec en symptôme observé un message d'erreur "Veuillez fournir une réponse"
+côté page.
+Correction : dom_analyzer.py pose `_block_ctx["ipsos_mriweb_grid_progressive_auto_advance"] = True`
+lors de la construction du bloc, scopé au même guard DOM strict que la résolution de question
+existante pour ce pattern (`group_key` commençant par `radio:name:dom:` ET ancêtre
+`.GridProgressive`). `_should_skip_post_actions_navigation` ajoute une branche additive qui retourne
+`True` (skip CTA) si ce flag est présent sur un des `question_blocks`, avec le même style que les
+signaux existants (`walr_cardsort`, `studystream_auto_advance`, `qarts_autosubmit`).
+Log discriminant : `[IPSOS_GRID_PROGRESSIVE] clic radio a déjà déclenché l'avance automatique → skip CTA`
+puis `[AUTONAV] skip post-actions CTA navigation (auto-navigation déjà effectuée)`.
+Patterns couverts :
+- Grille progressive Ipsos/mrIWeb Sharky (`div.the-radiogroup` sous ancêtre `.GridProgressive`),
+  group_key `radio:name:dom:*` — même périmètre DOM que la résolution de question associée.
+Patterns exclus :
+- Tout autre bloc/pattern ne portant pas ce flag : comportement de `_should_skip_post_actions_navigation`
+  strictement inchangé (branches existantes non modifiées, ordre additif).
+- `analyze_dom` : aucune fonction d'extraction existante modifiée — ajout d'une clé de contexte
+  supplémentaire sur le bloc déjà construit, scopée au même guard DOM que la branche de résolution de
+  question voisine.
+
+Diagnostic associé : confirmé en conditions réelles sur insights.ipsosinteractive.com (Ipsos/mrIWeb),
+question "À quelle fréquence est-ce que vous regardez... ChatGPT ou d'une autre IA" (target_id
+group_82bea303f887). Avant patch : `apply ok=true strategy=radio_main` suivi d'une tentative de clic
+CTA post-réponse (pause `[LOCAL][PAUSE]` déclenchée) alors que la question suivante avait déjà avancé.
+Après patch : log `[IPSOS_GRID_PROGRESSIVE] clic radio a déjà déclenché l'avance automatique → skip CTA`
+suivi de `[AUTONAV] skip post-actions CTA navigation (auto-navigation déjà effectuée)`, aucune tentative
+de clic CTA, flux de bot fluide confirmé (capture terminal `bot:9009`).
+
+Statut : patch validé.
+
+### analyze_dom — restriction du signal auto-advance à la dernière ligne de la grille progressive
+Fichier : Survey/dom_analyzer.py (même bloc que l'entrée précédente, émission de
+`_block_ctx["ipsos_mriweb_grid_progressive_auto_advance"]`).
+Bug corrigé : le signal `ipsos_mriweb_grid_progressive_auto_advance` (cf. entrée précédente) était
+posé de façon inconditionnelle dès que le bloc correspondait au guard DOM du pattern (`group_key`
+`radio:name:dom:*` + ancêtre `.GridProgressive`), sans distinguer une ligne intermédiaire de la
+dernière ligne de la séquence progressive. Or sur la dernière ligne, le clic sur l'option ne
+déclenche PAS d'avance automatique : les contrôles de navigation internes à la grille
+(`.prog-control-next`) sont désactivés (classe `.prog-control-disabled`), et c'est le bouton de
+soumission de page réel (`input[name="_NNext"].mrNext`) qui doit être cliqué pour poursuivre. Le
+signal étant posé à tort sur cette dernière ligne, `_should_skip_post_actions_navigation` sautait le
+clic CTA alors qu'il était requis — symptôme observé : page bloquée sur "Veuillez fournir une
+réponse", bouton "Suivant" réel jamais cliqué.
+Correction : le signal n'est désormais posé que si l'ancêtre `.GridProgressive` contient au moins un
+`.prog-control-next` NON désactivé (`.prog-control-next:not(.prog-control-disabled)`), ce qui
+caractérise une ligne intermédiaire (avance interne encore possible). Sur la dernière ligne, ce
+sélecteur ne retourne rien → signal absent → clic CTA de page exécuté normalement (comportement par
+défaut, aucune branche supplémentaire nécessaire côté `_should_skip_post_actions_navigation`).
+Patterns couverts :
+- Lignes intermédiaires de la grille progressive Ipsos/mrIWeb Sharky (`.prog-control-next` présent et
+  non désactivé dans l'ancêtre `.GridProgressive`) : comportement inchangé par rapport au patch
+  précédent (signal posé, CTA sauté).
+Patterns exclus :
+- Dernière ligne de la séquence progressive (tous les `.prog-control-next` de l'ancêtre
+  `.GridProgressive` sont `.prog-control-disabled`) : signal non posé, clic CTA de page exécuté comme
+  pour tout bloc standard.
+- `_should_skip_post_actions_navigation` (survey_executor.py) : non modifiée par ce patch, la
+  correction est entièrement scopée à l'émission du signal dans dom_analyzer.py.
+
+Diagnostic associé : confirmé en conditions réelles sur insights.ipsosinteractive.com (Ipsos/mrIWeb),
+dernière ligne de la grille "France Inter" (target_id group_db9bfe8d68fb), barre de progression
+interne (`.prog-progress-bar-item[data-item-index]`) confirmant l'item courant comme dernier index de
+la séquence (`aria-selected="true"` sur le dernier `data-item-index`). Avant patch : réponse appliquée
+(`apply ok=true strategy=radio_main`) puis CTA sauté à tort, page bloquée sur "Veuillez fournir une
+réponse". Après patch : signal absent sur cette ligne, clic CTA de page réel exécuté et confirmé
+(`[CTA_NAV] CTA_CLICKED candidate score=340 PROGRESSED=true`, `[CTA_NAV] CLICKED`).
+
+Statut : patch validé.
+
+
+---
+
+## PLATEFORME : IPSOS / mrIWeb (SHARKY) — CHECKBOX "CATEGORICALCLICKIMAGES" AVEC POPUP D'AGRANDISSEMENT (CustomPopup)
+Signature DOM : conteneur `div.question-container.QType-MA...CategoricalClickImages.CustomPopup`,
+config JSON associée `customJSONproperties` avec `"questionLook": "CategoricalClickImages"` et bloc
+`"AdditionalQuestion": {"questionLook": "CustomPopup", "Popups": [{"Trigger": "#picN", ...}]}`.
+Chaque option = `<label for="_Q0_Cx">` englobant l'`<input type="checkbox">` natif ET un
+`<img id="picN" style="cursor:pointer">` (déclencheur d'agrandissement CustomPopup).
+
+### _apply_by_target_id — branche ipsos_sharky_categorical_click_images_checkbox
+Fichier : Survey/action_dispatcher.py (bloc `resolved_itype == "checkbox"`, avant l'appel générique
+`_click_candidate(el, "target")`).
+Bug corrigé : un clic réel par coordonnées (`_click_candidate`) sur le label de cette question
+atteint visuellement l'image plutôt que l'input masqué dessous, ce qui coche bien la case mais
+déclenche EN PLUS le Trigger CustomPopup de l'image (`div.CustomPopup-modalWindow.image-enlarge`
+ouverte, classe `in`, `display:block`). Cette fenêtre reste ouverte au premier plan et bloque tout
+clic ultérieur (options suivantes ET bouton CTA "Suivant"), symptôme observé :
+`CTA_FOUND ... progressed=false` puis `CTA_NOT_FOUND`.
+Correction : garde DOM stricte (ancêtre `.question-container.CategoricalClickImages.CustomPopup` +
+label[for] contenant un `img[style*="cursor: pointer"]`) qui résout l'`<input>` natif via `for=` et
+force uniquement `checked=true` + events `input`/`change` (`_dispatch_check_events`, helper
+existant), sans jamais cliquer le label ni l'image — aucun risque de déclencher le Trigger
+CustomPopup.
+Patterns couverts :
+- Toute question checkbox Ipsos/mrIWeb Sharky avec ce guard DOM exact (logos/images cliquables +
+  CustomPopup d'agrandissement).
+Patterns exclus :
+- Toute autre question checkbox Ipsos/mrIWeb (ex. GridProgressive, déjà couverte séparément) :
+  guard DOM différent, non concernée, comportement inchangé.
+- Le clic générique `_click_candidate(el, "target")` : non modifié, reste le chemin par défaut pour
+  tout élément qui ne matche pas ce guard.
+
+Diagnostic associé : confirmé en conditions réelles sur insights.ipsosinteractive.com, question
+"Parmi les marques de mode ci-dessous, desquelles avez-vous déjà entendu parler..." (target_id
+`group_2606407bf215`, 5 réponses max). Avant patch : coche de la première option (ex. "Chanel")
+ouvrait en plus la modale d'agrandissement associée, restée ouverte au premier plan après les coches
+suivantes, CTA "Suivant" introuvable/sans effet. Après patch : coche silencieuse (aucun clic
+synthétique sur le label/l'image), aucune modale ouverte, CTA cliqué avec succès.
+
+Statut : patch validé.
+
+
+---
+
+## PLATEFORME : IFOP / SSI CONFIRMIT — MATRICE "MOBILE GRID" À RADIOS GRAPHIQUES (une carte par ligne)
+
+### ssi_confirmit_mobile_grid_card — résolution de question scopée à la ligne — Survey/dom_analyzer.py
+Fichier : Survey/dom_analyzer.py (bloc de résolution de "question" par groupe, avant le fallback
+générique `_nearest_question_container` / `_extract_question_from_container`).
+Guard DOM strict : `group_key` du groupe commence par `radio:name:` (issu du pattern
+"graphical_radio_native_name" de `_group_key_for_choice`, dom_question_extractor.py) ET présence
+d'un ancêtre `.mobile_grid_card` contenant un `.row_label_cell`, lui-même situé dans un ancêtre
+`.question.grid` portant un `div.header2` enfant direct (consigne partagée de la matrice).
+Problème résolu : sur cette structure Confirmit "mobile grid" (une carte `div.mobile_grid_card`
+par ligne de matrice, chacune avec son propre radiogroup graphique), aucune branche de résolution
+de question dédiée n'existait pour le pattern `radio:name:*`. Le code retombait sur le fallback
+générique, qui remonte via `_nearest_question_container` jusqu'à `div.question.grid` — l'ancêtre
+englobant TOUTE la matrice (les 5 lignes) — puis `_extract_question_from_container` concatène les
+libellés des 5 lignes au lieu de scoper à la ligne courante, et n'inclut pas la consigne partagée
+(`div.header2`) car son texte se mêle aux lignes dans l'`inner_text()` du conteneur global.
+Résultat avant patch : les 5 blocs recevaient un `question` identique et pollué, contenant la
+concaténation des 5 intitulés de ligne, sans la consigne d'intro.
+Correction : nouvelle branche insérée avant le fallback générique, scopée au `group_key` du
+pattern `radio:name:` : lecture du `.row_label_cell` de la carte courante (`.mobile_grid_card`
+ancêtre le plus proche) pour l'intitulé de ligne, lecture du `div.header2` de l'ancêtre
+`.question.grid` pour la consigne partagée, puis `question = "{intro_txt} {row_txt}"` (ou
+`row_txt` seul si `intro_txt` absent).
+Log discriminant : `[DOM_CONTEXT] ssi_confirmit_mobile_grid_card resolved question={...}`
+
+Patterns couverts :
+- Matrices Confirmit/SSI "mobile grid" où chaque ligne est une carte `div.mobile_grid_card`
+  distincte contenant son propre widget radio graphique (`div[role="radio"]` + input radio natif
+  caché, regroupés via `_group_key_for_choice` sous `radio:name:{name}`), avec consigne partagée
+  dans `div.header2` ancêtre commun (`div.question.grid`).
+
+Patterns exclus :
+- Toute autre structure produisant un `group_key` `radio:name:*` mais sans `.mobile_grid_card`
+  et/ou sans `.row_label_cell` et/ou sans `.question.grid > div.header2` — comportement inchangé,
+  retombe sur le fallback générique existant (`_nearest_question_container` +
+  `_extract_question_from_container`), non modifiés par ce patch.
+- `_group_key_for_choice` (regroupement) et `_extract_question_from_container` (fallback
+  générique) : fonctions partagées non modifiées — ce patch ajoute uniquement une branche de
+  résolution de question additionnelle, insérée avant leur appel en dernier recours.
+
+Diagnostic associé : confirmé en conditions réelles sur s2.ifoponline.com, page "Globalement,
+considérez-vous que cette/ces démarche(s) avec cet autre assureur a/ont été facile(s) à
+réaliser ?" (échelle 1-5 TRES PEU D'EFFORT / BEAUCOUP D'EFFORT, 5 lignes : souscription, demande
+d'information, point conseiller, sinistre, devis). Avant patch : 5 blocs avec `question` identique
+concaténant les 5 libellés de ligne (`question_len=554`), sans la consigne d'intro. Après patch :
+5 blocs avec `question` correctement scopée (consigne partagée + libellé de sa propre ligne
+uniquement, `question_len=439`), réponses GPT cohérentes et application réussie sur les 5
+`target_id` (`apply ok=true strategy=target_id`).
+
+Statut : patch validé.
+
+
+---
+
+## MODULE TRANSVERSAL : SNAPSHOT DEBUG (page_snapshot.py) — CAPTURE SUR LE DOCUMENT RACINE AU LIEU DU FRAME SÉLECTIONNÉ
+
+### dump_page_snapshot — résolution du contexte de frame avant capture (snapshot_ctx)
+Fichier : Survey/page_snapshot.py
+Bug corrigé : `dump_page_snapshot()` capturait `dom_outer.html`, `dom_body.html`, `page_source.html`
+ainsi que les champs meta `title`/`ready_state`/`dom_sig` en évaluant systématiquement sur `page`
+(le document racine), sans jamais tenir compte du frame réellement sélectionné pour l'analyse de
+la question par `_select_best_frame_chain` (dom_frame_selector.py). Sur une page en frameset
+(`<frameset>` + `frame#mainFrame` contenant le vrai contenu, `frame#leftFrame` vide — ex. Ipsos/
+mrIWeb insights.ipsosinteractive.com), ces fichiers de snapshot ne contenaient donc que le squelette
+du frameset racine, jamais le contenu réel de la question, alors même que le pipeline d'extraction
+(analyze_dom) résolvait déjà correctement `frame#mainFrame` via `_ctx` (cf. entrée "analyze_dom /
+dom_extractors — passage explicite du contexte résolu (_ctx) aux extracteurs" ci-dessus).
+`_dump_frames_best_effort()` (non modifiée) dumpait déjà un DOM par frame, mais uniquement dans un
+sous-dossier `frames/` distinct — sans remplacer ni enrichir les fichiers principaux du snapshot.
+Correction : nouvelle variable `snapshot_ctx`, résolue une fois en tout début de
+`dump_page_snapshot()` via `_select_best_frame_chain(driver)` + `switch_to_frame_chain(driver,
+best_chain)` + `getattr(driver, "_current_frame", page)`, avec fallback silencieux sur `page` en cas
+d'exception ou de chain vide. `dom_outer.html`, `dom_body.html`, `page_source.html` et les champs
+meta `title`/`ready_state`/`dom_sig` sont désormais évalués sur `snapshot_ctx` au lieu de `page`.
+Patterns couverts :
+- Toute page en frameset où le contenu de question vit dans un frame enfant (`frame#mainFrame` ou
+  équivalent), jamais dans le document racine — le snapshot reflète désormais le même contexte que
+  l'extraction réelle.
+Patterns exclus :
+- Page sans frameset : `_select_best_frame_chain` retourne `best_chain == []`, `snapshot_ctx` reste
+  `page` → capture strictement inchangée.
+- `_dump_frames_best_effort()` et son dump par frame dans `frames/` : non modifiés.
+- `body_text.txt` (texte visible) et `viewport.png` (screenshot) : toujours capturés sur `page`
+  racine, non concernés par ce bug (hors périmètre du symptôme signalé).
+
+Diagnostic associé : confirmé en conditions réelles sur insights.ipsosinteractive.com (Ipsos/
+mrIWeb), page frameset `frame#mainFrame`/`frame#leftFrame`, question grid "À quelle fréquence...".
+Avant patch : `dom_body.html` ne contenait que `<frameset>`/`<frame>` (aucune trace de la question,
+des inputs radio, etc.), confirmé par comparaison avec l'inspecteur DevTools montrant le contenu
+réel sous `frame#mainFrame > #document`. Après patch : `dom_body.html` contient le `<body>` complet
+du document de `frame#mainFrame` (question, grid, inputs radio inclus).
+
+Statut : patch validé.
+
+
+---
+
+## PLATEFORME : SSI CIWWEB LEGACY (ciwweb.pl, ex. eu.surveyme.online) — QUESTION "SELECT" DONT LE TEXTE VIT DANS div.header1, FRÈRE DE div.question_body
+
+### _wait_for_ssi_ciwweb_ready
+Fichier : Survey/dom_frame_selector.py (appelée dans dom_analyzer.py::analyze_dom, juste après
+_wait_for_survey_dom / _wait_for_mriweb_ready, aux deux points d'appel existants).
+Guard DOM strict : n'attend QUE si `form#ssi-form-submit` ou `form[action*="ciwweb.pl"]` est
+présent dans le contexte courant. Sur toute autre plateforme, retour immédiat sans attente.
+Rôle : attend (budget 1.5s, poll 0.1s) que `document.body` perde la classe `element_hidden`
+(observée avec `aria-busy="true"` sur les pages ciwweb.pl) avant de laisser l'extraction
+s'exécuter. Abandon contrôlé avec log `[DOM_CONTEXT_DEBUG] ssi_ciwweb_ready_timeout` si la classe
+reste présente au-delà du budget (comportement alors identique à avant ce patch).
+Statut : ajouté en même temps que le patch validé ci-dessous (voir `ssi_confirmit_select_header1`).
+Non confirmé comme causal à lui seul — la cause racine confirmée est la résolution de conteneur de
+question (cf. entrée suivante) ; cette fonction reste une garde défensive additive et sans effet de
+bord sur les autres plateformes, conservée car elle ne casse rien de confirmé.
+
+### ssi_confirmit_select_header1 — résolution de question scopée div.header1(+header2)/div.question_body
+Fichier : Survey/dom_analyzer.py (bloc de résolution de question, juste avant le fallback générique
+`_nearest_question_container` / `_extract_question_from_container`).
+Guard DOM strict : ancêtre `div[id$="_div"]` dont la classe contient à la fois "question" et
+"select", possédant un enfant direct `div.header1` ET un enfant direct `div.question_body`
+(structure frère, pas ancêtre/descendant), pour un `group_key` préfixé `radio:name:` OU
+`checkbox:name:` (les deux group_key émis par `_group_key_for_choice` pour cette structure —
+`graphical_radio_native_name` pour le widget radio, `ssi_confirmit_rs1_hid_list_group` pour le
+widget checkbox multi-select).
+Problème résolu : sur ce pattern (widget radio/checkbox graphique + input natif caché, déjà groupés
+correctement en amont), le fallback générique `_nearest_question_container` remonte à l'ancêtre le
+PLUS PROCHE portant une classe contenant "question" — ici `div.question_body` lui-même (le mot
+"question" est un sous-token de sa classe) — qui ne contient que les libellés d'options, pas le
+texte de consigne/question situé dans les `div.header1`/`div.header2` frères. `_extract_question_
+from_container` retire ensuite ces libellés (dédup anti-option), laissant une question vide → bloc
+rejeté (`missing_question`) malgré un DOM stable et déjà rendu (confirmé : pas un problème de
+timing/chargement).
+Correction : branche insérée avant le fallback générique, scopée au guard ci-dessus : lecture du
+`div.header1` (intitulé de la question, obligatoire) et, si présent, du `div.header2` (consigne de
+sélection, ex. "Veuillez sélectionner une ou plusieurs réponses."), combinés en `"{header1} {header2}"`
+si header2 présent sinon header1 seul, validation via `_is_question_text`. Guard initialement
+scopé au seul `radio:name:*` puis étendu au même bloc pour couvrir aussi `checkbox:name:*` — même
+structure DOM sous-jacente, seul le type de widget (radio vs checkbox) diffère.
+Log discriminant : `[DOM_CONTEXT] ssi_confirmit_select_header1 resolved question={...}`
+
+Patterns couverts :
+- Pages SSI/ciwweb.pl (ex. eu.surveyme.online) de type `div.question.select`, widget radio
+  graphique (`div.graphical_select.radiobox`, single-select) OU widget checkbox graphique
+  (`div.graphical_select.checkbox`, multi-select) + input natif caché sœur, dont le texte de
+  question/consigne est porté par `div.header1` (et optionnellement `div.header2`), enfants directs
+  du même conteneur `div[id$="_div"]` que `div.question_body` (structure en frères, pas imbriquée).
+
+Patterns exclus :
+- Toute structure produisant un `group_key` `radio:name:*` ou `checkbox:name:*` sans
+  `div[id$="_div"]` matchant `.question.select`, ou sans les deux enfants directs
+  `header1`/`question_body` requis — comportement inchangé, retombe sur le fallback générique
+  existant, non modifié par ce patch.
+- `_nearest_question_container` / `_extract_question_from_container` (fallback générique) et
+  `_group_key_for_choice` (regroupements `graphical_radio_native_name` /
+  `ssi_confirmit_rs1_hid_list_group`) : fonctions partagées non modifiées — ce patch ajoute
+  uniquement une branche de résolution de question additionnelle.
+- Le pattern "mobile grid" Confirmit (`.mobile_grid_card` / `.row_label_cell` / `header2`), déjà
+  couvert par un guard distinct (`ssi_confirmit_mobile_grid_card`) — non concerné, structure DOM
+  différente (matrice vs question simple).
+
+Diagnostic associé :
+- Confirmé sur eu.surveyme.online (G5711FR, question "IntroFR" — consentement, widget radio).
+  Avant patch : `choice_groups detected=1 created=0 rejected={'missing_question': 1}`, DOM-only
+  abort malgré 2 wrappers de réponse visibles. Après patch : question résolue depuis `div.header1`,
+  2 options extraites, bloc créé.
+- Confirmé sur eu.surveyme.online (G5711FR, question "Q1" — secteurs d'activité, widget checkbox,
+  8 options, groupées via `ssi_confirmit_rs1_hid_list_group prefix=q1 matching=8`). Avant extension
+  du guard : même symptôme `missing_question` (le guard ne couvrait alors que `radio:name:*`, ce
+  cas checkbox n'était pas concerné). Après extension : question résolue en combinant `div.header1`
+  ("Veuillez indiquer si vous-même...") + `div.header2` ("Veuillez sélectionner une ou plusieurs
+  réponses."), 8 options extraites, bloc créé.
+
+Statut : patch validé.
+
+
+---
+
+## PLATEFORME : ASKIA — TEXTAREA OUVERTE SANS ID, DISCRIMINÉE PAR NAME (S52/S53)
+Signature DOM : plusieurs `<textarea>` sur une même page, aucun attribut `id`, distingués
+uniquement par leur attribut `name` (ex: name="S52", name="S53"), consigne de fin de bloc
+quasi identique entre questions ("Veuillez fournir une réponse aussi détaillée que possible").
+
+### action_dispatcher.py — lecture de target_payload à la racine (pas sous "context")
+Fichier : Survey/action_dispatcher.py, bloc TEXT/NUMBER/TEXTAREA dans execute_action.
+Bug corrigé : `_field_id` et `_name_field_id` étaient lus via `target_payload.get("context")`,
+une sous-clé qui n'existe que dans le bloc "context" envoyé au prompt GPT (structure
+imbriquée), absente du payload retourné par `get_target()`/`register_target()`
+(Survey/dom_registry.py + Survey/dom_analyzer.py, boucle singles) où `tag`/`name`/`id` sont
+des clés RACINE. Cette lecture retournait donc invariablement `{}` → `_field_id` et
+`_name_field_id` toujours `None`, quel que soit le DOM → branche de discrimination par name
+jamais activée (log : `reason=no_strategy` au lieu de `textarea_name_fallback_failed`).
+Correction : lecture directe `target_payload.get("id")` / `target_payload.get("tag")` /
+`target_payload.get("name")`.
+Patterns couverts : toute branche de ce bloc qui lit `target_payload = get_target(target_id)`
+(payload registre, pas le bloc GPT).
+Patterns exclus : aucune autre structure de payload (ex: contexte GPT nested) n'est concernée
+par ce fichier.
+
+### input_text.py — fill_text_input, résolution element_id via query_selector (pas find_element)
+Fichier : Survey/input_text.py.
+Bug corrigé : la résolution du champ par `element_id` appelait `driver.find_element("id",
+element_id)` puis `driver.find_element("name", element_id)` — API Selenium (By, valeur)
+absente de l'objet Page Playwright natif depuis la suppression du shim (migration native,
+cf. PLAYWRIGHT_NATIVE_MIGRATION.md BLOC S8). `AttributeError` systématique, avalée par le
+try/except → `field` jamais résolu par id/name malgré un `element_id` valide transmis par
+l'appelant → repli silencieux sur `driver.wait_for_selector(selector, ...)` non scopé, qui
+renvoie le premier textarea du DOM quel que soit le `target_id` demandé.
+Correction : `driver.query_selector(f"#{element_id}")` puis, si `None`,
+`driver.query_selector(f'[name="{element_id}"]')`.
+Patterns couverts : tout appel à `fill_text_input` avec `element_id` renseigné
+(text/number/textarea), y compris la branche `textarea_name_fallback` d'action_dispatcher.py.
+Patterns exclus : aucun changement aux autres stratégies de saisie de la cascade
+(send_keys/ActionChains/CDP/JS) ni à la logique de vérification finale — non concernées par
+ce patch. Ces autres appels Selenium résiduels dans la même fonction (`field.send_keys(...)`,
+`driver.execute_cdp_cmd(...)`) restent en l'état, non auditées par ce patch.
+
+Diagnostic associé : confirmé sur Critical Research / Askia (crweblab.com), page à 2
+questions ouvertes indépendantes S52/S53. Avant patch : `reason=no_strategy` puis (après le
+seul fix action_dispatcher.py, isolément) `reason=textarea_name_fallback_failed` avec Q1 non
+rempli et Q2 rempli de façon incohérente avec le log. Après les deux patchs combinés :
+`apply ok=true strategy=textarea_name_fallback reason=applied` pour Q1 et Q2, chaque
+textarea rempli avec le texte correspondant à sa propre question.
+
+---
+
+Statut : patch validé.
+## PLATEFORME : IPSOS / mrIWeb (SHARKY) — DETECTION DE PROGRESSION APRES CLIC CTA, VARIANTE GRIDPROGRESSIVE CHECKBOX
+Signature DOM : grille progressive Ipsos/mrIWeb Sharky "GridProgressive" en variante checkbox
+(`div.question-container.GridProgressive.prog-type-checkbox`), SPA sans changement d'URL entre
+sous-catégories, toutes les cases à cocher natives de toutes les sous-catégories déjà présentes
+dans le tableau caché `.no-display-answers` (une seule sous-catégorie visible à la fois via
+`.prog-answers-row` / `.prog-the-statement-inner-frame`).
+
+### cta_handler.py — _dom_progress_marker / _did_progress, signal dédié progGridSig
+Fichier : Survey/cta_handler.py.
+Bug corrigé : après un clic CTA réel (hors CTA_INTERCEPT_ONLY) qui faisait progresser la page
+vers la sous-catégorie suivante de la grille, le marqueur de progression généraliste (extrait de
+texte `#root`/body sur 220 caractères, compteur `qNodes`, signature de notification, URL) restait
+identique avant/après clic : le texte dominant les 220 premiers caractères et le nombre de noeuds
+de question ne varient pas d'une sous-catégorie à l'autre pour ce gabarit (toutes les checkboxes
+de toutes les sous-catégories sont déjà dans le DOM, seule leur sous-catégorie visible change).
+`_did_progress` retournait donc `false` malgré une progression réelle → `_click_with_intercept`
+déclenchait un second clic, puis `try_click_navigation_cta` relançait des scans de candidats CTA,
+ces tentatives supplémentaires s'exécutant sur le contenu déjà basculé sur la nouvelle
+sous-catégorie et cliquant sur de mauvaises options → erreur de validation affichée
+("Veuillez fournir une réponse").
+Correction : ajout d'un signal dédié `progGridSig` dans `_dom_progress_marker`, scopé strictement
+par le guard DOM `div.question-container.GridProgressive.prog-type-checkbox` — construit à partir
+du texte de la consigne de ligne (`.prog-the-statement-inner-frame`), des libellés d'options de la
+sous-catégorie active (`.prog-answers-row .prog-the-answer`) et de l'index de l'item actif dans la
+barre de progression (`.prog-progress-bar-item[aria-selected="true"]`). `_did_progress` compare ce
+signal avant/après clic uniquement lorsque les deux marqueurs le portent (guard matché des deux
+côtés) ; sinon le comportement générique existant (texte/qNodes/notifSig/url) reste inchangé.
+
+Patterns couverts :
+- Grille progressive Ipsos/mrIWeb Sharky, variante checkbox uniquement
+  (`.question-container.GridProgressive.prog-type-checkbox`), détection de progression après clic
+  CTA réel (hors mode CTA_INTERCEPT_ONLY).
+
+Patterns exclus :
+- Toute page où `div.question-container.GridProgressive.prog-type-checkbox` est absent : le signal
+  `progGridSig` reste une chaîne vide des deux côtés, `_did_progress` retombe intégralement sur la
+  logique générique (texte/qNodes/notifSig/url), non modifiée par ce patch.
+- La variante radio du même widget GridProgressive (`prog-type-checkbox` absent) : non couverte
+  par ce guard, comportement de détection de progression inchangé pour cette variante.
+- `_wait_post_click_stabilization` (mutations locales du CTA cliqué : stale/déconnecté/remplacé/
+  caché) : fonction partagée non modifiée, sert toujours uniquement au diagnostic/prolongation
+  d'attente, pas à la décision PROGRESSED elle-même.
+
+Diagnostic associé : confirmé en conditions réelles sur insights.ipsosinteractive.com (Ipsos/
+mrIWeb Sharky), question grille progressive checkbox "Parmi ces produits, lesquels avez-vous
+achetés..." (target_id `group_3aa7603038b5`). Avant patch : clic CTA visuellement réussi sur la
+sous-catégorie "NEUFS", logs `[CTA_CLICK] ... progressed=false` (attempt=1 et attempt=2,
+wait_reason=timeout), second clic et scans CTA suivants retombant sur la sous-catégorie
+"VINTAGE/D'OCCASION" déjà affichée → mauvaise sélection, bandeau d'erreur "Veuillez fournir une
+réponse". Après patch : `progGridSig` diffère entre les deux sous-catégories dès le premier clic,
+`_did_progress` retourne `true`, aucun second clic ni scan CTA superflu.
+
+---
+
+## PLATEFORME : BOUTONS CUSTOM `button.choice` (SANS INPUT NATIF)
+Signature DOM : `div.question-body-options__inner` > N `div.question-body-options__choice` >
+`button.choice[id]` (pas d'`<input>` natif) ; libellé dans `.choice__label` ; question dans
+`.question-title__title`.
+
+### _extract_button_choice_radio_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : Survey/dom_analyzer.py (deux points d'appel, avant `_extract_custom_testid_multi_select_checkbox_blocks`)
+Guard : `div.question-body-options__inner` avec >= 2 `div.question-body-options__choice`, chaque
+`button.choice[id]` avec libellé résolu via `.choice__label`.
+Patterns couverts :
+- Question single-choice à boutons custom sans input natif (ex. genre : Homme/Femme/Je préfère
+  ne pas répondre/Autre).
+- Option "Autre" à saisie libre sans libellé statique (`.choice__label` contient un champ
+  `contenteditable` vide, ex. `div.rename[data-cx="option-other-input"]` avec placeholder
+  "Autre") : détectée via le marqueur `[data-cx="option-other-input"]` à l'intérieur du
+  `button.choice` concerné → cette option est ignorée (skip), les autres options du même groupe
+  restent extraites normalement.
+- `group_key = button_choice_radio:{root_idx}:{crc32(button_ids)}` ; flag payload :
+  `button_choice_radio=True`, `studystream_auto_advance=True`.
+- `itype` déduit du DOM (pas figé) : `"checkbox"` si au moins un `button.choice` du groupe
+  contient un `.choice__indicator__check` (indicateur visuel case à cocher carrée) ; `"radio"`
+  sinon (défaut historique inchangé, ex. indicateur rond non matché par ce sélecteur).
+  `max_select`/`min_select` recalculés en conséquence (`_compute_max_select`/`_compute_min_select`
+  avec l'`itype` réel, ce dernier appliqué en aval dans `dom_analyzer.py`).
+Patterns exclus :
+- Tout `button.choice` sans id → abandon complet du groupe (comportement inchangé, cause non
+  identifiée à ce jour → pas de garde-fou spécifique).
+- Toute option sans libellé ET sans marqueur `[data-cx="option-other-input"]` → abandon complet
+  du groupe (signal insuffisant pour distinguer un "Autre" légitime d'un DOM cassé).
+
+Bug corrigé : avant patch, la moindre option sans libellé textuel statique (ex. l'option "Autre"
+vide tant que l'utilisateur n'a rien saisi) provoquait `options = []; break` sur la boucle
+complète du groupe → 0 bloc produit pour toute la question, malgré 3 options valides sur 4 et un
+`DOM_ONLY_ABORT` en aval, alors que l'extracteur dédié à ce pattern était bien présent et son
+gate DOM correctement matché.
+Diagnostic associé : confirmé sur DOM de référence (plateforme survey Vue.js, question "Quel est
+votre genre ?", 4 `div.question-body-options__choice` dont un `o_question-2-other` avec
+`div.rename__contenteditable` vide). Avant patch : `question_blocks.json` vide, 0 groupe créé sur
+14 éléments cliquables visibles. Après patch : bloc radio extrait avec "Homme", "Femme", "Je
+préfère ne pas répondre" (option "Autre" ignorée, sans bloquer le reste).
+
+Statut : patch validé.
+
+Bug corrigé (2) : `itype` était figé en dur à `"radio"` (et `min_select`/`max_select` à 1) pour
+tout groupe matchant ce pattern, y compris quand l'indicateur visuel réel des options était une
+case à cocher carrée (`choice__indicator__check`), signalant une sélection multiple potentielle.
+Diagnostic associé : confirmé sur DOM de référence (provider Confirmit/Forsta, question
+"Qu'est-ce qui, le cas échéant, peut donner l'impression qu'une marque est trop populaire ou
+moins spéciale ?", 13 `div.question-body-options__choice` dont chacun avec
+`span.choice__indicator__check`). Avant patch : `question_blocks.json` avec `itype="radio"`,
+`min_select=1`, `max_select=1`. Après patch : détection de l'indicateur `.choice__indicator__check`
+dans la boucle d'extraction existante → `itype="checkbox"`, `max_select`/`min_select` recalculés
+via `_compute_checkbox_max_select`/`_compute_min_select`.
+Patterns couverts (ajout) : tout groupe de ce pattern dont au moins un `button.choice` contient
+`.choice__indicator__check` → `itype="checkbox"`.
+Patterns exclus (ajout) : aucun changement pour les groupes sans `.choice__indicator__check`
+détecté sur aucun bouton → `itype="radio"` inchangé (comportement historique, y compris DOM de
+référence "Quel est votre genre ?" ci-dessus).
+Statut : patch validé (test confirmé par l'opérateur).
+
+---
+
+## MODULE TRANSVERSAL : STUDYSTREAM_AUTO_ADVANCE — FAUX POSITIFS SUR LE GARDE-FOU CTA (button_choice_radio)
+
+Contexte : les blocs produits par `_extract_button_choice_radio_blocks` (cf. section
+"BOUTONS CUSTOM `button.choice` (SANS INPUT NATIF)") portent le flag de contexte
+`studystream_auto_advance=True`. Ce flag est consommé dans `_should_skip_post_actions_navigation`
+(Survey/survey_executor.py) pour décider si le clic CTA post-réponse doit être sauté, au motif
+qu'une navigation automatique aurait déjà eu lieu après le clic sur l'option. Sur la page de
+référence (studystream.me, question "Dans lesquelles des catégories de produits suivantes..."),
+aucune auto-navigation réelle n'a lieu : la question reste affichée à l'identique après le clic,
+mais le clic CTA était systématiquement sauté, bloquant le bot en boucle sur la même question.
+
+Deux causes distinctes, corrigées ensemble :
+
+### 1. Comparaison question_text / body_text non normalisée (faux négatif "question absente")
+Fichier : Survey/survey_executor.py, `_should_skip_post_actions_navigation`, branche
+`studystream_auto_advance`.
+Bug corrigé : la vérification `question_text in body_text` comparait le texte de question déjà
+normalisé (extrait via `_norm`, qui collapse les espaces y compris les espaces insécables) au
+texte brut renvoyé par `document.body.innerText` (qui conserve les espaces insécables `\u00A0`,
+ex. avant le point d'interrogation de la question). Cette différence de représentation des
+espaces faisait échouer la recherche de sous-chaîne même quand la question était strictement
+identique à l'écran, produisant un faux "question précédente absente du DOM → navigation réelle
+confirmée" et donc un skip CTA à tort.
+Correction : les deux côtés de la comparaison passent désormais par `_norm` (Survey/dom_utils.py) :
+`_norm(question_text) in _norm(body_text)`.
+Patterns couverts : tout bloc `studystream_auto_advance=True` dont le texte de question contient
+un espace insécable ou toute autre variation d'espace normalisée différemment entre l'extraction
+et la relecture DOM post-clic.
+Patterns exclus : aucun changement pour les blocs sans ce flag, ni pour la détection par URL
+(`url_changed`), inchangée.
+
+### 2. Fallback structurel générique écrasant la décision de la branche dédiée
+Fichier : Survey/survey_executor.py, fin de `_should_skip_post_actions_navigation` (dernier bloc
+avant le `except Exception: return False` de clôture).
+Bug corrigé : une vérification structurelle générique, non conditionnée par un flag de contexte,
+retournait un résultat provoquant le skip CTA dès que la page contenait au moins 2
+`div.question-body-options__choice button.choice` — exactement la structure DOM des blocs
+`button_choice_radio`/`studystream_auto_advance`. Cette vérification s'exécutait après la branche
+dédiée `studystream_auto_advance` (qui avait déjà correctement tranché "CTA requis" via la
+vérification normalisée du point 1), et écrasait systématiquement cette décision par un simple
+comptage de boutons, sans rapport avec une navigation réelle.
+Correction : si au moins un bloc de `question_blocks` porte déjà `studystream_auto_advance=True`,
+ce fallback structurel retourne `False` (ne décide plus rien — la décision a déjà été prise plus
+haut par la branche dédiée) au lieu d'appliquer son comptage générique.
+Patterns couverts : toute page où un bloc `studystream_auto_advance=True` est présent — la
+décision revient entièrement à la branche dédiée (point 1), plus jamais écrasée par ce fallback.
+Patterns exclus : pages sans aucun bloc `studystream_auto_advance` → comportement du fallback
+structurel générique (comptage `button.choice >= 2`) inchangé.
+
+Diagnostic associé : confirmé en conditions réelles sur app.studystream.me, question "Dans
+lesquelles des catégories de produits suivantes avez-vous acheté un article de luxe...". Avant
+patch : `apply` échouait par ailleurs sur la sélection (cf. section "BOUTONS CUSTOM button.choice"),
+et même quand la sélection réussissait visuellement, le clic CTA était sauté à chaque step
+(`[STUDYSTREAM_AUTONAV] question précédente absente du DOM...` puis, après le fix point 1,
+écrasement par le fallback structurel du point 2). Après les deux correctifs : log
+`[STUDYSTREAM_AUTONAV] question toujours affichée après clic (mutation d'état de sélection
+uniquement) → CTA requis` suivi d'une tentative réelle de clic CTA (confirmé en mode local via
+la pause `[LOCAL][PAUSE] Appuie sur <Enter> pour autoriser le clic CTA`).
+
+Statut : patch validé.
+
+---
+
+## PLATEFORME : STUDYSTREAM.ME — QUESTION OUVERTE À CHAMP CONTENTEDITABLE (SANS INPUT/TEXTAREA NATIF)
+
+### _extract_studystream_contenteditable_open_text_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : Survey/dom_analyzer.py, point d'appel dédié (bloc "0i-duodecies"), avant le
+pattern générique radio/checkbox — retour anticipé (`return studystream_open_text_blocks`) si des
+blocs sont produits.
+Guard DOM strict : `div.question-body-open-text` contenant, sous un wrapper
+`[data-cx="text-input"]`, une `div.input-voice__contenteditable[contenteditable="true"]` avec un
+`id` non vide. Question résolue via `.question-title__title`, avec repli sur
+`.embed-header__sub__question-title` si absent.
+Patterns couverts :
+- Question ouverte studystream.me dont l'unique champ de saisie est une div contenteditable
+  (pas de `<input type="text">` ni `<textarea>` natif).
+- Bloc produit : `itype="text"`, `tag="div"`, `kind="single"`, flag de contexte
+  `studystream_contenteditable_open_text=True` (payload registry et bloc), `target_id` construit
+  via `make_target_id("single", f"studystream_open_text:{fld_id}", question)`.
+Patterns exclus :
+- Toute question ouverte avec input/textarea natif → non concernée, extracteurs existants
+  inchangés (`_detect_itype` continue de les couvrir normalement).
+- Conteneur `div.question-body-open-text` sans `div.input-voice__contenteditable` exploitable
+  (pas de wrapper `[data-cx="text-input"]`, ou champ sans `id`) → aucun bloc produit, abandon
+  silencieux de ce conteneur (pas de fallback générique).
+
+Bug corrigé : `_detect_itype()` (Survey/dom_utils.py) ne reconnaît que `<input>`/`<textarea>`/
+`<select>` — une div contenteditable n'était jamais candidate, `itype` restait `"unknown"`, et le
+pipeline aboutissait à un abort DOM-only malgré un champ de saisie visible et fonctionnel à
+l'écran (`clickable_visible=8`, `input_groups=0`, `visual_tiles=1`).
+Diagnostic associé : confirmé sur app.studystream.me, question "Quelles marques de luxe avez-vous
+achetées au cours des 12 derniers mois ?" (champ `div#ie_wIqbydwlyaVHIU1A.input-voice__contenteditable`).
+Avant patch : `question_blocks.json` vide, `[DOM_ONLY_ABORT] detector_no_match ... clickable_visible=8`.
+Après patch : bloc unique extrait (`itype=text`, `studystream_contenteditable_open_text=True`).
+
+Statut : patch validé.
+
+---
+
+## PLATEFORME : SSI CIWWEB LEGACY (ciwweb.pl, ex. eu.surveyme.online) — WIDGET FOOTER "SIGNALER UNE ERREUR" (custom element error-report-button)
+
+### Exclusion additive dans la boucle "Autres inputs"
+Fichier : Survey/dom_analyzer.py, boucle `# --- 2) Autres inputs (dropdown / text / textarea / button) ---`,
+juste après `itype = _detect_itype(el)`, avant tout autre filtre (y compris le guard zip2city Ifop).
+Guard DOM strict : élément dont l'hôte du shadow root (`e.getRootNode().host`) OU un ancêtre
+light-DOM (`e.closest(...)`) a pour tagName `error-report-button`. Vérifié via `el.evaluate(...)`
+(JS exécuté côté page), pas de dépendance au nom/id du champ interne.
+Log discriminant : `[SINGLES_SKIP] error_report_widget_input skipped` (conditionné `LOG_LEVEL`).
+
+Problème résolu : le custom element `<error-report-button>` (widget utilitaire de report d'erreur,
+`div.page_footer`) expose un champ interne (observé : `input[name="errorreporting"]`, souvent en
+shadow DOM, piercé automatiquement par le sélecteur CSS Playwright de la boucle générique) qui
+n'est rattaché à aucun conteneur de question réel. Le fallback générique
+(`_nearest_question_container` / `_extract_question_from_container`) remontait alors jusqu'à la
+question voisine (ex. le bloc de consentement `IntroEN`) et réutilisait son texte intégral
+(question + options concaténées) comme "question" du faux bloc, avec `itype="text"`. Résultat :
+2 blocs produits pour une page à une seule vraie question (radio, 2 options), le second étant un
+doublon fantôme du widget hors questionnaire.
+
+Patterns couverts :
+- Toute page portant un custom element `<error-report-button>` (light DOM ou shadow DOM à un
+  niveau), quel que soit le name/id du champ interne ou la locale — le garde cible le tag de
+  l'élément hôte, pas un attribut du champ.
+
+Patterns exclus :
+- Tout champ hors de ce custom element → non concerné, comportement de la boucle "Autres inputs"
+  inchangé pour tous les autres inputs/textarea/select/button/lien.
+- `_nearest_question_container` / `_extract_question_from_container` (fallback générique) et
+  `_detect_itype` : fonctions partagées non modifiées — ce patch ajoute uniquement une exclusion
+  en amont de leur appel dans cette boucle précise.
+- Le pattern `ssi_confirmit_select_header1` (résolution de question du bloc radio de consentement
+  lui-même, cf. entrée dédiée ci-dessus) : non concerné, branche de résolution différente et
+  en amont de cette boucle.
+
+Diagnostic associé : confirmé sur eu.surveyme.online (G5765_Translation, page 2, question
+"IntroEN" — consentement, widget radio graphique). Avant patch : `question_blocks.json` contenait
+2 blocs, le second `itype="text"`, `target_id` `single_fc281c12ccfe`, `context.name="errorreporting"`,
+avec le texte complet de la question `IntroEN` (question + options) comme "question". Après patch :
+un seul bloc extrait (le radio `IntroEN`), le champ `errorreporting` est ignoré silencieusement par
+la boucle "Autres inputs".
+
+---
+
+## PLATEFORME : PURESPECTRUM — DATE DE NAISSANCE (ps-date-question)
+Signature DOM : `<ps-date-question qualificationid="...">`, deux variantes rendues selon
+responsive/device, mutuellement exclusives sur un même DOM :
+- Desktop : `<ps-date-picker-select>` → `<ps-select-dropdown data-e2e="month|year">` → ng-bootstrap
+  (`div[ngbdropdown]` : `button[ngbdropdowntoggle]` + `div[ngbdropdownmenu] > button[ngbdropdownitem][data-e2e=...]`).
+- Mobile/carrousel : `<ps-date-picker-mobile>` → `<ps-select-scroll>` (roues `div.select-scroll-slide`
+  positionnées par `transform: rotateX(...) translateZ(...)`, pas de `data-e2e`, pas d'input/label natif).
+
+Trois extracteurs enregistrés dans dom_analyzer.py (ordre additif, chacun avec `return` propre en
+cas de match — pas de risque de masquage croisé confirmé, gardes CSS strictement disjoints) :
+1. `_extract_ps_select_dropdown_blocks` — garde `ps-select-dropdown[data-e2e=month|year]`,
+   itype="select"/"dropdown", flag `ps_select_dropdown=True`.
+2. `_extract_purespectrum_date_dropdown_blocks` — garde `ps-date-question[qualificationid]` +
+   mêmes dropdowns ngbdropdown (variante plus ancienne), itype="radio", flag
+   `purespectrum_date_dropdown=True`. Ne s'exécute jamais sur un DOM desktop tant que #1 matche
+   (comportement voulu, #1 prioritaire — vérifié, pas un bug).
+3. `_extract_purespectrum_mobile_date_blocks` — garde `ps-date-picker-mobile ps-select-scroll`
+   (≥2 colonnes), itype="radio", flag `purespectrum_mobile_date=True`, `option_xpath_map` sur les
+   `.select-scroll-slide` (texte), pas d'input/label réel derrière.
+
+### action_dispatcher.py — guard anti-crash bloc 🟦 DROPDOWN pour ps_select_dropdown / purespectrum_date_dropdown
+Fichier : Survey/action_dispatcher.py, bloc `if itype == "dropdown":`, tout début (avant le guard
+sliderpoints), juste avant la séquence `dropdown_block_resolver` → `select_option_with_hint` →
+`open_dropdown_generic`.
+Guard : `target_payload.get("ps_select_dropdown") or target_payload.get("purespectrum_date_dropdown")`.
+Bug corrigé : la stratégie dédiée (`is_ps_select_dropdown`/`is_purespectrum_date_dropdown` dans
+`_apply_by_target_id`, ~ligne 1239-1304) est tentée en premier ; si elle échoue (clic sans effet sur
+ce widget ngbdropdown), l'exécution retombait sur le chemin générique `select_option_with_hint()` →
+`open_dropdown_generic()`, qui appelle `el.tag_name` (API Selenium absente d'un ElementHandle
+Playwright) dès qu'aucun `<select>` natif n'est trouvé (aucun sur ce widget custom) → `AttributeError`
+non catché qui faisait abandonner toute l'action (`execute_actions_plan idx=N crashed`), bloquant la
+progression du survey.
+Correction : sur le modèle exact du guard `kantar_rowpicker_radio`/`mui_dialog_question_option`
+(bloc 🟦 RADIO) — la stratégie dédiée ayant déjà échoué, on rapporte l'échec proprement
+(`log_debug` + `continue`) au lieu de retomber sur un chemin non applicable à ce widget. Zéro
+modification d'`open_dropdown_generic`/`select_option_with_hint` (stratégies existantes intactes).
+Patterns couverts :
+- Tout target_id portant le flag `ps_select_dropdown` ou `purespectrum_date_dropdown` dont la
+  stratégie dédiée a échoué.
+Patterns exclus :
+- Tout autre dropdown (natif `<select>`, custom sans ces flags) → chemin générique inchangé.
+Statut : patch anti-crash validé en conditions réelles (log `[TARGET_DEBUG] dropdown
+ps_select_dropdown: dedicated strategy failed, no generic fallback`, plus aucun `AttributeError:
+'ElementHandle' object has no attribute 'tag_name'` ni `execute_actions_plan idx=N crashed`).
+**Résolu** (patch en 3 étapes, validé en conditions réelles) : la stratégie dédiée (clic
+`toggle_xpath` puis `option_xpath_map`) échouait systématiquement sur ce widget, pour mois ET
+année. Cause racine réelle (établie par logs de diagnostic — différente de l'hypothèse initiale
+`aria-expanded`/timing) : `driver.query_selector_all`/`_find_best_visible` reçoivent les xpaths tels
+que générés par l'extracteur — absolus à slash unique (`/html/body/ps-root/.../button`) — or
+Playwright n'auto-détecte le moteur xpath que pour `//` ou `..` ; un xpath à slash unique est donc
+interprété comme du CSS et lève une exception de parsing (`Unexpected token "/" while parsing css
+selector`), avalée silencieusement par la fonction locale `_click_xpath` → `node` toujours `None` →
+échec identique pour toggle et option (même extracteur, même format de xpath).
+Correction (Survey/action_dispatcher.py, fonction locale `_click_xpath` définie dans le bloc
+`is_ps_select_dropdown`/`is_purespectrum_date_dropdown`, ~ligne 1384-1463) :
+1. Nouvelle fonction locale `_pw_xpath(raw_xpath)` : préfixe `xpath=` si la chaîne ne commence ni
+   par `xpath=`, ni par `//`, ni par `..` — même convention que le reste du fichier
+   (`dropdown_block_resolver.py`, `question_block_resolver.py`, etc.). Appliquée dans `_click_xpath`
+   (couvre toggle ET option, les deux passent par cette fonction) et à l'appel direct de
+   `_find_best_visible` dans la boucle d'attente d'ouverture du menu (point 3).
+2. Le retour du clic sur `toggle_xpath` est désormais vérifié (abandon loggé si échec) au lieu
+   d'être ignoré.
+3. La pause fixe `time.sleep(0.1)` post-toggle est remplacée par un polling borné (20×50ms, budget
+   explicite, abandon loggé) qui attend que le nœud de l'option ciblée soit réellement
+   `is_visible()` avant de tenter le clic — proxy fiable de l'ouverture réelle du menu ng-bootstrap
+   (les `dropdown-item` ne sont visibles que quand `div[ngbdropdownmenu]` a la classe `show`).
+4. Logs de diagnostic ajoutés dans `_click_xpath` (paramètre `label`="toggle"/"option") : distingue
+   nœud introuvable (xpath non résolu, avec exception `query_selector_all` si levée) vs nœud trouvé
+   mais clic natif ET clic JS tous deux en échec (type+message des deux exceptions).
+Zéro modification de `_find_best_visible` (fonction partagée à de nombreux autres blocs — seul
+l'argument passé change) ni du `_click_xpath(driver, xpath)` de portée module (ligne ~586) —
+correction strictement confinée à la fonction locale et à la boucle du bloc
+`is_ps_select_dropdown`/`is_purespectrum_date_dropdown`.
+Statut : validé en conditions réelles — `[TARGET] apply ok=true strategy=target_id reason=applied`
+pour mois (`Juillet`, `group_5d6036b01ebf`) et année (`2001`, `group_73d4417cdad3`) sur le DOM de
+référence (PureSpectrum date de naissance, desktop), plus aucun `purespectrum dropdown toggle click
+failed` ni `purespectrum xpath dropdown click failed`.
+
+### action_dispatcher.py — guard abandon contrôlé bloc 🟦 RADIO pour purespectrum_mobile_date
+Fichier : Survey/action_dispatcher.py, bloc `if itype == "radio":`, juste après le guard
+`mui_dialog_question_option`.
+Guard : `target_payload.get("purespectrum_mobile_date")`.
+Patterns couverts :
+- Widget roue `ps-select-scroll` (variante mobile) : aucune stratégie de sélection dédiée n'existe
+  à ce jour (pas d'input/label natif, mécanisme d'interaction — drag/scroll/clic centré — non
+  observé sur un DOM de référence réel). Sans ce guard, les stratégies génériques
+  radio_main/radio_buttonish chercheraient un input/label inexistant page entière, avec risque de
+  faux clic sur un élément sans rapport.
+- Abandon proprement loggé (`log_debug` + `return False`), pas d'implémentation de stratégie
+  d'interaction (aucun DOM réel de cette variante disponible — cf. `_extract_purespectrum_mobile_date_blocks`).
+Patterns exclus :
+- Tout autre radio sans ce flag → chemin générique inchangé.
+Statut : guard anti-fallback-erroné appliqué ; stratégie de sélection réelle à concevoir dès
+qu'un DOM de référence de la variante mobile (`ps-date-picker-mobile ps-select-scroll`) sera
+disponible.
+
+Statut : patch validé.
+
+---
+
+## PLATEFORME : PURESPECTRUM — DRAG & DROP (déposer un numéro dans une case, `dropZoneList`)
+Signature DOM : Angular CDK — draggables `[cdkdrag]`/`.cdk-drag` contenant `img[alt="{valeur}"]`,
+zone de dépôt `#dropZoneList` (classe `.cdk-drop-list`/`.drop-zone`). CTA `button[aria-label='Go to
+next question']`.
+
+### handle_drag_drop_logic — evaluate() multi-arguments invalide
+Fichier : Survey/action_dispatcher.py, fonction `handle_drag_drop_logic` → sous-fonction
+`_run_drag_attempt`, bloc de calcul des points de drag (avant la séquence `_page.mouse.move/down/.../up`).
+Bug corrigé : l'appel `driver.evaluate(js, source, drop_zone, ox, oy)` passait 4 arguments
+positionnels supplémentaires à Playwright `Page.evaluate(expression, arg=None)`, qui n'accepte
+qu'un seul `arg` → `TypeError: Page.evaluate() takes from 2 to 3 positional arguments but 6 were
+given`, levée avant tout calcul de coordonnées, donc avant le moindre déplacement de souris. Les 2
+tentatives (offsets `(0,0)`/`(15,0)`) étaient consommées sans qu'aucun drag réel n'ait lieu. Le
+script JS lui-même était incohérent avec sa propre signature : déclaré `() => {...}` (zéro
+paramètre) mais référençant `_el`, `_arg1`, `arguments[2]`, `arguments[3]` à l'intérieur — cas
+déjà signalé comme suspect (non confirmé) dans la leçon transversale `evaluate() vs
+evaluate_handle()` / piège `arguments[0]` (voir plus haut dans ce fichier), confirmé ici sur DOM
+réel PureSpectrum (snapshot `20260803_042307_after_dom_analyze`, drop zone `dropZoneList`, source
+`img[alt=...]`).
+Correction : remplacement de l'appel unique à 6 arguments par 3 appels `evaluate()` mono-argument
+(1 seul ElementHandle chacun, forme supportée par Playwright) :
+1. `getBoundingClientRect()` de la source (fonction `(el) => {...}`, arg = `source`)
+2. `getBoundingClientRect()` de la drop zone (même fonction, arg = `drop_zone`)
+3. vérification `elementFromPoint` (fonction `(dst) => {...}`, arg = `drop_zone`), `ox`/`oy`/
+   coordonnées finales déjà calculées côté Python et injectées comme littéraux entiers (pas de
+   risque d'injection, valeurs `int` uniquement)
+Le dict `points` reconstruit en Python expose exactement les mêmes clés qu'avant
+(`startX`/`startY`/`endX`/`endY`/`verified`/`elementTag`/`elementId`/`elementClass`) — aucune
+modification de la logique de séquence mouse.move/down/.../up, du budget de tentatives (2 offsets),
+de la garde `_cdkdrag_cards_ready`/refresh, ni du comportement CTA (`_attempt_cta_once`,
+`CTA_INTERCEPT_ONLY` inchangé).
+Patterns couverts :
+- Tout appel à `handle_drag_drop_logic` (n'importe quelle valeur cible/instruction extraite via
+  `_extract_drag_drop_target_value`) — le bug était systématique, indépendant du DOM/de la
+  plateforme au-delà de la présence de `[cdkdrag]`/`.cdk-drag` + `#dropZoneList`.
+Patterns exclus :
+- Aucun autre bloc n'a été modifié (extraction `_extract_drag_drop_target_value`,
+  `_cdkdrag_cards_ready`, `_wait_cards_ready`, `_attempt_cta_once` intacts).
+Statut : patch validé (confirmé par l'utilisateur).
+
+---
+
+## PLATEFORME : ANGULAR MATERIAL (mat-radio-group) — CHAMP DE FILTRAGE PARASITE
+
+Signature DOM : `app-single-question` > `mat-card.question-card` contenant `mat-label.question-text`
++ un `<input type="text" placeholder="Search Here">` de filtrage du widget de sélection, suivi d'un
+`mat-radio-group` (options `mat-radio-button` avec `input[type=radio]` dont `value` est un code
+numérique `1..N`, pas le libellé visible — libellé réel dans `label.mdc-label > span.category-text`).
+
+### _is_auxiliary_text_for_choice_group — priorité label sur value pour inputs radio/checkbox natifs
+Fichier : Survey/dom_analyzer.py
+Emplacement : boucle `for node in choice_nodes`, calcul de `option_words`.
+Bug corrigé : pour un `input[type=radio|checkbox]` natif, l'ancien ordre de fallback
+(`inner_text() || innerText attr || value attr`) retombait sur `value` (souvent un code technique,
+ex. `value="1".."9"` Angular Material) avant de tenter `_find_associated_label()`. Le vrai libellé de
+l'option n'était donc jamais capturé dans `option_words`, faussant le calcul du signal `generic_q`
+(chevauchement lexical question/options) utilisé par le score d'auxiliarité.
+Correction : pour ces nœuds uniquement (`type` natif radio/checkbox), `_find_associated_label()` est
+tenté en priorité, `value` reste le fallback. Aucun changement pour les autres nœuds de choix
+(`button`, `a[role=button]`, `[role=radio]`/`[role=checkbox]` custom).
+Patterns couverts :
+- `input[type=radio]`/`input[type=checkbox]` dont l'attribut `value` est un code technique et dont le
+  libellé visible est porté par un `<label>` associé (`for=id` ou ancêtre).
+Patterns exclus :
+- Nœuds de choix non-input natifs (boutons, rôles ARIA) → ordre de fallback inchangé.
+
+### _is_auxiliary_text_for_choice_group — cas additif "champ de filtrage du widget de choix"
+Fichier : Survey/dom_analyzer.py
+Emplacement : nouveau bloc juste après le garde-fou JS "Autre, précisez" inline, avant le calcul du
+score à 4 signaux. Retour direct `True` (bypass du score), même modèle que le cas "Autre, précisez"
+existant — n'a pas modifié le score ni son seuil (0,7 sur l'overlap lexical) qui reste trop fragile
+pour ce cas (mesuré à 0,673 sur le DOM de référence, sous le seuil de quelques centièmes).
+Guard (double, ET) :
+- `placeholder` de l'input matche `\bsearch\b|\brecherch\w*\b|\bfilter\b|\bfiltr\w*\b` (regex sur
+  l'attribut `placeholder` normalisé en minuscule — jamais sur le texte de la question)
+- L'input n'a pas de label propre (`has_own_label` False : ni `<label>` associé, ni `aria-label`, ni
+  `aria-labelledby`)
+Patterns couverts :
+- `input[type=text][placeholder="Search Here"]` dans le même conteneur qu'un `mat-radio-group` à 9
+  options (DOM de référence : profession du soutien économique du ménage, `mat-radio-group-1`) — le
+  filtre de recherche du widget Angular Material n'est plus extrait comme bloc `single` parasite.
+Patterns exclus :
+- Tout champ texte avec un placeholder ne matchant pas le motif recherche/filtre, ou disposant d'un
+  label propre (même dans un conteneur à choix) → chemin du score à 4 signaux inchangé.
+- Aucun autre DOM de référence dans `snapshots/` ne porte ce type de placeholder (vérifié, pas de
+  risque de faux positif sur une vraie question ouverte "recherchez votre ville" etc.).
+Statut : patch validé (confirmé par l'utilisateur).
+
+---
+
+## PLATEFORME : DECIPHER/FOCUSVISION — WIDGET CARDSORT ADOSSÉ À UNE VRAIE MATRICE DE CHECKBOXES
+
+Signature DOM : question de type `.question.checkbox` contenant un widget visuel `.sq-cardsort`
+(`Survey.question.cardsort.setup(...)`, `type: "checkbox"`, `grouping: "rows"`, `automaticAdvance: 0`
+dans les `setupOptions` du script inline de la question) ET, dans le même bloc de question, une
+`<table class="grid ... answers-table">` masquée par une règle CSS scopée
+(`#question_<label> .answers-table { display: none; }`) contenant les vraies cases à cocher, nommées
+selon le motif `ans<uid>.<col>.<row>`, une case par combinaison carte (ligne) × bucket (colonne), avec
+sélection multiple réellement supportée par carte. La page contient également un vrai bouton de
+soumission `input[type="submit"]#btn_continue` (état `display: none` par défaut), distinct du
+contrôle de défilement interne au widget (`span.sq-cardsort-next`, propre au carrousel visuel des
+cartes et sans effet de soumission de page).
+
+### Traitement de la question — router vers checkbox plutôt que vers l'interaction cardsort
+Fichier : Survey/action_dispatcher.py (routage de la question), Survey/batch_response_parser.py
+(format de réponse), Survey/dom_analyzer.py / dom_extractors_decipher.py (détection du bloc)
+Bug corrigé : le pipeline traitait initialement ce DOM comme un cardsort classique (une affectation
+carte→bucket unique par carte, pilotée via clic/drag sur le widget visuel `.sq-cardsort`). Cette
+interaction s'est révélée systématiquement non fiable sur ce DOM précis (sélections n'aboutissant
+jamais, ou aboutissant toujours sur le même bucket indépendamment de la carte/du bucket visé), quelle
+que soit la qualité du format de réponse du modèle. Le DOM réel montre que le widget cardsort est en
+fait adossé à une véritable matrice de cases à cocher multi-select par ligne (une ligne = une carte,
+une colonne = un bucket), masquée visuellement mais fonctionnellement identique à une question
+checkbox groupée par ligne.
+Correction : cette question est désormais extraite/traitée comme N blocs indépendants de type
+`checkbox` (un par carte/ligne), au même format que les questions matrice-checkbox déjà supportées
+ailleurs, en ciblant directement les `input[type=checkbox]` réels (`ans<uid>.<col>.<row>`) plutôt que
+l'interaction visuelle du widget cardsort. Chaque ligne autorise un nombre de sélections correspondant
+aux attributs `atleast`/`atmost` portés par la carte (`min_select`/`max_select`).
+Patterns couverts :
+- DOM Decipher/FocusVision où `.sq-cardsort` coexiste avec une `table.grid` de checkboxes cachée
+  (motif `ans<uid>.<col>.<row>`) dans le même bloc de question — signature confirmée sur la question
+  "Comment interagissez-vous avec les ligues suivantes ?" (label `JANxNEW25x2`).
+Patterns exclus :
+- Les widgets `.sq-cardsort` classiques sans matrice de checkboxes sous-jacente équivalente
+  continuent d'être traités via l'interaction cardsort existante (fonction `solve_focusvision_cardsort`
+  non modifiée pour ce cas).
+Statut : patch validé (confirmé par l'utilisateur).
+
+### Navigation — bouton "Suivant" interne au carrousel cardsort vs bouton de soumission réel
+Fichier : Survey/cta_handler.py (`try_click_navigation_cta`)
+Bug corrigé (diagnostic initial, avant confirmation finale) : un traitement dédié avait été ajouté
+pour cibler spécifiquement `span.sq-cardsort-next` (bouton de défilement interne au carrousel visuel
+du widget cardsort, non natif — attribut `disabled="disabled"` non standard porté par un `<span>`,
+absent de tous les motifs génériques de détection de CTA). Une fois la question répondue via les
+checkboxes réelles (cf. entrée précédente) sans jamais naviguer dans le carrousel, une inquiétude
+avait été soulevée sur la pertinence de continuer à cibler ce bouton plutôt que le vrai bouton de
+soumission de page caché (`input[type=submit]#btn_continue`).
+Constat final : après nouvelle vérification, le clic de navigation fonctionne correctement dans ce
+contexte (la sélection par checkboxes et le clic CTA aboutissent tous deux) — l'échec initialement
+rapporté provenait d'une interruption manuelle du test par l'utilisateur, pas d'un bug réel.
+Statut : patch validé (confirmé par l'utilisateur) ; aucune modification supplémentaire nécessaire sur
+`try_click_navigation_cta` pour ce cas.
+
+### set_sliderpoints — récupération des containers de ligne via API Selenium résiduelle
+Fichier : Survey/input_slider.py
+Emplacement : tout début de la fonction, juste après le scoping par `find_context_container`.
+Bug corrigé : la récupération de la liste des containers de ligne (`.sq-sliderpoints-container`)
+appelait `root.find_elements("css selector", ...)` — signature Selenium, alors que `root` (page
+Playwright ou container retourné par `find_context_container`) n'expose que l'API Playwright
+(`query_selector`/`query_selector_all`). L'appel levait une exception silencieusement absorbée par
+le `except Exception: blocks_all = []` englobant, vidant la liste dès le départ et provoquant un
+`return False` immédiat avant même d'atteindre la boucle de traitement par ligne — sans aucun log
+"Sliderpoints rempli" ni échec détaillé par ligne, symptôme observé sur une question à deux lignes
+(Football masculin/féminin professionnel, DOM Decipher/FocusVision `sq-sliderpoints`).
+Correction (1 ligne) : remplacement par `root.query_selector_all(".sq-sliderpoints-container")`,
+cohérent avec le reste de la fonction (déjà 100% Playwright natif) et avec l'usage équivalent dans
+`input_utils.py` (`find_questions_container`/`has_visible_open_ended_field`) sur le même type d'objet.
+Patterns couverts : tout DOM `sq-sliderpoints` avec une ou plusieurs lignes (`.sq-sliderpoints-row-legend`
++ `.sq-sliderpoints-container`), scope page entière ou scope question via `context_hint`.
+Patterns exclus : aucun changement de logique de scoping, de mapping choice_text→index, ni des
+stratégies d'application (clic legend/circle, `<select>`, jQuery-UI `slider('value', ...)`) —
+uniquement la récupération initiale des containers.
+
+### _find_best_option_match — numeric_prefix_match (échelles bornées à extrêmes libellés)
+Fichier : Survey/batch_response_parser.py
+Emplacement : dans le même bloc `if re.fullmatch(r"\d+", v_fold.strip())` que la stratégie
+existante `numeric_suffix_match`, juste après elle.
+Bug corrigé : sur les échelles radio 0-10 dont les deux valeurs extrêmes portent un libellé complet
+préfixé par le chiffre (ex. "0 - Très négative", "10 - Très positive") tandis que les valeurs
+intermédiaires sont des chiffres bruts ("1".."9"), une réponse modèle "10" ou "0" ne matchait aucune
+option : le match exact échoue (valeur ≠ libellé complet), le fuzzy est sous le seuil (0.80), et
+`numeric_suffix_match` ne couvre que les chiffres en fin de libellé (ex. "... 7"), pas en préfixe.
+Symptôme observé : `[batch_response_parser] qid=Q6 valeur rejetée (aucune option correspondante):
+'10' ...` puis `received=0 final_count=0` — le radio de l'entreprise correspondante restait non coché
+sur la page réelle (DOM Decipher/FocusVision, question "impression générale" par entreprise).
+Correction : nouvelle stratégie additive `numeric_prefix_match`, ajoutée après `numeric_suffix_match`
+sans modifier son corps. Guard : valeur reçue = entier pur ET exactement une option commence par ce
+chiffre suivi d'un caractère non-numérique (`^10(?!\d)`, folded/lowercased) — évite un faux match sur
+une option "100 ...".
+Patterns couverts :
+- Échelles radio/checkbox/dropdown dont seules les options extrêmes portent un libellé préfixé par
+  le chiffre, les autres étant des chiffres bruts (confirmé sur échelle 0-10 "Très négative"/"Très
+  positive", DOM Decipher/FocusVision, plusieurs blocs `group_*` de la même question à sous-items).
+Patterns exclus :
+- Valeurs intermédiaires (ex. "1".."9") → toujours résolues par le match exact (étape 1), chemin
+  inchangé.
+- `numeric_suffix_match` (chiffre en fin de libellé) → fonction/logique non modifiée, stratégie
+  distincte conservée telle quelle.
+- Ambiguïté (plusieurs options partageant le même préfixe numérique) → aucun match, comportement de
+  rejet inchangé (pas de fallback empilé).
+Statut : patch validé (confirmé par l'utilisateur).
+Statut : patch validé (test réel réussi par l'utilisateur, les deux lignes se positionnent correctement).
+
+
+---
+
+## PLATEFORME : DECIPHER/FOCUSVISION — GROUP-BY-COL TABLE : LIMITE DE SÉLECTION PAR COLONNE ("SÉLECTIONNEZ JUSQU'À N...") NON PRISE EN COMPTE
+
+Signature DOM : question `table.grid[data-settings*='group-by-col'][data-settings*='table-mode']`
+(extraction "group-by-col table" existante, 1 bloc checkbox par colonne, lignes = options
+communes), avec un `h2.instruction-text` au niveau de la question globale (`#question_QID`,
+sibling de `h1.question-text`) énonçant en langage naturel une limite de sélection par colonne
+(ex. "Sélectionnez jusqu'à deux responsables pour chaque problème.").
+
+### Extraction "group-by-col table" — fusion de l'instruction dans le texte de question par colonne
+Fichier : Survey/dom_extractors_decipher.py (section "group-by-col table : 1 bloc par colonne,
+lignes = options")
+Bug corrigé : `h2.instruction-text` de la question globale n'était jamais lu par ce bloc
+d'extraction — le texte de question construit pour chaque bloc-colonne (`col_q_gc`) ne contenait
+que le libellé de question + en-tête de colonne, sans l'instruction de limite. Le modèle n'avait
+donc aucune trace de la contrainte "jusqu'à deux" affichée à l'utilisateur.
+Correction : lecture de `h2.instruction-text` (même sélecteur déjà utilisé ailleurs dans le
+fichier, ex. lignes ~1682/~1847) et fusion dans `col_q_gc` (question + instruction + "[Col]"),
+à l'image de la fusion déjà pratiquée pour d'autres types de blocs.
+Patterns couverts :
+- Table `group-by-col` avec `h2.instruction-text` présent au niveau de la question globale.
+Patterns exclus :
+- Aucun changement de calcul de `max_select`/`min_select` pour ce bloc (reste `len(opts_gc)`,
+  volontairement — voir entrée suivante pour la raison).
+Statut : patch validé (confirmé par l'utilisateur).
+
+### prompt_builder — selection_rule (checkbox) : priorité explicite à une limite de sélection mentionnée dans la question
+Fichier : Survey/prompt_builder.py, branche `elif itype == "checkbox":` non-`cap_hard`
+(construction du `selection_rule`, ~ligne 848)
+Constat : même après fusion de l'instruction dans le texte de question (entrée précédente), le
+modèle continuait à sélectionner plus d'options que la limite réelle ("jusqu'à deux"). Cause :
+`display_max_sel` est plafonné par une heuristique générique indépendante du DOM
+(`min(max_sel, 5) if max_sel > 3 else max_sel`), donnant "sélectionner entre 1 et 5" alors que la
+vraie limite affichée à l'utilisateur est 2. Modifier ce plafond générique ou `max_select` selon
+l'itype checkbox comportait un risque de régression sur d'autres questions checkbox n'ayant pas
+de limite explicite dans leur texte.
+Correction : ajout d'une phrase dans le `selection_rule` existant (aucune nouvelle branche,
+aucun nouveau champ) indiquant que si le texte de la question mentionne explicitement un nombre
+maximal de sélections (ex. "jusqu'à deux", "au plus 3", "maximum 2 réponses"), ce nombre prime sur
+la limite numérique `display_max_sel` sinon indiquée.
+Patterns couverts :
+- Tout bloc checkbox (toutes plateformes) dont le texte de question contient une limite de
+  sélection explicite en langage naturel, quel que soit le `max_select` calculé par ailleurs.
+Patterns exclus :
+- Branche `cap_hard` (renvoyer EXACTEMENT N valeurs) — non modifiée, logique déjà stricte.
+- Aucune dérivation numérique de `max_select`/`display_max_sel` à partir du texte : la contrainte
+  reste une consigne textuelle au modèle, pas une validation dure côté code (`batch_response_parser`
+  ne rejette pas un nombre de sélections dépassant la limite textuelle si le modèle l'ignore malgré
+  tout — limite connue de cette approche, retenue par choix explicite plutôt qu'un cap numérique dur).
+Statut : patch validé (confirmé par l'utilisateur).
+### Extraction widget "sq-atm1d" — fusion locale de l'instruction dans le texte de question du bloc
+Fichier : Survey/dom_extractors_decipher.py (section widget `.sq-atm1d-widget .sq-atm1d-buttons
+.sq-atm1d-button[data-label]`, bloc checkbox/radio unique regroupant tous les boutons)
+Bug corrigé : ce bloc utilisait directement la variable `question` (h1.question-text uniquement,
+définie une fois en tête de fonction et partagée par plusieurs blocs d'extraction de ce même
+fichier) sans y fusionner `h2.instruction-text` de la question globale — même bug que celui déjà
+corrigé sur le bloc "group-by-col table", mais localisé dans un extracteur distinct (DOM différent,
+widget `sq-atm1d`). Symptôme observé : question "Dans la liste suivante, quels sont selon vous les
+TROIS avantages que le tourisme apporte à votre commune aujourd'hui ?" avec instruction séparée
+"Sélectionnez jusqu'à TROIS réponses." (DOM `#question_Q18.sq-atm1d`) — instruction absente du
+texte transmis au modèle pour ce bloc.
+Correction : nouvelle variable locale `question_atm1d` = fusion de `question` + `h2.instruction-text`
+(lue via le même sélecteur déjà utilisé ailleurs dans le fichier), utilisée uniquement pour ce bloc
+(target_id, payload, blocks.append). La variable partagée `question` n'est pas modifiée — aucun
+impact sur les autres blocs d'extraction de la même fonction (group-by-row, group-by-col, etc.).
+Patterns couverts :
+- Widget `sq-atm1d` avec `h2.instruction-text` présent au niveau de la question globale.
+Patterns exclus :
+- Aucun changement de calcul de `max_select`/`min_select` pour ce bloc (reste `len(options)`,
+  même choix que pour le bloc group-by-col — cf. entrée précédente et le patch prompt_builder.py
+  associé, qui gère la priorité de la limite textuelle au niveau du selection_rule).
+- Variable partagée `question` (autres blocs d'extraction de la fonction) — non modifiée,
+  fusion strictement locale à ce bloc.
+Statut : patch validé (test réel réussi par l'utilisateur).
+
+---
+
+## MODULE TRANSVERSAL : TOPSURVEYS POPUP RESOLVE — INSTANCES DUPLIQUEES ET COLLISION DE LIBELLE ENTRE POPUPS DISTINCTS
+
+### _handle_topsurveys_streak_complete_popup — support de plusieurs instances empilees du conteneur streak_complete_modal
+Fichier : Survey/functions.py
+Bug corrige : le handler ne recuperait que la PREMIERE occurrence de
+[data-test-id='streak_complete_modal'] via query_selector et tentait un clic
+unique dessus. Confirme sur DOM de reference reel (captures successives, au
+retour topsurveys.app comme juste apres login) : le DOM contient de facon
+reproductible DEUX conteneurs streak_complete_modal empiles simultanement,
+contenu identique, chacun dans son propre div.p-modal-mask. Le clic sur
+l'instance retournee par query_selector echouait systematiquement par
+timeout, intercepte par le masque de l'autre instance empilee au-dessus -
+epuisant le budget de re-scan de _resolve_topsurveys_popups sans jamais
+fermer la modale.
+Correction : query_selector_all sur toutes les instances visibles du
+conteneur, collecte de tous les boutons candidats, puis tentative de clic
+sequentielle instance par instance jusqu'a la premiere qui accepte le clic
+(budget : 1 tentative de clic par instance candidate). Retour tri-etat
+(True/False/None) : False = popup detecte mais toutes les instances
+obstruees (permet a l'appelant de redonner une chance de re-scan), distinct
+de None = non detecte.
+Patterns couverts :
+- streak_complete_modal present en 1 ou plusieurs instances simultanees dans
+  le DOM (confirme jusqu'a 2 instances en conditions reelles).
+Patterns exclus :
+- Aucun changement de _resolve_topsurveys_popups (boucle de re-scan) ni des
+  autres handlers de popup du fichier.
+Statut : patch valide (confirme par l'utilisateur - fermeture reussie des
+2 instances sur deux sequences de logs distinctes, au retour topsurveys et
+juste apres login).
+
+### _handle_topsurveys_genial_reward_popup — exclusion du bouton streak-complete-modal-button dans le repli generique
+Fichier : Survey/functions.py
+Bug corrige : le repli generique de detection (parcours de tous les
+`button` de la page dont le texte normalise vaut "genial", utilise quand le
+selecteur specifique button[data-test-id='ps-common-actions-button'] ne
+matche rien) pouvait capturer par erreur le bouton
+data-test-id='streak-complete-modal-button' de la modale de serie
+quotidienne (meme libelle visible "Genial"), quand celle-ci etait presente
+sans veritable popup de recompense sur la page. La boucle de re-scan
+journalisait alors a tort la detection d'un popup "Genial" distinct et
+retentait un clic deja gere (et deja en echec) par
+_handle_topsurveys_streak_complete_popup.
+Correction : garde explicite dans le repli generique excluant tout bouton
+dont l'attribut data-test-id vaut "streak-complete-modal-button" avant
+d'evaluer son texte.
+Patterns couverts :
+- Tout DOM ou streak_complete_modal est present (1 ou plusieurs instances)
+  et ou aucun veritable popup de recompense n'existe simultanement.
+Patterns exclus :
+- Selecteur specifique button[data-test-id='ps-common-actions-button']
+  (chemin normal du popup de recompense) - non modifie.
+Statut : patch valide (confirme par l'utilisateur - plus de faux match
+"Genial" observe dans les sequences de logs suivant ce patch).
+---
+
+## MODULE TRANSVERSAL : SURVEY_MEMORY (State/survey_memory.py) — MÉMOIRE PARTAGÉE INTER-BOTS DE PRÉSÉLECTION : CYCLE DE VIE DE SESSION ET CORRESPONDANCE DE QUESTION
+
+Contexte : State/survey_memory.py stocke, par popup de qualification (SurveySession
+accumulée localement puis flushée en Postgres via flush_disqualified/flush_qualified),
+la séquence ordonnée {question_key, page_index, chosen_options}. À la lecture
+(read_guidance), un bot peut réutiliser une combinaison gagnante, réutiliser les options
+d'une tentative antérieure ayant dépassé la page courante, ou éviter les options ayant
+causé une disqualification à cette page — fil d'Ariane inter-bots sur un même survey_key
+(dérivé de la 1ère question de la série via make_key, TTL 3h).
+
+### SurveySession — recréation dans _skip_card_and_retry (carte abandonnée sans DQ ni qualification)
+Fichier : Survey/survey_handler.py (_run_survey_impl, fonction interne _skip_card_and_retry)
+Bug corrigé : la session mémoire n'était recréée qu'aux points de flush (disqualification
+détectée, qualification). _skip_card_and_retry — appelée sur échec de déclin d'une question
+sensible, action de préselection inconnue, ou échec d'exécution d'une réponse — naviguait
+vers la carte suivante sans flush ni recréation. survey_key (fixé une seule fois par
+set_survey_key_if_first) et le compteur de page restaient donc ceux du popup abandonné,
+contaminant potentiellement le popup suivant (questions du nouveau popup enregistrées sous
+le survey_key de l'ancien).
+Correction : session recréée (SurveySession()) dans _skip_card_and_retry, juste après la
+navigation vers la carte suivante — même principe que les recréations déjà faites après
+flush_disqualified/flush_qualified.
+Patterns couverts :
+- Tout abandon de carte via _skip_card_and_retry (question sensible non déclinable, action
+  de préselection inconnue, échec d'exécution d'une réponse) — session repart de zéro sur
+  la carte suivante.
+Patterns exclus :
+- Points de flush existants (disqualification/qualification) — comportement inchangé.
+- Logique de lecture/écriture de State/survey_memory.py — non touchée par ce patch.
+Statut : patch validé (confirmé en conditions réelles).
+
+### read_guidance — repli positionnel (_options_for_page) restreint au palier avoid_options
+Fichier : State/survey_memory.py (read_guidance, _options_for_page)
+Bug corrigé : un repli positionnel (même page_index, sans vérification du contenu de la
+question — destiné à tolérer une légère variation d'énoncé entre tentatives : piping,
+reformulation) avait été appliqué aux 3 paliers de priorité, y compris "combinaison
+qualifiée" et "page franchie avec succès", qui déclenchent un bypass complet de GPT. Un
+repli purement positionnel pouvait alors associer la question courante à une question sans
+rapport (branchement conditionnel, question sautée dans la série) et faire répondre le bot
+hors-sujet sans aucun garde-fou GPT — risque de propagation/renforcement d'une mauvaise
+association dans la mémoire partagée pour les tentatives suivantes.
+Correction : repli positionnel retiré des paliers "qualifiée" et "page franchie" (bypass) —
+ces paliers exigent désormais une correspondance exacte par question_key. Conservé
+uniquement sur le palier "options à éviter" (avoid_options), où la donnée n'est qu'injectée
+comme signal dans le prompt GPT, qui reste l'arbitre final — impact d'une association
+imparfaite nettement plus faible (pas de bypass).
+Patterns couverts :
+- Variation légère d'énoncé de question entre tentatives, palier avoid_options uniquement.
+Patterns exclus :
+- Paliers "qualifiée" et "page franchie" (bypass GPT) — correspondance exacte (question_key)
+  requise, aucun repli positionnel.
+Statut : patch validé (confirmé en conditions réelles).
+
+---
+
+## MODULE TRANSVERSAL : YSENSE (ATTACH) — SÉLECTION DE SURVEY ET SAUT DE PRÉSÉLECTION GÉNÉRIQUE
+
+### YSensePlatform.select_survey — liste de sélecteurs candidats + attente de l'injection réelle des cartes
+Fichier : platforms/ysense.py
+Bug corrigé (1/2 — sélecteur) : le scan des surveys disponibles ne ciblait que
+`#survey-list-body > a.survey-link[data-survey_reward][data-survey_loi]` (enfants
+directs `<a>`). Sur le DOM réel observé en conditions réelles (compte/session
+donnés), les surveys sont des `<tr class="hova survey-link" data-survey_reward=...
+data-survey_loi=...>` imbriquées dans `#survey-list-body > table.tsurveys > tbody`
+— ni `<a>`, ni enfants directs. `query_selector_all` renvoyait donc toujours une
+liste vide alors que des dizaines de surveys exploitables étaient présentes.
+Bug corrigé (2/2 — course/timing) : même après ajout du sélecteur `tr.survey-link`
+ci-dessous, la détection restait instable (parfois trouvée, parfois non, sur un DOM
+par ailleurs identique entre deux runs). Cause : `#survey-list-body` peut être
+attaché au DOM avant que les lignes de surveys ne soient injectées par le rendu
+asynchrone (`vendor-react.compiled.js` / `surveys.js`). Le `wait_for_selector`
+portait uniquement sur le conteneur vide, jamais sur son contenu.
+Correction :
+- Liste bornée `_CARD_SELECTORS` (2 entrées) essayées dans l'ordre : le sélecteur
+  historique `a.survey-link` (conservé, non modifié — reste valide selon le mode
+  d'affichage/connexion) puis `#survey-list-body tr.survey-link[data-survey_reward]
+  [data-survey_loi]` (nouveau, additif). Le premier qui retourne des cartes gagne.
+- Avant le scan, attente bornée (10s) sur l'apparition d'au moins une carte réelle
+  (sélecteur combiné des deux entrées de la liste, `state="attached"`), en plus de
+  l'attente déjà existante sur le conteneur seul (20s). Timeout non bloquant (log
+  debug), retombe proprement sur "aucun survey disponible" si aucune carte
+  n'apparaît réellement.
+Patterns couverts :
+- Liste de surveys ySense rendue en tableau (`<tr class="survey-link">` dans
+  `table.tsurveys > tbody`), avec injection asynchrone des lignes après attache du
+  conteneur `#survey-list-body`.
+Patterns exclus :
+- Le sélecteur `a.survey-link` historique (mode d'affichage alternatif) — non
+  modifié, toujours essayé en premier.
+- Calcul du ratio reward/durée, clic (`best.click()`), `CTA_INTERCEPT_ONLY` —
+  inchangés.
+Statut : patch validé (confirmé par l'utilisateur — logs réels : 33 puis 35 cartes
+détectées, survey sélectionné avec succès sur deux sessions distinctes).
+
+### run_attach_login_takeover — saut de la présélection générique pour les plateformes non-TopSurveys
+Fichier : main.py
+Bug corrigé : après `platform.select_survey()` pour une plateforme configurée
+différente de TopSurveys (ex. ySense), le flux s'arrêtait systématiquement
+(`return` contrôlé) au motif qu'aucun moteur de présélection générique n'était
+disponible — alors que ySense (et plus généralement toute plateforme sans étape de
+présélection) mène directement des questions du survey après le clic, sans popup de
+présélection à gérer.
+Correction : l'appel au moteur de présélection (`preselection.survey_handler`,
+spécifique au popup TopSurveys) est désormais conditionné à `if _is_topsurveys:`.
+Les autres plateformes sautent uniquement cette étape et enchaînent directement sur
+la boucle de résolution commune (`survey_executor.execute_survey_page`). Le pont
+BLOC 1 → BLOC 2 (shim `page._survey_account_id`, construction de `SurveyContext`)
+reste commun aux deux chemins, sans duplication.
+Patterns couverts :
+- Toute plateforme configurée (`platform.get_platform_name() != "topsurveys"`) dont
+  la sélection du survey mène directement aux questions, sans popup de
+  présélection intermédiaire (confirmé pour ySense).
+Patterns exclus :
+- Chemin TopSurveys (`_is_topsurveys=True`) — comportement inchangé, présélection
+  toujours appelée via `preselection.survey_handler`.
+- `run_attach_preselection_takeover` (route dédiée au popup de présélection déjà
+  affiché) — non modifiée, reste spécifique à TopSurveys.
+Statut : patch validé (confirmé par l'utilisateur — logs réels : login, sélection du
+survey et passage direct à la résolution sans arrêt contrôlé).
+
+### run_attach_login_takeover — branchement de switch_to_latest_window_and_close_others après sélection du survey ySense
+Fichier : main.py (branche non-TopSurveys de run_attach_login_takeover)
+Bug corrigé : après `platform.select_survey(page)`, le clic sur un survey ySense
+ouvre un nouvel onglet destiné à recevoir le focus, mais l'onglet plateforme
+(ysense.com) reste ouvert et conservait le focus réel côté navigateur — la même
+situation déjà rencontrée et corrigée sur TopSurveys. Sans switch explicite,
+`page` continuait de référencer l'onglet plateforme : l'analyse DOM/résolution
+plus bas s'exécutait donc dessus au lieu du survey nouvellement ouvert, produisant
+une extraction faussée (blocs vides ou hors-sujet).
+Correction : capture de `_base_handles` (onglets ouverts) juste avant l'appel à
+`platform.select_survey(page)`. Si la sélection réussit, appel à
+`switch_to_latest_window_and_close_others` (redirect_watcher.py — déjà validée
+pour ce même problème côté TopSurveys, réutilisée telle quelle, non modifiée),
+avec `platform_domains=platform.get_domains()` (générique — pas de valeur
+hardcodée à ysense.com, réutilisable pour toute future plateforme non-TopSurveys).
+Cette fonction fait le switch/la fermeture des anciens onglets en interne sans
+retourner la nouvelle Page ; `page = _resync_live_page(page)` (import réutilisé
+depuis preselection/survey_handler.py) resynchronise ensuite la référence locale
+sur l'onglet réellement actif, suivi de `wait_for_final_redirection`. Le tout est
+encapsulé dans un `try/except` non bloquant (log `WARN` en cas d'échec) — cohérent
+avec le traitement H4 déjà en place pour le même appel côté TopSurveys.
+Patterns couverts :
+- Toute plateforme non-TopSurveys dont `select_survey()` ouvre le survey dans un
+  nouvel onglet distinct de l'onglet plateforme (confirmé pour ySense).
+Patterns exclus :
+- `switch_to_latest_window_and_close_others` et `_resync_live_page` eux-mêmes —
+  non modifiés, réutilisation à l'identique de fonctions déjà validées.
+- Chemin TopSurveys — inchangé, gère déjà ce switch via son propre appel dans
+  preselection/survey_handler.py.
+Statut : patch validé (confirmé par l'utilisateur en conditions réelles).
+### run_attach_preselection_takeover — route "preselection" étendue aux plateformes sans popup (sélection directe du survey)
+Fichier : main.py
+Bug corrigé : pour toute plateforme non-TopSurveys (ex. ySense), la route
+"preselection" abandonnait systématiquement (repli contrôlé, aucune action) au
+motif qu'aucun moteur de présélection popup générique n'était disponible —
+alors que, pour ces plateformes, il n'y a justement pas de popup de
+présélection à résoudre : le rôle de cette route s'y réduit à cliquer le
+meilleur survey depuis la page de liste (ouverte manuellement par
+l'utilisateur avant de lancer le mode attach) puis enchaîner sur la résolution.
+Correction : la branche non-TopSurveys appelle désormais directement
+`platform.select_survey(driver)`. En cas de succès, même gestion de switch
+d'onglet que sur la route "login" (réutilisation à l'identique de
+`switch_to_latest_window_and_close_others` + `_resync_live_page`, cf. entrée
+précédente — le clic ouvre un nouvel onglet sujet au même problème de focus).
+En cas d'échec (aucun survey disponible), abandon contrôlé propre, sans forcer
+la suite. La boucle de résolution finale (`survey_executor.execute_survey_page`)
+reste commune aux deux chemins (TopSurveys après popup / autres plateformes
+après clic direct) — aucune duplication de cette partie.
+Patterns couverts :
+- Toute plateforme configurée sans popup de présélection (ex. ySense), route
+  "preselection" lancée avec la page de liste de surveys déjà ouverte
+  manuellement.
+Patterns exclus :
+- Chemin TopSurveys (`_is_topsurveys=True`) — inchangé, toujours résolu via
+  `preselection.survey_handler.run_attach_preselection_takeover`.
+- Route "login" (`run_attach_login_takeover`) — non modifiée par ce patch,
+  gère déjà son propre appel de sélection/switch en amont.
+- Route "resolution" (`run_attach_takeover`) — déjà générique au préalable
+  (hook optionnel `platform.is_on_platform`/`handle_post_survey` via
+  `NotImplementedError`), confirmée fonctionnelle sans modification.
+Statut : patch validé (confirmé par l'utilisateur en conditions réelles).
+
+---
+
+## PRESCREENER YSENSE (ysense.com/surveys/prescreener-v2) — DATE DE NAISSANCE 3 CHAMPS TEXTE (Next.js, classes CSS modules hashees)
+
+### _nearest_question_container_structural
+Fichier : Survey/dom_question_extractor.py
+Emplacement : juste avant `_extract_question_from_container`.
+Guard DOM strict : remonte au plus 4 niveaux d'ancetres depuis le champ ; ne retient un
+ancetre que s'il regroupe >= 3 enfants directs contenant chacun un champ texte/nombre
+avec `id` ET un `<label>` associe (comptage purement structurel, aucune classe requise).
+Appelee UNIQUEMENT en complement additif de `_nearest_question_container` (Survey/dom_analyzer.py,
+boucle "singles", ~ligne 3592) quand celle-ci renvoie None ET itype in ("text","textarea") —
+ne remplace jamais son resultat quand elle en trouve un, fonction existante non modifiee.
+Patterns couverts :
+- DOM ou aucun ancetre ne porte de mot-cle semantique ('question'/'form-group'/'field-wrap')
+  ni balise fieldset/section (classes CSS modules Next.js/React hashees, ex:
+  `user-input_field__r_90_`, `user-input_container__l8b_U`) — confirme sur ysense.com
+  prescreener-v2, question "When were you born?" (3 inputs sans attribut `name`, ids
+  `month`/`day`/`year`, chacun dans son propre wrapper div).
+Patterns exclus :
+- Tout DOM ou `_nearest_question_container` trouve deja un ancetre valide, ou itype hors
+  text/textarea — chemin inchange.
+Bug corrige : sans ce fallback, `container = _nearest_question_container(el) or el`
+degradait a `container = el` (l'input lui-meme, sans descendant), la recherche de champs
+"pairs" pour la detection triplet date (Survey/dom_analyzer.py, `has_date_triplet`, cf.
+entree "CHAMP DATE TRIPLET" ci-dessus) ne trouvait donc jamais >= 2 pairs, et jour/annee
+etaient ensuite elimines en aval comme doublons de signature `(question, itype)` (meme
+question resolue via `_find_question_text_near_element`, meme itype "text") : un seul bloc
+"month" etait produit, jour et annee disparaissaient silencieusement.
+Diagnostic associe : `question_blocks.json` avant patch = 1 seul bloc text (`id=month`,
+question "When were you born?"). Apres patch : `[DOM_DATE_MULTI_TEXT] detected date triplet
+fields=3` puis 3 blocs distincts (Birth month/day/year), remplis correctement en conditions
+reelles (07/15/2001).
+Statut : patch valide (confirme par l'utilisateur en conditions reelles).
+
+---
+
+## PLATEFORME : YSENSE (ysense.com) — WIDGET ACCESSIBILITE TIERS EQUALWEB (shadow root, faux groupe button_group)
+
+### Exclusion additive dans la boucle "btn_like" (pipeline button_group generique)
+Fichier : Survey/dom_analyzer.py
+Emplacement : boucle `for b in btn_like:`, juste apres le filtre Bulbshare
+(data-survey-progress/data-survey-bulbshare), avant le guard `sq-cardrating-button`.
+Guard DOM strict (via `driver.evaluate`, y compris a travers un shadow root) : exclut tout
+element dont l'hote de shadow root (`el.getRootNode().host`) a pour `id`
+`INDShadowRootHost`, OU dont un ancetre light-DOM matche
+`#INDshadowRootWrap, #INDShadowRootHost, #quick-access-navigation-container, #INDquickAccess`.
+Log discriminant : aucun log dedie (filtre silencieux, comme les filtres CookieYes/
+interview-footer/Bulbshare deja presents dans cette meme boucle).
+Patterns couverts :
+- Widget accessibilite equalweb (`cdn.equalweb.com/core/.../accessibility.js`) injecte
+  globalement sur les pages ysense.com, panneau "Quick Access" rendu dans un shadow root
+  (`#INDShadowRootHost`, piercing automatique du selecteur CSS Playwright
+  `button, a[role='button'], [role='button']`). Confirme identique sur 5 snapshots
+  (20260810_042749, 20260810_043417, 20260811_014501, 20260811_025742, 20260813_022240) :
+  le pipeline button_group generique produisait un faux bloc radio unique
+  "Press enter for Accessibility for blind people who use screen readers / Press enter for
+  Keyboard Navigation / Press enter for Accessibility menu" (group_key contenant
+  `INDquickAccess`), sans rapport avec le contenu du questionnaire.
+Patterns exclus :
+- Boutons CTA legitimes du questionnaire (ex. "Continue") — non concernes, verifie
+  explicitement (pas d'exclusion a tort).
+- Tout autre widget hors des ids exacts ci-dessus — non concerne, pipeline button_group
+  generique inchange.
+Diagnostic associe : avant patch, `question_blocks.json` de la page date de naissance
+contenait un 2e bloc fantome `group_109633f1c580` (kind=group, itype=radio) en plus du bloc
+date reel. Apres patch : bloc fantome absent, uniquement les 3 blocs date reels produits.
+Statut : patch valide (confirme par l'utilisateur en conditions reelles).
+
+
+---
+
+## PLATEFORME : YSENSE (ysense.com/surveys/prescreener-v2) — GROUPE RADIO AVEC INTITULE COURT ("I am...") REJETE (missing_question)
+
+### _find_heading_tag_near_choice_group
+Fichier : Survey/dom_question_extractor.py
+Emplacement : juste avant `_group_key_for_choice`.
+Guard DOM strict : aucun mot-cle de classe CSS — signal discriminant = balise semantique
+heading (`h1-h6` / `[role="heading"]`). Remonte au plus 5 niveaux d'ancetres depuis le
+premier champ du groupe (budget controle), s'arrete au premier niveau ou un candidat
+valide est trouve. Ne retient qu'un heading visible, situe AVANT le groupe de choix en
+ordre DOM (jamais une section suivante), hors du conteneur du groupe lui-meme, dont le
+texte ne correspond a aucune option (filtre `optionKeys`, evite de promouvoir a tort un
+libelle d'option en question).
+Appelee en dernier recours, additif, dans Survey/dom_analyzer.py (cascade de resolution de
+question d'un groupe radio/checkbox, ~ligne 2628), juste avant le rejet final
+`missing_question` — seulement apres l'echec de TOUS les replis generiques existants
+(`_nearest_question_container`, `_find_question_text_near_element`,
+`_find_group_heading_text_near_element`, etc.), aucun d'eux non modifie.
+Patterns couverts :
+- Intitule de question COURT (< 8 caracteres, ex: "I am...") porte par une vraie balise
+  heading, frere structurel (pas ancetre) du conteneur d'options, dans un DOM sans classe
+  CSS semantique (Next.js/React hashees) — confirme sur ysense.com prescreener-v2, question
+  "I am..." (h3.container_text__QoTgu, 3 radios name="question-3": Male/Female/Not
+  Specified), meme famille de page que l'entree "PRESCREENER YSENSE ... DATE DE NAISSANCE"
+  ci-dessus (meme site, memes classes CSS modules hashees).
+Patterns exclus :
+- Tout groupe deja resolu par un repli existant (container, near-element, group-heading) —
+  chemin inchange, cette fonction n'est jamais appelee dans ce cas.
+- Heading dont le texte matche une option du groupe, ou heading situe apres le groupe en
+  ordre DOM, ou heading a l'interieur du conteneur du groupe lui-meme — jamais retenu.
+Bug corrige : `_find_question_text_near_element` (Survey/dom_question_extractor.py:59) et
+`_find_group_heading_text_near_element` (meme fichier, ligne 610) filtrent TOUTES DEUX,
+dans leur JS interne, tout texte candidat de moins de 8 caracteres
+(`if (!t || t.length < 8) continue;`) — non modifie par ce patch, seuil toujours en vigueur
+pour tous leurs autres appelants. "I am..." (7 caracteres) etait donc rejete par les deux
+AVANT meme d'atteindre `_is_question_text`. Combine a l'echec de
+`_nearest_question_container` (h3 et groupe d'options sont deux enfants freres d'un meme
+`<main>`, pas de relation ancetre/descendant, memes classes CSS modules hashees que le bug
+date de naissance), `question` restait vide → groupe entierement rejete
+(`missing_question`) malgre 3 options radio correctement detectees et regroupees par name.
+Diagnostic associe : `question_blocks.json` avant patch = `[]` (vide), log
+`[DOM_CONTEXT_DEBUG] analyze_dom choice_groups detected=1 created=0 rejected={'missing_question': 1}`.
+Apres patch : bloc unique produit (`question="I am...", options=[Male,Female,Not Specified],
+group_key="radio:name:question-3"`).
+Non-regression verifiee : snapshots des 2 patches precedents (triplet date + widget
+equalweb) et snapshot dropdown "How old are you?" — aucun changement de comportement,
+aucune promotion indue d'un libelle d'option en question.
+Statut : patch valide (confirme par l'utilisateur en conditions reelles).
+
+---
+
+## PLATEFORME : YSENSE (ysense.com/login) — SOUMISSION EN DEUX PASSES (SIGN IN PUIS CONTINUE MOT DE PASSE SEUL) NON GEREE
+
+### YSensePlatform.login — boucle bornee de re-soumission avec re-detection de la variante password_only_reauth
+Fichier : platforms/ysense.py
+Bug corrige : sur certains comptes/sessions, /login sert un premier ecran complet
+(email + mot de passe, bouton "Sign In"). Apres soumission, le site re-rend en place
+un second ecran sur la MEME URL /login (pas de navigation entre les deux, formulaire
+re-rendu par login.bundle.js) : mot de passe seul, champ #username present mais
+`display:none` ("Please re-enter your password to continue.", bouton "Continue").
+La detection de cette variante (visibilite reelle du champ #username, deja geree pour
+le cas "profil persistant, 1 seul ecran") n'etait evaluee qu'une seule fois, juste
+apres la 1re navigation vers /login — jamais reevaluee apres un 1er clic de soumission
+qui laisse l'URL sur /login avec un nouvel etat de DOM. `login()` retournait donc
+`False` apres une seule soumission valide, quel que soit le contenu du 2e ecran.
+Correction : toute la sequence existante (attente #username, detection
+password_only_reauth, remplissage, stabilisation anti-hydration, clic soumission,
+poll+resolution recaptcha, verification de sortie de /login) est desormais executee
+dans une boucle bornee `_MAX_LOGIN_SUBMIT_PASSES = 2`. La detection
+`password_only_reauth` est reevaluee a chaque passe (pas de valeur figee entre les
+passes). Si l'URL reste sur /login apres soumission ET qu'il reste un budget de passe,
+`continue` vers une 2e passe ; sinon (budget epuise) lecture de `div#errors` et
+`return False` comme avant. Aucune modification du chemin a une seule soumission
+(cas nominal) : il sort de la boucle des la 1re passe via le `return True` de succes,
+inchange.
+Onglet secondaire observe pendant la transition : le formulaire `#loginform` porte
+`target="dummy"` sur les DEUX ecrans (confirme identique sur les 2 DOM de reference,
+Sign In et Continue) — la soumission ouvre une fenetre nommee "dummy" qui recoit la
+reponse brute du POST cote navigateur (page d'erreur HTTP visible a l'ecran). C'est un
+effet de bord du HTML du site, sans lien avec la session/le profil ni avec un echec de
+login. Cette fenetre n'est ni interrogee ni pilotee par le patch : `page` reste la Page
+d'origine du debut a la fin de `login()`, aucune detection/fermeture necessaire.
+Log discriminant :
+`[YSENSE] login() — variante détectée : ré-authentification mot de passe seul ... [passe N]`,
+`[YSENSE] login() — bouton de soumission cliqué [passe N]`,
+`[YSENSE] login() — toujours sur /login après soumission, nouvelle passe (second écran probable)`
+(uniquement si une 2e passe est engagee), succes final inchange :
+`[YSENSE] login() — succès (URL sans /login)`.
+Patterns couverts :
+- Comptes/sessions ySense ou /login sert successivement, sur la meme URL et sans
+  navigation intermediaire, un ecran complet (Sign In) puis un ecran mot de passe seul
+  (Continue) apres une premiere soumission valide.
+Patterns exclus :
+- Cas nominal a une seule soumission (session pleinement expiree → formulaire complet
+  suffit, ou profil persistant → ecran mot de passe seul des la 1re passe) : comportement
+  inchange, la boucle ne fait qu'une iteration.
+- `is_session_expired()` : non modifiee par ce patch (logs de diagnostic deja ajoutes
+  separement, hors de ce correctif).
+- Aucune fermeture/detection de la fenetre `target="dummy"` : volontairement absente,
+  cette fenetre n'affecte pas la Page pilotee.
+Statut : patch valide (confirme par l'utilisateur en conditions reelles).
+
+---
+
+## PLATEFORME : QUESTIONPRO
+
+### try_click_navigation_cta — bouton de soumission de page réel #SurveySubmitButtonElement (bypass collision de scoring avec save-and-continue-later + faux positif filtre "back")
+
+Fichier : Survey/cta_handler.py (nouveau bloc dédié, inséré avant la boucle générique de collecte/scoring de candidats CTA de `try_click_navigation_cta`).
+
+Cas observé : page QuestionPro (form `qproSurvey`, script `qp_sectionDisplayScript`), question radio unique avec deux boutons adjacents dans `.survey-submit-wrapper` : le vrai bouton de soumission `#SurveySubmitButtonElement` (role="button", texte/aria-label "Suivant", classes `btn btn-submit has-back`) et, juste à côté, un bouton distinct de sauvegarde différée `name="SAVE_AND_CONTINUE"` (classes `btn btn-save-later`, texte/aria-label "Enregistrer et continuer plus tard"). Le clic de navigation aboutissait à tort sur ce second bouton.
+
+Double cause identifiée dans le chemin générique (aucun handler provider dédié n'existait pour ce DOM avant ce patch) :
+- Le bouton "Enregistrer et continuer plus tard" partage plusieurs signaux positifs du scoring générique avec le vrai bouton "Suivant" (texte contient "continuer", `name` contient la sous-chaîne "continue"), sans qu'aucun mot-clé d'exclusion existant ne le distingue d'une vraie progression de page — collision de score potentiellement égal ou supérieur au vrai CTA.
+- Le vrai bouton `#SurveySubmitButtonElement` porte une classe `has-back` (signale la présence d'un bouton précédent adjacent, pas un bouton "retour" lui-même) qui matche à tort le mot entier "back" du filtre anti-retour générique (`\bback\b` — frontière de mot sur le tiret de "has-back"), l'excluant donc AVANT même le scoring.
+
+Patch : ciblage direct du vrai bouton via son id structurel `#SurveySubmitButtonElement` (stable, généré par le framework QuestionPro, indépendant de la langue/libellé), dans un bloc dédié placé avant la boucle générique — court-circuite les deux problèmes ci-dessus sans toucher au scoring générique ni à la liste `bad` du filtre anti-retour (aucune régression possible sur les autres providers).
+
+Patterns couverts :
+- Pages QuestionPro où `#SurveySubmitButtonElement` est visible/actif, y compris quand un bouton `SAVE_AND_CONTINUE`/`btn-save-later` adjacent est présent.
+
+Patterns exclus :
+- Filtre générique `bad` (mot entier "back") non modifié — reste inchangé pour tous les autres providers, y compris le cas "background" déjà documenté (cf. MODULE TRANSVERSAL CTA_NAV_BAD_KEYWORD_SUBSTRING_FALSE_POSITIVE plus haut dans ce fichier). Le cas "has-back" n'est pas corrigé au niveau du filtre lui-même — seulement contourné structurellement pour ce provider.
+- Scoring générique de `try_click_navigation_cta` non modifié — la collision "continuer"/"continue" avec un bouton save-and-continue-later reste possible sur tout autre provider présentant ce même motif (non couvert par ce patch, scopé à QuestionPro).
+
+Vérification : patch confirmé fonctionnel par l'utilisateur.
+
+Statut : patch validé.
+
+---
+
+### _extract_questionpro_matrix_spreadsheet_row_blocks / _extract_questionpro_constant_sum_row_blocks — grilles multi-lignes (5 champs numériques fusionnés en 1 seul bloc par dédoublonnage)
+
+Fichier : Survey/dom_extractors_misc.py (deux nouvelles fonctions), enregistrées dans
+Survey/dom_analyzer.py (`_analyze_dom_current_context`, étape "0h-bis-2a-quater", juste
+après le bloc mrIWeb GRID/NUM, avant `_extract_label_radio_list_blocks`), avec `return`
+immédiat sur la somme des deux si des blocs sont produits.
+
+Cas observé : page QuestionPro avec deux questions consécutives composées chacune de 5
+champs numériques par ligne (scénarios "LE PLUS BAS / FAIBLE / MOYEN / ÉLEVÉ / LE PLUS
+ÉLEVÉ"). Deux widgets QuestionPro distincts, deux causes distinctes, même symptôme final :
+
+1. `div.answer-container.matrix-spreadsheet-question` (`table.parent-table`, un
+   `input[type="number"]` par `<tr>`) : chaque ligne porte son propre
+   `<label for="t_...">`, mais ce label contient le texte générique de l'en-tête de
+   colonne (ex: "Taux de croissance attendu du chiffre d'affaires (%)"), strictement
+   identique pour les 5 lignes — le vrai libellé distinctif est un `<span
+   class="question-text-span">`/`div.control-label` **sibling** du `<td>` de saisie
+   (pas ancêtre), donc jamais atteint par `_find_associated_label`. dom_analyzer.py
+   (~ligne 3747, bloc `label[for=id]` priorité text/textarea) captait ce label
+   générique avant tout recours au conteneur.
+2. `div.answer-container.constant-sum-question` (répartition d'un pourcentage,
+   `div.loop-wrapper[role="listitem"]` par ligne, aucun `<label for=...>` associé au
+   champ) : la résolution retombait sur `_nearest_question_container`
+   (dom_question_extractor.py) qui remonte jusqu'au conteneur englobant TOUTES les
+   lignes (seul ancêtre dont la classe contient "question" — le `loop-wrapper` de
+   chaque ligne n'a pas ce mot-clé), puis `_extract_question_from_container`
+   concaténait les 5 libellés de ligne + la ligne "Total" en un seul texte.
+
+Dans les deux cas, `_dedupe_question_blocks` fusionnait ensuite les 5 blocs sur une
+signature de question identique/quasi identique, n'en conservant qu'un seul.
+
+Correction (additive, aucune modification de `_nearest_question_container`,
+`_extract_question_from_container`, de la boucle générique text/textarea de
+dom_analyzer.py, ni de `_dedupe_question_blocks`) : un bloc `single`/itype="number" par
+ligne pour chaque widget, `question` = texte partagé (en-tête de colonne pour la
+matrice / question globale du `div.question-container` précédent pour le constant-sum)
+concaténé au libellé de ligne réel (rend le texte de question unique par bloc → aucune
+collision de signature de dédup, aucun besoin de scoper `_dedup_signature`).
+`context.row_label` porte le libellé brut ; flags payload/context distincts
+`qp_matrix_spreadsheet_row=True` / `qp_constant_sum_row=True`. Payload registry
+(xpath/alt_xpaths/tag/name/id) identique au pattern `mriweb_grid_num_row` déjà validé →
+dispatch fill number sans changement dispatcher (`fill_text_input` générique, détection
+`[NUM] champ numérique détecté` confirmée).
+
+Guard DOM strict (additif) :
+- Matrice : `div.answer-container.matrix-spreadsheet-question` présent ET
+  `table.parent-table` à l'intérieur ET au moins une ligne avec `td[role='cell']
+  .control-label` + `td[role='listitem'] input[type='number']`.
+- Constant-sum : `div.answer-container.constant-sum-question` présent ET au moins une
+  ligne `div.loop-wrapper[role='listitem']` avec `div.answer-options .control-label` +
+  `div.input-wrapper input`. La ligne "Total" (lecture seule, `span.form-input`, pas de
+  `<input>`) est exclue naturellement, sans traitement spécifique du texte "Total".
+
+Patterns couverts :
+- Grilles QuestionPro `matrix-spreadsheet-question` à ≥1 ligne, chaque ligne son propre
+  `input[type=number]` + libellé de ligne sibling du `<td>` de saisie.
+- Questions QuestionPro `constant-sum-question` à ≥1 ligne de saisie + une ligne "Total"
+  lecture seule optionnelle.
+- Validé en conditions réelles (snapshot `20260905_021438_after_dom_analyze`) : 10
+  blocs distincts extraits (5+5), GPT a répondu 10 valeurs numériques distinctes
+  (Q1..Q10), les 10 champs remplis avec succès (`[TARGET] apply ok=true
+  strategy=text_input reason=applied` ×10, `[NUM] champ numérique détecté` sur chaque
+  champ).
+Patterns exclus :
+- Toute autre variante de `matrix-spreadsheet-question` sans `input[type='number']` par
+  ligne (ex: options radio) → 0 ligne valide, aucun bloc produit, chemin générique
+  inchangé pour ce conteneur.
+- Toute autre variante de `constant-sum-question` sans input texte par ligne dans
+  `div.input-wrapper` → 0 ligne valide, aucun bloc produit, chemin générique inchangé.
+- Aucun autre type de question sur la même page (non observé dans ce cas : le
+  `<form>` ne contenait que ces deux widgets) — comme les autres extracteurs "page
+  spéciale" de ce fichier, un `return` est effectué dès qu'au moins un bloc est produit
+  par ces deux fonctions, court-circuitant le reste du pipeline pour cette page.
+
+Statut : patch validé (confirmé fonctionnel par l'utilisateur en conditions réelles).
+
+---
+
+### _qp_interactive_mode_active / _qp_visible_validation_errors — confirmation explicite (log) de la validation de page et de la progression/soumission en mode "Interactive"
+
+Fichier : Survey/survey_executor.py (deux nouvelles fonctions, lecture seule, aucun
+effet de bord), appelées depuis `execute_survey_page` :
+- `_qp_visible_validation_errors` juste après `action_dispatcher.execute_actions_plan(...)`
+  (avant l'enregistrement du contexte `ctx`).
+- `_qp_interactive_mode_active` en complément (nouvelles branches `elif`, additives)
+  dans le bloc CTA existant, juste après `clicked = input_handler.try_click_navigation_cta_any_context(driver)`.
+
+Cas observé : enquête QuestionPro en mode "Interactive" (`div.survey-inside-wrapper
+.has-interactive-mode`, script `interactiveSurvey.js`/`InteractiveMode.init(...)`) —
+toutes les sections de l'enquête sont rendues dans un seul DOM/une seule page, le
+passage d'une section à la suivante étant déclenché côté client dès qu'une question
+est renseignée, sans navigation d'URL. Le comportement fonctionnait en pratique
+(confirmé sur snapshot `20260905_021918_after_dom_analyze`, 17 blocs radio/checkbox
+extraits et remplis avec succès), mais uniquement parce que le passage côté client se
+produit avant que l'action suivante ne soit tentée — rien ne le garantissait ni ne le
+confirmait explicitement côté code :
+- Ni `execute_actions_plan` ni `execute_action` (action_dispatcher.py) ne vérifient
+  l'état de validation de la page après application d'une réponse.
+- `try_click_navigation_cta`/`try_click_navigation_cta_any_context` (cta_handler.py)
+  existent déjà mais aucun log n'explicitait le résultat quand le clic CTA final
+  n'aboutissait à aucun changement d'URL/DOM détecté (`redirect_watcher
+  .wait_for_navigation_or_dom_change` revient `None`/falsy) : le code poursuivait
+  silencieusement, la soumission finale réelle du formulaire n'étant alors jamais
+  confirmée explicitement (simplement supposée).
+
+Correction (additive, aucune modification de `execute_actions_plan`, `execute_action`,
+`try_click_navigation_cta`/`try_click_navigation_cta_any_context`, ni de la stratégie
+de clic CTA existante — aucun nouveau clic ajouté, donc CTA_INTERCEPT_ONLY non
+applicable ici) :
+1. `_qp_interactive_mode_active(driver)` : détection en lecture seule du mode
+   Interactive (gate DOM strict `div.survey-inside-wrapper.has-interactive-mode`).
+2. `_qp_visible_validation_errors(driver)` : remonte les `span[id^='errorSpan_']
+   [role='alert']` actuellement visibles (hors classes `hidden`/`d-none`, texte non
+   vide) — pattern d'erreur QuestionPro déjà observé (`errorSpan_<id>` par
+   question/ligne, masqué par défaut). Scopé à `_qp_interactive_mode_active`. Si des
+   erreurs sont trouvées après application des réponses → `log_info
+   [QP_INTERACTIVE_VALIDATION]` avec le(s) texte(s) d'erreur.
+3. Dans le bloc CTA existant : si `clicked=True` mais `changed` est falsy (aucune
+   navigation/mutation DOM détectée sous 10s) ET mode Interactive actif → `log_info
+   [QP_INTERACTIVE_SUBMIT]` explicitant que la progression de section ou la
+   soumission finale n'est pas confirmée. Si `clicked=False` (aucun bouton
+   trouvé/cliqué) ET mode Interactive actif → `log_info [QP_INTERACTIVE_SUBMIT]`
+   distinct (toutes les questions visibles semblent répondues mais aucun clic
+   n'a eu lieu).
+
+Vérification : test Playwright headless sur le snapshot réel — `
+_qp_interactive_mode_active` détecte correctement le mode (`True`) ;
+`_qp_visible_validation_errors` retourne `[]` sur le DOM de référence (aucun faux
+positif) et détecte correctement un `errorSpan` rendu visible artificiellement pour le
+test ; retourne `[]` dès que la classe `has-interactive-mode` est absente (scope
+respecté, aucun impact sur les autres modes QuestionPro ni sur les autres providers).
+
+Patterns couverts :
+- Enquêtes QuestionPro en mode Interactive (`div.survey-inside-wrapper
+  .has-interactive-mode`) : diagnostic explicite (logs) de la validation de page et de
+  la confirmation de progression/soumission finale, sans changement de comportement
+  fonctionnel (pur ajout de visibilité — aucune nouvelle action, aucun nouveau clic,
+  aucune boucle de retry).
+Patterns exclus :
+- Pages QuestionPro sans `has-interactive-mode` (mode "grille statique" déjà couvert
+  par le patch CTA `#SurveySubmitButtonElement` ci-dessus) — `_qp_interactive_mode_active`
+  retourne `False`, les deux nouvelles fonctions n'ont alors aucun effet (retour `[]`
+  immédiat / branches `elif` jamais atteintes).
+- Tout autre provider — gate DOM strict sur `div.survey-inside-wrapper
+  .has-interactive-mode`, absent partout ailleurs.
+- Aucune nouvelle logique de retry/abandon/nouveau clic CTA n'a été ajoutée : ce patch
+  est un diagnostic en lecture seule ; un renforcement du comportement (retry,
+  abandon contrôlé, nouveau clic explicite) nécessiterait une validation explicite
+  séparée.
+
+Statut : patch validé (vérifié sur DOM de référence réel, comportement non modifié
+pour les autres modes/providers).
+
+---
+
+## PLATEFORME : DECIPHER/FOCUSVISION — ANSWERS-LIST GENERIQUE (GROUPEMENT PAR NAME) : LIMITE DE SELECTION ("SELECTIONNE JUSQU'A N...") NON PRISE EN COMPTE
+
+Signature DOM : `div.question[role='radiogroup'] / div.question.checkbox / div.question.radio`
+avec `.answers.answers-list` (branche generique, regroupement des inputs par attribut `name`,
+blocs produits avec `context.focusvision_answers_list=True`), et un `h2.instruction-text`
+sibling de `h1.question-text` au niveau du conteneur `.question`, enoncant une limite de
+selection en langage naturel (ex. "Selectionne jusqu'a 3 marques.").
+Confirme sur snapshot `20260814_040958_after_dom_analyze` (question
+`A5_LikelyToBuy_Clothes`, 17 marques + "Autre", `h2.instruction-text` = "Selectionne jusqu'a
+3 marques.").
+
+### _extract_focusvision_answers_list_groups — branche generique (by_name) : fusion de l'instruction dans le texte de question
+Fichier : Survey/dom_extractors_decipher.py (fonction `_extract_focusvision_answers_list_groups`,
+boucle `for name, inps in by_name.items():`, juste avant construction de `target_id`).
+Bug corrige : cette branche generique lisait le texte de question uniquement depuis la
+variable partagee `question` (`.question-text`, calculee une fois en tete de fonction et
+reutilisee par plusieurs branches du meme fichier) sans y fusionner `h2.instruction-text`
+du conteneur `.question` — meme bug deja corrige ailleurs dans ce fichier pour les blocs
+"group-by-col table" et "sq-atm1d" (cf. entrees precedentes), mais non couvert pour cette
+branche generique la plus courante (regroupement par `name`). Consequence observee : le
+modele en aval ne disposait d'aucune trace de la limite affichee a l'utilisateur et
+selectionnait plus d'options que la limite reelle (ex. 3 marques attendues, davantage
+cochees).
+Correction : nouvelle variable locale `instruction_generic` (lue via `h2.instruction-text`,
+meme selecteur deja utilise ailleurs dans le fichier), calculee une fois par conteneur `.question`
+juste avant la boucle `by_name`. Nouvelle variable locale `question_generic` = fusion de
+`question` + `instruction_generic`, utilisee uniquement pour `target_id`,
+`register_target["question"]` et `blocks[].question` de cette branche. La variable partagee
+`question` n'est pas modifiee — aucun impact sur les autres branches d'extraction de la meme
+fonction (group-by-row, group-by-col table, matrix, sq-atm1d), qui la reutilisent plus haut
+et sortent (`continue`) avant d'atteindre cette branche generique.
+Log debug ajoute : `[DECIPHER_ANSWERS_LIST_GENERIC] instruction merged: ...`.
+Patterns couverts :
+- Branche generique answers-list (`by_name`, `focusvision_answers_list=True`) avec
+  `h2.instruction-text` present au niveau du conteneur `.question` (radio ou checkbox).
+Patterns exclus :
+- Aucun changement de calcul de `max_select`/`min_select` pour cette branche (reste
+  `len(options)` pour checkbox / `1` pour radio) — la priorite de la limite textuelle est
+  geree cote `Survey/prompt_builder.py` (regle `selection_rule` deja en place depuis le
+  patch "group-by-col table", non modifiee par ce patch — cf. entree "prompt_builder —
+  selection_rule (checkbox) : priorite explicite a une limite de selection mentionnee dans
+  la question").
+- Autres branches de `_extract_focusvision_answers_list_groups` (group-by-row, group-by-col
+  table, matrix, sq-atm1d) → variable partagee `question` inchangee, fusion strictement
+  locale a la branche generique.
+- Conteneurs `.question` sans `h2.instruction-text` → `instruction_generic=""`,
+  `question_generic == question` (comportement inchange).
+
+---
+
+## PLATEFORME : ASK&ANSWER / FIRSTINSIGHT — CLASSEMENT DRAG & DROP (RANKING_DRAG_AND_DROP)
+Signature DOM : `<app-survey-page>` (Angular Material 14 + Angular CDK), conteneurs
+`div[id^='appQuestionContainer-']`. Ce même moteur porte plusieurs patterns déjà couverts
+séparément dans `Survey/dom_extractors_misc.py` : `_extract_askandanswer_mobile_matrix_rows`
+(matrice mobile en panels), `_extract_askandanswer_selection_list_questions`
+(`mat-selection-list` / `mat-radio-group`, listes/radios classiques) — ces deux extracteurs
+existaient avant cette entrée et n'ont pas été modifiés par ce patch.
+
+Bug corrigé : sur une page combinant un `mat-selection-list`/`mat-radio-group` (2 blocs) ET un
+3e bloc `data-question-type="RANKING_DRAG_AND_DROP"` (classement par glisser-déposer, items
+`div.cdk-drag` sans `<mat-list-option>`/`<mat-radio-button>`), le pipeline ne retournait que les
+2 premiers blocs — le 3e disparaissait silencieusement de `blocks_count`/`itypes`, sans
+exception. Confirmé sur snapshot `20260819_012813_after_dom_analyze` (Under Armour, 7 items
+de classement).
+
+### _extract_askandanswer_ranking_dragdrop_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py, `_analyze_dom_current_context`, étape `0c-bis-0` (juste après
+`_extract_askandanswer_selection_list_questions`, avant `_extract_rnw_ionicon_multi_choice_blocks`).
+Guard : `app-survey-page` présent ET `div[id^='appQuestionContainer-'][data-question-type='RANKING_DRAG_AND_DROP']`.
+Patterns couverts :
+- Conteneur : `div cdkDropList` (`div.cdk-drop-list`, `id` du type `cdk-drop-list-N`) contenant
+  N `div.cdk-drag.ranking-option-list` — items ordonnés par position DOM (le rang = la position).
+- Question = `mat-card-title div` ; options = texte de `div.ranking-answer-color` par item
+  (≥2 items requis, dédupliqué par `_norm_key`).
+- Bloc unique `itype=checkbox`, `max_select=len(options)` — même convention que
+  `_extract_confirmit_cf_ranking_blocks` (bloc "full permutation", le texte de la question guide
+  l'ordre attendu, pas de sémantique de sélection classique).
+- `option_xpath_map` : XPath ancré sur le **texte brut** de l'item (whitespace-collapse
+  uniquement, PAS `_norm()`), scopé au `cdkDropList` par `id` — stable après reorder puisque
+  basé sur le contenu, pas la position. Voir bug NFKD ci-dessous : c'est la raison exacte pour
+  laquelle le texte brut est utilisé ici plutôt que `_norm()`.
+- Flag payload `aa_ranking_dragdrop=True` + `aa_ranking_dragdrop_drop_list_xpath` (XPath du
+  conteneur `cdkDropList`, ex. `(//div[@id="cdk-drop-list-0"])[1]`), consommés par la stratégie
+  de dispatch dédiée ci-dessous.
+Patterns exclus :
+- `mat-selection-list`/`mat-radio-group` (mêmes conteneurs `appQuestionContainer-*`) →
+  `_extract_askandanswer_selection_list_questions`, non modifié.
+- Toute page sans `data-question-type='RANKING_DRAG_AND_DROP'` → retour `[]` immédiat.
+
+### dom_analyzer.py — fusion additive `aa_sl_blocks` + `aa_rank_blocks` (étape 0c)
+Fichier : Survey/dom_analyzer.py, `_analyze_dom_current_context`, étape `0c)`.
+Cause racine du bug : `_extract_askandanswer_selection_list_questions` retournait `aa_sl_blocks`
+**immédiatement** dès qu'elle trouvait des blocs (`if aa_sl_blocks: return aa_sl_blocks`),
+empêchant tout extracteur suivant (dont le nouveau `_extract_askandanswer_ranking_dragdrop_blocks`)
+d'être atteint pour cette page.
+Fix : `aa_sl_blocks` n'est plus retourné immédiatement ; `_extract_askandanswer_ranking_dragdrop_blocks`
+est appelé juste après, et `aa_sl_blocks + aa_rank_blocks` est retourné dès que l'un des deux est
+non-vide. Aucune modification du corps des deux extracteurs — uniquement le point d'appel/fusion.
+Patterns couverts :
+- Page avec uniquement `mat-selection-list`/`mat-radio-group` → comportement inchangé
+  (`aa_rank_blocks=[]`, `aa_sl_blocks + [] == aa_sl_blocks`).
+- Page combinant les deux patterns → les 2 (ou plus) blocs `aa_sl_blocks` ET le(s) bloc(s)
+  `aa_rank_blocks` sont tous exposés à l'IA, dans cet ordre.
+Patterns exclus :
+- Aucune autre étape (0a, 0b, 0c-bis...) du pipeline n'est modifiée.
+
+### _aa_ranking_dragdrop_apply / _aa_ranking_dragdrop_locate / _aa_ranking_dragdrop_slot_rect (dispatcher)
+Fichier : Survey/action_dispatcher.py, juste avant `_apply_by_target_id`.
+Emplacement dispatch : dans `_apply_by_target_id → _apply_in_current_context`, guard
+`payload.get("aa_ranking_dragdrop") and resolved_itype == "checkbox"`, placé juste après le bloc
+`alchemer_rank_dragdrop` et avant le chemin générique `opt_map` (comme `alchemer_rank_dragdrop`,
+ce bloc n'a pas d'`option_xpath_map` cliquable exploitable : l'interaction est un drag, pas un clic).
+Différence avec `alchemer_rank_dragdrop`/`decipher_ranksort_dropdown` : pas d'input caché
+exploitable côté DOM — l'ordre est uniquement porté par la position réelle des items `cdkDrag`,
+donc un **drag pointer réellement simulé** est nécessaire (mousedown → mousemove par pas →
+mouseup), même technique déjà validée pour Angular CDK dans `handle_drag_drop_logic._run_drag_attempt`
+(PureSpectrum) plus bas dans ce fichier.
+Patterns couverts :
+- `_aa_ranking_dragdrop_locate` : localise l'item par texte (comparaison NFKD des deux côtés,
+  voir bug ci-dessous), retourne son index courant + son rectangle.
+- `_aa_ranking_dragdrop_slot_rect` : rectangle de l'item actuellement à un index donné (sert de
+  point de dépôt cible).
+- `_aa_ranking_dragdrop_apply` : déplace l'item vers `target_index` (0-based) — dépose au 1er
+  quart de l'item cible en remontant, au 3e quart en descendant (évite les oscillations
+  `cdkDropList` sur un dépôt pile à la frontière). Budget borné : `max_attempts=2`, abandon
+  contrôlé + log `verify_failed`/`item_not_found`/`target_slot_unavailable`/`drag_error` si non
+  atteint après re-vérification (re-localisation par texte, pas de cache d'élément).
+- Ordinal (rang cible = `target_index`) calculé dans `execute_actions_plan`, guard `if
+  _ard_p.get("aa_ranking_dragdrop")`, compteur `driver._aa_ranking_dragdrop_counts` /
+  `driver._aa_ranking_dragdrop_ordinal` réinitialisé à chaque plan — même schéma exact que
+  `alchemer_rank_dragdrop`/`kantar_rowrank`/`decipher_ranksort_dropdown`.
+Patterns exclus :
+- Autres providers ranking (`confirmit_cf_ranking`, `alchemer_rank_dragdrop`,
+  `decipher_ranksort_dropdown`, `askia_ranking_isotope`, `toluna_runtime_ranking`) — non touchés.
+
+### _aa_ranking_dragdrop_suppress_text_selection — sélection de texte native bloquant les drags consécutifs
+Fichier : Survey/action_dispatcher.py, appelée en tête de chaque tentative dans
+`_aa_ranking_dragdrop_apply`.
+Cause racine confirmée (isolée en environnement de test, puis reproduite sur les logs terrain
+fournis par l'utilisateur) : les items de classement sont du texte simple
+(`div.ranking-answer-color`), sans `user-select:none`. Un `mousedown`+`mousemove` simulé dessus
+déclenche la sélection de texte native du navigateur — confirmé directement via
+`window.getSelection().toString()` non vide après un premier drag. Cette sélection résiduelle
+fait que le `mouseup` du drag **suivant** n'a plus aucun effet sur `cdkDropList` : aucune
+exception, aucun déplacement DOM, juste `verify_failed` en boucle. Symptôme observé en prod :
+seul le tout premier item déplacé d'un plan de classement atteignait son rang cible, tous les
+suivants restaient figés à leur position d'avant le plan.
+Fix : `window.getSelection().removeAllRanges()` + `document.body.style.userSelect = 'none'`
+avant chaque tentative de drag. Best-effort (`try/except` silencieux), aucun CTA/side-effect
+métier touché.
+Patterns couverts :
+- Tout drag `aa_ranking_dragdrop` suivant un drag précédent réussi sur la même page.
+Patterns exclus :
+- Hypothèse écartée par test isolé : ce n'est PAS un problème de timing d'animation Angular CDK
+  (une attente supplémentaire seule, sans neutraliser la sélection, ne corrige rien).
+
+### NFKD vs texte DOM — accents dans option_xpath_map (extraction) / needle JS (dispatch)
+Fichier : Survey/dom_extractors_misc.py (`_extract_askandanswer_ranking_dragdrop_blocks`),
+Survey/action_dispatcher.py (`_aa_ranking_dragdrop_locate`).
+Bug corrigé : `Survey.dom_utils._norm()` applique `unicodedata.normalize("NFKD", ...)`, qui
+décompose les caractères accentués (ex. "é" → "e" + accent combinant). Le DOM du navigateur
+(`textContent`/`normalize-space()` XPath) reste en forme composée (NFC, "é" = 1 codepoint).
+Toute comparaison stricte entre un texte `_norm()`-isé et le DOM échouait systématiquement pour
+toute option accentuée (repro confirmé : "Qualités de performance...", "...porté en dehors...").
+Fix : `_extract_askandanswer_ranking_dragdrop_blocks` construit le littéral XPath à partir du
+texte brut (whitespace-collapse seulement, pas de NFKD) ; `_aa_ranking_dragdrop_locate` normalise
+les DEUX côtés (needle Python via `unicodedata.normalize("NFKD", ...)`, texte DOM côté JS via
+`.normalize('NFKD')`) avant comparaison, insensible à la forme d'origine du `value` reçu de l'IA.
+Patterns couverts :
+- Toute option contenant des caractères accentués (é, è, ê, à...) dans ce bloc de classement.
+Patterns exclus :
+- `_norm()` lui-même n'est pas modifié (utilisé tel quel ailleurs dans tout le codebase).
+Statut : patch applique, confirme fonctionnel par l'utilisateur en conditions reelles.
+
+---
+
+## CONSENTEMENT COOKIES BLOQUANT (CookieYes) — FERMETURE AVANT CLIC SUR UNE OPTION DE RÉPONSE
+
+Contexte : une bannière de consentement cookies (CookieYes, `div.cky-consent-container`, position
+fixe, ex. coin bas-gauche `cky-box-bottom-left`) peut rester affichée alors que le bot a déjà
+commencé à répondre aux questions de la page — elle n'était jusque-là fermée, si elle l'était, qu'au
+moment du clic sur le CTA de navigation "Suivant" via `try_click_navigation_cta`. Tant qu'elle reste
+ouverte, elle intercepte les clics natifs Playwright sur les cases à cocher situées dans sa zone
+d'affichage : `node.click()` puis `node.hover(); node.click()` échouent chacun après 30 secondes
+("subtree intercepts pointer events"), avec un scroll répété visible induit par l'auto-retry interne
+de Playwright, avant qu'une stratégie de repli (résolution `label[for]` + forçage `checked`) ne finisse
+par appliquer la sélection sans clic réel. Confirmé sur PureSpectrum (`screener.purespectrum.com`,
+question `group_ae4880eda297`), plateforme Angular.
+
+### Appel de _dismiss_blocking_overlays avant les méthodes de clic pointer (_click_candidate)
+Fichier : Survey/action_dispatcher.py, fonction `_click_candidate`.
+`_dismiss_blocking_overlays` (Survey/cta_handler.py) existait déjà, appelée uniquement avant le clic
+du CTA de navigation (`try_click_navigation_cta`) — jamais avant les clics sur les options de réponse
+elles-mêmes. Elle est réutilisée telle quelle (aucune modification de son corps) juste avant les
+méthodes 1 (clic natif) et 2 (hover+clic) de `_click_candidate`, uniquement lors du premier appel pour
+un `target_id` donné (`_first == 1`). Le résultat (nombre d'overlays fermés, ou exception) est
+systématiquement loggé (`[TARGET_DEBUG] _click_candidate: overlay-dismiss dismissed=N|exception=...
+before '<label>'`), y compris en cas d'échec — pas de branche silencieuse.
+Patterns couverts :
+- Tout overlay bloquant détecté et fermé par `_dismiss_blocking_overlays` (voir critères ci-dessous),
+  présent au moment du premier clic tenté sur une nouvelle cible (`target_id`).
+Patterns exclus :
+- Appels suivants pour le même `target_id` une fois une méthode de clic gagnante mise en cache
+  (`_first > 1`) — pas de re-scan à chaque option d'un même groupe de cases à cocher.
+- Aucune modification des méthodes de clic 1 à 4 elles-mêmes, ni de la logique `label[for]` de repli.
+
+### Bug racine dans _dismiss_blocking_overlays — evaluate() ne peut pas renvoyer de handle DOM cliquable
+Fichier : Survey/cta_handler.py, fonction `_dismiss_blocking_overlays`.
+Cause racine confirmée : la fonction récupérait la liste des boutons candidats via `ctx.evaluate(js)`,
+qui ne peut renvoyer que des valeurs sérialisables en JSON — les éléments DOM renvoyés par le script
+(`result.push(chosen)`) étaient donc dépouillés de toute référence exploitable côté Python avant même
+d'atteindre la boucle de clic. Chaque `btn.click()` échouait silencieusement (absorbé par le
+`except: continue` de la boucle), donc `dismissed` restait à `0` en permanence — y compris depuis
+l'appelant d'origine (`try_click_navigation_cta`), sans qu'aucune trace ne le révèle jusqu'à l'ajout du
+log inconditionnel côté `_click_candidate` (cf. entrée ci-dessus). Confirmé reproductible sur
+`.cky-consent-container` malgré des critères de détection (position:fixed, z-index, taille, visibilité)
+satisfaits par cet élément.
+Fix : remplacement de `ctx.evaluate(js)` par `ctx.evaluate_handle(js)` (JSHandle sur le tableau DOM),
+puis extraction de chaque élément individuel via
+`buttons_handle.evaluate_handle("(arr, i) => arr[i]", i).as_element()` pour obtenir un ElementHandle
+réellement cliquable. Aucune modification des critères de détection JS (`JS_FIND_DISMISS_BUTTONS`) ni
+de la logique de choix du bouton (priorité `data-cky-tag` type accept/reject/close).
+Patterns couverts :
+- Tout appelant de `_dismiss_blocking_overlays`, y compris `try_click_navigation_cta` (bénéficie du
+  même correctif sans modification propre).
+Patterns exclus :
+- Aucun changement des sélecteurs CMP existants ailleurs dans le codebase
+  (`CMP_CONTAINER_SELECTORS` de `handle_consent_screen`), non concernés par ce fix.
+Statut : patch appliqué, confirmé fonctionnel par l'utilisateur en conditions réelles (bannière
+CookieYes fermée avant clic sur les options, plus d'échec de clic natif/hover ni de scroll répété
+observé).
+
+### Faux positifs sur UI générique (.ps-navbar) + latence — filtre texte consentement obligatoire
+Fichier : Survey/cta_handler.py, fonction `_dismiss_blocking_overlays`.
+Bug corrigé : les seuls critères position:fixed + z-index élevé + taille + visibilité ne
+suffisaient pas à distinguer un bandeau de consentement d'un élément d'UI générique de la page
+partageant les mêmes propriétés CSS. Confirmé sur PureSpectrum : `.ps-navbar` (position:fixed,
+z-index:1030) contient les boutons "Decrease Font Size" / "Increase Font Size", sans
+`data-cky-tag` ni `aria-haspopup="dialog"` — les deux seuls critères d'exclusion du 2e passage
+de sélection (fallback "premier bouton visible non exclu") — donc éligible dès que la bannière
+de consentement elle-même était fermée (`cky-hide`) et ne restait plus candidate prioritaire.
+Symptômes observés en prod : clics involontaires répétés sur "Decrease Font Size" pendant la
+réponse à une question à cases à cocher, et forte latence entre deux sélections d'options une
+fois ce bouton devenu non interactif après un premier clic (nouvelle tentative de clic Playwright
+sur un candidat non actionnable, avec le même comportement d'auto-retry ~30s déjà documenté pour
+d'autres clics dans ce fichier).
+Fix : ajout d'un critère positif obligatoire — un indice textuel lié au consentement/vie privée
+(`aria-label` ou texte visible du candidat lui-même) parmi une liste de mots-clés génériques
+multi-langue (cookie, cookies, consent, consentement, confidentialité, vie privée, privacy, gdpr,
+rgpd, témoin, datenschutz) — en plus des critères géométriques/CSS existants, avant qu'un élément
+ne soit retenu comme overlay candidat. Aucun changement des critères géométriques eux-mêmes, ni
+de la logique de choix du bouton (1er passage `data-cky-tag`, 2e passage fallback générique).
+Patterns couverts :
+- Tout bandeau de consentement dont l'`aria-label` ou le texte visible contient un des mots-clés
+  ci-dessus (couvre CookieYes et, en principe, d'autres CMP génériques utilisant un vocabulaire
+  similaire) — non limité à un vendor nommé.
+- Tout élément d'UI fixe générique de la page (nav bar, barre d'outils, boutons de taille de
+  police, etc.) ne portant aucun de ces mots-clés — désormais explicitement exclu, quels que
+  soient ses position/z-index/taille.
+Patterns exclus :
+- CMP dont le bandeau ne contient aucun des mots-clés listés (ex. vendor avec un texte d'intro
+  entièrement différent, ou langue non couverte) — non détecté par ce filtre, à étendre au
+  besoin par ajout de mots-clés supplémentaires (pas de modification de la structure existante).
+Statut : patch appliqué, confirmé fonctionnel par l'utilisateur en conditions réelles (plus de
+clic sur le bouton de taille de police, plus de latence anormale entre deux sélections
+d'options).
+
+---
+
+## CONFIRMIT/FORSTA CF-QUESTION--SEARCHABLE-MULTI — RÉPONSE OPENAI AU FORMAT 5 CHAMPS INVERSÉ (COLONNE QID CONTENANT LA LISTE DE VALEURS)
+
+Contexte : question checkbox Confirmit/Forsta de type widget recherche-et-sélection
+(`cf-question--searchable-multi`, ex. target_id `group_ed9aefe29b8b`, group_key
+`checkbox:cf-searchable-multi:{qid}`). L'extraction DOM de ce widget fonctionnait déjà
+correctement (question + options bien récupérées).
+
+### parse_batch_response — chemin de récupération additif pour variante 5 champs avec colonnes inversées
+Fichier : Survey/batch_response_parser.py, fonction `parse_batch_response`
+Bug corrigé : sur cette question, la réponse brute d'OpenAI comportait bien 5 segments
+séparés par "////", mais dans un ordre inversé par rapport au format documenté
+(`QID //// target_id //// valeur //// itype //// contexte`) : colonne 1 = liste des
+valeurs sélectionnées (séparées par " | ", au lieu du QID), colonne 2 = target_id correct,
+colonne 3 = la même liste de valeurs sous une autre forme ("|" sans espace), colonne 4 =
+itype, colonne 5 = texte de question. Le mapping positionnel standard (5 champs) traitait
+donc la liste de valeurs comme un QID, qui ne matchait ni `_QID_RE` ni les contraintes
+batch strict (`Q1` introuvable) — la ligne entière était silencieusement écartée.
+Symptôme observé : `received=0 final_count=0 values=[]` malgré une extraction réussie et
+une réponse modèle contenant des valeurs valides parmi les options connues.
+Correction : nouveau chemin de résolution additif, déclenché uniquement si (a) la
+récupération standard existante a échoué (qid absent des contraintes) ET (b) la colonne 2
+correspond exactement à un target_id connu (`target_to_qid`) ET (c) l'itype déclaré en
+colonne 4 correspond à l'itype attendu pour la question ainsi retrouvée (double
+discriminant, pour ne jamais capturer à tort une ligne au format standard dont le QID
+serait simplement inconnu pour une autre raison). Aucune modification des branches 5/4/3
+champs existantes ni de la logique de récupération `target_to_qid` déjà en place.
+Patterns couverts :
+- Réponse à 5 segments "////" où la colonne 1 attendue pour le QID contient en réalité la
+  liste des valeurs sélectionnées, et où la colonne 2 porte le target_id correct.
+Patterns exclus :
+- Toute ligne où la colonne 2 ne correspond à aucun target_id connu, ou où l'itype de la
+  colonne 4 ne correspond pas à celui de la question retrouvée via ce target_id — dans ces
+  cas, comportement inchangé (ligne écartée si non résolue par les chemins existants).
+Statut : patch validé (confirmé par l'utilisateur — sélection appliquée avec succès sur la
+première valeur retournée après correction du parsing).
+
+### Observation associée (non patchée) — multiCount de la question non reflété dans max_select extrait
+Sur cette même question, `max_select` extrait valait 13 (nombre total d'options), alors que
+la configuration JS intégrée à la page porte `"multiCount":{"equal":1,"min":null,"max":null}`
+et une règle de validation "Veuillez sélectionner 1 réponse." : la question n'autorise en
+réalité qu'une seule sélection. Confirmé comportementalement : dès qu'une option est cochée,
+le widget ajoute la classe `cf-checkbox-answer--disabled` à toutes les autres options de la
+liste (seule l'option cochée porte `cf-checkbox-answer--selected`), ce qui explique les
+échecs de clic observés sur les valeurs supplémentaires renvoyées par le modèle (options
+devenues non interactives, pas un défaut de stratégie de clic).
+Non traité pour l'instant (aucune modification appliquée à l'extracteur
+`_extract_confirmit_cf_searchable_multi_choice_blocks`) : à réutiliser comme point de
+diagnostic si une occurrence similaire (question cf-question--searchable-multi avec
+sur-sélection par le modèle et clics suivants systématiquement en échec après le premier)
+est rencontrée à nouveau. Ne pas supposer que la limite est toujours 1 : le widget expose un
+objet `multiCount` générique (`equal`/`min`/`max`), la contrainte réelle peut varier d'une
+question à l'autre.
+
+---
+
+## PLATEFORME : QDTECH / KUAIJUECE — RADIO ICONE SANS INPUT NATIF (qd-radio)
+
+Signature DOM : marquage Vue scopé `data-v-*`, conteneurs `.qd-header`/`.qd-title`/
+`.radio-ctn`, pied de page "Support technique fourni par KuaiJueCe". Chaque option est
+matérialisée uniquement par une icône `<i class="qd-radio-unselect qd-radio">` (aucun
+`input[type=radio/checkbox]`, aucun `role="radio"/"checkbox"`) — la détection générique des
+éléments de choix (`dom_analyzer.py`, sélecteur combiné input/role) ne matche donc aucun
+élément sur ce DOM, ce qui empêchait toute construction de bloc de question.
+
+### _extract_qdtech_qdradio_icon_choice_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py, appelée juste après le bloc Studystream contenteditable,
+avant le sélecteur générique input/role radio-checkbox (retour anticipé si blocs trouvés).
+Guard DOM strict : `.radio-ctn` avec ≥2 `i[class*='qd-radio']` regroupées, plus un ancêtre
+commun portant un bloc `.qd-header` avec un span `.qd-title` non vide.
+Patterns couverts :
+- Question : concaténation du titre (`.qd-title`) avec les autres spans non vides du même
+  bloc `.qd-header` (ex. indicateur de type "Veuillez sélectionner une option"), dans l'ordre
+  d'apparition DOM.
+- Options : pour chaque icône `i[class*='qd-radio']`, libellé résolu via `innerText` du
+  parent direct de l'icône, avec repli sur le grand-parent si le parent direct est vide.
+- `option_xpath_map` peuplé via `_best_xpath_for_element` (XPath absolu positionnel) — voir
+  limite ci-dessous, corrigée côté dispatcher/clic, pas ici.
+- Flag payload : `qdtech_qdradio_icon=True` ; `itype="radio"` uniquement ; `group_key` :
+  `qdtech_qdradio:{question_norm}:{nb_options}`.
+Limite connue (non re-patchée dans l'extracteur, corrigée en aval) : le XPath positionnel de
+`option_xpath_map` ne résout plus l'élément au moment du clic dès que Vue re-rend l'icône
+(transition classe unselect/select) — voir `click_qdtech_qdradio_icon` ci-dessous, qui
+bypasse totalement ce XPath par une résolution en JS par texte normalisé.
+Patterns exclus :
+- Variantes `qd-checkbox` (multi-sélection) → hors scope, non couvert.
+- Tout DOM portant un input/role natif → chemins existants inchangés.
+
+### qdtech_qdradio_icon — guard dispatcher (_apply_by_target_id)
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc opt_map, juste après le guard `mui_dialog_question_option`.
+Guard : `payload.get("qdtech_qdradio_icon") and resolved_itype == "radio"`
+Patterns couverts :
+- Bypass total du chemin XPath/`_find_best_visible` → appel direct
+  `click_qdtech_qdradio_icon(driver, value)`.
+Problème résolu : `option_xpath_map` posé par l'extracteur (XPath positionnel absolu) ne
+résout plus l'icône au moment du clic — log observé `element not found for xpath: /html/...`
+suivi d'un fallback infructueux sur deux stratégies d'autres providers (`kantar_rowpicker`,
+`ipsos_sharky_grid_progressive`) puis `reason=no_strategy`.
+Patterns exclus :
+- Tous les autres itypes et providers.
+
+### click_qdtech_qdradio_icon
+Fichier : Survey/input_radio.py
+Guard : appelée uniquement depuis le guard `qdtech_qdradio_icon` du dispatcher.
+Patterns couverts :
+- `_JS_FIND` : itère `.radio-ctn i[class*='qd-radio']`, résout le libellé par `innerText` du
+  parent (repli grand-parent si vide, même logique que l'extracteur), compare en texte
+  normalisé (`toLowerCase().normalize('NFKC')`, espaces collapsés) — retourne la ligne
+  (ou l'icône si pas de parent) via `evaluate_handle(...).as_element()`, pas `evaluate()`
+  (même convention que `click_kantar_rowpicker_radio`/`click_mui_dialog_question_option`).
+- Clic sur la ligne (pas seulement l'icône) : `row_el.click()`, fallback
+  `row_el.hover(); row_el.click()`.
+- `_JS_VERIFY` : la classe de l'icône correspondante ne contient plus `unselect` après clic
+  (transition `qd-radio-unselect` → état sélectionné).
+Note DOM : le nom de classe exact à l'état sélectionné n'est pas figé dans la vérification —
+seule l'absence du sous-mot `unselect` est testée, pour rester robuste si la classe
+sélectionnée diffère d'un déploiement à l'autre du widget.
+Patterns exclus :
+- Aucun — fonction dédiée à ce seul flag.
+
+### execute_action — bloc radio : pas de fallback générique après échec qdtech_qdradio_icon
+Fichier : Survey/action_dispatcher.py
+Emplacement : section `if itype == "radio":`, juste après le guard `mui_dialog_question_option`.
+Guard : `_tp.get("qdtech_qdradio_icon")` truthy.
+Problème résolu : même risque de faux positif que `kantar_rowpicker_radio`/
+`mui_dialog_question_option` — ce widget n'a ni input natif, ni role, ni label[for], donc les
+stratégies génériques `radio_main`/`radio_buttonish` ne peuvent rien y trouver de pertinent.
+Correction : retour `False` immédiat si la stratégie dédiée a déjà échoué, aucun fallback
+générique invoqué.
+Patterns exclus :
+- Tout bloc radio sans flag `qdtech_qdradio_icon` → séquence générique inchangée.
+
+Statut : patch validé — confirmé par l'utilisateur en conditions réelles (log
+`qdtech_qdradio: native_verify=ok`, `apply ok=true strategy=target_id`, capture d'écran
+montrant l'option "25 à 34 ans" effectivement sélectionnée dans l'UI).
+
+---
+
+## PLATEFORME : QDTECH / KUAIJUECE — CHECKBOX ICONE SANS INPUT NATIF (qd-checkbox, choix multiple)
+
+Bug observé : question "Choix multiple" avec options illustrées par une image (7 tuiles)
++ une option texte simple additionnelle ("Aucune des réponses ci-dessus"), sur le même
+provider que la variante radio ci-dessus. Le DOM réutilise le conteneur commun
+`.radio-ctn`, mais les icônes de sélection portent la classe `qd-checkbox` (pas
+`qd-radio`) — hors scope de `_extract_qdtech_qdradio_icon_choice_blocks` (documenté
+"Patterns exclus" ci-dessus), donc `extracted_blocks count=0` puis abandon
+`detector_no_match` (0 input/role natif trouvé, comme pour la variante radio).
+
+### _extract_qdtech_qdcheckbox_icon_choice_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py, juste après
+`_extract_qdtech_qdradio_icon_choice_blocks` (retour anticipé si blocs trouvés).
+Guard DOM strict : `.radio-ctn` avec ≥2 `i[class*='qd-checkbox']` regroupées, plus un
+ancêtre commun portant un bloc `.qd-header` avec un span `.qd-title` non vide (même
+guard structurel que la variante radio — sélecteur d'icône disjoint : `qd-checkbox` ne
+matche jamais `i[class*='qd-radio']`, donc aucun recouvrement ni régression possible sur
+le DOM de référence radio).
+Patterns couverts :
+- Question : même logique de concaténation `.qd-header`/`.qd-title` + spans non vides
+  que la variante radio (code dupliqué intentionnellement, pas de factorisation pour ne
+  pas toucher l'extracteur radio existant).
+- Options : pour chaque icône `i[class*='qd-checkbox']`, libellé résolu via l'`innerText`
+  de l'ancêtre `.radio-ctn-body-list-item` (recherché via xpath `ancestor::*[...]`) — PAS
+  parent/grand-parent direct comme la variante radio. Raison : ce DOM comporte deux
+  structures d'option sous le même `.radio-ctn` :
+  - options illustrées par une image : l'icône est nichée dans le sous-bloc image
+    (`.option-picture-ctn-img`), le texte vit dans un conteneur **frère** distinct
+    (`.option-text-ctn`), hors de la chaîne d'ascendance directe de l'icône (au-delà de
+    2 niveaux) ;
+  - option texte simple : icône et texte partagent un parent commun proche.
+  `.radio-ctn-body-list-item` est l'ancêtre borne commun aux deux structures (une seule
+  option par item, jamais plusieurs — vérifié sur le DOM de référence), d'où son choix
+  plutôt qu'un nombre de niveaux fixe.
+- `option_xpath_map` peuplé via `_best_xpath_for_element` (XPath absolu positionnel) —
+  même limite que la variante radio (Vue re-rend l'icône), corrigée côté dispatcher/clic,
+  pas ici.
+- Flag payload : `qdtech_qdcheckbox_icon=True` ; `itype="checkbox"` uniquement ;
+  `group_key` : `qdtech_qdcheckbox:{question_norm}:{nb_options}`.
+- `max_select` via `_compute_max_select("checkbox", options, question)` (helper partagé
+  existant) — détecte correctement "Aucune des réponses ci-dessus" comme option
+  exclusive (préfixe "aucune").
+Patterns exclus :
+- Variante `qd-radio` (sélection unique) → hors scope, extracteur radio existant
+  inchangé, aucune régression (vérifié : 0 bloc radio sur le DOM checkbox de référence).
+- Tout DOM portant un input/role natif → chemins existants inchangés.
+
+### qdtech_qdcheckbox_icon — guard dispatcher (execute_action, avant _apply_by_target_id)
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `_p.get(...)`, juste après le guard
+`mui_dialog_question_checkbox_option` (même famille de widgets checkbox sans input natif
+court-circuités avant `_apply_by_target_id`, ex. `kantar_rowpicker_radio`/checkbox).
+Guard : `_p.get("qdtech_qdcheckbox_icon") and itype == "checkbox"`.
+Patterns couverts :
+- `skip_apply_by_target_id = True` puis appel direct
+  `click_qdtech_qdcheckbox_icon(driver, value)`, retour immédiat (`True`/`False`), aucun
+  fallback générique invoqué (widget sans input natif, ni role, ni label[for]).
+Patterns exclus :
+- Tous les autres itypes et providers.
+
+### click_qdtech_qdcheckbox_icon
+Fichier : Survey/input_radio.py (colocalisé avec `click_qdtech_qdradio_icon`, même
+convention que `click_mui_dialog_question_option`/`click_mui_dialog_question_checkbox_option`
+dans ce même fichier).
+Guard : appelée uniquement depuis le guard `qdtech_qdcheckbox_icon` du dispatcher.
+Patterns couverts :
+- `_JS_FIND` : itère `.radio-ctn i[class*='qd-checkbox']`, résout chaque option via
+  `icon.closest('.radio-ctn-body-list-item')` puis compare l'`innerText` de cet ancêtre
+  en texte normalisé (`toLowerCase().normalize('NFKC')`, espaces collapsés) — retourne
+  l'ancêtre `.radio-ctn-body-list-item` via `evaluate_handle(...).as_element()`, pas
+  `evaluate()` (même convention que `click_qdtech_qdradio_icon`).
+- Clic sur l'ancêtre `.radio-ctn-body-list-item` résolu (pas seulement l'icône) :
+  `item_el.click()`, fallback `item_el.hover(); item_el.click()`.
+- `_JS_VERIFY` : la classe de l'icône `qd-checkbox` correspondante (retrouvée via
+  `item.querySelector("i[class*='qd-checkbox']")`) ne contient plus `unselect` après clic.
+Patterns exclus :
+- Aucun — fonction dédiée à ce seul flag.
+
+Statut : patch validé — confirmé par l'utilisateur en conditions réelles (logs
+`qdtech_qdcheckbox: native_verify=ok`, `apply ok=true strategy=qdtech_qdcheckbox_icon_direct`
+répétés pour plusieurs options du même groupe — "Station électrique portable", "Batterie /
+système de stockage domestique", "Véhicule électrique", "Panneau solaire portable" —,
+capture d'écran montrant la case "Panneau solaire portable" effectivement cochée dans
+l'UI).
+
+### CTA navigation "Continuer" — motif dédié div[usetype] sans rôle/tabindex
+Fichier : Survey/cta_handler.py, fonction `try_click_navigation_cta`
+Emplacement : nouveau bloc de motif dédié, inséré avant le bloc "MetrixLab / Toluna" et
+avant la boucle générique de scoring des candidats CTA.
+Signature DOM : `<div usetype="...">` englobant un `<div>` texte "Continuer" — aucun
+`<button>`/`<input>`/`<a>`, aucun `role="button"`, aucun `tabindex`. La classe du texte
+change d'état (avant/après sélection d'une réponse sur la question) mais l'attribut
+`usetype` reste le discriminant DOM stable dans les deux états.
+Problème résolu : le scoring générique de candidats CTA ne cible que des éléments
+interactifs natifs ou explicitement marqués (role/tabindex) ; le seul candidat matché par
+le motif texte générique (`nav_xpath_matched count=1`) était systématiquement écarté
+(`not_visible_or_disabled`), aboutissant à `CTA_NOT_FOUND (no candidates)` malgré un bouton
+visible et cliquable dans l'UI.
+Guard DOM strict : `div[usetype]` dont le texte normalisé (`_normalize_lbl`) matche
+`looks_like_nav_label` (réutilise `CTA_SYNONYMS`/liste nav_kw déjà existante, aucune
+modification) + visible (`_is_visible`).
+Patterns couverts :
+- Clic via `_click_with_intercept` (helper partagé existant, inchangé) — respecte déjà
+  `CTA_INTERCEPT_ONLY` automatiquement (armement interceptor si activé, sinon
+  press/click/release réel avec vérification de progression DOM).
+Patterns exclus :
+- Tout `div[usetype]` dont le texte ne matche pas un label de navigation connu → ignoré,
+  chemin générique inchangé pour ces cas.
+Statut : patch validé — confirmé par l'utilisateur en conditions réelles (log
+`CTA_FOUND pattern=qdtech_usetype_div`, `CTA_CLICKED ... PROGRESSED=true`, navigation SPA
+détectée après clic).
+
+## PLATEFORME : QDTECH / KUAIJUECE — PICKER ROUE VANT SANS INPUT NATIF (van-picker-column)
+
+Signature DOM : composant Vant/Vue `.van-picker` / `.van-picker__columns`, chaque colonne
+étant `<ul class="van-picker-column__wrapper">` positionnée via `style="transform:
+translate3d(...)"`. Chaque option est un `<li role="button" tabindex="0"
+class="van-picker-column__item">` (libellé dans un `<div class="van-ellipsis">`), sans
+`id`/`name`/`value`. L'item actuellement sélectionné porte la classe additionnelle
+`van-picker-column__item--selected`. L'extraction générique `button_group`
+(`dom_analyzer.py`) produit correctement le bloc radio (question + 15 options) — non
+concernée par ce patch.
+
+### click_vant_picker_column_radio
+Fichier : Survey/input_radio.py
+Enregistré dans : `click_radio_by_label`, juste après le try `click_ipsos_sharky_grid_progressive_radio`
+(ordre additif, avant Confirmit GridClick).
+Guard DOM strict : `ul.van-picker-column__wrapper > li.van-picker-column__item` présent —
+sinon retour anticipé `False`, chaîne de fallback inchangée pour tout autre widget.
+Problème résolu : la résolution générique par XPath positionnel calculé à l'extraction ne
+retrouve pas l'élément au moment du clic (`element not found for xpath: .../ul/li[9]`), suivi
+d'un fallback infructueux sur deux stratégies d'autres providers (`kantar_rowpicker`,
+`ipsos_sharky_grid_progressive`) puis `reason=no_strategy` — même signature de bug que
+`qdtech_qdradio_icon` ci-dessus, sur un widget DOM différent.
+Patterns couverts :
+- Résolution de l'item par texte normalisé (`toLowerCase().normalize('NFKC')`, espaces
+  collapsés) au moment du clic, texte exact prioritaire puis repli substring — aucune
+  dépendance à l'index/position DOM.
+- Clic natif `target.click()` exécuté côté page (dans le `evaluate()`, pas via l'API
+  d'actionabilité Playwright/CDP) : l'item ciblé peut être hors de la fenêtre visible du
+  picker (clip via overflow sur la colonne), sans scroll natif possible sur cette roue
+  pilotée par `transform` — un clic Playwright classique échouerait sur l'actionabilité.
+- `_JS_VERIFY` (après `time.sleep(0.15)`, même convention que `click_kantar_rowpicker_radio`) :
+  la classe `van-picker-column__item--selected` doit avoir migré sur l'item dont le texte
+  correspond au label demandé.
+Patterns exclus :
+- Tout DOM sans `ul.van-picker-column__wrapper` → chemins existants inchangés (guard le
+  premier retour `False`).
+Statut : patch validé — confirmé par l'utilisateur en conditions réelles (log
+`vant_picker_column: native_verify=ok`, `apply ok=true strategy=radio_main reason=applied`,
+capture d'écran montrant l'option "Île-de-France" effectivement sélectionnée dans l'UI).
+
+## NAVIGATION POST-CTA — CLASSIFICATION "DOM-only (SPA)" PRÉMATURÉE SUR REDIRECTION CROSS-ORIGIN MULTI-SAUTS
+
+### wait_for_dom_stabilization_after_cta_nav
+Fichier : Management/redirect_watcher.py (nouvelle fonction, appelée uniquement dans
+Survey/survey_executor.py::execute_survey_page, bloc de clic CTA post-dispatch d'actions,
+juste après la classification `_kind = "URL" if changed.url_changed else "DOM-only (SPA)"`).
+Problème résolu : `wait_for_navigation_or_dom_change` (non modifiée) déclare la navigation
+terminée dès la première mutation de signature DOM détectée (poll 0.2s), sans vérifier que
+cette mutation correspond au document final. Sur une redirection cross-origin en plusieurs
+sauts (ex. screener.purespectrum.com → … → nsv.netr.jp), un état transitoire (document
+intermédiaire quasi vide) suffit à produire une signature différente de l'état pré-clic,
+d'où une classification `"DOM-only (SPA)"` prématurée. Le step suivant relançait aussitôt
+`analyze_dom()` sur ce document pas encore final : pipeline générique
+(`choice_groups detected=0`, `extracted_blocks count=0`) ET détecteur de dernier recours
+(`inputs=0/visible_wrappers=0/input_groups=0`) retournaient tous deux zéro simultanément,
+malgré une page cible finale (SC1, `input[type=radio][name="a0001"]`, 23 options) sans
+aucune particularité DOM justifiant un échec d'extraction générique — cause temporelle, pas
+un défaut de couverture d'extracteur.
+Correction : nouvelle fonction additive, appelée uniquement quand `_kind == "DOM-only (SPA)"`,
+qui rejoue la signature DOM (`_dom_signature`, non modifiée) jusqu'à 2 lectures consécutives
+identiques (aucune mutation supplémentaire), budget borné à 5.0s, poll 0.25s. Abandon
+contrôlé (retourne `False`, le flux continue normalement) si le budget est épuisé sans
+stabilisation confirmée.
+Log discriminant : `[CTA_NAV_STABILIZE] dom_stable=true après navigation DOM-only` (debug,
+LOG_LEVEL) si stabilisé dans le budget ; `[CTA_NAV_STABILIZE] dom_stable_timeout après
+navigation DOM-only (5.0s) — poursuite du flux` (info, 1 ligne) sinon.
+Patterns couverts :
+- Uniquement le point d'appel post-dispatch d'actions dans `execute_survey_page`
+  (Survey/survey_executor.py), et uniquement la branche `_kind == "DOM-only (SPA)"` de ce
+  point d'appel précis.
+Patterns exclus :
+- `wait_for_navigation_or_dom_change` : non modifiée, aucun changement de sa classification
+  URL vs DOM-only ni de son budget/poll existant.
+- Les 3 autres points d'appel existants à `wait_for_navigation_or_dom_change`
+  (VIDEO_GATE, DOM_ONLY_ABORT `random_selected`, CF_CAROUSEL_VISION) : non modifiés, patch
+  scopé au seul point d'appel impliqué dans le bug — pas de généralisation non demandée.
+- Branche `_kind == "URL"` (URL déjà changée) : non concernée, comportement inchangé.
+- Aucun CTA ajouté/modifié : le clic existant (`try_click_navigation_cta_any_context`) n'est
+  pas touché, seule l'attente de stabilité post-navigation est renforcée ; `CTA_INTERCEPT_ONLY`
+  non concerné par ce patch.
+
+Diagnostic associé : confirmé en conditions réelles sur screener.purespectrum.com → redirection
+vers nsv.netr.jp/ans/pc/processAnswer.php (question SC1 "Veuillez indiquer votre sexe et votre
+âge."). Avant patch : classification `DOM-only (SPA)` immédiate après clic CTA, puis
+`choice_groups detected=0`/`extracted_blocks count=0` sur le step suivant malgré 23 radios
+natifs visibles → fallback `cta_only_fallback` (pause manuelle). Après patch : confirmation de
+stabilisation DOM avant retour de `execute_survey_page`, laissant le document final se
+rendre avant le prochain `analyze_dom()`.
+
+Statut : patch validé.
+
+## CHAMP INPUT[TYPE=TEL] SANS ID, PARTAGEANT UN PRÉFIXE DE NAME AVEC UN CHAMP FRÈRE CACHÉ (nsv.netr.jp)
+
+### text_input_name_fallback — action_dispatcher.py
+Fichier : Survey/action_dispatcher.py, bloc `itype in ("text", "number", "textarea")`, juste
+après la branche existante `textarea_name_fallback` (tag=="textarea"), avant `native_date_input`.
+Bug corrigé : question ouverte à saisie numérique (nsv.netr.jp, `<input type="tel"
+name="a0065n002">` visible, sans `id`, précédé d'un `<input type="tel" name="a0065n001"
+style="display:none">` caché partageant le préfixe de name). L'extraction exclut déjà
+correctement le champ caché (`[SINGLES_SKIP] not_actionable_visible`) et cible le bon champ
+visible (`context.name="a0065n002"`, `context.id=null`). Côté dispatcher, `_field_id` (résolu
+via `target_payload.get("id")`) restait `None` (pas d'`id` HTML), et la résolution de repli par
+`name` déjà existante (`_name_field_id`) est scopée à `tag=="textarea"` — ce champ, `tag=="input"`,
+n'y matchait pas. `fill_text_input` (Survey/input_text.py) était donc appelé avec
+`element_id=None` ; son sélecteur générique (`input[type='text'], input[type='search'],
+input[type='number'], textarea, [contenteditable='true'], input[type='textarea']`) ne couvre
+pas `input[type='tel']` — alors que sa logique de scoring interne (`_score_input`) bonifie déjà
+ce type (`typ in ("number", "tel")`) pour la voie scopée par `context_hint`, preuve d'une
+couverture visée mais restée incomplète au niveau du sélecteur. Résultat : `TimeoutError`
+systématique sur `driver.wait_for_selector(selector, ...)` malgré un champ visible et
+actionnable.
+Correction : nouvelle branche additive, distincte de `textarea_name_fallback`, guard
+`not _field_id and not _name_field_id and target_payload.get("tag") == "input"` → résout
+`_input_name_field_id = target_payload.get("name")` et appelle `fill_text_input(..., element_id=fid)`.
+Cette résolution passe alors par le fallback `element_id` déjà existant dans `fill_text_input`
+(`driver.query_selector(f'[name="{element_id}"]')`, cf. entrée "input_text.py — fill_text_input,
+résolution element_id via query_selector" plus haut dans ce fichier) — `name` étant unique pour
+ce champ précis (distinct du name du champ caché frère), aucune ambiguïté possible malgré le
+préfixe partagé.
+Aucune modification du sélecteur générique ni de la logique de scoring de `fill_text_input`
+(corps de la fonction non touché) — patch strictement côté dispatcher, résolution directe par
+`name` qui contourne le besoin de couvrir `input[type='tel']` dans le sélecteur générique.
+Log discriminant : `strategy=text_input_name_fallback` (succès) /
+`apply ok=false reason=text_input_name_fallback_failed target_id=...` (échec).
+Patterns couverts :
+- `itype in ("text", "number", "textarea")`, `target_payload.get("tag") == "input"`, `id` HTML
+  absent, `name` HTML présent et non vide, `_field_id`/`_name_field_id` non résolus en amont.
+Patterns exclus :
+- Champs avec `id` HTML résolu (`_field_id` non vide) → chemin existant inchangé.
+- `tag == "textarea"` sans `id` → branche `textarea_name_fallback` existante inchangée, non
+  impactée (guard mutuellement exclusif, ordre additif : `textarea_name_fallback` reste
+  prioritaire et inchangée).
+- Aucun changement à `fill_text_input` (Survey/input_text.py) : ni son sélecteur générique, ni
+  sa logique de scoring `_score_input`, ni son fallback `element_id` existant (réutilisé tel
+  quel).
+Statut : patch validé par l'utilisateur en conditions réelles.
+
+## MODULE TRANSVERSAL : LOG_LEVEL — CENTRALISATION SUR is_debug()/current_log_level(), RETRAIT DE GLOBAL_CONFIG
+
+### is_debug / current_log_level — Survey/log_utils.py (résolveur canonique, non modifié) + 4 consommateurs migrés
+Fichier : Survey/log_utils.py (inchangé, déjà correct depuis toujours), preselection/survey_navigator.py,
+Survey/survey_executor.py, Survey/batch_response_parser.py, launch.py.
+Bug corrigé : malgré `LOG_LEVEL = "DEBUG"` déclaré dans global_config.py, les `log_debug()` n'apparaissaient
+jamais en sortie (seuls les `log_info()`, plus rares, étaient visibles). Cause racine : rien ne consommait
+cette déclaration — `preselection/secret_loader.py` ne produit aucune clé `log_level`/`LOG_LEVEL` (0
+occurrence, confirmé par grep), donc la réinjection conditionnelle dans `os.environ` par
+`preselection/config_loader.py` (dépendante de `merged.get("log_level")`) ne s'exécutait jamais. Le vrai
+résolveur légitime (`current_log_level()`, lecture `os.getenv("LOG_LEVEL")`) était déjà correct depuis
+toujours, mais 4 autres endroits dupliquaient leur propre check `os.getenv("LOG_LEVEL")` incohérent (pas
+d'escalade `DOM_DEBUG_FRAMES`/`ACTION_DEBUG_TARGET` comme dans log_utils.py) :
+`preselection/survey_navigator.py::_is_debug_enabled()`, `Survey/survey_executor.py` (2 points d'appel,
+lignes ~2195/2217), `Survey/batch_response_parser.py::_debug_enabled()`, `launch.py::setup_logging()`
+(niveau du module `logging` stdlib).
+Décision actée (utilisateur, 25/08/2026) : LOG_LEVEL reste explicitement HORS GLOBAL_CONFIG — une tentative
+antérieure de l'y inclure (`LOG_LEVEL="DEBUG"` ajouté dans global_config.py, jamais consommé) est annulée,
+conformément à `Utils/DEPLOIEMENT_BAREMETAL_DECISIONS.md` §2/§6 (rigidité opérationnelle : impossible de
+débugger un bot isolément sans recompiler tout le parc). Écart précédemment repéré au point 4 de
+`Utils/AUDIT_ARRET_RELANCE_BOTS.md` — résolu pour ce volet par ce patch (LOG_LEVEL retiré de global_config.py).
+Correction : les 4 lecteurs dupliqués délèguent désormais à `is_debug()`/`current_log_level()`
+(Survey/log_utils.py) au lieu de relire `os.getenv("LOG_LEVEL")` indépendamment — source unique de vérité,
+cohérente avec l'escalade DOM_DEBUG_FRAMES/ACTION_DEBUG_TARGET déjà existante dans log_utils.py.
+Patterns couverts :
+- Tout process où LOG_LEVEL est positionné en variable d'environnement avant lancement (accounts.json →
+  injection env par bot, NSSM, tools/attach_tab.ps1) — mécanisme légitime inchangé, désormais effectivement
+  honoré par tous les modules consommateurs.
+Patterns exclus :
+- Aucun changement à preselection/config_loader.py ni preselection/secret_loader.py (chemin de réinjection
+  PAR_BOT laissé disponible, actuellement inutilisé faute de producteur).
+- Aucun CTA touché (patch scopé aux gates de logs uniquement).
+- LOG_STEP_SUMMARY et CAPTCHA_PROVIDER (même écart doc/code documenté au point 4 de l'audit) non traités —
+  hors périmètre de ce patch, restent ouverts.
+Statut : patch validé par l'utilisateur.
+
+## PLATEFORME : DECIPHER — WIDGET sq-atm1d IMAGÉ (options pictogrammes, radio)
+
+### _extract_focusvision_answers_list_groups / atm1d_buttons — légende image-only + itype sans role ARIA
+Fichier : Survey/dom_extractors_decipher.py (branche dédiée `atm1d_buttons`, lignes ~537-655)
+Bug corrigé (double, même branche, même DOM de référence) :
+1. La légende d'option n'était lue que via `.inner_text()` sur `.sq-atm1d-legend`. Pour une option
+   image-only (`<span class="sq-atm1d-legend"><img alt="Male"></span>`, aucun nœud texte), `inner_text()`
+   renvoie `""` → `if not legend: continue` supprimait silencieusement l'option. Sur la question de
+   référence (Male/Female en image, Autre en texte), seule "Autre" survivait → `len(options) < 2` →
+   tout le bloc dédié (qui cible pourtant correctement le `<li class="sq-atm1d-button">` **visible** du
+   widget) était abandonné, et l'extraction retombait sur la branche générique `by_name` plus bas dans le
+   même fichier, laquelle cible la table `.answers.answers-table` **cachée en CSS** (le widget la
+   remplace entièrement à l'affichage). Conséquence en aval (Survey/action_dispatcher.py, `_click_candidate`
+   sur ce xpath caché) : 2 méthodes de clic (natif, hover) timeoutent chacune 30s sur un élément jamais
+   visible, avant une cascade de stratégies génériques non pertinentes (kantar_rowpicker,
+   ipsos_sharky_grid_progressive, vant_picker_column, decipher_grid_radio_strict) qui échouent toutes →
+   `apply ok=false reason=no_strategy` → pause manuelle, alors que l'option finit par apparaître
+   sélectionnée à l'écran (état réel non reflété par le rapport de stratégie).
+2. La détection radio/checkbox (`itype_atm1d`) ne vérifiait qu'un `role="radiogroup"`/`role="radio"`
+   porté par le `<ul class="sq-atm1d-buttons">` ou le `<li>` du widget. Sur ce DOM, aucun des deux ne
+   porte de `role` — c'est le `div.question` englobant qui porte `role="radiogroup"` (+ classe `radio`),
+   exactement le même discriminant déjà utilisé pour repérer `q_containers` en tête de cette fonction.
+   Sans correctif, la correction du point 1 aurait fait basculer une question radio (1 réponse) en
+   checkbox (`max_select = len(options)` = 3) — régression plus grave que le bug initial.
+Correction :
+1. Repli image-only sur `.sq-atm1d-legend img` : lecture `alt` puis `title` puis nom de fichier `src`
+   (regex `\.[a-zA-Z0-9]{2,5}$` retirée), déclenché uniquement quand `legend` reste vide après
+   `inner_text()` ET qu'une `<img>` est présente dans `.sq-atm1d-legend` — repli déjà utilisé mot pour
+   mot ailleurs dans le même fichier pour un cas identique (branche générique `by_name`, lignes ~890-906),
+   simplement porté dans cette branche dédiée.
+2. Repli itype : si les vérifications de `role` internes au widget n'ont pas tranché (itype_atm1d resté à
+   la valeur par défaut `"checkbox"`), lecture du `role` et de la classe `radio` du `div.question`
+   englobant (`q`) ; ne s'active que dans ce cas, ne modifie aucun des deux checks existants.
+Diagnostic ajouté : nouvelle vérification post-clic scopée `meta.source == "sq-atm1d"` + itype radio
+(Survey/action_dispatcher.py, juste avant le `_click_candidate(el, "target")` générique) — la vérification
+générique plus bas (`.checked` sur l'input décoratif du widget, jamais synchronisé de façon fiable par le
+site) donnait un faux échec malgré une sélection visuellement bien appliquée. Nouvelle vérification :
+poll borné à 1s sur la classe `sq-atm1d-selected` que Decipher applique lui-même au `<li>` sélectionné
+(cf. `<style>` inline de la question : `.sq-atm1d-selected{border-color:#0b97c3 !important;...}`).
+Log : `[TARGET] apply ok=true strategy=sq_atm1d_widget reason=li_selected_class`.
+Patterns couverts :
+- Widget `sq-atm1d` avec au moins une option dont `.sq-atm1d-legend` ne contient qu'une `<img>` (pas de
+  texte visible), quel que soit l'itype (radio/checkbox).
+- Widget `sq-atm1d` dont ni le `<ul class="sq-atm1d-buttons">` ni le `<li class="sq-atm1d-button">` ne
+  portent de `role` ARIA, mais dont le `div.question` englobant porte `role="radiogroup"` et/ou la classe
+  `radio`.
+Patterns exclus :
+- Widget `sq-atm1d` avec `role` déjà présent sur le `<ul>`/`<li>` (chemin existant inchangé, vérifié par
+  rejeu sur DOM synthétique : itype résolu identique avant/après patch).
+- Widget `sq-atm1d` checkbox sans aucun `role` ni classe `radio` sur le `div.question` (reste `checkbox`,
+  vérifié par rejeu sur DOM synthétique — le repli itype ne bascule pas à tort).
+- Options déjà pourvues d'un texte visible dans `.sq-atm1d-legend` (chemin `inner_text()` existant
+  inchangé, le repli image-only ne s'active que si `legend` est vide).
+- La vérification `sq_atm1d_widget` (action_dispatcher.py) ne s'active que si `meta.source == "sq-atm1d"`
+  ; tout autre payload retombe inchangé sur le chemin générique `_click_candidate(el, "target")` existant.
+  [MISE À JOUR 2026-08-29 : initialement restreinte à itype radio, étendue à itype checkbox — cf. entrée
+  ci-dessous "sq_atm1d_widget — extension checkbox".]
+Vérification : rejeu direct de l'extracteur (shim lxml, hors Playwright) contre le snapshot DOM de
+référence du bug (`20260829_103324_after_dom_analyze`) — options extraites correctement (Male/Female/
+Autre), itype=radio confirmé, xpath résolu vers le `<li>` visible (data-uid vérifié) et non plus vers la
+table cachée. Non-régression vérifiée sur 2 DOMs synthétiques (radio texte+role déjà correct ; checkbox
+image-only sans role). Confirmé en conditions réelles : `apply ok=true strategy=sq_atm1d_widget
+reason=li_selected_class` puis `apply ok=true strategy=target_id reason=applied`, sélection quasi
+instantanée (plus de double timeout 30s), plus de pause manuelle.
+Statut : patch validé par l'utilisateur en conditions réelles.
+
+### sq_atm1d_widget — extension checkbox (vérification post-clic partagée radio/checkbox)
+Date : 2026-08-29
+Fichier : Survey/action_dispatcher.py (garde de la vérification post-clic dédiée `sq-atm1d`, juste avant
+le `_click_candidate(el, "target")` générique — cf. entrée précédente pour l'introduction de cette
+vérification).
+Bug corrigé : la vérification post-clic dédiée `sq_atm1d_widget` (poll borné à 1s sur la classe
+`sq-atm1d-selected` posée par Decipher sur le `<li>` sélectionné) n'était déclenchée que pour
+`resolved_itype == "radio"`. Sur la variante checkbox du même widget (DOM de référence :
+`20260829_114613_after_dom_analyze`, question `QBRAW02`, 5 options attendues sur 14, dont l'option
+exclusive `b99` "Aucune d'entre elles"), le clic ciblait bien le `<li class="sq-atm1d-button">` visible
+et la sélection était visuellement correcte (bordure active), mais la vérification dédiée était sautée
+faute de correspondre à `itype == "radio"`. L'exécution retombait sur la vérification générique
+(recherche d'un `input` avec id/name résolvable sous l'élément cliqué), qui échoue systématiquement ici
+car les inputs sous le `<li>` visible sont décoratifs (sans id/name — le vrai input nommé, ex.
+`ans183213.0.3`, vit dans la table `.answers.answers-table` cachée en CSS que le widget remplace à
+l'affichage). Cascade en aval : `toluna_runtime_answerrow` (probe AttributeError), puis
+`ipsos_sharky_grid_progressive_checkbox`, `kantar_rowpicker`, `ipsos_sharky_grid_progressive`,
+`vant_picker_column`, `decipher_grid_radio_strict` — toutes génériques, toutes non pertinentes pour ce
+widget, toutes en échec → `apply ok=false reason=no_strategy` pour chaque option ciblée, malgré une
+sélection réelle correcte à l'écran.
+Correction : élargissement du garde de `resolved_itype == "radio"` à
+`resolved_itype in ("radio", "checkbox")`. Aucune duplication de logique — même stratégie nommée
+`sq_atm1d_widget`, même signal DOM (`sq-atm1d-selected`), partagé entre les deux itypes, cohérent avec
+le nettoyage des options exclusives du même widget (bloc `exclusive_options_norm`, quelques centaines de
+lignes plus haut dans action_dispatcher.py) qui traitait déjà `meta.source == "sq-atm1d"` sans condition
+d'itype. Extracteur (dom_extractors_decipher.py, `atm1d_buttons`) non modifié — le bug était uniquement
+dans le garde de la vérification post-clic, pas dans l'extraction.
+Patterns couverts :
+- Widget `sq-atm1d` itype checkbox (en plus du radio déjà couvert), avec ou sans option exclusive.
+Patterns exclus :
+- Payload sans `meta.source == "sq-atm1d"` : chemin générique existant inchangé, quel que soit l'itype.
+Vérification : confirmé en conditions réelles sur le DOM de référence (question `QBRAW02`, 14 options
+dont 1 exclusive) — logs `apply ok=true strategy=sq_atm1d_widget reason=li_selected_class` puis
+`apply ok=true strategy=target_id reason=applied` pour chaque option ciblée (Philips, Babyliss, Gillette
+confirmées sélectionnées à l'écran, Wilkinson-sword correctement non sélectionnée), plus de cascade de
+stratégies génériques, plus d'abandon `no_strategy` sur ce widget en checkbox.
+Statut : patch validé par l'utilisateur en conditions réelles.
+
+### atm1d_buttons — repli texte de question depuis un bloc `.comment` frère (widget rappel publicitaire, h1.question-text zero-width)
+Date : 2026-08-29
+Fichier : Survey/dom_extractors_decipher.py (bloc `atm1d_buttons` de
+`_extract_focusvision_answers_list_groups`, construction de la variable locale `question_atm1d` — cf.
+entrées précédentes pour l'introduction de cette variable).
+Bug corrigé : sur une question de rappel/exposition publicitaire (widget `sq-atm1d` en radiogroup,
+DOM de référence `20260829_143237_after_dom_analyze`, question `QADREC_ad4`), `h1.question-text` ne
+contient qu'un caractère invisible zero-width (`‌`) et `h2.instruction-text` est vide — `question`
+puis `question_atm1d` restent donc visuellement vides après un simple `.strip()` (qui ne retire pas les
+caractères zero-width). Le texte réellement visible pour le répondant ("Avez-vous vu cette publicité
+auparavant ?") est porté par un `<div class="html comment ...">` frère (`h1.comment-text`), placé juste
+avant `div.question...sq-atm1d` mais hors de son périmètre — jamais lu par cet extracteur. Conséquence :
+le prompt envoyé au modèle contenait une question vide (`contexte: ‌`), empêchant la règle système
+dédiée aux questions de rappel publicitaire (déclenchée sur mots-clés du texte de question) de
+s'appliquer ; le modèle retombait sur un choix par défaut positif ("Oui, absolument") au lieu du refus
+attendu ("Non, certainement pas").
+Correction : nouveau helper module-level `_strip_zero_width()` (retire `​`/`‌`/`‍`/`﻿`
+avant test de vacuité). Dans le bloc `atm1d_buttons`, repli scopé : si `question_atm1d` est vide une fois
+les caractères invisibles retirés, lecture des `div` frères précédents portant la classe `comment`
+(xpath `preceding-sibling::div[...][position()<=3]`, borné à 3 pour rester "juste avant"), concaténation
+du texte visible (nettoyé des mêmes caractères invisibles) de ceux qui en ont. `question_atm1d` reste la
+seule variable modifiée (locale à ce bloc) — la variable partagée `question` et les autres branches
+d'extraction de la même fonction sont inchangées.
+Log debug ajouté : `[DECIPHER_ATM1D] question fallback from preceding .comment sibling(s): ...`.
+Patterns couverts :
+- Widget `sq-atm1d` dont `h1.question-text` est vide ou ne contient qu'un/des caractère(s) zero-width
+  ET `h2.instruction-text` vide, avec un ou plusieurs `div.comment` frères précédant immédiatement
+  `div.question` (texte d'intitulé et/ou bloc média vidéo/image/texte sans texte propre).
+Patterns exclus :
+- Widget `sq-atm1d` avec `h1.question-text` déjà exploitable (chemin existant inchangé, non-régression
+  vérifiée par rejeu — cf. Vérification).
+- Aucun `div.comment` frère trouvé, ou tous vides : `question_atm1d` reste tel quel (vide), comportement
+  inchangé (pas de nouvelle exception, pas de valeur fabriquée).
+- Stratégie de clic/vérification `sq_atm1d_widget` (action_dispatcher.py) : non modifiée, l'échec observé
+  en amont de ce patch (`no sq-atm1d-selected class after click`) a eu lieu sur la mauvaise valeur produite
+  par ce bug ; à surveiller sur un prochain run réel une fois la bonne valeur ciblée, mais aucun bug
+  distinct confirmé à ce stade dans action_dispatcher.py.
+Vérification : rejeu direct de l'extracteur (shim lxml, hors Playwright) sur 3 DOMs — DOM du bug
+(`20260829_143237_after_dom_analyze`) : question récupérée = "Avez-vous vu cette publicité auparavant ?",
+options/itype(radio)/max_select(1) corrects ; DOM Male/Female/Autre (`20260829_103324_after_dom_analyze`)
+et DOM QBRAW02 checkbox+instruction (`20260829_114613_after_dom_analyze`) : question native/instruction
+fusionnée inchangées, repli non déclenché (non-régression confirmée).
+Statut : patch validé par l'utilisateur en conditions réelles.
+
+### sq-atm1d checkbox imagé — vérité-terrain embarquée (`cs:trapCorrect`) au lieu de la sélection du modèle
+Date : 2026-08-29
+Fichiers :
+- Survey/dom_extractors_decipher.py — nouvelles fonctions module-level `_extract_balanced_json_object()`
+  et `_extract_atm1d_trap_correct_labels(q)`, plus hooks additifs dans le bloc `atm1d_buttons` de
+  `_extract_focusvision_answers_list_groups` (aucune ligne existante de ce bloc modifiée).
+- Survey/survey_executor.py — nouvelle fonction `_apply_atm1d_trap_ground_truth(actions, qid_meta)`,
+  appelée juste après `batch_response_parser.sanitize_actions(...)` et avant
+  `action_dispatcher.execute_actions_plan(...)` dans `execute_survey_page`.
+Bug corrigé : sur un widget `sq-atm1d` checkbox de type "trap" imagé (ex: question `QTRAP` "Laquelle de
+ces images contient un arbre ?", DOM de référence `20260829_165923_after_dom_analyze` /
+`20260829_190856_after_dom_analyze`), chaque option n'est représentée dans le DOM visible que par une
+image sans alt/title — le texte transmis au modèle n'est donc qu'un label opaque dérivé du nom de fichier
+(`b6`, `b5`, `nb1`, ...). Confirmé en conditions réelles : le modèle a répondu `b6|b5|b1|b3|b7` (5 valeurs)
+en omettant `b2` et `b8`, alors que la consigne demande de cocher *toutes* les images pertinentes — omission
+structurelle, non corrigible par reformulation de prompt (le modèle ne voit jamais le contenu visuel réel).
+Cause racine : la page embarque, dans un `<script>` sibling de `div.question` (hors de son sous-arbre),
+un objet `var jsexport = {...}` contenant un tableau `rows` avec, par option, une clé `cs:trapCorrect`
+("Y"/"N") indexée sur le même `label` que l'attribut `data-label` du `<li class="sq-atm1d-button">` DOM —
+vérité-terrain Decipher elle-même, jamais lue par aucun extracteur.
+Correction :
+1. `_extract_balanced_json_object(text, start_marker)` : extrait le literal JSON `{...}` qui suit
+   `start_marker` en comptant les accolades (chaînes ignorées), fonction utilitaire générique autonome.
+2. `_extract_atm1d_trap_correct_labels(q)` : lit `.sq-atm1d-widget[data-uid]` du widget courant, cherche
+   via `q.query_selector_all("xpath=following::script")` un script contenant à la fois `"jsexport"` et
+   `"cs:trapCorrect"`, extrait l'objet JSON, et n'accepte le résultat QUE si `data["uid"]` correspond
+   exactement au `data-uid` du widget DOM (corrélation stricte, jamais le premier script venu). Retourne
+   `{data-label: "Y"|"N"}` ou `{}` (fail-safe total, aucune exception ne remonte).
+3. Dans le bloc `atm1d_buttons` (boucle existante inchangée) : recopie additive de cette vérité-terrain sur
+   la clé `legend_norm` déjà produite par la boucle (une ligne ajoutée après
+   `option_xpath_map[legend_norm] = xp`, aucune variable existante altérée). Garde de cohérence après la
+   boucle : la vérité-terrain n'est retenue que si elle couvre STRICTEMENT toutes les options du bloc
+   (`len(trap_correct_norm) == len(options)`), sinon réinitialisée à `{}` (repli silencieux vers le
+   comportement piloté par le modèle, inchangé). Stockée dans `meta.trap_correct_norm`, scopée
+   `itype_atm1d == "checkbox"` uniquement (le bug ne concerne que le multi-select ; laissée vide sur radio).
+4. `_apply_atm1d_trap_ground_truth()` (survey_executor.py) : pour chaque bloc checkbox dont le target
+   enregistré porte `meta.source == "sq-atm1d"` ET un `trap_correct_norm` non vide, remplace intégralement
+   les actions produites par le modèle pour ce `qid` par le set déterministe issu du DOM (une action
+   `{qid, target_id, value=legend_norm, itype="checkbox", context=question, raw=...}` par option correcte),
+   au lieu de dépendre de sa réponse. Tout autre bloc (checkbox générique compris, ou sq-atm1d sans
+   couverture complète) traverse la fonction sans aucune altération.
+Log ajouté : `[ATM1D_TRAP] ground-truth override applied qids=[...]` (log_info, 1 ligne, uniquement quand
+l'override s'applique réellement) ; `[DECIPHER_ATM1D] trap ground-truth coverage incomplete (...) — ignored`
+(log_debug, cas de repli).
+Patterns couverts :
+- Widget `sq-atm1d` checkbox dont un script sibling contient `var jsexport` avec `cs:trapCorrect` pour
+  CHAQUE option retenue, et dont le `uid` JSON correspond au `data-uid` du widget DOM.
+Patterns exclus :
+- Widget `sq-atm1d` radio (bug rapporté uniquement sur checkbox) : `trap_correct_norm` toujours vide en
+  sortie, comportement inchangé.
+- `cs:trapCorrect` absent, script introuvable/non corrélé (`uid` différent), ou couverture partielle :
+  override jamais déclenché, comportement 100% inchangé (modèle pilote la sélection comme avant ce patch).
+- Tout bloc checkbox dont `meta.source != "sq-atm1d"` : `_apply_atm1d_trap_ground_truth` ne touche jamais
+  ses actions.
+- CTA non touché par ce patch (aucune modification de la logique de clic Suivant/Submit) — règle
+  CTA_INTERCEPT_ONLY non applicable ici.
+Vérification :
+- Extraction réelle (Playwright, DOM de référence `20260829_165923_after_dom_analyze`) : `target_id`,
+  `options`, `option_xpath_map`, `max_select` identiques bit-à-bit à l'extraction pré-patch (non-régression
+  confirmée) ; `meta.trap_correct_norm` correctement peuplé (7×Y : b6,b5,b1,b3,b7,b2,b8 — 2×N : nb1,nb4).
+- Override testé unitairement avec réponse modèle incomplète simulée (omission b1/b2/b3) : remplacé par le
+  set complet et exact des 7 bonnes images.
+- Non-régression testée sur un bloc checkbox générique (hors sq-atm1d) : actions du modèle traversent la
+  fonction totalement inchangées.
+- **Confirmé en conditions réelles** (`20260829_190856_after_dom_analyze`) : le modèle a répondu
+  `b6|b5|b1|b3|b7` (omission de `b2` et `b8`, bug reproduit) ; log `[ATM1D_TRAP] ground-truth override
+  applied qids=['Q1']` ; les 7 clics `b6,b5,b1,b3,b7,b2,b8` tous `apply ok=true strategy=sq_atm1d_widget
+  reason=li_selected_class` — sélection complète et correcte malgré l'omission initiale du modèle.
+Statut : patch validé par l'utilisateur en conditions réelles.
+
+### _extract_table_matrix_radio_rows — préserve la casse du name DOM (fallback par valeur)
+Fichier : Survey/dom_extractors_misc.py (construction de `option_xpath_map`, branche fallback
+`@name=.../@value=...` de la boucle par ligne).
+Cas observé : matrice radio HTML classique (InsightExpress/Decipher, `table.grid` avec `thead`
+6 colonnes + 4 lignes `Q154_1..Q154_4`, radios sans `id`, groupés par `name` casse mixte type
+`Q154_4`). La résolution primaire par `option_xpath_map` échouait systématiquement pour les 4
+lignes (`element not found for xpath: (//input[@type='radio' and @name="q154_4" and @value="3"])[1]`),
+alors que le `name` réel dans le DOM est `Q154_4`. Cause : `row_name` (utilisé pour le regroupement
+interne par ligne, `group_key`, `target_id`) est lowercasé via `_norm_lc`, mais cette même variable
+lowercasée était réutilisée telle quelle pour construire le XPath `@name=...` — comparaison XPath
+d'attribut sensible à la casse, donc jamais de match. Le pipeline retombait alors sur le générique
+`radio_main` (`click_radio_by_label`), qui matche un libellé de colonne **page entière** sans scoping
+par ligne ; comme les 4 lignes partagent exactement les 6 mêmes libellés de colonnes, il rapportait
+`apply ok=true` sans jamais garantir la bonne ligne/colonne (1 seule case cochée sur 4 dans le DOM
+réel, mauvaise colonne, faux positif silencieux) — même famille de symptôme que les faux positifs
+`radio_main` déjà documentés ailleurs dans ce fichier, mais cause différente (mismatch de casse
+XPath, pas absence de vérification DOM).
+Patch : dans la branche `else` (pas de `radio_id`), lecture d'un `radio_name_raw` frais depuis
+`radio.get_attribute("name")` (valeur brute, non lowercasée) au moment de construire le XPath,
+au lieu de réutiliser `row_name`. `row_name` (lowercasé) reste inchangé partout ailleurs
+(comparaison same-name, `group_key`, `target_id`, `register_target`) — clés internes, jamais
+exposées au DOM, donc aucune régression possible dessus.
+Patterns couverts :
+- Radios sans `id`, `name` casse mixte (ex. `Q154_4`) partagé par toute la ligne, `value` par
+  colonne (`0..5`) : XPath `@name=...and @value=...` résout désormais directement via
+  `option_xpath_map` (strategy=`target_id`), sans retomber sur le générique `radio_main`.
+Patterns exclus :
+- Radios avec `id` (branche `radio_id`, non touchée par ce patch).
+- Pages où le `name` DOM est déjà tout en minuscules : `radio_name_raw == row_name`, comportement
+  strictement identique à avant patch (non-régression).
+- Aucun CTA touché — règle CTA_INTERCEPT_ONLY non applicable ici.
+Vérification :
+- DOM de référence `20260830_003526_after_dom_analyze` (4 lignes Thaïlande/Japon/Chine/Corée,
+  6 colonnes identiques) : les 4 lignes résolvent désormais `apply ok=true strategy=target_id
+  reason=applied` (plus de fallback `radio_main`), chaque ligne affiche la case réellement
+  demandée cochée, indépendamment des 3 autres lignes partageant les mêmes libellés.
+- **Confirmé en conditions réelles par l'utilisateur** (capture d'écran post-patch) : les 4 lignes
+  de la matrice affichent chacune la bonne colonne cochée, une seule case par ligne, aucune
+  interférence entre lignes.
+Statut : patch validé par l'utilisateur en conditions réelles.
+
+---

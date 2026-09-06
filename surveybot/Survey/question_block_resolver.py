@@ -27,9 +27,10 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.action_chains import ActionChains
+
+# ---------------------------------------------------------------------------
+# Playwright page helper
+# ---------------------------------------------------------------------------
 
 
 # -------------------------
@@ -40,13 +41,13 @@ def _norm_soft(s: str) -> str:
     """Normalisation douce pour matcher du texte de question."""
     if not s:
         return ""
-    s = s.replace("\u00a0", " ")
+    s = s.replace(" ", " ")
     s = unicodedata.normalize("NFKD", s)
     s = "".join(c for c in s if not unicodedata.combining(c))
     s = s.lower().strip()
     s = re.sub(r"\s+", " ", s)
     # on retire une ponctuation fréquente qui casse les contains()
-    s = re.sub(r"[\"'’“”«»•·→,:;.!?()\[\]{}<>]+", " ", s)
+    s = re.sub(r"[\"''""«»•·→,:;.!?()\[\]{}<>]+", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
 
@@ -98,7 +99,7 @@ def _is_numeric_input(el) -> bool:
     On accepte aussi certains input[type=text] quand le site force du numérique.
     """
     try:
-        tag = (el.tag_name or "").lower()
+        tag = el.evaluate("e => e.tagName.toLowerCase()")
     except Exception:
         return False
     if tag != "input":
@@ -151,13 +152,13 @@ def _is_numeric_input(el) -> bool:
 def _is_fillable(el) -> bool:
     """Visible + pas disabled/readonly."""
     try:
-        if not el.is_displayed():
+        if not el.is_visible():
             return False
         if el.get_attribute("disabled"):
             return False
         if el.get_attribute("readonly"):
             return False
-        r = el.rect or {}
+        r = el.bounding_box() or {}
         if r.get("width", 0) < 12 or r.get("height", 0) < 10:
             return False
         return True
@@ -179,8 +180,8 @@ def _get_value(el) -> str:
 @dataclass
 class NumberBlock:
     label: str                  # texte question le plus probable
-    input_el: Any               # WebElement
-    container_el: Any           # WebElement
+    input_el: Any               # ElementHandle
+    container_el: Any           # ElementHandle
     signature: str              # texte enrichi (label + aria + placeholder + container)
     y: float = 0.0              # position verticale approx (pour tie-break)
     filled: bool = False        # déjà rempli
@@ -206,7 +207,9 @@ _HEAD_XPATH = (
 def _nearest_container(el):
     for xp in _CONTAINER_XPATHS:
         try:
-            return el.find_element(By.XPATH, xp)
+            result = el.query_selector("xpath=" + xp)
+            if result is not None:
+                return result
         except Exception:
             continue
     return None
@@ -229,11 +232,12 @@ def _extract_label_from_dom(driver, el, container) -> Tuple[str, str]:
         eid = (el.get_attribute("id") or "").strip()
         if eid:
             try:
-                lbl = driver.find_element(By.XPATH, f"//label[@for={_xpath_literal(eid)}]")
-                txt = (lbl.text or lbl.get_attribute("innerText") or "").strip()
-                if txt:
-                    lines.append(txt)
-                    reasons.append("label[for=id]")
+                lbl = driver.query_selector(f"xpath=//label[@for={_xpath_literal(eid)}]")
+                if lbl is not None:
+                    txt = (lbl.inner_text() or "").strip()
+                    if txt:
+                        lines.append(txt)
+                        reasons.append("label[for=id]")
             except Exception:
                 pass
     except Exception:
@@ -254,8 +258,8 @@ def _extract_label_from_dom(driver, el, container) -> Tuple[str, str]:
         if labby:
             for ref in labby.split():
                 try:
-                    n = driver.find_element(By.ID, ref)
-                    txt = (n.text or n.get_attribute("innerText") or "").strip()
+                    n = driver.query_selector(f"#{ref}")
+                    txt = (n.inner_text() or "").strip()  # AttributeError if n is None → caught
                     if txt:
                         lines.append(txt)
                         reasons.append("aria-labelledby")
@@ -276,10 +280,10 @@ def _extract_label_from_dom(driver, el, container) -> Tuple[str, str]:
     # E) texte dans le container
     if container is not None:
         try:
-            heads = container.find_elements(By.XPATH, _HEAD_XPATH)
+            heads = container.query_selector_all("xpath=" + _HEAD_XPATH)
             for h in heads[:25]:
                 try:
-                    txt = (h.text or h.get_attribute("innerText") or "").strip()
+                    txt = (h.inner_text() or "").strip()
                     if txt:
                         lines.append(txt)
                 except Exception:
@@ -291,7 +295,7 @@ def _extract_label_from_dom(driver, el, container) -> Tuple[str, str]:
 
         # F) texte brut du container (fallback)
         try:
-            raw = (container.text or container.get_attribute("innerText") or "").strip()
+            raw = (container.inner_text() or "").strip()
             if raw:
                 # souvent il y a plein de texte; on split en lignes
                 for ln in raw.splitlines():
@@ -324,7 +328,7 @@ def _build_signature(driver, el, container, label: str) -> str:
     # un peu du texte container (limité)
     if container is not None:
         try:
-            t = (container.text or container.get_attribute("innerText") or "").strip()
+            t = (container.inner_text() or "").strip()
             if t:
                 # limiter pour ne pas exploser
                 t = re.sub(r"\s+", " ", t)
@@ -353,7 +357,7 @@ def extract_number_blocks(driver) -> List[NumberBlock]:
     blocks: List[NumberBlock] = []
 
     try:
-        inputs = driver.find_elements(By.CSS_SELECTOR, "input")
+        inputs = driver.query_selector_all("input")
     except Exception:
         return blocks
 
@@ -369,7 +373,7 @@ def extract_number_blocks(driver) -> List[NumberBlock]:
             sig = _build_signature(driver, el, container, label)
 
             try:
-                y = float((el.rect or {}).get("y", 0.0))
+                y = float((el.bounding_box() or {}).get("y", 0.0))
             except Exception:
                 y = 0.0
 
@@ -458,14 +462,9 @@ def choose_best_number_block(
 
 def _dispatch_events(driver, el):
     try:
-        driver.execute_script(
-            """
-            const e = arguments[0];
-            for (const t of ["input","change","blur"]) {
-              try { e.dispatchEvent(new Event(t, {bubbles:true})); } catch(_) {}
-            }
-            """,
-            el,
+        el.evaluate(
+            "(e) => { for (const t of ['input','change','blur']) {"
+            " try { e.dispatchEvent(new Event(t, {bubbles:true})); } catch(_) {} } }"
         )
     except Exception:
         pass
@@ -473,7 +472,7 @@ def _dispatch_events(driver, el):
 
 def _safe_focus(driver, el) -> None:
     try:
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+        el.scroll_into_view_if_needed()
     except Exception:
         pass
     time.sleep(0.05)
@@ -483,12 +482,13 @@ def _safe_focus(driver, el) -> None:
     except Exception:
         pass
     try:
-        ActionChains(driver).move_to_element(el).pause(0.03).click().perform()
+        el.hover()
+        el.click()
         return
     except Exception:
         pass
     try:
-        driver.execute_script("arguments[0].focus();", el)
+        el.focus()
     except Exception:
         pass
 
@@ -500,13 +500,17 @@ def _safe_clear(driver, el) -> None:
     - si ça échoue, on tente JS value="" + events
     """
     try:
-        el.send_keys(Keys.CONTROL, "a")
-        el.send_keys(Keys.BACKSPACE)
+        el.press("Control+a")
+        el.press("Backspace")
         return
     except Exception:
         pass
     try:
-        driver.execute_script("arguments[0].value = '';", el)
+        el.evaluate(
+            "(e) => { e.value = '';"
+            " e.dispatchEvent(new Event('input', {bubbles:true}));"
+            " e.dispatchEvent(new Event('change', {bubbles:true})); }"
+        )
         _dispatch_events(driver, el)
     except Exception:
         pass
@@ -557,10 +561,15 @@ def fill_number_input(
 
         # typing humain court
         try:
-            input_el.send_keys(v)
+            input_el.type(v)
         except Exception:
             try:
-                driver.execute_script("arguments[0].value = arguments[1];", input_el, v)
+                input_el.evaluate(
+                    "(e, v) => { e.value = v;"
+                    " e.dispatchEvent(new Event('input', {bubbles:true}));"
+                    " e.dispatchEvent(new Event('change', {bubbles:true})); }",
+                    v,
+                )
             except Exception:
                 return False
 
@@ -571,7 +580,7 @@ def fill_number_input(
         if not newv:
             # certains champs ne reflètent pas value immédiatement, mais on tente une seconde micro-action
             try:
-                input_el.send_keys(Keys.TAB)
+                input_el.press("Tab")
             except Exception:
                 pass
             time.sleep(0.03)

@@ -1,80 +1,157 @@
-import os, random
-IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
-from config import is_prod_like, should_run_guard_monitor, should_run_hot_reload
+import os, random, re
+from config import is_attach_mode, is_prod_like, should_run_guard_monitor
+
+# SNAP_ENABLED est une variable GLOBAL_CONFIG : en build compilé (Nuitka), elle provient
+# exclusivement de global_config.py, jamais de l'environnement du process (cf. config.py).
+# En dev/attach (global_config.py absent du projet), fallback os.getenv.
+try:
+    from global_config import SNAP_ENABLED  # type: ignore
+except ImportError:
+    SNAP_ENABLED = os.getenv("SNAP_ENABLED", "")
+
+# ---------- PID file (bare-metal Windows) ----------
+
+def _pid_path(account_id: str) -> str:
+    """
+    Retourne le chemin du fichier PID pour ce bot (pids\bot_<id>.pid).
+    Réutilise _pids_dir() de bot_supervisor.py (résolution via _bot_root_dirs())
+    pour pointer vers le même dossier racine que le fichier .state du bot,
+    plutôt que le dossier du module launch.py (qui peut différer : sous-dossier
+    "code", ou dossier d'extraction temporaire Nuitka onefile).
+    """
+    from bot_supervisor import _pids_dir
+    return os.path.join(_pids_dir(), f"bot_{account_id}.pid")
+
+def write_pid_file(account_id: str) -> None:
+    """
+    Écrit pids\bot_<account_id>.pid - sauf si launch_all.ps1 y a déjà écrit ce
+    même PID juste avant (format "PID|StartTicks" : PID + heure de démarrage du
+    process, utilisés ensemble côté ps1 pour détecter un PID Windows recyclé par
+    un autre process après la fin du bot). Cette écriture "double sécurité" ne
+    doit pas dégrader ce couple en un simple PID nu.
+    """
+    if is_attach_mode():
+        return
+    my_pid = os.getpid()
+    path = _pid_path(account_id)
+    try:
+        if os.path.exists(path):
+            existing_pid = open(path, "r").read().strip().split("|", 1)[0]
+            if existing_pid == str(my_pid):
+                return
+        with open(path, "w") as f:
+            f.write(str(my_pid))
+        print(f"[PID] Fichier écrit : {path} (pid={my_pid})")
+    except Exception as e:
+        print(f"[PID][WARN] Impossible d'écrire le fichier PID : {e}")
+
+def delete_pid_file(account_id: str) -> None:
+    """Supprime pids\bot_<account_id>.pid à l'arrêt propre."""
+    if is_attach_mode():
+        return
+    try:
+        path = _pid_path(account_id)
+        if os.path.exists(path):
+            os.remove(path)
+            print(f"[PID] Fichier supprimé : {path}")
+    except Exception as e:
+        print(f"[PID][WARN] Impossible de supprimer le fichier PID : {e}")
+
 
 from Management.guards.runtime_guard import RuntimeGuard, StopReason, set_guard, get_guard
 from State.daily_target import DAILY_TARGET_EUR, ensure_daily_timer_started
 from Cash.payout import MIN_CASHOUT_EUR
 import time, sys, logging, threading, traceback, signal, Cash.payout as payout
-from preselection.playwright_launcher import launch_browser
+from preselection.playwright_launcher import launch_browser_playwright
 from preselection.auth_handler import login
 from preselection.survey_navigator import go_to_best_value_survey
 from preselection.survey_handler import run_survey
 from Management.notifier import send_telegram
-from State.account_state import update_state, load_state, try_acquire_cooldown_slot, _now, load_datadome_cookies, load_cookies
-from selenium.common.exceptions import TimeoutException
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
+from State.account_state import update_state, load_state, try_acquire_cooldown_slot, _now
 from preselection.auth_handler import is_session_expired, handle_proxy_error_page_if_needed
 from Management.pause_policy import PausePolicy
 import subprocess
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from Cash.payout import _payout_and_check_daily_stop
 
+
 def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 240):
+    # Vérifié AVANT try_acquire_cooldown_slot() (Postgres) : le marqueur local
+    # posé par freeze_and_wait() (Management/guards/freeze_gate.py, via
+    # bot_supervisor.mark_account_frozen()) reste valide indépendamment de la
+    # disponibilité de Postgres — précisément le cas où le slot Postgres peut
+    # expirer (TTL 240s, non renouvelé si touch_heartbeat() échoue) alors que
+    # l'instance gelée est toujours vivante et utilise encore le profil Chrome.
+    # Sans ce contrôle, un nouveau process passe le lock Postgres, collisionne
+    # sur le profil (TargetClosedError), puis son échec dans
+    # launch_driver_or_fail() supprime le fichier PID et relibère le slot
+    # Postgres — ouvrant la voie à une cascade de relances tant que l'instance
+    # gelée n'a pas repris.
+    from bot_supervisor import is_account_frozen
+    if is_account_frozen(account_id):
+        print(f"[FREEZE] Account {account_id} gelé par une autre instance (FREEZE_ON_TRIGGER) → exit")
+        from bot_supervisor import record_exit, EXIT_VOLUNTARY
+        record_exit(account_id, EXIT_VOLUNTARY, "frozen_by_other_instance")
+        sys.exit(0)
+
     ok = try_acquire_cooldown_slot(account_id=account_id, ttl_sec=ttl_sec)
     if not ok:
         print(f"[COOLDOWN] Account {account_id} en cooldown ou déjà actif → exit")
+        # Même convention que RuntimeGuard.pause() (runtime_guard.py) pour un arrêt
+        # volontaire : sans cet enregistrement, last_exit_code restait bloqué sur le
+        # sentinel EXIT_CRASH écrit par check_and_record_start() au démarrage précédent,
+        # faisant compter à tort ce cooldown répété comme une crash-loop.
+        from bot_supervisor import record_exit, EXIT_VOLUNTARY
+        record_exit(account_id, EXIT_VOLUNTARY, "cooldown_active")
         sys.exit(0)
 
 def safe_get(driver, url, base_delay=4):
     """
     Navigation sécurisée : s'assure qu'un driver valide existe.
     - Timeout 70s pour éviter les hangs infinis en ECS.
-    - Retry avec backoff exponentiel sur tout TimeoutException (latence proxy, tunnel lent…).
-    - Après épuisement des retries : chargement partiel accepté + vérification proxy.
+    - Sur PlaywrightTimeoutError : window.stop() + chargement partiel accepté.
+    - Sur toute autre exception : log + re-raise.
     """
     if driver is None:
         raise RuntimeError("SAFE_GET appelé avec driver=None")
 
+    page = driver
     try:
-        if not hasattr(driver, "window_handles") or not driver.window_handles:
-            raise RuntimeError("Aucune fenêtre active")
-
-        driver.switch_to.window(driver.window_handles[-1])
-        driver.set_page_load_timeout(70)
-
-        effective_retries = 1
-        for attempt in range(effective_retries):
-            try:
-                driver.get(url)
-                handle_proxy_error_page_if_needed(driver)
-                if is_session_expired(driver):
-                    msg = "🔐 Session expirée — ré-authentification manuelle requise."
-                    print(msg)
-                    try:
-                        get_guard().notify_fn(msg)
-                    except Exception:
-                        pass
-                    get_guard().pause(
-                        PausePolicy.UNTIL_MANUAL,
-                        StopReason.SESSION_EXPIRED,
-                    )
-                    raise SystemExit("session_expired")
-
-                print(f"[SAFE_GET] done get: {url}")
-                return  # ✅ succès
-
-            except TimeoutException:
-                print(f"[SAFE_GET][WARN] Timeout page load vers {url} -> window.stop()")
+        try:
+            page.goto(url, timeout=70_000, wait_until="domcontentloaded")
+            handle_proxy_error_page_if_needed(driver)
+            if is_session_expired(driver):
+                # account_id inclus dans le message : même convention que le message
+                # PROXY_EXPIRED (auth_handler.py::handle_proxy_error_page_if_needed) —
+                # sans lui, l'alerte Telegram ne permet pas de savoir quel compte,
+                # parmi les services NSSM du parc, nécessite la ré-authentification.
+                _guard = get_guard()
+                _account_id = getattr(_guard, "account_id", "unknown")
+                msg = f"🔐 Session expirée — ré-authentification manuelle requise. | account={_account_id}"
+                print(msg)
                 try:
-                    driver.execute_script("window.stop();")
+                    _guard.notify_fn(msg)
                 except Exception:
                     pass
-
+                _guard.pause(
+                    PausePolicy.UNTIL_MANUAL,
+                    StopReason.SESSION_EXPIRED,
+                )
+                raise SystemExit("session_expired")
+            print(f"[SAFE_GET] done get: {url}")
+            return
+        except SystemExit:
+            raise
+        except Exception as e:
+            if type(e).__name__ == "TimeoutError":
+                print(f"[SAFE_GET][WARN] Timeout page load vers {url} -> window.stop()")
+                try:
+                    page.evaluate("window.stop()")
+                except Exception:
+                    pass
+            else:
+                raise
+    except SystemExit:
+        raise
     except Exception as e:
         print(f"[SAFE_GET] Navigation impossible vers {url}: {e}")
         raise
@@ -101,33 +178,67 @@ def install_sigusr1_handler():
     print("[SIGUSR1] Handler installé. Dump via : kill -SIGUSR1", os.getpid())
 
 def install_sigterm_handler(account_id: str):
-    signal.signal(signal.SIGTERM, _make_sigterm_handler(account_id))
+    """
+    Sur Windows, SIGTERM n'est PAS délivré par les processus Win32 externes
+    (NSSM, taskkill, TerminateProcess…). Il ne peut être déclenché que via
+    os.kill(pid, signal.SIGTERM) depuis un autre process Python.
+    On l'enregistre pour la portabilité Linux et les cas de test Python-to-Python,
+    mais ce n'est pas le chemin d'arrêt réel sous Windows — voir install_sigint_handler.
+    """
+    signal.signal(signal.SIGTERM, _make_stop_handler(account_id, sig_name="SIGTERM"))
 
-def _make_sigterm_handler(aid: str):
+def install_sigint_handler(account_id: str):
     """
-    Handler SIGTERM (ECS) : marque l'arrêt demandé dans l'état du compte.
-    - On capture 'aid' via closure pour éviter les variables globales non définies.
+    Handlers des signaux console Windows — seul canal d'arrêt externe fonctionnel
+    pour un process Python sur Windows :
+      - SIGINT   : Ctrl+C dans le terminal (arrêt manuel opérateur).
+      - SIGBREAK : GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT) — signal exact
+                   envoyé par NSSM lors d'un `nssm stop` (méthode Console).
+    Les deux déclenchent la même séquence de fermeture propre.
     """
-    def _handle_sigterm(signum, frame):
-        print(f"🛑 SIGTERM reçu depuis ECS | account_id={aid}")
+    signal.signal(signal.SIGINT, _make_stop_handler(account_id, sig_name="SIGINT"))
+    if hasattr(signal, "SIGBREAK"):   # Windows uniquement
+        signal.signal(signal.SIGBREAK, _make_stop_handler(account_id, sig_name="SIGBREAK"))
+
+# Levé en tout premier dans _handle() ci-dessous, avant toute autre instruction :
+# consommé par RuntimeGuard.pause() (runtime_guard.py) pour forcer EXIT_VOLUNTARY
+# quand un arrêt externe (nssm stop) est déjà en cours, même si c'est le thread de
+# supervision (_monitor_loop, séparé du thread principal) qui termine le process
+# en premier via os._exit(). Sans cela, la course entre le handler de signal et ce
+# thread pouvait laisser un code de sortie "restart" gagner, faisant croire à NSSM
+# qu'il doit relancer le service alors qu'un arrêt volontaire était demandé.
+_external_stop_requested = threading.Event()
+
+
+def _make_stop_handler(aid: str, sig_name: str = "SIGTERM"):
+    """
+    Fabrique un handler d'arrêt propre pour SIGTERM ou SIGINT.
+    Libère le slot Postgres, supprime le fichier PID, stoppe le heartbeat, puis exit.
+    """
+    def _handle(signum, frame):
+        _external_stop_requested.set()
+        print(f"🛑 {sig_name} reçu | account_id={aid}")
 
         try:
             update_state(aid, lambda st: (
                 st.__setitem__("ecs_stop_requested", True),
                 st.__setitem__("ecs_stop_ts", _now()),
-                st.__setitem__("ecs_stop_notified", False),  # reset anti-spam à chaque SIGTERM
+                st.__setitem__("ecs_stop_notified", False),
                 st.__setitem__("status", "idle"),
-                st.__setitem__("cooldown_until_ts", "1970-01-01T00:00:00"),  # relance immédiate autorisée
+                st.__setitem__("cooldown_until_ts", "1970-01-01T00:00:00"),
             ))
         except Exception as e:
-            print("[SIGTERM][WARN] update_state échoué:", e)
-        
-        finally:
-            stop_heartbeat_thread()
-            print("SIGTERM traité → exit immédiat")
-            raise SystemExit("ecs_sigterm")
+            print(f"[{sig_name}][WARN] update_state échoué:", e)
 
-    return _handle_sigterm
+        finally:
+            from bot_supervisor import record_exit, EXIT_VOLUNTARY
+            record_exit(aid, EXIT_VOLUNTARY, f"{sig_name.lower()}_received")
+            stop_heartbeat_thread()
+            delete_pid_file(aid)
+            print(f"{sig_name} traité → exit immédiat")
+            raise SystemExit(EXIT_VOLUNTARY)
+
+    return _handle
 
 def build_notifier(config):
     tg_token = os.getenv("telegram_bot_token", "").strip()
@@ -180,8 +291,9 @@ def soft_restart_resume(ctx, driver, platform=None):
     #   topsurveys.app     → check-email-field-input
     #   app.topsurveys.app → app-page-email-field-input
     from preselection.auth_handler import LOGIN_PAGE_SELECTORS
+    _page = driver
     _on_login_page = any(
-        driver.find_elements("css selector", sel)
+        _page.query_selector(sel)
         for sel in LOGIN_PAGE_SELECTORS
     )
     if _on_login_page:
@@ -190,12 +302,45 @@ def soft_restart_resume(ctx, driver, platform=None):
             platform.login(driver, {"Email": ctx["email"], "Password": ctx["password"]})
         else:
             login(driver, ctx["email"], ctx["password"])
-        if any(driver.find_elements("css selector", sel) for sel in LOGIN_PAGE_SELECTORS):
+        if any(_page.query_selector(sel) for sel in LOGIN_PAGE_SELECTORS):
             raise RuntimeError("soft_restart_resume: re-login échoué, page de login toujours présente")
 
     survey_ctx = SurveyContext(session_id=ctx["account_id"], openai_api_key=ctx["api_key"])
+
+    # Même configuration que dans init_session_and_enter_surveys ci-dessus
+    # (et déjà en place en mode attach) : switch d'onglet + fermeture des
+    # autres, uniquement pour les plateformes non-TopSurveys. Ici la
+    # réassignation locale de `driver` suffit puisque run_survey() est appelé
+    # plus bas dans cette même fonction.
+    _is_topsurveys = platform is None or platform.get_platform_name() == "topsurveys"
+
     if platform:
-        platform.select_survey(driver)
+        if _is_topsurveys:
+            platform.select_survey(driver)
+        else:
+            try:
+                _base_handles = set(driver.context.pages)
+            except Exception:
+                _base_handles = set()
+
+            _survey_selected = platform.select_survey(driver)
+
+            if _survey_selected:
+                try:
+                    import Management.redirect_watcher as redirect_watcher
+                    from preselection.survey_handler import _resync_live_page
+
+                    redirect_watcher.switch_to_latest_window_and_close_others(
+                        driver,
+                        base_handles=_base_handles,
+                        timeout=12,
+                        prefer_external=True,
+                        platform_domains=platform.get_domains(),
+                    )
+                    driver = _resync_live_page(driver)
+                    redirect_watcher.wait_for_final_redirection(driver, max_wait=30)
+                except Exception as _switch_e:
+                    print(f"[SOFT_RESTART][WARN] Erreur lors du switch d'onglet après sélection survey : {_switch_e}")
     else:
         go_to_best_value_survey(driver)
     run_survey(
@@ -230,11 +375,12 @@ def soft_restart(ctx, driver, reason, platform=None):
 
     soft_restart_resume(ctx, driver, platform=platform)
 
-def start_runtime_guard(account_id: str, notify_fn, on_soft_restart):
+def start_runtime_guard(account_id: str, notify_fn, on_soft_restart, platform_name: str):
     state = load_state(account_id)
 
     guard = RuntimeGuard(
         account_id=account_id,
+        platform_name=platform_name,
         idle_timeout_sec=120,
         restart_cooldown_sec=60,
         max_errors_in_row=5,
@@ -307,9 +453,77 @@ def start_heartbeat_thread():
     _HEARTBEAT_STOP.clear()
     threading.Thread(target=_heartbeat, name="heartbeat", daemon=True).start()
 
-def setup_logging():
-    # 2) niveau depuis l'env (default INFO)
-    _level = os.getenv("LOG_LEVEL", "INFO").upper()
+def _purge_old_session_logs(account_id: str, keep: int = 10) -> None:
+    """
+    Purge additive, distincte de la rotation NSSM elle-même (nssm_setup_bot.ps1 :
+    AppRotateFiles=1, AppRotateSeconds=0, AppRotateBytes=0 -> 1 fichier roté par
+    démarrage de process). NSSM rote mais ne purge jamais les fichiers rotés ->
+    accumulation indéfinie sans ce patch. Ne touche jamais le fichier actif (sans
+    suffixe, en cours d'écriture par CE process) ni les mécanismes
+    PID/heartbeat/signaux/update_checker.
+    Reconnaissance alignée sur le format réel de rotation NSSM (constaté sur
+    disque, cf. diagnostic) : "<base>-<YYYYMMDDTHHMMSS>.<mmm>.log", ex.
+    bot_<id>_stdout-20260729T125348.078.log — PAS un suffixe numérique pur
+    directement après ".log." comme supposé par l'ancienne regex (qui ne
+    matchait donc jamais aucun fichier réel).
+    Flux stderr : un fichier roté de 0 octet (aucune erreur écrite pour cette
+    session) est supprimé immédiatement, hors quota des "keep" dernières
+    sessions conservées — il ne représente aucune session avec erreur et ne
+    doit pas polluer la rétention.
+    Chaque bot a son propre sous-dossier logs\\<account_id>\\ (cf.
+    nssm_setup_bot.ps1 / launch_all.ps1) — un flux/bot par appel, pas de
+    boucle non bornée.
+    Best-effort : une erreur ici ne doit jamais empêcher le boot du bot.
+    """
+    try:
+        from bot_supervisor import _pids_dir
+        log_dir = os.path.join(os.path.dirname(_pids_dir()), "logs", account_id)
+        if not os.path.isdir(log_dir):
+            return
+        from Survey.log_utils import log_info
+        for stream in ("stdout", "stderr"):
+            pattern = re.compile(
+                rf"^bot_{re.escape(account_id)}_{stream}-\d{{8}}T\d{{6}}\.\d{{3}}\.log$"
+            )
+            rotated = [f for f in os.listdir(log_dir) if pattern.match(f)]
+
+            if stream == "stderr":
+                non_empty = []
+                removed_empty = 0
+                for f in rotated:
+                    fp = os.path.join(log_dir, f)
+                    try:
+                        is_empty = os.path.getsize(fp) == 0
+                    except Exception:
+                        is_empty = False
+                    if is_empty:
+                        try:
+                            os.remove(fp)
+                            removed_empty += 1
+                        except Exception:
+                            pass
+                    else:
+                        non_empty.append(f)
+                rotated = non_empty
+                if removed_empty:
+                    log_info("[LOG_PURGE]", f"account={account_id} stream=stderr removed_empty={removed_empty}")
+
+            rotated.sort(reverse=True)  # suffixe timestamp NSSM -> tri chronologique
+            stale = rotated[max(0, keep - 1):]
+            for f in stale:
+                try:
+                    os.remove(os.path.join(log_dir, f))
+                except Exception:
+                    pass
+            if stale:
+                log_info("[LOG_PURGE]", f"account={account_id} stream={stream} removed={len(stale)} kept={keep}")
+    except Exception as e:
+        print(f"[LOG_PURGE][WARN] échec purge logs session pour {account_id}: {e}")
+
+def setup_logging(account_id: str | None = None):
+    # 2) niveau centralisé (log_utils.current_log_level(), même source que log_debug/log_info)
+    from Survey.log_utils import current_log_level
+    _level = current_log_level()
     logging.basicConfig(
         level=getattr(logging, _level, logging.INFO),
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
@@ -324,86 +538,23 @@ def setup_logging():
         logging.getLogger("uncaught").exception("UNCAUGHT EXCEPTION", exc_info=(exc_type, exc, tb))
     sys.excepthook = _excepthook
 
+    # 4) purge des logs de session NSSM au-delà des 10 dernières (cf. nssm_setup_bot.ps1)
+    if account_id:
+        _purge_old_session_logs(account_id)
+
 def mark_bot_running(account_id: str, email):
     print(f"🚀 Démarrage surveybot pour account_id={account_id}, EMAIL={email}")
+    write_pid_file(account_id)
     update_state(account_id, lambda st: (
         st.__setitem__("status", "running"),
         st.__setitem__("last_boot_ts", _now())
     ))
 
-def restore_session_cookies(driver, account_id: str) -> None:
-    """
-    Restaure tous les cookies de session depuis cookie_store via CDP.
-    Appelé après le lancement de Chrome, avant le premier chargement de page.
-    Les cookies expirés sont filtrés. Les échecs par cookie sont loggés et ignorés.
-    Ne bloque jamais le démarrage du bot.
-    """
-    import time as _time
-    from Survey.log_utils import log_info, log_debug
-    _TAG = "SESSION_RESTORE"
-    try:
-        all_cookies = load_cookies(account_id)
-    except Exception as e:
-        log_info(_TAG, f"load_cookies() a échoué, démarrage sans cookies: {e}")
-        return
-    if not all_cookies:
-        return
-    for domain, cookies in all_cookies.items():
-        restored = 0
-        for cookie in cookies:
-            try:
-                expires = cookie.get("expires")
-                if expires is not None and expires != -1 and expires < _time.time():
-                    log_debug(_TAG, f"Cookie expiré ignoré: name={cookie.get('name')} domain={domain}")
-                    continue
-                params = {"name": cookie["name"], "value": cookie["value"], "domain": domain}
-                if "path" in cookie:
-                    params["path"] = cookie["path"]
-                if "secure" in cookie:
-                    params["secure"] = cookie["secure"]
-                if "httpOnly" in cookie:
-                    params["httpOnly"] = cookie["httpOnly"]
-                if expires is not None and expires != -1:
-                    params["expires"] = expires
-                if "sameSite" in cookie:
-                    params["sameSite"] = cookie["sameSite"]
-                driver.execute_cdp_cmd("Network.setCookie", params)
-                restored += 1
-            except Exception as e:
-                log_info(_TAG, f"Cookie ignoré: name={cookie.get('name')} domain={domain}: {e}")
-        log_info(_TAG, f"{restored} cookie(s) restauré(s) pour domaine={domain}")
-
-
-def restore_datadome_cookies(driver, account_id: str) -> None:
-    """
-    Restaure les cookies DataDome persistés dans le navigateur via CDP.
-    Appelé après le lancement de Chrome, avant le premier chargement de page.
-    Les échecs par cookie sont loggés et ignorés — ne bloque jamais le démarrage.
-    """
-    from Survey.log_utils import log_info, log_debug
-    _TAG = "DATADOME_RESTORE"
-    cookies = load_datadome_cookies(account_id)
-    if not cookies:
-        return
-    log_info(_TAG, f"{len(cookies)} cookie(s) DataDome à restaurer")
-    for domain, cookie_value in cookies.items():
-        try:
-            driver.execute_cdp_cmd("Network.setCookie", {
-                "name": "datadome",
-                "value": cookie_value,
-                "domain": domain,
-                "path": "/",
-            })
-            log_info(_TAG, f"Cookie restauré pour domaine={domain}")
-        except Exception as e:
-            log_info(_TAG, f"Restauration ignorée pour domaine={domain}: {e}")
-
-
 def launch_driver_or_fail(config, account_id: str):
     try:
-        driver = launch_browser(config)
+        driver = launch_browser_playwright(config)
         if driver is None:
-            raise RuntimeError("launch_browser() a retourné None")
+            raise RuntimeError("launch_browser_playwright() a retourné None")
         if should_run_guard_monitor():
             get_guard().attach_driver(driver)
         return driver
@@ -418,15 +569,16 @@ def launch_driver_or_fail(config, account_id: str):
                 st.__setitem__("cooldown_until_ts", "1970-01-01T00:00:00"),
                 st.__setitem__("last_stop_reason", "browser_launch_failed"),
             ))
+        delete_pid_file(account_id)
         raise SystemExit("browser_launch_failed")
 
 def start_debug_http_server(survey_ctx_getter):
     """
     Serveur HTTP de debug accessible sur chrome_port + 1000.
     Exemple : bot sur port 9222 → http://localhost:10222/ctx
-    Uniquement en local — ignoré en prod.
+    Uniquement en mode attach — ignoré en prod.
     """
-    if not IS_LOCAL:
+    if not is_attach_mode():
         return
 
     attach_port = int(os.getenv("ATTACH_DEBUGGER_ADDRESS", ":0").split(":")[-1] or 0)
@@ -468,138 +620,149 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
     safe_get(driver, _home_url)
     print("🚀 Brave lancé.")
 
-    _SESSION_SELECTOR = (By.CSS_SELECTOR, "[data-test-id='surveys-nav']")
-    try:
-        WebDriverWait(driver, 8).until(EC.presence_of_element_located(_SESSION_SELECTOR))
+    # Diagnostic (BUG login ySense / profil persistant) : trace la chronologie
+    # exacte des URLs entre la home page, la vérification de session et
+    # l'appel de login, sans modifier la logique de décision ci-dessous.
+    from Survey.log_utils import log_info as _diag_log_info
+    _diag_log_info("[INIT][DIAG]", f"après safe_get(home={_home_url!r}) — url_actuelle={driver.url!r}")
+
+    # Détection de session active gated par plateforme : le sélecteur
+    # [data-test-id='surveys-nav'] est spécifique au DOM TopSurveys et n'existe
+    # dans aucune page ySense (ni ailleurs) — sur cette dernière, _session_active
+    # était donc toujours faux, et platform.login() était appelé systématiquement
+    # à chaque lancement, y compris sur un profil Chrome persistant déjà
+    # authentifié (login() navigue alors vers /login sur une session déjà
+    # valide, sans effet utile autre que perdre du temps).
+    # Chemin TopSurveys inchangé. Pour les autres plateformes (ex. ySense),
+    # réutilisation de platform.is_session_expired() — déjà la détection
+    # correcte et validée (YSensePlatform : navigation vers la page de login,
+    # redirection automatique hors /login si la session est valide).
+    _is_topsurveys = platform is None or platform.get_platform_name() == "topsurveys"
+    _page = driver
+
+    if _is_topsurveys:
+        _SESSION_SEL = "[data-test-id='surveys-nav']"
+        _session_active = False
+        try:
+            _page.wait_for_selector(_SESSION_SEL, state="attached", timeout=8_000)
+            _session_active = True
+        except Exception:
+            pass
+    else:
+        try:
+            _session_active = not platform.is_session_expired(driver)
+        except Exception:
+            _session_active = False
+        _diag_log_info(
+            "[INIT][DIAG]",
+            f"après platform.is_session_expired() — url_actuelle={driver.url!r} session_active={_session_active}",
+        )
+
+    if _session_active:
         print("[INIT] session active détectée — login ignoré")
-        if os.getenv("SNAP_ENABLED", "").strip() == "1":
+        if SNAP_ENABLED.strip() == "1":
             from Management.snap_uploader import new_survey, capture_and_upload
             new_survey()
             capture_and_upload(driver, "survey_account")
-
-    except TimeoutException:
+    else:
         if platform:
-            platform.login(driver, config)
+            _diag_log_info("[INIT][DIAG]", f"avant platform.login() — url_actuelle={driver.url!r}")
+            _login_ok = platform.login(driver, config)
+            if not _login_ok:
+                raise RuntimeError(
+                    f"platform.login() a échoué pour {platform.get_platform_name()} "
+                    "(URL toujours sur /login) — abandon du cycle"
+                )
         else:
-            email = config.get("Email")
-            password = config.get("Password")
+            email = os.getenv("EMAIL") or config.get("Email")
+            password = os.getenv("PASSWORD") or config.get("Password")
             login(driver, email, password)
         # Après login, attendre que la page soit hydratée avant de continuer.
-        # On réutilise _SESSION_SELECTOR plutôt qu'un sleep arbitraire.
-        try:
-            WebDriverWait(driver, 30).until(
-                EC.presence_of_element_located(_SESSION_SELECTOR)
-            )
-            print("[LOGIN] surveys-nav détecté post-login — page prête.")
-        except TimeoutException:
-            print("[LOGIN][WARN] surveys-nav non détecté après 30 s — on continue quand même.")
+        # Best-effort, TopSurveys uniquement (cf. _SESSION_SEL ci-dessus) — pour
+        # les autres plateformes, platform.login() valide déjà lui-même son
+        # propre succès en interne (ex. YSensePlatform.login : vérifie l'URL
+        # sans /login avant de retourner), une attente supplémentaire ici sur
+        # un sélecteur TopSurveys n'aurait aucune valeur diagnostique.
+        if _is_topsurveys:
+            try:
+                _page.wait_for_selector(_SESSION_SEL, state="attached", timeout=30_000)
+                print("[LOGIN] surveys-nav détecté post-login — page prête.")
+            except Exception:
+                print("[LOGIN][WARN] surveys-nav non détecté après 30 s — on continue quand même.")
 
-    try:
-        _payout_and_check_daily_stop(driver, account_id)  # retrait + DAILY STOP
-    except Exception as e:
-        print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
+    # try:
+    #     _payout_and_check_daily_stop(driver, account_id, email=config.get("Email", ""))  # retrait + DAILY STOP
+    # except Exception as e:
+    #     print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
 
     # Attente que la page soit pleinement chargée et hydratée avant de chercher un survey.
-    # On réutilise _SESSION_SELECTOR ([data-test-id='surveys-nav']) : il est présent dès
+    # On réutilise _SESSION_SEL ([data-test-id='surveys-nav']) : il est présent dès
     # que l'app Vue est loggée et rendue, sans dépendre de la disponibilité de surveys.
     # Timeout généreux (30 s) pour absorber les démarrages lents en prod headless.
     # Si le sélecteur n'apparaît pas dans le délai, on continue quand même (best-effort).
-    try:
-        WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located(_SESSION_SELECTOR)
-        )
-        print("[INIT] surveys-nav détecté — page prête, lancement select_survey.")
-    except TimeoutException:
-        print("[INIT][WARN] surveys-nav non détecté après 30 s — select_survey lancé quand même.")
+    # TopSurveys uniquement — même raison que ci-dessus, sélecteur non
+    # applicable aux autres plateformes (évite un palier de 30 s systématique
+    # et inutile à chaque lancement/cycle sur ces dernières).
+    if _is_topsurveys:
+        try:
+            _page.wait_for_selector(_SESSION_SEL, state="attached", timeout=30_000)
+            print("[INIT] surveys-nav détecté — page prête, lancement select_survey.")
+        except Exception:
+            print("[INIT][WARN] surveys-nav non détecté après 30 s — select_survey lancé quand même.")
 
+    # Comme en mode attach (main.py::run_attach_login_takeover), le switch
+    # d'onglet post-sélection ne concerne que les plateformes configurées
+    # autres que TopSurveys : celle-ci gère déjà ce switch en interne dans son
+    # propre chemin (preselection.survey_handler). Pour les autres (ex.
+    # ySense), le clic sur le survey ouvre un nouvel onglet qui doit recevoir
+    # le focus — sans switch explicite, l'onglet plateforme (ex. ysense.com)
+    # garde le focus réel et toute résolution ultérieure s'exécute dessus au
+    # lieu du survey, produisant une extraction faussée. Cette configuration
+    # existait déjà en mode attach (cf. BOT_EVOLUTION_MEMORY.md) mais n'était
+    # pas répliquée sur ce chemin prod, seul point d'entrée de select_survey()
+    # hors attach/soft-restart.
     if platform:
-        platform.select_survey(driver)
+        if _is_topsurveys:
+            # Chemin TopSurveys existant — inchangé.
+            platform.select_survey(driver)
+        else:
+            try:
+                _base_handles = set(driver.context.pages)
+            except Exception:
+                _base_handles = set()
+
+            _survey_selected = platform.select_survey(driver)
+
+            if _survey_selected:
+                # Réutilisation à l'identique de switch_to_latest_window_and_
+                # close_others + _resync_live_page, déjà validées pour ce même
+                # problème en mode attach. Non bloquant : un échec ici ne doit
+                # pas interrompre le flux d'initialisation de session.
+                try:
+                    import Management.redirect_watcher as redirect_watcher
+                    from preselection.survey_handler import _resync_live_page
+
+                    redirect_watcher.switch_to_latest_window_and_close_others(
+                        driver,
+                        base_handles=_base_handles,
+                        timeout=12,
+                        prefer_external=True,
+                        platform_domains=platform.get_domains(),
+                    )
+                    driver = _resync_live_page(driver)
+                    redirect_watcher.wait_for_final_redirection(driver, max_wait=30)
+                except Exception as _switch_e:
+                    print(f"[INIT][WARN] Erreur lors du switch d'onglet après sélection survey : {_switch_e}")
     else:
         go_to_best_value_survey(driver)
 
-    return api_key, payout_name, payout_revolut_tag
-
-def start_hot_reload_thread():
-    global _HOT_RELOAD_STARTED
-    if not should_run_hot_reload():
-        print("[HOT_RELOAD] Ignoré en environnement mode unattended ou non-local.")
-        return
-    if _HOT_RELOAD_STARTED:
-        return
-    _HOT_RELOAD_STARTED = True
-
-    if IS_LOCAL:        
-        import Survey.survey_executor as _se
-        from hot_reload.hot_reload import ModuleReloader
-
-        reloader = ModuleReloader(
-            [
-                "captcha.captcha_solver",
-                "captcha.datadome_handler",
-                "captcha.normal_captcha",
-                "captcha.recaptcha_handler",
-                "captcha.recaptcha_utils",
-                "captcha.tencent_handler",
-                "Survey.action_dispatcher",
-                "Survey.action_types",
-                "Survey.batch_response_parser",
-                "Survey.cta_handler",
-                "Survey.dom_analyzer",
-                "Survey.dom_classifier",
-                "Survey.dom_context_mapper",
-                "Survey.dom_extractors_areyounet",
-                "Survey.dom_extractors_decipher",
-                "Survey.dom_extractors_misc",
-                "Survey.dom_frame_selector",
-                "Survey.dom_question_extractor",
-                "Survey.dom_registry",
-                "Survey.dom_selection_rules",
-                "Survey.dom_utils",
-                "Survey.dropdown_block_resolver",
-                "Survey.frame_utils",
-                "Survey.input_checkbox",
-                "Survey.input_dropdown",
-                "Survey.input_frame",
-                "Survey.input_handler",
-                "Survey.input_matrix",
-                "Survey.input_radio",
-                "Survey.input_slider",
-                "Survey.input_text",
-                "Survey.input_utils",
-                "Survey.page_snapshot",
-                "Survey.prompt_builder",
-                "Survey.question_block_analyzer",
-                "Survey.question_block_resolver",
-                "Survey.screenshot_analyzer",
-                "Survey.survey_executor",
-                "Survey.survey_solver",
-                "preselection.question_analyzer",
-                "preselection.question_validation",
-                "preselection.response_executor",
-                "preselection.survey_handler",
-                "Management.pause_policy",
-                "Management.redirect_watcher",
-                "Management.guards.runtime_guard",
-                "Management.guards.survey_difficulty_guard",
-            ],
-            poll_interval=0.5,
-        )
-
-        def _on_change(reloaded):
-            nonlocal _se
-            if "Survey.survey_executor" in reloaded:
-                _se = reloaded["Survey.survey_executor"]
-            print(" Modules rechargés:", ", ".join(reloaded.keys()))
-
-        threading.Thread(
-            target=reloader.watch_loop,
-            args=(_on_change,),
-            daemon=True,
-        ).start()
-    else:
-        print("[HOT_RELOAD] Ignoré en environnement non-local.")
-        
-_HOT_RELOAD_STARTED = False
+    # driver est retourné en plus des valeurs de session existantes : le switch
+    # d'onglet ci-dessus peut avoir remplacé la Page active par une nouvelle
+    # (nouvel onglet du survey), et cette réassignation est locale à cette
+    # fonction — sans la retourner, l'appelant (main.py) continuerait sur
+    # l'ancienne Page pour la suite du flux (run_main_loop), reproduisant le
+    # même bug plus loin.
+    return api_key, payout_name, payout_revolut_tag, driver
 
 def run_main_loop(driver, api_key: str, account_id: str, payout_name: str = "", payout_revolut_tag: str = "", platform=None):
     from Survey.survey_context import SurveyContext
@@ -614,8 +777,15 @@ def run_main_loop(driver, api_key: str, account_id: str, payout_name: str = "", 
         payout_revolut_tag=payout_revolut_tag,
         platform=platform,
     )
+
+    # Vérification mise à jour du code au retour au listing (entre deux cycles).
+    # No-op si UPDATE_CHECK_ENABLED != "1" ou si git est inaccessible.
+    # Si une mise à jour est disponible : git pull + os.execv() (ne retourne pas).
+    from update_checker import check_and_apply
+    check_and_apply(account_id)
+
     # H1: en prod le bot doit quitter proprement (pas bloquer Chrome indéfiniment)
-    if IS_LOCAL:
+    if is_attach_mode():
         print("Script terminé. Navigateur maintenu ouvert pour inspection.")
         while True:
             time.sleep(999)

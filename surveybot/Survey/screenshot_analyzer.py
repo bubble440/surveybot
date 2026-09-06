@@ -9,6 +9,8 @@ FINETUNED_MODEL = os.getenv(
 )
 
 
+
+
 def _compress_image(src_path, max_w=768, quality=70):
     """
     Compresse l'image pour réduire les coûts tokens.
@@ -38,7 +40,7 @@ def take_screenshot(
     """
     Prend une capture et renvoie le chemin du fichier.
     - full_page=False : viewport uniquement (ancien comportement)
-    - full_page=True  : tente CDP plein‑page, puis fallback mosaïque si CDP échoue
+    - full_page=True  : capture pleine page native Playwright, puis fallback mosaïque
     """
 
     # 📂 1) Dossier screenshots (chemin absolu, ancré au projet)
@@ -60,9 +62,9 @@ def take_screenshot(
                 pngs.append(int(m.group(1)))
     except Exception:
         pngs = []
-    
+
     next_num = (max(pngs) + 1) if pngs else 1
-    
+
     # filet de sécurité : si le nom existe déjà, on incrémente jusqu'à un slot libre
     while True:
         filename = f"screenshot_{next_num:03d}.png"
@@ -73,78 +75,49 @@ def take_screenshot(
 
 
     try:
+        page = driver
+
         if not full_page:
-            driver.save_screenshot(out_path)
+            page.screenshot(path=out_path)
             return out_path
 
-        # 1) Tentative CDP plein‑page (Chrome/Brave)
+        # Capture pleine page native Playwright (remplace le bloc CDP)
         try:
-            # Mesures du document complet
-            metrics = driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
-            content_size = metrics.get("contentSize", {})
-            width = int(content_size.get("width", 0)) or driver.execute_script(
-                "return document.documentElement.clientWidth"
-            )
-            height = int(content_size.get("height", 0)) or driver.execute_script(
-                "return document.body.scrollHeight"
-            )
-
-            # Activer un viewport virtuel de la taille du document
-            driver.execute_cdp_cmd(
-                "Emulation.setDeviceMetricsOverride",
-                {
-                    "mobile": False,
-                    "width": width,
-                    "height": height,
-                    "deviceScaleFactor": 1,
-                    "scale": 1,
-                },
-            )
-            driver.execute_cdp_cmd("Page.enable", {})
-            time.sleep(0.1)
-
-            # Capturer
-            data = driver.execute_cdp_cmd(
-                "Page.captureScreenshot",
-                {"fromSurface": True, "captureBeyondViewport": True},
-            )
-            png_b64 = data.get("data")
-            with open(out_path, "wb") as f:
-                f.write(base64.b64decode(png_b64))
-                print(f"💾 Capture enregistrée (CDP) → {os.path.abspath(out_path)}")
-            # Restaurer
-            driver.execute_cdp_cmd("Emulation.clearDeviceMetricsOverride", {})
+            page.screenshot(full_page=True, path=out_path)
+            print(f"💾 Capture enregistrée (full_page) → {os.path.abspath(out_path)}")
             return out_path
         except Exception as e:
-            print(f"⚠️ CDP plein‑page indisponible, fallback mosaïque. Détail: {e}")
+            print(f"⚠️ full_page screenshot échoué, fallback mosaïque. Détail: {e}")
 
-        # 2) Fallback mosaïque (scroll + assemblage)
+        # Fallback mosaïque (scroll + assemblage)
         return _stitch_fullpage(driver, out_path)
 
     except Exception as e:
         print(f"❌ Erreur capture écran : {e}")
         # dernier filet : viewport simple
-        driver.save_screenshot(out_path)
+        driver.screenshot(path=out_path)
         print(f"💾 Capture enregistrée (fallback) → {os.path.abspath(out_path)}")
         return out_path
 
 
 def _stitch_fullpage(driver, out_path: str) -> str:
     """
-    Fallback : scroller par “tuiles” et assembler verticalement.
+    Fallback : scroller par "tuiles" et assembler verticalement.
     Gère les sticky headers en overlap.
     """
+    page = driver
+
     # Se mettre tout en haut
-    driver.execute_script("window.scrollTo(0, 0);")
+    page.evaluate("() => window.scrollTo(0, 0)")
     time.sleep(0.2)
 
     total_height = int(
-        driver.execute_script(
-            "return Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"
+        page.evaluate(
+            "() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"
         )
     )
-    viewport_h = int(driver.execute_script("return window.innerHeight"))
-    viewport_w = int(driver.execute_script("return window.innerWidth"))
+    viewport_h = int(page.evaluate("() => window.innerHeight"))
+    viewport_w = int(page.evaluate("() => window.innerWidth"))
     step = max(1, int(viewport_h * 0.85))  # overlap ~15% pour éviter les bandes
     slices = []
     y = 0
@@ -154,11 +127,11 @@ def _stitch_fullpage(driver, out_path: str) -> str:
     os.makedirs(tmp_dir, exist_ok=True)
 
     while y < total_height:
-        driver.execute_script(f"window.scrollTo(0, {y});")
+        page.evaluate(f"() => window.scrollTo(0, {y})")
         time.sleep(0.25)  # laisser charger le contenu lazy
 
         part_path = os.path.join(tmp_dir, f"shot_{i}.png")
-        driver.save_screenshot(part_path)
+        page.screenshot(path=part_path)
         slices.append(part_path)
 
         y += step
@@ -171,7 +144,7 @@ def _stitch_fullpage(driver, out_path: str) -> str:
     images = [Image.open(p) for p in slices if os.path.exists(p)]
     if not images:
         # fallback ultime
-        driver.save_screenshot(out_path)
+        page.screenshot(path=out_path)
         return out_path
 
     # Normaliser largeur
@@ -245,8 +218,8 @@ def send_image_to_gpt(image_path, api_key):
 
     # SYSTEM : règles fermes (anti-disqualification + format)
     system_policy = (
-        "Tu es un PARTICIPANT HUMAIN dont l’objectif est de TERMINER le questionnaire. "
-        """Ta mission: retourner UNE SEULE instruction courte et actionnable pour l’étape immédiate. Ne renvoie qu’une ligne au format:
+        "Tu es un PARTICIPANT HUMAIN dont l'objectif est de TERMINER le questionnaire. "
+        """Ta mission: retourner UNE SEULE instruction courte et actionnable pour l'étape immédiate. Ne renvoie qu'une ligne au format:
         <libellé exact> //// <type>> //// <contexte-question>
         ➤ <libellé exact> : la valeur à saisir ou à cliquer (ex. '28', '95000', 'Masculin').
         ➤ <type> : radio | checkbox | dropdown | text | textarea | button.
@@ -256,11 +229,11 @@ def send_image_to_gpt(image_path, api_key):
         Masculin //// radio //// Êtes-vous de genre masculin ou féminin ?
         Jour //// dropdown //// Quelle est ta date de naissance ?"""
         "Cherche a toujours avamcer dans le survey, donc donne des reponses qui entrainent une evolution du survey."
-        "N’envoie jamais une option qui risque de disqualifier. "
-        "Règles d’évitement (si ces options existent, NE PAS les choisir) : "
-        "  - Réponses d’inéligibilité ou de refus de répondre"
+        "N'envoie jamais une option qui risque de disqualifier. "
+        "Règles d'évitement (si ces options existent, NE PAS les choisir) : "
+        "  - Réponses d'inéligibilité ou de refus de répondre"
         "  - Extrêmes qui paraissent incohérents. "
-        "Ordre d’action : traiter le premier champ OBLIGATOIRE non rempli (haut de page) ; "
+        "Ordre d'action : traiter le premier champ OBLIGATOIRE non rempli (haut de page) ; "
         "Pour radio/checkbox/dropdown, tu DOIS choisir UNIQUEMENT parmi les options disponibles."
         "RÈGLES “TEXT” (champs à remplir)"
         "Si la question concerne un code postal / ZIP (FR/EN): renvoyer 95000"
@@ -269,7 +242,7 @@ def send_image_to_gpt(image_path, api_key):
         "Si la page demande un champ explicitement numérique, renvoyer des CHIFFRES seulement."
         "Règles de décision (IMPORTANT):"
         "Ne clique pas les éléments de navigation non requis: langue, bannière, politique de confidentialité."
-        "Ne renvoie **qu’une seule instruction** par tour (pas de liste, pas d’explications)."
+        "Ne renvoie **qu'une seule instruction** par tour (pas de liste, pas d'explications)."
         "Lorsque l'action a effectuer est de cliquer sur un CTA sans texte retourne: Suivant //// button //// CTA"
     )
 

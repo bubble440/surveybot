@@ -1,72 +1,164 @@
-<body>
-<script>
-!function(a,b,c,d,e,f){a.ddjskey=e;a.ddoptions=f||null;var m=b.createElement(c),n=b.getElementsByTagName(c)[0];m.async=1,m.src=d,n.parentNode.insertBefore(m,n)}(window,document,"script","https://js.datadome.co/tags.js","170A0F4766C0F087378FFCCED0A8E2", { ajaxListenerPath: true });
-</script>
-<div class="container">
-<div class="row">
-<div class="span8 offset2">
-<a class="btn btn-small pull-right" href="/survey/fcb8d020-0d8d-a66a-8171-e5932a0fe89e/abort">
-Passez directement à l'enquête
-</a>
-<h1>
-Mise à jour rapide du profil
-</h1>
-<p class="lead">
-Avant de commencer le sondage, veuillez s'il vous plaît répondre à quelques questions d'identification. Vous aurez terminé et commencerez l'enquête dans moins d'une minute.
-</p>
-</div>
-</div>
-<div class="row">
-<div class="well span8 offset2">
-<div id="title">
-<div class="row-fluid">
-<div class="span10">
-<p class="lead">
-Question 1 de 3
-</p>
-<h2 id="label">
-Comment décririez-vous votre lieu de résidence&nbsp;?
-</h2>
-<p class="muted">
-Veuillez sélectionner une réponse parmi celles proposées ci-dessous.
-</p>
-</div>
-</div>
-</div>
-<form action="/survey/fcb8d020-0d8d-a66a-8171-e5932a0fe89e/question/0" accept-charset="UTF-8" method="post"><input name="utf8" type="hidden" value="✓"><input type="hidden" name="authenticity_token" value="XOQwIg/6BzU6gUraN+iljv/OFV05D5AD8+kAsJoOQjDtnFusfrb9vxOOI0vi1R03IdPXpEZtaAfaB2T9weShgw==">
-<input type="hidden" name="question_id" id="question_id" value="3160748">
-<div class="answer row-fluid">
-<input type="radio" name="answer" id="answer_130499567" value="130499567">
-<label for="answer_130499567"><span class="span12">Zone urbaine (métropole ou ville)</span>
-</label></div>
-<div class="answer row-fluid">
-<input type="radio" name="answer" id="answer_130499568" value="130499568">
-<label for="answer_130499568"><span class="span12">Zone périurbaine (zone résidentielle en périphérie d’une grande ville)</span>
-</label></div>
-<div class="answer row-fluid">
-<input type="radio" name="answer" id="answer_130499569" value="130499569">
-<label for="answer_130499569"><span class="span12">Zone rurale (zone en périphérie d’une petite ville)</span>
-</label></div>
-<div class="clearfix spacer30"></div>
-<div class="controls pull-right">
-<input type="submit" name="commit" value="Prochaine question" id="Create" class="btn btn-primary btn-large" data-disable-with="Prochaine question">
-</div>
-</form>
+<body class="sg-body sg-page-29 sg-pageid-25 sg-has-tools  sg-webkit sg-ltr  sg-replace-icons " id="sgbody-8905016"><noscript><div id="no-js-warning"><p>We've detected that Javascript is not enabled. It is required for an optimal survey taking experience.<br /> Please check your browser's settings and make sure Javascript is turned on. <a href='http://www.enable-javascript.com/' target='_blank' >Learn how to enable Javascript.</a></p></div></noscript><div class="sg-skipnav-container">
+						<a id="sg-skipnav" class="sg-screenreader-only" href="#sg-skipnav-target">Skip survey header</a>
+					</div>
+<div class="sg-tool-bar sg-snc-bar sg-lang-bar sg-lang-fixed-at-top" id="sg-snc-bar">
+	<div class="sg-snc-trigger-container">
+					<a class="sg-snc-trigger sg-language sg-hover" tabindex="0" aria-label="English - This will open a menu below with different survey language options" onclick="$SG('#sg-lang-box').slideToggle('slow',function(){
+						$SG('#sg-snc-form p:first').attr('tabindex', '0').focus();
+					});
+					$SG('#sg-snc-error').fadeOut('fast');
+					$SG('.sg-snc-lang-list').slideToggle('fast');
+					$SG(this).find('.toolbar-lang-arrow').css({
+						display: 'inline-block',
+						transform: ( $SG(this).find('.toolbar-lang-arrow').css('transform') == 'none') ? 'rotate(180deg)' : 'none'
+					});">
+				<svg class="sg-toolbar-icon" aria-hidden="true" aria-label="globe icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path stroke="#aaa" d="M364.215 192h131.43c5.439 20.419 8.354 41.868 8.354 64s-2.915 43.581-8.354 64h-131.43c5.154-43.049 4.939-86.746 0-128zM185.214 352c10.678 53.68 33.173 112.514 70.125 151.992.221.001.44.008.661.008s.44-.008.661-.008c37.012-39.543 59.467-98.414 70.125-151.992H185.214zm174.13-192h125.385C452.802 84.024 384.128 27.305 300.95 12.075c30.238 43.12 48.821 96.332 58.394 147.925zm-27.35 32H180.006c-5.339 41.914-5.345 86.037 0 128h151.989c5.339-41.915 5.345-86.037-.001-128zM152.656 352H27.271c31.926 75.976 100.6 132.695 183.778 147.925-30.246-43.136-48.823-96.35-58.393-147.925zm206.688 0c-9.575 51.605-28.163 104.814-58.394 147.925 83.178-15.23 151.852-71.949 183.778-147.925H359.344zm-32.558-192c-10.678-53.68-33.174-112.514-70.125-151.992-.221 0-.44-.008-.661-.008s-.44.008-.661.008C218.327 47.551 195.872 106.422 185.214 160h141.572zM16.355 192C10.915 212.419 8 233.868 8 256s2.915 43.581 8.355 64h131.43c-4.939-41.254-5.154-84.951 0-128H16.355zm136.301-32c9.575-51.602 28.161-104.81 58.394-147.925C127.872 27.305 59.198 84.024 27.271 160h125.385z"></path></svg>
 
-</div>
-</div>
+				<span class="sg-toolbar-text">English<span class="toolbar-lang-arrow">▾</span></span>
+			</a>
+			<ul class="sg-snc-lang-list">
+				
+					
+					<li>
+						<a href="/s3/8905016/c93bba9f7396?sg_maintain_session=1&amp;sg_navigate=start&amp;sglocale=en-gb">English (UK)</a>
+					</li>
+				
+					
+					<li>
+						<a href="/s3/8905016/c93bba9f7396?sg_maintain_session=1&amp;sg_navigate=start&amp;sglocale=en-au">English (Australia)</a>
+					</li>
+				
+					
+					<li>
+						<a href="/s3/8905016/c93bba9f7396?sg_maintain_session=1&amp;sg_navigate=start&amp;sglocale=de">German</a>
+					</li>
+				
+											<li>
+						<a href="/s3/8905016/c93bba9f7396?sg_maintain_session=1&amp;sg_navigate=start&amp;sglocale=ar">Arabic</a>
+					</li>
+					
+					
+					<li>
+						<a href="/s3/8905016/c93bba9f7396?sg_maintain_session=1&amp;sg_navigate=start&amp;sglocale=fr">French</a>
+					</li>
+							</ul>
+			</div>
+	</div>
+<form action="/s3/8905016/c93bba9f7396" method="post" enctype="multipart/form-data" class="sg-survey-form" id="sg_FormFor8905016" novalidate="">
+<div class="sg-hidden-inputs"><input type="hidden" name="sg_navchoice" id="sg_navchoice" value="" style=""><input type="hidden" name="sg_currentpageid" id="sg_currentpageid" value="25" style=""><input type="hidden" name="sg_surveyident" id="sg_surveyident" value="8905016" style=""><input type="hidden" name="sg_sessionid" id="sg_sessionid" value="1783938115_6a54bc43de4ba1.15167827" style=""><input type="hidden" name="sg_high_contrast" id="sg_high_contrast" value="false" style=""><input type="hidden" name="sg_cint_panelist" id="sg_cint_panelist" value="" style=""><input type="hidden" name="sg_interactionlevel" id="sg_interactionlevel" value="32" style=""><input type="hidden" name="sg_interactionlevel_sig" id="sg_interactionlevel_sig" value="origin-32" style=""><input type="hidden" name="sge1f818b2b909448ef080af75cc8edf8a" id="sge1f818b2b909448ef080af75cc8edf8a" value="3450274918" style=""><script>window["Fingerprint"] && (document.getElementById("sge1f818b2b909448ef080af75cc8edf8a").value = new Fingerprint({canvas: true}).get());</script></div>  <div class="sg-wrapper">
+<div class="sg-header">
+<div class="sg-header-hook-1"></div>
+<img class="sg-header-image" src="//app.alchemer.com/public/images/spacer.gif" alt="">
 
-<div class="row" id="footer">
-<div class="span8 offset2">
-<div class="small">
-Votre panel, Prime Insights  France, en partenariat avec Cint afin de vous fournir les meilleures opportunités d'études de marché. Les réponses aux questions d'identification collectées par Cint, sont enregistrées sur votre profil et utilisées dans le but de vous envoyer des invitations à des sondages correspondant à vos critères.
-<a href="/survey/fcb8d020-0d8d-a66a-8171-e5932a0fe89e/abort">
-Veuillez cliquer ici si vous ne souhaitez pas répondre aux questions d'identification pour le moment.
-</a>
-</div>
-</div>
-</div>
-</div>
+<h1 class="sg-title" tabindex="0"><span>July Brand Health Tracker</span></h1>
 
 
-</body>
+<div class="sg-header-hook-2"></div>
+</div>
+<div class="sg-content" id="sg-skipnav-target">
+<div class="sg-content-hook-1"></div>
+
+
+     <h2 class="sg-page-title" role="heading" tabindex="0">Q21</h2>
+
+<div class="sg-question-set">		<div id="sgE-8905016-25-70-box" class="sg-question sg-type-rank sg-type-rank-dragdrop  sg-required">
+			<input type="hidden" id="sgE-8905016-25-70-meta" name="sgE-8905016-25-70-meta" value="hidden=false&amp;required=true" style="">
+		<input type="hidden" id="sgE-8905016-25-70-time" name="sgE-8905016-25-70-time" value="" style="">
+						<div class="sg-question-title">
+					<span class="sg-question-number">28.</span> Please select your top 3 most important aspects of a wearable device when deciding which brand to purchase. <strong class="sg-required-icon">*<span class="sg-screenreader-only">This question is required.</span></strong>	<span class="sg-screenreader-only">Order the items from the following list. First select an item with the spacebar to show a menu of possible ranking positions. Next, click a ranking position to order it in the ranked list.  Note the menu will display more ordering options as you add items to the ranked list.</span>
+				</div>
+							<div class="sg-question-options ">
+			
+<div class="sg-rank-dragdrop" style="width:410px">
+	<div class="sg-rank-instructions" aria-hidden="true">Drag items from the left-hand list into the right-hand list to order them.</div>
+	<div class="sg-rank-box">
+		<div class="sg-rank-listbox sg-rank-origin">
+			<ul class="sg-list sg-list-vertical ui-sortable" id="sgE-8905016-25-70-origin" style="height: 712.4px;">
+								<li class="sg-first-li ui-sortable-handle" id="sgE-8905016-25-70-10198-handle" tabindex="0" aria-grabbed="false" aria-haspopup="true" role="listitem">
+						<div id="sgE-8905016-25-70-10198-number" class="sg-rank-number"></div>
+						<span class="sg-access-helper"><input type="text" class="sg-input sg-input-text" id="sgE-8905016-25-70-10198" name="sgE-8905016-25-70-10198" value="" aria-hidden="true" style=""></span>
+						<label for="sgE-8905016-25-70-10198">Accuracy of health and fitness measurements</label>					</li>
+										<li id="sgE-8905016-25-70-10210-handle" class="ui-sortable-handle" tabindex="0" aria-grabbed="false" aria-haspopup="true" role="listitem">
+						<div id="sgE-8905016-25-70-10210-number" class="sg-rank-number"></div>
+						<span class="sg-access-helper"><input type="text" class="sg-input sg-input-text" id="sgE-8905016-25-70-10210" name="sgE-8905016-25-70-10210" value="" aria-hidden="true" style=""></span>
+						<label for="sgE-8905016-25-70-10210">Community and social features</label>					</li>
+										
+										<li id="sgE-8905016-25-70-10207-handle" class="ui-sortable-handle" tabindex="0" aria-grabbed="false" aria-haspopup="true" role="listitem">
+						<div id="sgE-8905016-25-70-10207-number" class="sg-rank-number"></div>
+						<span class="sg-access-helper"><input type="text" class="sg-input sg-input-text" id="sgE-8905016-25-70-10207" name="sgE-8905016-25-70-10207" value="" aria-hidden="true" style=""></span>
+						<label for="sgE-8905016-25-70-10207">AI-driven features + insights</label>					</li>
+										
+										
+										<li id="sgE-8905016-25-70-10206-handle" class="ui-sortable-handle" tabindex="0" aria-grabbed="false" aria-haspopup="true" role="listitem">
+						<div id="sgE-8905016-25-70-10206-number" class="sg-rank-number"></div>
+						<span class="sg-access-helper"><input type="text" class="sg-input sg-input-text" id="sgE-8905016-25-70-10206" name="sgE-8905016-25-70-10206" value="" aria-hidden="true" style=""></span>
+						<label for="sgE-8905016-25-70-10206">Pace of innovation</label>					</li><li id="sgE-8905016-25-70-10200-handle" class="ui-sortable-handle" tabindex="0" aria-grabbed="false" aria-haspopup="true" role="listitem" aria-dropeffect="" style="position: relative; left: 0px; top: 0px;">
+						<div id="sgE-8905016-25-70-10200-number" class="sg-rank-number"></div>
+						<span class="sg-access-helper"><input type="text" class="sg-input sg-input-text" id="sgE-8905016-25-70-10200" name="sgE-8905016-25-70-10200" value="" aria-hidden="true" style=""></span>
+						<label for="sgE-8905016-25-70-10200">Integration with health data or blood testing services</label>					</li><li id="sgE-8905016-25-70-10205-handle" class="ui-sortable-handle" tabindex="0" aria-grabbed="false" aria-haspopup="true" role="listitem" aria-dropeffect="" style="position: relative; left: 0px; top: 0px;">
+						<div id="sgE-8905016-25-70-10205-number" class="sg-rank-number"></div>
+						<span class="sg-access-helper"><input type="text" class="sg-input sg-input-text" id="sgE-8905016-25-70-10205" name="sgE-8905016-25-70-10205" value="" aria-hidden="true" style=""></span>
+						<label for="sgE-8905016-25-70-10205">Ability to customize look and feel</label>					</li>
+										
+										<li id="sgE-8905016-25-70-10202-handle" class="ui-sortable-handle" tabindex="0" aria-grabbed="false" aria-haspopup="true" role="listitem">
+						<div id="sgE-8905016-25-70-10202-number" class="sg-rank-number"></div>
+						<span class="sg-access-helper"><input type="text" class="sg-input sg-input-text" id="sgE-8905016-25-70-10202" name="sgE-8905016-25-70-10202" value="" aria-hidden="true" style=""></span>
+						<label for="sgE-8905016-25-70-10202">Battery life and charging experience</label>					</li>
+										<li id="sgE-8905016-25-70-10211-handle" class="ui-sortable-handle" tabindex="0" aria-grabbed="false" aria-haspopup="true" role="listitem">
+						<div id="sgE-8905016-25-70-10211-number" class="sg-rank-number"></div>
+						<span class="sg-access-helper"><input type="text" class="sg-input sg-input-text" id="sgE-8905016-25-70-10211" name="sgE-8905016-25-70-10211" value="" aria-hidden="true" style=""></span>
+						<label for="sgE-8905016-25-70-10211">Live activity tracking (e.g., Heart Rate)</label>					</li>
+										<li id="sgE-8905016-25-70-10203-handle" class="ui-sortable-handle" tabindex="0" aria-grabbed="false" aria-haspopup="true" role="listitem">
+						<div id="sgE-8905016-25-70-10203-number" class="sg-rank-number"></div>
+						<span class="sg-access-helper"><input type="text" class="sg-input sg-input-text" id="sgE-8905016-25-70-10203" name="sgE-8905016-25-70-10203" value="" aria-hidden="true" style=""></span>
+						<label for="sgE-8905016-25-70-10203">Customer support</label>					</li>
+										<li id="sgE-8905016-25-70-10208-handle" class="ui-sortable-handle" tabindex="0" aria-grabbed="false" aria-haspopup="true" role="listitem">
+						<div id="sgE-8905016-25-70-10208-number" class="sg-rank-number"></div>
+						<span class="sg-access-helper"><input type="text" class="sg-input sg-input-text" id="sgE-8905016-25-70-10208" name="sgE-8905016-25-70-10208" value="" aria-hidden="true" style=""></span>
+						<label for="sgE-8905016-25-70-10208">Personal health and data privacy</label>					</li>
+										<li class="sg-last-li ui-sortable-handle" id="sgE-8905016-25-70-10201-handle" tabindex="0" aria-grabbed="false" aria-haspopup="true" role="listitem">
+						<div id="sgE-8905016-25-70-10201-number" class="sg-rank-number"></div>
+						<span class="sg-access-helper"><input type="text" class="sg-input sg-input-text" id="sgE-8905016-25-70-10201" name="sgE-8905016-25-70-10201" value="" aria-hidden="true" style=""></span>
+						<label for="sgE-8905016-25-70-10201">Ease of setup and daily use</label>					</li>
+								</ul>
+		</div>
+	</div>
+	<div class="sg-rank-box">
+		<div class="sg-rank-listbox sg-rank-target">
+			<ul class="sg-list sg-list-vertical ui-sortable" id="sgE-8905016-25-70-target" style="height: 712.4px;">
+											<!-- <li class="filler" style="height:0px;border:none;padding:0;margin:0"></li> -->
+							<li id="sgE-8905016-25-70-10204-handle" class="ui-sortable-handle sg-first-li" tabindex="0" aria-grabbed="false" aria-haspopup="true" role="listitem" aria-dropeffect="" style="position: relative; left: 0px; top: 0px;">
+						<div id="sgE-8905016-25-70-10204-number" class="sg-rank-number">1.&nbsp;</div>
+						<span class="sg-access-helper"><input type="text" class="sg-input sg-input-text" id="sgE-8905016-25-70-10204" name="sgE-8905016-25-70-10204" value="" aria-hidden="true" style=""></span>
+						<label for="sgE-8905016-25-70-10204">Comfort and design</label>					</li><li id="sgE-8905016-25-70-10199-handle" class="ui-sortable-handle" tabindex="0" aria-grabbed="false" aria-haspopup="true" role="listitem" aria-dropeffect="" style="position: relative; left: 0px; top: 0px;">
+						<div id="sgE-8905016-25-70-10199-number" class="sg-rank-number">2.&nbsp;</div>
+						<span class="sg-access-helper"><input type="text" class="sg-input sg-input-text" id="sgE-8905016-25-70-10199" name="sgE-8905016-25-70-10199" value="" aria-hidden="true" style=""></span>
+						<label for="sgE-8905016-25-70-10199">Coaching and guidance</label>					</li></ul>
+		</div>
+		<ul class="hide sg-hide sg-sort-default">
+			<li class="filler" style="height:0px;border:none;padding:0;margin:0"></li>
+		</ul>
+	</div>
+</div>				</div>
+
+				</div>
+	</div>
+
+<div class="sg-content-hook-2"></div>
+
+<div class="sg-footer">        
+<div class="sg-footer-hook-1"></div>
+
+<div class="sg-button-bar"><input type="submit" class="sg-button sg-next-button" id="sg_NextButton" name="sGizmoNextButton" onclick="$SG('sg_navchoice').value='sGizmoNextButton';return(true);" aria-label="Next" value="Next" style=""></div>
+<div class="sg-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="74"><div class="sg-progress-bar-text">74%</div><div class="sg-progress-bar-background"><div class="sg-progress-bar-inner" style="width:74%;"></div></div></div>
+
+
+<div class="sg-footer-hook-2"></div>
+</div>
+
+</div>
+
+</div></form><script type="text/javascript">SGAPI.surveyData['8905016'] = {    "id": 8905016,    "current_domain": "survey.alchemer.com",    "customer_id": 761225,    "key": "307VSXA63762A89IKXNCH3MJ805DXS",    "rtl": false,    "session": "1783938115_6a54bc43de4ba1.15167827",    "progess": "71.691176470588",    "progress": 71.69117647058823195038712583482265472412109375,    "minstep": "2.5735294117647",    "ispreview": "false",    "ismobile": "false",    "language": "English",    "page_direction": -1,    "currency_glyph": "$",    "title": "July Brand Health Tracker",    "options": {        "forward_only": true,        "file_session_download": true,        "is_kiosk": false,        "dynamic_number": false    },    "currentpage": 25,    "pages": {        "p25": {            "id": 25,            "title": "Q21",            "hidden": false,            "haserrors": false,            "shuffled": false,            "xnumberselected": false,            "piped": false,            "pipevalue": "",            "number": 25,            "options": {}        }    },    "messages": {        "min_number": ":value is less than :min",        "max_number": ":value is more than :max",        "minimum_response": "You must select at least :min checkbox(es). You have only selected :value checkbox(es).",        "minimum_response_rank": "You must rank at least :min option(s). You have only ranked :value option(s).",        "minimum_rows_required": "You must answer at least :min rows of the table. You have only answered :value row(s).",        "required": "This question is required",        "save_n_continue_match": "Email address fields must match.",        "save_n_continue_invalid": "Invalid Email address.",        "save_n_continue_send_error": "Please try again. There was a problem sending your email.",        "uploading_file": "Uploading...",        "deleting_file": "Deleting...",        "file_prefix": "File:",        "no_file_specified": "No file specified",        "upload_error": "Error: Please try again",        "invalid_file_type": "Error: File type not allowed",        "invalid_file_size": "Error: File size is too large",        "max_words": "Words used: :value out of :max.",        "max_characters": "Characters used: :value out of :max.",        "too_many_words": "You have typed more words than allowed (:wordcount of :limit words)",        "too_many_characters": "You have typed more characters than allowed (:charactercount of :limit characters)",        "min_words": "Words used: :value (minimum :min).",        "min_characters": "Characters used: :value (minimum :min).",        "not_enough_words": "You have typed fewer words than required (:minwordcount of :minimum words)",        "back_button": "Back",        "next_button": "Next",        "not_enough_characters": "You have typed fewer characters than required (:mincharactercount of :minimum characters)",        "invalid_email": "\":value\" is not a valid email address",        "invalid_percent": ":value must be a percent",        "invalid_min_date": "Date must be after or equal to :min",        "invalid_max_date": "Date must be before or equal to :max",        "must_be_positive_whole_number": "Please supply a positive whole number (no decimals)",        "must_be_whole_number": "Please supply a whole number (no decimals)",        "selectone": "-- Please Select --",        "invalid_number": ":value must be a number",        "page_timer_warning": "This page has an initial time limit of",        "page_timer_prompt": "Would you like to disable all future page timer notifications?",        "page_timer_expired": "Time limit expired. Submitting page."    },    "questions": {        "70": {            "id": 70,            "title": "Please select your top 3 most important aspects of a wearable device when deciding which brand to purchase.",            "type": "RANK",            "Runtime": {                "Hidden": false,                "Required": true,                "Rendered": true,                "HasErrors": false,                "Errors": [],                "Answered": false,                "Number": "28.",                "PipePrototype": false,                "Piped": false,                "PipedValue": null,                "Data": {                    "atoms": []                }            },            "properties": {                "required": true,                "hidden": false,                "option_sort": "SHUFFLE",                "haschanged": "false",                "size": "",                "cssclass": "sg-rank",                "display_type": "ARROW",                "inline-edit": true,                "map_key": "rank-dragdrop",                "alldepends": [],                "validation_control": "",                "labels_right": false,                "newpipeorder": true,                "show_title": false,                "question_description": {                    "English": ""                },                "question_description_above": false,                "soft-required": false,                "required-when": false,                "disabled": false,                "pro-services-lock": false,                "include_page_titles": "false",                "include_page_numbers": "false",                "include_question_numbers": "false",                "alert_emails": [],                "save_logic_data": "false",                "messages": {                    "inputmask": [],                    "r_extreme_label": [],                    "l_extreme_label": [],                    "center_label": [],                    "right_label": [],                    "left_label": [],                    "na_text": [],                    "th_content": [],                    "conjoint_best_label": [],                    "conjoint_worst_label": [],                    "conjoint_none_label": [],                    "conjoint_card_label": [],                    "conjoint_error_label": [],                    "maxdiff_best_label": [],                    "maxdiff_worst_label": [],                    "maxdiff_attribute_label": [],                    "maxdiff_of": [],                    "maxdiff_sets_message": []                },                "col_sort": "NONE",                "dhtml_hidden": false,                "hide_all_after_until_value": false,                "hide_after_response": false,                "comments": false,                "require_comments": false,                "admin_question": false,                "require_admin_question": false,                "custom_css": "",                "break_after": false,                "report-value-method": "sequential",                "sequential-option-index": 14,                "has_showhide_deps": false,                "url": "http:\/\/",                "lastmodified": 1763778239,                "orientation": "VERT",                "table_width_units": "px",                "left_cell_width_units": "px",                "minimum_response": 3,                "xnumber": 3,                "amounts": {                    "70-10209": null                }            },            "options": {                "10198": {                    "id": 10198,                    "previous_version_id": null,                    "value": "1",                    "title": {                        "English": "Accuracy of health and fitness measurements"                    },                    "group": null,                    "source": 0,                    "source_id": null,                    "source_option_id": null,                    "Runtime": {                        "Disabled": false                    },                    "properties": {                        "disabled": false                    },                    "image": null,                    "history": null,                    "parent_survey": null,                    "parent_question": null,                    "parent_section": null,                    "need_value": true                },                "10199": {                    "id": 10199,                    "previous_version_id": null,                    "value": "2",                    "title": {                        "English": "Coaching and guidance"                    },                    "group": null,                    "source": 0,                    "source_id": null,                    "source_option_id": null,                    "Runtime": {                        "Disabled": false                    },                    "properties": {                        "disabled": false                    },                    "image": null,                    "history": null,                    "parent_survey": null,                    "parent_question": null,                    "parent_section": null,                    "need_value": true                },                "10200": {                    "id": 10200,                    "previous_version_id": null,                    "value": "3",                    "title": {                        "English": "Integration with health data or blood testing services"                    },                    "group": null,                    "source": 0,                    "source_id": null,                    "source_option_id": null,                    "Runtime": {                        "Disabled": false                    },                    "properties": {                        "disabled": false                    },                    "image": null,                    "history": null,                    "parent_survey": null,                    "parent_question": null,                    "parent_section": null,                    "need_value": true                },                "10201": {                    "id": 10201,                    "previous_version_id": null,                    "value": "4",                    "title": {                        "English": "Ease of setup and daily use"                    },                    "group": null,                    "source": 0,                    "source_id": null,                    "source_option_id": null,                    "Runtime": {                        "Disabled": false                    },                    "properties": {                        "disabled": false                    },                    "image": null,                    "history": null,                    "parent_survey": null,                    "parent_question": null,                    "parent_section": null,                    "need_value": true                },                "10202": {                    "id": 10202,                    "previous_version_id": null,                    "value": "5",                    "title": {                        "English": "Battery life and charging experience"                    },                    "group": null,                    "source": 0,                    "source_id": null,                    "source_option_id": null,                    "Runtime": {                        "Disabled": false                    },                    "properties": {                        "disabled": false                    },                    "image": null,                    "history": null,                    "parent_survey": null,                    "parent_question": null,                    "parent_section": null,                    "need_value": true                },                "10203": {                    "id": 10203,                    "previous_version_id": null,                    "value": "6",                    "title": {                        "English": "Customer support"                    },                    "group": null,                    "source": 0,                    "source_id": null,                    "source_option_id": null,                    "Runtime": {                        "Disabled": false                    },                    "properties": {                        "disabled": false                    },                    "image": null,                    "history": null,                    "parent_survey": null,                    "parent_question": null,                    "parent_section": null,                    "need_value": true                },                "10204": {                    "id": 10204,                    "previous_version_id": null,                    "value": "7",                    "title": {                        "English": "Comfort and design"                    },                    "group": null,                    "source": 0,                    "source_id": null,                    "source_option_id": null,                    "Runtime": {                        "Disabled": false                    },                    "properties": {                        "disabled": false                    },                    "image": null,                    "history": null,                    "parent_survey": null,                    "parent_question": null,                    "parent_section": null,                    "need_value": true                },                "10205": {                    "id": 10205,                    "previous_version_id": null,                    "value": "8",                    "title": {                        "English": "Ability to customize look and feel"                    },                    "group": null,                    "source": 0,                    "source_id": null,                    "source_option_id": null,                    "Runtime": {                        "Disabled": false                    },                    "properties": {                        "disabled": false                    },                    "image": null,                    "history": null,                    "parent_survey": null,                    "parent_question": null,                    "parent_section": null,                    "need_value": true                },                "10206": {                    "id": 10206,                    "previous_version_id": null,                    "value": "9",                    "title": {                        "English": "Pace of innovation"                    },                    "group": null,                    "source": 0,                    "source_id": null,                    "source_option_id": null,                    "Runtime": {                        "Disabled": false                    },                    "properties": {                        "disabled": false                    },                    "image": null,                    "history": null,                    "parent_survey": null,                    "parent_question": null,                    "parent_section": null,                    "need_value": true                },                "10207": {                    "id": 10207,                    "previous_version_id": null,                    "value": "10",                    "title": {                        "English": "AI-driven features + insights"                    },                    "group": null,                    "source": 0,                    "source_id": null,                    "source_option_id": null,                    "Runtime": {                        "Disabled": false                    },                    "properties": {                        "disabled": false                    },                    "image": null,                    "history": null,                    "parent_survey": null,                    "parent_question": null,                    "parent_section": null,                    "need_value": true                },                "10208": {                    "id": 10208,                    "previous_version_id": null,                    "value": "11",                    "title": {                        "English": "Personal health and data privacy"                    },                    "group": null,                    "source": 0,                    "source_id": null,                    "source_option_id": null,                    "Runtime": {                        "Disabled": false                    },                    "properties": {                        "disabled": false                    },                    "image": null,                    "history": null,                    "parent_survey": null,                    "parent_question": null,                    "parent_section": null,                    "need_value": true                },                "10209": {                    "id": 10209,                    "previous_version_id": null,                    "value": "12",                    "title": {                        "English": "Ease of setup and daily use"                    },                    "group": null,                    "source": 0,                    "source_id": null,                    "source_option_id": null,                    "Runtime": {                        "Disabled": true                    },                    "properties": {                        "disabled": true,                        "piping_exclude": "false",                        "show_rules": null,                        "show_rules_logic_map": null                    },                    "image": null,                    "history": null,                    "parent_survey": null,                    "parent_question": null,                    "parent_section": null,                    "need_value": true                },                "10210": {                    "id": 10210,                    "previous_version_id": null,                    "value": "13",                    "title": {                        "English": "Community and social features"                    },                    "group": null,                    "source": 0,                    "source_id": null,                    "source_option_id": null,                    "Runtime": {                        "Disabled": false                    },                    "properties": {                        "disabled": false                    },                    "image": null,                    "history": null,                    "parent_survey": null,                    "parent_question": null,                    "parent_section": null,                    "need_value": true                },                "10211": {                    "id": 10211,                    "previous_version_id": null,                    "value": "14",                    "title": {                        "English": "Live activity tracking (e.g., Heart Rate)"                    },                    "group": null,                    "source": 0,                    "source_id": null,                    "source_option_id": null,                    "Runtime": {                        "Disabled": false                    },                    "properties": {                        "disabled": false                    },                    "image": null,                    "history": null,                    "parent_survey": null,                    "parent_question": null,                    "parent_section": null,                    "need_value": true                }            },            "page": "p25"        }    }};
+S8905016 = new SGSurvey(SGAPI.surveyData['8905016'], false);
+S8905016.InitPage(25);
+$SG(document).ready(function(){SG_init_page();});</script></body>

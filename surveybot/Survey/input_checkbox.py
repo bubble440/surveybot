@@ -12,8 +12,11 @@ Dépendances:
 - input_utils pour les fonctions utilitaires
 """
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
+
+
+
+
+
 import unicodedata
 import re
 import time
@@ -42,9 +45,8 @@ def force_checkbox_events(driver, checkbox_el):
     Force les events JS sur un checkbox pour s'assurer que les frameworks
     (React, Angular, Vue, jQuery) détectent le changement.
     """
-    driver.execute_script(
-        """
-        const cb = arguments[0];
+    driver.evaluate("""([_el, _arg1]) => {
+        const cb = _el;
         cb.checked = true;
         cb.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
         cb.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
@@ -61,8 +63,8 @@ def force_checkbox_events(driver, checkbox_el):
 def privacy_checkbox_is_accepted(driver) -> bool:
     """Vérifie si la checkbox de politique de confidentialité est acceptée."""
     try:
-        warn = driver.find_element(By.ID, "privacyPolicyFeedback7")
-        return not warn.is_displayed()
+        warn = driver.query_selector("#privacyPolicyFeedback7")
+        return not warn.is_visible()
     except Exception:
         return True
 
@@ -79,7 +81,7 @@ def force_label_for_checkbox_js(driver, label_text: str) -> bool:
     const norm = s => (s||'').toLowerCase()
         .normalize('NFKC').replace(/\u00A0/g,' ')
         .replace(/[»«""\"'›→·•:]/g,'').replace(/\s+/g,' ').trim();
-    const needle = norm(arguments[0]);
+    const needle = norm(_el);
 
     const labs = Array.from(document.querySelectorAll('label'));
     for (const lab of labs) {
@@ -112,7 +114,7 @@ def force_label_for_checkbox_js(driver, label_text: str) -> bool:
     return false;
     """
     try:
-        return bool(driver.execute_script(js, label_text))
+        return bool(driver.evaluate("(arg) => {" + js + "}", label_text))
     except Exception:
         return False
 
@@ -128,7 +130,7 @@ def fallback_click_checkbox_js_alchemer(driver, target_text: str) -> bool:
     const norm = s => (s||'').toLowerCase()
       .normalize('NFKC').replace(/\u00A0/g,' ')
       .replace(/[»«""\"'›→·•:]/g,'').replace(/\s+/g,' ').trim();
-    const needle = norm(arguments[0]);
+    const needle = norm(_el);
 
     const roots = Array.from(document.querySelectorAll(
       '.sg-type-checkbox, .sg-question-options, ul.sg-list'
@@ -172,7 +174,7 @@ def fallback_click_checkbox_js_alchemer(driver, target_text: str) -> bool:
     return !!(inp.checked || (inp.getAttribute('aria-checked')||'').toLowerCase()==='true');
     """
     try:
-        return bool(driver.execute_script(js, target_text))
+        return bool(driver.evaluate("(arg) => {" + js + "}", target_text))
     except Exception:
         return False
 
@@ -187,7 +189,7 @@ def fallback_click_checkbox_js_generic(driver, target_text: str) -> bool:
     const norm = s => (s||'').toLowerCase()
       .normalize('NFKC').replace(/\u00A0/g,' ')
       .replace(/[»«""\"'›→·•:]/g,'').replace(/\s+/g,' ').trim();
-    const needle = norm(arguments[0]);
+    const needle = norm(_el);
 
     const candidates = [];
     candidates.push(...document.querySelectorAll('label, .checkbox, [role=checkbox]'));
@@ -231,7 +233,7 @@ def fallback_click_checkbox_js_generic(driver, target_text: str) -> bool:
     return false;
     """
     try:
-        return bool(driver.execute_script(js, target_text))
+        return bool(driver.evaluate("(arg) => {" + js + "}", target_text))
     except Exception:
         return False
 
@@ -262,17 +264,14 @@ def click_checkbox_buttonish_by_label(driver, label: str, context_hint: str | No
 
     # candidats labels "button-like"
     try:
-        labels = root.find_elements(
-            By.XPATH,
-            ".//label[@role='button' or contains(@class,'ui-btn') or contains(@class,'checkbox') or contains(@class,'ui-checkbox') or .//span]"
-        )
+        labels = root.query_selector_all("xpath=" + ".//label[@role='button' or contains(@class,'ui-btn') or contains(@class,'checkbox') or contains(@class,'ui-checkbox') or .//span]")
     except Exception:
         labels = []
 
     best, best_score = None, -1.0
     for lab in labels:
         try:
-            txt = _norm(lab.text or lab.get_attribute("innerText") or "")
+            txt = _norm(lab.inner_text() or lab.get_attribute("innerText") or "")
             if not txt:
                 continue
             sc = 1.0 if (needle in txt or txt in needle) else 0.0
@@ -293,13 +292,13 @@ def click_checkbox_buttonish_by_label(driver, label: str, context_hint: str | No
     try:
         fid = best.get_attribute("for")
         if fid:
-            linked = driver.find_element(By.ID, fid)
+            linked = driver.query_selector(f"#{fid}")
     except Exception:
         linked = None
 
     # 1) scroll + clicks sur le label
     try:
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", best)
+        driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", best)
     except Exception:
         pass
 
@@ -308,9 +307,9 @@ def click_checkbox_buttonish_by_label(driver, label: str, context_hint: str | No
             if how == "native":
                 best.click()
             elif how == "ac":
-                ActionChains(driver).move_to_element(best).click().perform()
+                best.hover(); best.click()
             else:
-                driver.execute_script("arguments[0].click();", best)
+                driver.evaluate("(el) => el.click()", best)
             time.sleep(0.15)
             if linked is not None:
                 try:
@@ -327,16 +326,16 @@ def click_checkbox_buttonish_by_label(driver, label: str, context_hint: str | No
     # 2) clic JS direct sur l'input lié + events
     if linked is not None:
         try:
-            driver.execute_script("arguments[0].click();", linked)
+            driver.evaluate("(el) => el.click()", linked)
             time.sleep(0.1)
             if linked.is_selected():
                 return True
-            driver.execute_script("""
-                const el = arguments[0];
+            linked.evaluate("""(_el) => {
+                const el = _el;
                 if (!el.checked) el.checked = true;
                 el.dispatchEvent(new Event('input',{bubbles:true}));
                 el.dispatchEvent(new Event('change',{bubbles:true}));
-            """, linked)
+}""")
             time.sleep(0.1)
             try:
                 if linked.is_selected():
@@ -386,7 +385,7 @@ def click_confirmit_checktable(driver, label: str, context_hint: str | None = No
     # Candidats: lignes de réponses
     rows = []
     try:
-        rows = scope.find_elements(By.XPATH, ".//tr[contains(@class,'Row') or contains(@class,'row')]")
+        rows = scope.query_selector_all("xpath=" + ".//tr[contains(@class,'Row') or contains(@class,'row')]")
     except Exception:
         rows = []
 
@@ -395,11 +394,11 @@ def click_confirmit_checktable(driver, label: str, context_hint: str | None = No
             # Texte de la ligne
             txt = ""
             try:
-                lab_el = tr.find_element(By.XPATH, ".//label")
-                txt = _n(lab_el.text or lab_el.get_attribute("innerText") or "")
+                lab_el = tr.query_selector("xpath=" + ".//label")
+                txt = _n(lab_el.inner_text() or lab_el.get_attribute("innerText") or "")
             except Exception:
                 try:
-                    txt = _n(tr.text or tr.get_attribute("innerText") or "")
+                    txt = _n(tr.inner_text() or tr.get_attribute("innerText") or "")
                 except Exception:
                     continue
 
@@ -409,18 +408,18 @@ def click_confirmit_checktable(driver, label: str, context_hint: str | None = No
             # Trouver l'input
             inp = None
             try:
-                inp = tr.find_element(By.XPATH, ".//input[@type='checkbox' or @type='radio']")
+                inp = tr.query_selector("xpath=" + ".//input[@type='checkbox' or @type='radio']")
             except Exception:
                 continue
 
             # Clic
             for attempt in range(max_retries):
                 try:
-                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", inp)
+                    driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", inp)
                     try:
                         inp.click()
                     except Exception:
-                        driver.execute_script("arguments[0].click();", inp)
+                        driver.evaluate("(el) => el.click()", inp)
                     time.sleep(0.1)
                     if inp.is_selected():
                         if return_element:
@@ -431,12 +430,12 @@ def click_confirmit_checktable(driver, label: str, context_hint: str | None = No
 
             # Force events
             try:
-                driver.execute_script("""
-                    const el = arguments[0];
+                inp.evaluate("""(_el) => {
+                    const el = _el;
                     el.checked = true;
                     el.dispatchEvent(new Event('input', {bubbles:true}));
                     el.dispatchEvent(new Event('change', {bubbles:true}));
-                """, inp)
+}""")
                 if inp.is_selected():
                     if return_element:
                         return inp
@@ -448,6 +447,116 @@ def click_confirmit_checktable(driver, label: str, context_hint: str | None = No
             continue
 
     return None if return_element else False
+
+
+# =============================================================================
+# IPSOS/mrIWeb SHARKY "GridProgressive" — VARIANTE CHECKBOX (MULTI-RÉPONSES)
+# =============================================================================
+
+def click_ipsos_sharky_grid_progressive_checkbox(driver, label: str) -> bool:
+    """
+    Ipsos/mrIWeb Sharky "GridProgressive", variante multi-réponses (conteneur
+    question-container QSubType-MA / prog-type-checkbox) : chaque option est un
+    div.prog-the-answer-container[role='checkbox'] (libellé dans un
+    span.mrQuestionText imbriqué), enfant direct de div.clearfix.prog-answers-row
+    (pas de div.the-radiogroup, contrairement à la variante radio couverte par
+    click_ipsos_sharky_grid_progressive_radio dans Survey/input_radio.py, non
+    modifiée par cette fonction). Les <input type="checkbox" class="mrMultiple">
+    natifs existent dans une table séparée (.no-display-answers, masquée) — ce ne
+    sont pas les éléments cliqués ni vérifiés ici.
+
+    Voir BOT_EVOLUTION_MEMORY.md ("ipsos_mriweb_grid_progressive", dom_analyzer.py)
+    pour la résolution de la question associée à ce même widget.
+
+    Guard DOM strict : div.clearfix.prog-answers-row présent, contenant des
+    div.prog-the-answer-container[role='checkbox'] enfants directs.
+
+    Cible du clic : le div.prog-the-answer-container[role='checkbox'] lui-même.
+    Vérification : aria-checked="true" reflété sur ce même div après clic.
+    """
+    _JS_FIND = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    if (!needle) return null;
+
+    const rows = Array.from(document.querySelectorAll("div.clearfix.prog-answers-row"));
+    if (!rows.length) return null;
+
+    for (const row of rows) {
+      const opts = Array.from(row.querySelectorAll(":scope > div.prog-the-answer-container[role='checkbox']"));
+      for (const opt of opts) {
+        const span = opt.querySelector('span.mrQuestionText');
+        const txt = norm(span ? (span.innerText || span.textContent || '') : '');
+        if (!txt || !(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
+        return opt;
+      }
+    }
+    return null;
+    """
+
+    _JS_VERIFY = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    const rows = Array.from(document.querySelectorAll("div.clearfix.prog-answers-row"));
+    for (const row of rows) {
+      const opts = Array.from(row.querySelectorAll(":scope > div.prog-the-answer-container[role='checkbox']"));
+      for (const opt of opts) {
+        const span = opt.querySelector('span.mrQuestionText');
+        const txt = norm(span ? (span.innerText || span.textContent || '') : '');
+        if (!txt || !(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
+        return (opt.getAttribute('aria-checked') || '').toLowerCase() === 'true';
+      }
+    }
+    return false;
+    """
+
+    # Résout le frame actif, même convention que click_ipsos_sharky_grid_progressive_radio
+    # (driver.evaluate_handle/evaluate opèrent sur le document racine sinon).
+    _ctx = getattr(driver, "_current_frame", driver)
+
+    try:
+        opt = _ctx.evaluate_handle("(arg) => {" + _JS_FIND + "}", label).as_element()
+    except Exception as exc:
+        log_debug("[TARGET_DEBUG]", f"ipsos_sharky_grid_progressive_checkbox: js_find_exception label={label!r} error={type(exc).__name__}: {exc}")
+        return False
+
+    if opt is None:
+        log_debug("[TARGET_DEBUG]", f"ipsos_sharky_grid_progressive_checkbox: option_not_found label={label!r}")
+        return False
+
+    try:
+        opt.scroll_into_view_if_needed()
+    except Exception:
+        pass
+
+    try:
+        opt.click()
+    except Exception as exc_click:
+        try:
+            opt.hover()
+            opt.click()
+        except Exception as exc_hover:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"ipsos_sharky_grid_progressive_checkbox: click_failed label={label!r} "
+                f"click_error={type(exc_click).__name__}: {exc_click} "
+                f"hover_click_error={type(exc_hover).__name__}: {exc_hover}",
+            )
+            return False
+
+    time.sleep(0.15)
+
+    try:
+        ok = bool(_ctx.evaluate("(arg) => {" + _JS_VERIFY + "}", label))
+    except Exception:
+        ok = False
+
+    log_debug("[TARGET_DEBUG]", f"ipsos_sharky_grid_progressive_checkbox: native_verify={'ok' if ok else 'ko'} label={label!r}")
+    return ok
 
 
 # =============================================================================
@@ -471,7 +580,7 @@ def click_qarts_widget_by_label(driver, target_text: str) -> bool:
       .replace(/\u00A0/g, ' ')
       .replace(/[»«\u201c\u201d"'›→·•:]/g, '')
       .replace(/\s+/g, ' ').trim();
-    const needle = norm(arguments[0]);
+    const needle = norm(_el);
     if (!needle) return {ok: false, reason: 'empty_needle'};
 
     // Guard 1 : conteneur QARTS avec _rowpicker
@@ -518,7 +627,7 @@ def click_qarts_widget_by_label(driver, target_text: str) -> bool:
       .replace(/\u00A0/g, ' ')
       .replace(/[»«\u201c\u201d"'›→·•:]/g, '')
       .replace(/\s+/g, ' ').trim();
-    const needle = norm(arguments[0]);
+    const needle = norm(_el);
     if (!needle) return false;
 
     for (const container of Array.from(
@@ -546,7 +655,7 @@ def click_qarts_widget_by_label(driver, target_text: str) -> bool:
     """
 
     try:
-        clickable_el = driver.execute_script(_JS_FIND, target_text)
+        clickable_el = driver.evaluate("(arg) => {" + _JS_FIND + "}", target_text)
     except Exception:
         return False
 
@@ -561,7 +670,7 @@ def click_qarts_widget_by_label(driver, target_text: str) -> bool:
 
     # Clic natif via ActionChains : produit isTrusted=true, reconnu par React.
     try:
-        ActionChains(driver).move_to_element(clickable_el).click().perform()
+        clickable_el.hover(); clickable_el.click()
     except Exception as _ce:
         log_debug("[TARGET_DEBUG]", f"qarts_widget: ActionChains failed label={target_text!r} err={_ce}")
         return False
@@ -569,7 +678,7 @@ def click_qarts_widget_by_label(driver, target_text: str) -> bool:
     log_debug("[TARGET_DEBUG]", f"qarts_widget: click sent label={target_text!r}")
     try:
         time.sleep(0.15)
-        verified = bool(driver.execute_script(_JS_VERIFY, target_text))
+        verified = bool(driver.evaluate("(arg) => {" + _JS_VERIFY + "}", target_text))
         log_debug("[TARGET_DEBUG]", f"qarts_widget: svg_verify={'ok' if verified else 'ko'} label={target_text!r}")
     except Exception:
         pass
@@ -593,13 +702,13 @@ def click_nfield_swatches_by_label(driver, target_text: str, scope=None) -> bool
     Vérifie via backgroundColor "228, 231, 248" (sélectionné) après la transition CSS.
     """
     _JS_FIND = r"""
-    const root = arguments[0] || document;
+    const root = _el || document;
     const norm = s => (s || '')
       .toLowerCase().normalize('NFKC')
       .replace(/\u00A0/g, ' ')
       .replace(/[»«\u201c\u201d"'›→·•:]/g, '')
       .replace(/\s+/g, ' ').trim();
-    const needle = norm(arguments[1]);
+    const needle = norm(_arg1);
     if (!needle) return {ok: false, reason: 'empty_needle'};
 
     // Guard 1: input.mrMultiple.styled cherché au niveau document (peut être hors scope visuel)
@@ -634,13 +743,13 @@ def click_nfield_swatches_by_label(driver, target_text: str, scope=None) -> bool
     """
 
     _JS_VERIFY = r"""
-    const root = arguments[0] || document;
+    const root = _el || document;
     const norm = s => (s || '')
       .toLowerCase().normalize('NFKC')
       .replace(/\u00A0/g, ' ')
       .replace(/[»«\u201c\u201d"'›→·•:]/g, '')
       .replace(/\s+/g, ' ').trim();
-    const needle = norm(arguments[1]);
+    const needle = norm(_arg1);
     if (!needle) return false;
 
     const allOverlays = Array.from(root.querySelectorAll(
@@ -667,7 +776,7 @@ def click_nfield_swatches_by_label(driver, target_text: str, scope=None) -> bool
     """
 
     try:
-        clickable_el = driver.execute_script(_JS_FIND, scope, target_text)
+        clickable_el = driver.evaluate("([a,b]) => {" + _JS_FIND + "}", [scope, target_text])
     except Exception:
         return False
 
@@ -680,7 +789,7 @@ def click_nfield_swatches_by_label(driver, target_text: str, scope=None) -> bool
         return False
 
     try:
-        ActionChains(driver).move_to_element(clickable_el).click().perform()
+        clickable_el.hover(); clickable_el.click()
     except Exception as _ce:
         log_debug("[TARGET_DEBUG]", f"nfield_swatches: ActionChains failed label={target_text!r} err={_ce}")
         return False
@@ -688,7 +797,7 @@ def click_nfield_swatches_by_label(driver, target_text: str, scope=None) -> bool
     log_debug("[TARGET_DEBUG]", f"nfield_swatches: click sent label={target_text!r}")
     try:
         time.sleep(0.3)  # CSS transition 250ms
-        verified = bool(driver.execute_script(_JS_VERIFY, scope, target_text))
+        verified = bool(driver.evaluate("([a,b]) => {" + _JS_VERIFY + "}", [scope, target_text]))
         log_debug("[TARGET_DEBUG]", f"nfield_swatches: verify={'ok' if verified else 'ko'} label={target_text!r}")
     except Exception:
         pass
@@ -719,12 +828,11 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     # Guard Toluna Runtime : si l'option est déjà cochée, ne pas cliquer (évite de la décocher).
     # Activé uniquement si la structure Runtime_AnswerRow est détectée dans le DOM.
     try:
-        _toluna_checked = driver.execute_script(
-            r"""
+        _toluna_checked = target_text.evaluate("""(_el) => {
             const norm = s => (s || '').toLowerCase().normalize('NFKC')
                 .replace(/\u00A0/g,' ').replace(/[»«\u201c\u201d"'›→·•:]/g,'')
                 .replace(/\s+/g,' ').trim();
-            const needle = norm(arguments[0]);
+            const needle = norm(_el);
             const allRows = Array.from(document.querySelectorAll("[data-aut='Runtime_AnswerRow']"));
             if (allRows.length < 2) return false;
             const targetRow = allRows.find(r => {
@@ -745,9 +853,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
             for (const i of allInners) { const c = i.className || ''; counts[c] = (counts[c] || 0) + 1; }
             const uncheckedCls = Object.keys(counts).reduce((a, b) => counts[b] > counts[a] ? b : a);
             return (inner.className || '') !== uncheckedCls;
-            """,
-            target_text,
-        )
+}""")
         if _toluna_checked:
             log_debug("[TARGET_DEBUG]", f"click_checkbox_by_label: toluna already_checked skip label={target_text!r}")
             return True
@@ -760,12 +866,11 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     # Vérification post-clic après time.sleep : React re-rend de façon asynchrone, la vérification
     # JS synchrone (clsBefore vs clsAfter dans le même tick) retourne toujours false avant ce patch.
     try:
-        _toluna_row = driver.execute_script(
-            r"""
+        _toluna_row = target_text.evaluate("""(_el) => {
             const norm = s => (s || '').toLowerCase().normalize('NFKC')
                 .replace(/\u00A0/g,' ').replace(/[»«\u201c\u201d"'›→·•:]/g,'')
                 .replace(/\s+/g,' ').trim();
-            const needle = norm(arguments[0]);
+            const needle = norm(_el);
             const allRows = Array.from(document.querySelectorAll("[data-aut='Runtime_AnswerRow']"));
             if (allRows.length < 2) return null;
             const targetRow = allRows.find(r => {
@@ -777,9 +882,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
             const inner = targetRow.querySelector("[data-aut='Runtime_IconBox'], [data-aut='Runtime_InnerFill']");
             if (!inner) return null;
             return { row: targetRow, inner, clsBefore: inner.className || '' };
-            """,
-            target_text,
-        )
+}""")
         if _toluna_row and isinstance(_toluna_row, dict):
             _row_el = _toluna_row.get("row")
             _inner_el = _toluna_row.get("inner")
@@ -789,10 +892,10 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                 try:
                     _row_el.click()
                 except Exception:
-                    ActionChains(driver).move_to_element(_row_el).click().perform()
+                    _row_el.hover(); _row_el.click()
                 # Laisser React re-rendre avant la vérification
                 time.sleep(0.15)
-                _cls_after = driver.execute_script("return arguments[0].className || '';", _inner_el)
+                _cls_after = driver.evaluate("(el) => el.className || \'\'", _inner_el)
                 if _cls_after != _cls_before:
                     log_debug("[TARGET_DEBUG]", f"click_checkbox_by_label: toluna_runtime click ok label={target_text!r}")
                     return True
@@ -819,20 +922,28 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     except Exception:
         pass
 
+    # 0c) Ipsos/mrIWeb Sharky "GridProgressive" variante checkbox (multi-réponses,
+    #     widget div-based sans input natif exploitable). Guard DOM strict :
+    #     div.clearfix.prog-answers-row > div.prog-the-answer-container[role='checkbox'].
+    try:
+        if click_ipsos_sharky_grid_progressive_checkbox(driver, target_text):
+            return True
+    except Exception:
+        pass
+
     # 0) DOM ciblé: Decipher + Dynata MX Carousel superposé à une grille checkbox.
     #    Guard DOM strict: même question contient à la fois la grille .answers-table/.clickableCell
     #    et un stage #mx-stage-{qid}. Le clic doit cibler le <td.clickableCell> natif.
     try:
-        mx_targets = driver.execute_script(
-            r"""
-            const scope = arguments[0];
+        mx_targets = cb.evaluate("""(_el) => {
+            const scope = _el;
             const norm = s => (s || '')
               .toLowerCase()
               .normalize('NFKC')
               .replace(/\u00A0/g, ' ')
               .replace(/\s+/g, ' ')
               .trim();
-            const needle = norm(arguments[1]);
+            const needle = norm(_arg1);
             if (!needle) return null;
 
             const hostCandidates = [];
@@ -886,10 +997,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
 
             best.td.scrollIntoView({ block: 'center', inline: 'center' });
             return [best.td, best.input];
-            """,
-            scope,
-            target_text,
-        )
+}""", [scope, target_text])
         if isinstance(mx_targets, list) and len(mx_targets) == 2 and mx_targets[0] is not None:
             td_clickable, matched_input = mx_targets
 
@@ -897,19 +1005,18 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
             try:
                 td_clickable.click()
             except Exception:
-                ActionChains(driver).move_to_element(td_clickable).click().perform()
+                td_clickable.hover(); td_clickable.click()
 
             # Vérification post-clic: l'input natif lié doit être checked.
-            mx_checked = driver.execute_script(
-                r"""
-                const scope = arguments[0];
+            mx_checked = driver.evaluate("""([_el, _arg1]) => {
+                const scope = _el;
                 const norm = s => (s || '')
                   .toLowerCase()
                   .normalize('NFKC')
                   .replace(/\u00A0/g, ' ')
                   .replace(/\s+/g, ' ')
                   .trim();
-                const needle = norm(arguments[1]);
+                const needle = norm(_arg1);
                 if (!needle) return false;
 
                 const hostCandidates = [];
@@ -946,10 +1053,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                 }
 
                 return false;
-                """,
-                scope,
-                target_text,
-            )
+}""", [scope, target_text])
             if mx_checked:
                 return matched_input
     except Exception:
@@ -965,9 +1069,8 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     #    - on trouve le meilleur wrapper en JS, puis on clique en Selenium natif / ActionChains.
     #    - la vérification est refaite via une nouvelle recherche DOM après un léger délai.
     try:
-        metrixlab_target = driver.execute_script(
-            r"""
-            const root = arguments[0] || document;
+        metrixlab_target = driver.evaluate("""([_el, _arg1]) => {
+            const root = _el || document;
             const norm = s => (s || '')
               .toLowerCase()
               .normalize('NFKC')
@@ -975,7 +1078,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
               .replace(/[’']/g, "'")
               .replace(/\s+/g, ' ')
               .trim();
-            const needle = norm(arguments[1]);
+            const needle = norm(_arg1);
             if (!needle) return null;
 
             const wrappers = Array.from(root.querySelectorAll('div.answer_options'));
@@ -1035,10 +1138,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
             const best = candidates[0];
             try { best.wrap.scrollIntoView({block: 'center', inline: 'center'}); } catch(e) {}
             return [best.wrap, best.inp, best.checkboxDiv, best.labelDiv];
-            """,
-            scope,
-            target_text,
-        )
+}""", [scope, target_text])
         if isinstance(metrixlab_target, list) and len(metrixlab_target) >= 2 and metrixlab_target[0] is not None:
             clicked_wrap = metrixlab_target[0]
             clicked_input = metrixlab_target[1]
@@ -1060,7 +1160,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                     break
                 except Exception:
                     try:
-                        ActionChains(driver).move_to_element(candidate).click().perform()
+                        candidate.hover(); candidate.click()
                         clicked = True
                         break
                     except Exception:
@@ -1068,9 +1168,8 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
 
             if clicked:
                 time.sleep(0.20)
-                verify_ok = driver.execute_script(
-                    r"""
-                    const root = arguments[0] || document;
+                verify_ok = driver.evaluate("""([_el, _arg1]) => {
+                    const root = _el || document;
                     const norm = s => (s || '')
                       .toLowerCase()
                       .normalize('NFKC')
@@ -1078,7 +1177,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                       .replace(/[’']/g, "'")
                       .replace(/\s+/g, ' ')
                       .trim();
-                    const needle = norm(arguments[1]);
+                    const needle = norm(_arg1);
                     if (!needle) return false;
 
                     const wrappers = Array.from(root.querySelectorAll('div.answer_options'));
@@ -1100,10 +1199,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                       if (checkboxOn || labelOn) return true;
                     }
                     return false;
-                    """,
-                    scope,
-                    target_text,
-                )
+}""", [scope, target_text])
                 if verify_ok:
                     log_debug("[TARGET_DEBUG]", f"click_checkbox_by_label: metrixlab QT ok label={target_text!r}")
                     return clicked_input
@@ -1112,15 +1208,8 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
 
     # 2) Cas standard : <label for="id"> → <input id="id" type="checkbox">
     try:
-        labels = (scope or driver).find_elements(
-            By.XPATH,
-            ".//label[normalize-space()!='' and contains("
-            "translate(normalize-space(.),"
-            "'ABCDEFGHIJKLMNOPQRSTUVWXYZ',"
-            "'abcdefghijklmnopqrstuvwxyz'),"
-            f"{xpath_literal(needle)}"
-            ")]"
-        )
+        labels = (scope or driver).query_selector_all("xpath=" + ".//label[normalize-space()!='' and contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),"
+            f"{xpath_literal(needle)})]")
 
         for label in labels:
             fid = label.get_attribute("for")
@@ -1128,7 +1217,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                 continue
 
             try:
-                cb = driver.find_element(By.ID, fid)
+                cb = driver.query_selector(f"#{fid}")
             except Exception:
                 continue
 
@@ -1146,19 +1235,15 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
             _ng_model = cb.get_attribute("ng-model") or ""
             if _ng_model:
                 try:
-                    _pretty = cb.find_elements(
-                        By.XPATH,
-                        "ancestor::*[contains(@class,'muCT')][1]"
-                        "//div[contains(@class,'prettycheckbox') and @ng-click]",
-                    )
+                    _pretty = cb.query_selector_all("xpath=" + "ancestor::*[contains(@class,'muCT')][1]//div[contains(@class,'prettycheckbox') and @ng-click]")
                     if _pretty:
                         scroll_into_view(driver, _pretty[0])
                         try:
                             _pretty[0].click()
                         except Exception:
-                            ActionChains(driver).move_to_element(_pretty[0]).click().perform()
+                            _pretty[0].hover(); _pretty[0].click()
                         _a_checked = bool(
-                            _pretty[0].find_elements(By.XPATH, ".//a[contains(@class,'checked')]")
+                            _pretty[0].query_selector_all("xpath=" + ".//a[contains(@class,'checked')]")
                         )
                         if _a_checked or is_checked(cb):
                             return cb
@@ -1171,7 +1256,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
             # On agit uniquement sur l'input checkbox lié.
             label_has_link = False
             try:
-                label_has_link = bool(label.find_elements(By.XPATH, ".//a[@href]"))
+                label_has_link = bool(label.query_selector_all("xpath=" + ".//a[@href]"))
             except Exception:
                 label_has_link = False
 
@@ -1193,15 +1278,13 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                     # fallthrough si le click n'a pas suffi
                 else:
                     try:
-                        driver.execute_script(
-                            """
-                            const cb = arguments[0];
+                        driver.evaluate("""() => {
+                            const cb = _el;
                             if (!cb.checked) cb.checked = true;
                             cb.dispatchEvent(new Event('input', { bubbles: true }));
                             cb.dispatchEvent(new Event('change', { bubbles: true }));
-                            """,
-                            cb,
-                        )
+}
+}""")
                     except Exception:
                         pass
 
@@ -1225,13 +1308,10 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
 
     # 3) Cas checkbox ARIA / custom (role="checkbox")
     try:
-        boxes = (scope or driver).find_elements(
-            By.XPATH,
-            ".//*[@role='checkbox' or @aria-checked]"
-        )
+        boxes = (scope or driver).query_selector_all("xpath=" + ".//*[@role='checkbox' or @aria-checked]")
 
         for box in boxes:
-            txt = norm_soft(box.text or box.get_attribute("aria-label") or "")
+            txt = norm_soft(box.inner_text() or box.get_attribute("aria-label") or "")
             if needle not in txt.lower():
                 continue
 
