@@ -1,0 +1,78 @@
+
+powershell -ExecutionPolicy Bypass -File .\surveybot\run_tabs.ps1
+
+# Lancer attach-takeover sur le port 9009 (debug)
+$env:ATTACH_DEBUGGER_ADDRESS = "127.0.0.1:9009"
+python surveybot/main.py
+
+
+# Pour vérifier que le contexte est bien exposé et mis à jour pendant le takeover (debug) 10xxx -> port 9229 alors xxx = 229:
+(Invoke-WebRequest -UseBasicParsing http://localhost:10009/ctx).content
+
+# ------------------------------------------------------------------------------------------------------------------------------------------
+# Search a function in files
+# ------------------------------------------------------------------------------------------------------------------------------------------
+
+Get-ChildItem -Recurse -Exclude ".venv" -Include *.py | Where-Object { $_.FullName -notmatch '\\.venv\\' } | Select-String "set_sliderpoints"
+
+ -----------------------------------------------------------------------------------------------------------------------------------------
+
+# Nettoyer un port: supprime le dossier entier et tout son contenu — cookies, cache, historique, tout.
+Remove-Item -Recurse -Force "$env:TEMP\sb_chrome_profiles\chrome_9009"
+# ------------------------------------------------------------------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------------------------------------------------------------------
+# Pour activer l'environnement virtuel
+& C:/projects/Surveys/.venv/Scripts/Activate.ps1
+
+Terminal 1 — ouvre le tunnel :
+flyctl proxy 5432 -a surveybot-db
+Terminal 2 — lance Adminer :
+docker run -p 8080:8080 adminer
+Ouvre http://localhost:8080 et connecte-toi :
+
+Champ         |     Valeur
+Système       |     PostgreSQL
+Serveur       |     host.docker.internal:5432
+Utilisateur   |     postgres
+Mot de passe  |     3o1L6kfCFxuncbY
+Base          |     postgres
+
+
+Commande de lancement d'un bot
+
+nssm stop surveybot_<account_id>
+# ou
+Stop-Service surveybot_<account_id>
+
+Commande d'arret d'un bot
+
+nssm stop surveybot_<account_id>
+# ou
+Stop-Service surveybot_<account_id>
+
+
+
+
+# Supprimer un port/profil
+
+$Port = 9009   # <-- remplace par ton port
+
+# 1. Trouver et tuer le process Chrome qui écoute sur ce port
+$listen = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue
+if ($listen) {
+    $ownerPid = ($listen | Select-Object -First 1 -ExpandProperty OwningProcess)
+    Write-Host "[PORT $Port] Kill du process PID=$ownerPid"
+    Stop-Process -Id $ownerPid -Force
+    Start-Sleep -Seconds 1
+} else {
+    Write-Host "[PORT $Port] Aucun process en ecoute sur ce port."
+}
+
+# 2. Supprimer le profil Chrome associe (cookies, localStorage, historique, cache)
+$profileDir = Join-Path $env:TEMP "sb_chrome_profiles\chrome_$Port"
+if (Test-Path $profileDir) {
+    Remove-Item -Path $profileDir -Recurse -Force
+    Write-Host "[PORT $Port] Profil supprime : $profileDir"
+} else {
+    Write-Host "[PORT $Port] Aucun profil trouve a cet emplacement."
+}

@@ -17,22 +17,12 @@ tmp/
 snapshots
 snapshots/
 debug_*.html
-surveybot/Utils/config
 
-surveybot/README
-surveybot/nul
-
-surveybot/tools/attach_tab
 surveybot/tools/attach_tab.ps1
-
-surveybot/preselection/_license_config.py
-surveybot/_license_config.py
 
 dist/
 build/
 *.spec
-global_config.py
-accounts.json
 manifest.json
 receiver_config.json
 dist_nuitka/
