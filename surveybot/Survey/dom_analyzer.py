@@ -159,6 +159,7 @@ try:
         _extract_mriweb_grid_num_row_blocks,
         _extract_qdtech_qdradio_icon_choice_blocks,
         _extract_qdtech_qdcheckbox_icon_choice_blocks,
+        _extract_zappi_maxdiff_blocks,
     )
 
     # Registre et utilitaires
@@ -293,6 +294,7 @@ except ImportError:
         _extract_mriweb_grid_num_row_blocks,
         _extract_qdtech_qdradio_icon_choice_blocks,
         _extract_qdtech_qdcheckbox_icon_choice_blocks,
+        _extract_zappi_maxdiff_blocks,
     )
 
 
@@ -2033,6 +2035,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         qdtech_qdcheckbox_blocks = _extract_qdtech_qdcheckbox_icon_choice_blocks(driver, frame_chain)
         if qdtech_qdcheckbox_blocks:
             return qdtech_qdcheckbox_blocks
+    except Exception:
+        pass
+
+    # --- 0i-quindecies) Zappi MaxDiff (affirmations illustrées, radios custom
+    # gauche="incite le moins"/droite="incite le plus" sans input natif actionnable) ---
+    # Guard DOM strict : div.max-diff-question-container + >=2 div.max-diff-container.row.
+    try:
+        zappi_maxdiff_blocks = _extract_zappi_maxdiff_blocks(driver, frame_chain)
+        if zappi_maxdiff_blocks:
+            return zappi_maxdiff_blocks
     except Exception:
         pass
 

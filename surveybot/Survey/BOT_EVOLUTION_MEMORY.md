@@ -5228,3 +5228,192 @@ validé structurellement (budget respecté, no-op confirmé sur DOM non-CloudRes
 options déjà présentes — cf. tests unitaires en session).
 
 ---
+
+## PLATEFORME : QUALTRICS NATIF — RANK ORDER DRAG & DROP (jQuery UI Sortable, sans input natif)
+
+Signature : Qualtrics natif (ex. `deagostini.eu.qualtrics.com`), question `QuestionType="RO"` /
+`Selector="DND"`, items purement visuels (images composites, aucun texte alt informatif — ex.
+noms de fichiers `"3.png"`). Structure : `div.QuestionOuter` > `div.Inner.DND` > `div.InnerInner.TX`
+> `fieldset` > `div.QuestionBody` > `div.ChoiceStructure` > `div.DND` > `ul[id$="~RO"].ui-sortable[role="list"]`
+contenant N `li[data-choiceid][role="listitem"]` (rang affiché via `span.rank`, contenu de l'option
+porté par `label > img[alt]`). **Aucun input natif** (ni radio, ni checkbox, ni select, ni champ
+caché) — c'est le seul discriminant qui exclut les 7 extracteurs `ChoiceStructure` existants
+(`_extract_qualtrics_choice_structure_radio_blocks`/`checkbox_blocks`/
+`_extract_qualtrics_bankedsa_single_row_radio_blocks`, etc.), tous gardés sur la présence d'un
+input sous `ul.ChoiceStructure`/`table.ChoiceStructure` — ici le conteneur est un `div.ChoiceStructure`.
+DOM de référence : snapshot `20260907_190900_after_dom_analyze` (QID1482, `Randomization:{"Type":"All"}`
+— l'ordre initial des items est randomisé par Qualtrics à chaque session, ne jamais supposer un
+ordre de départ stable d'un passage à l'autre).
+
+### _extract_qualtrics_rank_order_dragdrop_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py, `_analyze_dom_current_context`, étape `0h-bis-3h` (après
+`0h-bis-3g` / `_extract_qualtrics_bankedsa_single_row_radio_blocks`, avant le `if _qualtrics_page`
+de retour anticipé — accumulation additive, même schéma que les 7 étapes Qualtrics précédentes).
+Guard : `div.ChoiceStructure > div.DND > ul.ui-sortable[role='list']` + ≥2 `li[data-choiceid]` +
+AUCUN `input[type=radio]`/`input[type=checkbox]`/`select` dans ce `ul` (exclusion stricte des 7
+extracteurs ChoiceStructure existants). Budget `QUALTRICS_RANK_ORDER_DND_MAX_ITEMS` (défaut 12),
+abandon loggé si dépassé.
+Patterns couverts :
+- Bloc minimal DOM-first strict : aucune lecture d'`alt`/image (sans valeur informative ici),
+  aucun texte interprété. "options" exposées au pipeline = libellés positionnels neutres
+  (`"Item 1".."Item N"`, générés uniquement depuis la position DOM à l'extraction).
+- `option_xpath_map`/`qualtrics_rank_order_dragdrop_choice_id_map` : clé = `_norm_key("Item N")`,
+  valeur = XPath du `li[data-choiceid]`/`data-choiceid` réel, dans l'ordre DOM d'extraction
+  (l'ordre d'insertion du dict Python est réutilisé comme référentiel de position par le dispatcher,
+  voir ci-dessous — ne pas réordonner ce dict sans mettre à jour le dispatcher en conséquence).
+- Bloc unique `itype=checkbox`, `max_select=len(options)`, flag `qualtrics_rank_order_dragdrop=True`
+  + `qualtrics_rank_order_dragdrop_ul_xpath` (XPath du `ul.ui-sortable`).
+Patterns exclus :
+- Tout `ChoiceStructure` avec input natif → les 7 extracteurs existants, non modifiés.
+Log discriminant : `[DOM_QUALTRICS_RANK_ORDER_DND] blocks_extracted=N`.
+Statut : extraction confirmée fonctionnelle en conditions réelles par l'utilisateur
+(`blocks_extracted=1`, bloc exposé à l'IA avec 3 options).
+
+### _qualtrics_rank_order_dragdrop_apply / _locate / _slot_rect / _suppress_native_img_drag (dispatcher)
+Fichier : Survey/action_dispatcher.py, juste avant `_apply_by_target_id`.
+Emplacement dispatch : `_apply_by_target_id → _apply_in_current_context`, guard
+`payload.get("qualtrics_rank_order_dragdrop") and resolved_itype == "checkbox"`, placé juste après
+le bloc `aa_ranking_dragdrop` et avant le chemin générique `opt_map` (pas d'`option_xpath_map`
+cliquable exploitable : l'interaction est un drag, pas un clic).
+Patterns couverts :
+- `_qualtrics_rank_order_dragdrop_locate` : localise l'item par `data-choiceid` (PAS par texte,
+  contrairement à `aa_ranking_dragdrop` — les libellés sont vides de sens ici), retourne son index
+  courant + son rectangle.
+- `_qualtrics_rank_order_dragdrop_slot_rect` : rectangle de l'item actuellement à un index donné.
+- `_qualtrics_rank_order_dragdrop_apply` : déplace l'item vers `target_index` (0-based) — même
+  technique de drag pointer réellement simulé (mousedown → mousemove par pas → mouseup, dépose au
+  1er/3e quart de l'item cible selon le sens) déjà validée pour `aa_ranking_dragdrop`. Budget borné
+  `max_attempts=2`, abandon contrôlé + log si non atteint.
+- `_qualtrics_rank_order_dragdrop_suppress_native_img_drag` : désactive `img.draggable` avant
+  chaque tentative — les items ne portant que des `<img>`, le drag HTML5 natif du navigateur entre
+  sinon en concurrence avec le drag souris de jQuery UI Sortable. Même famille de fix que
+  `_aa_ranking_dragdrop_suppress_text_selection` (neutraliser un comportement natif du navigateur
+  qui casse un drag pointeur simulé), non modifiée, patron répliqué à l'identique.
+Patterns exclus :
+- Autres providers ranking (`aa_ranking_dragdrop`, `alchemer_rank_dragdrop`,
+  `decipher_ranksort_dropdown`, `kantar_rowrank`) — non touchés.
+Statut : drag confirmé fonctionnel en conditions réelles par l'utilisateur (voir bug ci-dessous
+pour l'historique — la version finale exécute réellement le drag, `attempt=1 ok`, plus jamais
+`already_in_place` systématique).
+
+### Bug corrigé : target_index dérivé de l'ordinal de la réponse LLM → toujours "already_in_place"
+Cause racine confirmée : la version initiale calculait `target_index` à partir de l'ordinal de
+l'action dans le plan (1er item nommé par l'IA → 0, 2e → 1, etc.), même schéma que
+`aa_ranking_dragdrop`/`alchemer_rank_dragdrop`. Ce schéma suppose implicitement que l'IA réordonne
+les options reçues selon une vraie préférence. Ici les libellés ("Item 1".."Item N") sont
+volontairement vides de sens (aucun signal exploitable, DOM-first strict, pas de fallback Vision) :
+l'IA les renvoie donc systématiquement dans l'ordre reçu, qui est exactement l'ordre DOM utilisé
+pour construire `qualtrics_rank_order_dragdrop_choice_id_map` à l'extraction — le `target_index`
+ordinal coïncidait donc toujours avec la position DOM courante (`already_in_place` systématique),
+aucun drag n'était jamais exercé alors que la question était marquée "répondue". Confirmé sur
+snapshot `20260907_190900_after_dom_analyze` (logs `already_in_place` × 3, `apply ok=true` sans
+aucune tentative de drag).
+Fix : `target_index` n'est plus dérivé de l'ordinal du plan. Il est calculé en **rotation fixe de
++1 (mod N)** à partir de la position de `choice_id` dans `qualtrics_rank_order_dragdrop_choice_id_map`
+(ordre d'insertion du dict = ordre DOM à l'extraction, garanti par Python — aucune donnée
+supplémentaire nécessaire côté extracteur, aucun parsing du libellé). Une permutation circulaire
+n'a aucun point fixe pour N≥2 : chaque item nécessite donc réellement un drag, indépendamment de
+l'ordre ou du contenu de la réponse de l'IA — conforme à la contrainte "le rang cible ne doit
+jamais dépendre de la propension du LLM à réordonner spontanément des libellés non informatifs".
+Le mécanisme ordinal (`driver._qualtrics_rank_order_dragdrop_ordinal`/`_counts`, réinitialisation
+dans `execute_actions_plan`) a été retiré entièrement (code mort une fois le calcul déplacé) — les
+mécanismes ordinaux des autres patterns (`kantar_rowrank`, `decipher_ranksort_dropdown`,
+`alchemer_rank_dragdrop`, `aa_ranking_dragdrop`) ne sont pas touchés.
+Patterns couverts :
+- Tout bloc `qualtrics_rank_order_dragdrop`, quel que soit l'ordre dans lequel l'IA nomme les
+  "Item N" (le résultat final ne dépend que de la position DOM à l'extraction, jamais de la
+  réponse IA).
+Patterns exclus :
+- `_extract_qualtrics_rank_order_dragdrop_blocks` (dom_extractors_misc.py) — non modifiée, le fix
+  est entièrement confiné à `action_dispatcher.py`.
+Statut : confirmé fonctionnel en conditions réelles par l'utilisateur (logs `attempt=1 ok`,
+`target_index=1/2/0` pour les 3 items, drag réellement exécuté).
+
+---
+
+## PLATEFORME : ZAPPI — MAXDIFF (affirmations illustrées, radios custom sans input actionnable)
+
+Signature : `data-collector.zappi.io`, conteneur `div.max-diff-question-container`. N lignes
+`div.max-diff-container.row` (id numérique stable par ligne, ex. `1996412` — jamais réutilisé
+comme name/group radio), chacune avec un `div.max-diff-radio-container.left-radio-container`
+("incite le moins") et `.right-radio-container` ("incite le plus") encadrant une image
+(`.content-container`). Chaque conteneur radio embarque un `<input type="radio" readonly>` sans
+name/id/value, doublé visuellement d'un `<div class="radio"><div class="inner-dot"></div></div>`
+qui est la cible réelle du clic. Le libellé de la question apparaît dans
+`.question-description-container .zappi-header-text`, le contexte de pagination du set dans
+`.header .middle` (ex. "Set 1 of 6"). DOM de référence : snapshot `20260907_194116_after_dom_analyze`
+(5 lignes visibles pour le set courant).
+
+Cause racine du bug initial : `readonly` (et non `disabled`) sur les `<input type=radio>` suffit à
+les faire exclure du scan générique d'inputs actionnables (`input_groups=0` dans les logs malgré 10
+`<input type=radio>` bien présents dans le DOM), et aucun extracteur image-tile existant ne couvre
+cette structure gauche/droite précise (`image_groups=0`, `clickable_image_options=0`) → `analyze_dom`
+retournait `[]` jusqu'à l'abort final `DOM_ONLY_ABORT`.
+
+Contrainte fonctionnelle MaxDiff : une seule sélection "le plus" ET une seule sélection "le moins"
+(ligne différente) sur l'ensemble des lignes du set courant — pas une paire indépendante par ligne.
+Les lignes ne portant aucun texte propre (affirmation illustrée uniquement par image, DOM-first
+strict, pas de fallback Vision), les options exposées au pipeline sont des libellés positionnels
+neutres ("Item 1".."Item N"), même convention que `qualtrics_rank_order_dragdrop` ci-dessus.
+
+### _extract_zappi_maxdiff_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py, `_analyze_dom_current_context`, étape `0i-quindecies` (après
+`0i-quaterdecies` / `_extract_qdtech_qdcheckbox_icon_choice_blocks`, avant le scan générique
+`input[type=radio], input[type=checkbox], [role=radio], [role=checkbox]` — accumulation additive,
+dernière étape de la chaîne).
+Guard : `div.max-diff-question-container` + ≥2 `div.max-diff-container.row`, sinon `[]`. Ligne
+ignorée (pas d'abandon global) si `.left-radio-container`/`.right-radio-container` absent ou non
+visible ; abandon global si <2 lignes exploitables au final.
+Patterns couverts :
+- Question globale : `.question-description-container .zappi-header-text` (texte ≥5 car., visible).
+- Contexte "Set X of Y" (`.header .middle`) ajouté en suffixe informatif dans le libellé envoyé au LLM.
+- 2 blocs radio indépendants par set (`itype=radio`, `max_select=1`) : un pour "LE PLUS" (options
+  mappées via `option_xpath_map` vers `.right-radio-container` de chaque ligne), un pour "LE MOINS"
+  (vers `.left-radio-container`). Options = libellés positionnels "Item 1".."Item N".
+- XPath par ligne ancré sur l'id numérique stable (`@id='{row_id}'`), robuste à un re-rendu (pas de
+  dépendance à une position DOM), fallback `_best_xpath_for_element` si id absent.
+- Payload registry additionnel : `zappi_maxdiff=True`, `zappi_maxdiff_side="most"|"least"`,
+  `zappi_maxdiff_row_id_map` (label positionnel -> id de ligne), utilisés par le garde-fou dispatcher
+  ci-dessous.
+Patterns exclus :
+- Toute ligne sans `.left-radio-container`/`.right-radio-container` visible (skip silencieux).
+- Aucune lecture/interprétation du contenu des images (`src` non exploité) — DOM-first strict.
+Log discriminant : `[ZAPPI_MAXDIFF_DEBUG] gate rows=N` / `blocks_built rows=N`.
+Statut : confirmé fonctionnel en conditions réelles par l'utilisateur (`gate rows=5`, 5×
+`row_kept`, `blocks_built rows=5 set_label='Set 1 of 6'`, `extracted_blocks count=2
+itypes=['radio']`, prompt GPT généré avec Q1/Q2 à 5 options chacune). Validé aussi hors-ligne via
+Playwright réel (chromium headless) rejouant le DOM de référence : xpaths résolvent chacun vers
+exactement 1 élément, côté gauche/droite correct.
+
+### _zappi_maxdiff_apply / guard zappi_maxdiff (dispatcher)
+Fichier : Survey/action_dispatcher.py (`_zappi_maxdiff_apply` juste avant `_apply_by_target_id`).
+Emplacement dispatch : `_apply_by_target_id → _apply_in_current_context`, guard
+`payload.get("zappi_maxdiff") and resolved_itype == "radio"`, placé juste après le bloc
+`qualtrics_rank_order_dragdrop` et avant le chemin générique `opt_map` (pas d'input natif
+actionnable : le clic cible directement le conteneur radio custom, pas de vérification `.checked`
+possible).
+Patterns couverts :
+- Résolution du libellé LLM ("Item N") vers l'entrée `option_xpath_map` : exact match d'abord
+  (`_norm_lc`), puis fuzzy substring/`_fold_norm_lc` (même idiome que `kantar_rowrank`).
+- Garde-fou de distinction MaxDiff : les 2 blocs ("le plus"/"le moins") étant résolus indépendamment
+  par le LLM sur des libellés positionnels sans signal différenciant, rien ne garantit une réponse
+  différente pour les 2 blocs (risque confirmé : le LLM peut renvoyer le même "Item N" pour les
+  deux). Le garde-fou compare la ligne choisie (`zappi_maxdiff_row_id_map`) à celle déjà appliquée
+  par l'autre côté (état porté par `driver._zappi_maxdiff_most_row_id`/`_least_row_id`, réinitialisé
+  à chaque plan dans `execute_actions_plan`) et substitue la première ligne disponible restante en
+  cas de collision.
+- Clic direct sur le conteneur `.left-radio-container`/`.right-radio-container` résolu (pas
+  d'`<input>` actionnable), avec fallback hover+click.
+Patterns exclus :
+- Chemin générique `opt_map` (autres providers radio/checkbox) — non modifié.
+- Aucune interaction avec le CTA ("Suivant") — non touché par ce patch, flux standard inchangé.
+Statut : confirmé fonctionnel en conditions réelles par l'utilisateur (`apply ok=true
+strategy=zappi_maxdiff side=most label='Item 1'` puis `side=least label='Item 5'`, réponses
+distinctes dans ce run — aucune collision nécessaire). Garde-fou de collision validé séparément par
+test dédié (Playwright réel sur le DOM de référence, LLM simulé renvoyant "Item 1" pour les 2
+côtés) : le second côté bascule automatiquement sur "Item 2"/ligne suivante, clic réel confirmé sur
+le bon conteneur gauche/droite.
+
+---

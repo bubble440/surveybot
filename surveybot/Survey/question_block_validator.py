@@ -75,14 +75,75 @@ def _qualtrics_ranked_choices_signal(driver) -> dict | None:
         return None
 
 
+def _zappi_max_diff_signal(driver) -> dict | None:
+    """Retourne un signal minimal pour le widget Zappi MaxDiff observé.
+
+    Le garde exige le domaine et la structure complète question + lignes de
+    choix gauche/droite + CTA du widget. Il ne reconstruit aucune option et ne
+    tente aucune interaction.
+    """
+    try:
+        current_frame = getattr(driver, "_current_frame", driver)
+        signal = current_frame.evaluate("""() => {
+            if (location.hostname !== 'data-collector.zappi.io') return null;
+
+            const visible = node => {
+                if (!node) return false;
+                const style = getComputedStyle(node);
+                return style.display !== 'none'
+                    && style.visibility !== 'hidden'
+                    && node.getClientRects().length > 0;
+            };
+
+            const question = document.querySelector(
+                '#root .max-diff-question-container'
+            );
+            if (!visible(question)) return null;
+
+            const questionText = question.querySelector(
+                '.question-description-container .zappi-header-text'
+            );
+            if (!visible(questionText) || questionText.textContent.trim().length < 8) {
+                return null;
+            }
+
+            const rows = Array.from(
+                question.querySelectorAll('.max-diff-container.row[id]')
+            );
+            if (rows.length < 2) return null;
+
+            for (const row of rows) {
+                const left = row.querySelector(
+                    '.max-diff-radio-container.left-radio-container input[type="radio"][readonly]'
+                );
+                const right = row.querySelector(
+                    '.max-diff-radio-container.right-radio-container input[type="radio"][readonly]'
+                );
+                const content = row.querySelector('.content-container');
+                if (!left || !right || !visible(content)) return null;
+            }
+
+            const next = document.querySelector('#root #timer-button-id.btn-timer');
+            if (!visible(next)) return null;
+
+            return {
+                rows_count: rows.length,
+                radio_count: rows.length * 2,
+            };
+        }""")
+        return signal if isinstance(signal, dict) else None
+    except Exception:
+        return None
+
+
 def validate_question_blocks(question_blocks: list[dict] | None, *, driver=None) -> dict:
     """Retourne un rapport JSON-sérialisable sans effet de bord."""
     blocks = question_blocks or []
     issues: list[dict] = []
 
     # Une liste vide est légitime sur les transitions et écrans sans question.
-    # Le seul cas signalé ici est le ranking Qualtrics complet, signal DOM
-    # strictement défini ci-dessus et confirmé par le DOM de reproduction.
+    # Seuls les patterns DOM complets, strictement définis ci-dessus et
+    # confirmés par leurs DOM de reproduction, sont signalés.
     if not blocks and driver is not None:
         signal = _qualtrics_ranked_choices_signal(driver)
         if signal:
@@ -91,6 +152,14 @@ def validate_question_blocks(question_blocks: list[dict] | None, *, driver=None)
                 "dom_signal": "qualtrics_ranked_choices",
                 **signal,
             })
+        else:
+            signal = _zappi_max_diff_signal(driver)
+            if signal:
+                issues.append({
+                    "failure_type": "missing_block",
+                    "dom_signal": "zappi_max_diff",
+                    **signal,
+                })
 
     for idx, block in enumerate(blocks):
         if not isinstance(block, dict):

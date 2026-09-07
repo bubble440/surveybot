@@ -3,10 +3,14 @@ d'auto-correction mature**. Je le découpe volontairement en étapes
 courtes et validables : on ne passe jamais à l'automatisation d'un
 niveau tant que le niveau précédent n'est pas fiable.
 
+
+> Mise à jour 2026-09-07 : Phase 1A clôturée après validation live attach.
+> Le snapshot IFOP zip2city `20260907_201456_action_validation_failure`
+> devient le premier cas de stabilisation de la Phase 1B.
+
 ## Phase 1A --- Observabilité passive
 
-**Statut : implémentée sur la branche `feature/phase-1a-observability`,
-validation live restante.**
+**Statut : TERMINÉE — implémentée sur la branche `feature/phase-1a-observability` et validée en live attach.**
 
 Objectif : détecter les échecs que tu repères aujourd'hui visuellement,
 **sans modifier le comportement du bot**.
@@ -158,27 +162,100 @@ retard  : 0 commit
 Les changements concernent les trois modules d'observabilité et leur
 intégration au système de snapshot/pipeline existant.
 
-### Validation live restante
+### Validation live réalisée
 
-1A n'est considérée **validée** qu'après un run attach réel.
+La Phase 1A a été validée en attach sur deux chemins complémentaires.
 
-Deux vérifications sont nécessaires :
+1. **Chemin positif CloudResearch Sentry**
 
-1.  **Non-régression** : lorsqu'aucune anomalie n'est détectée, le bot
-    doit fonctionner exactement comme avant.
-2.  **Détection réelle** : lorsqu'un mauvais cas d'extraction ou
-    d'insertion apparaît, un dossier `*_validation_failure` doit être
-    créé avec le rapport attendu.
+   Cas testé : question radio CloudResearch Sentry avec options accentuées,
+   notamment `Généralement`.
 
-Critère cible : privilégier une **forte précision** plutôt qu'une
-couverture maximale. Un faux positif est plus dangereux qu'un problème
-non détecté.
+   Résultat attendu :
 
-### BEM
+   ``` text
+   action demandée
+   → sélection réellement appliquée
+   → dispatcher = succès
+   → aucun action_validation_failure
+   ```
 
-`BOT_EVOLUTION_MEMORY.md` n'est pas mis à jour avant la validation live.
-La mise à jour éventuelle intervient uniquement après confirmation que
-le patch fonctionne réellement sur les cas de référence.
+   Résultat observé :
+
+   ``` text
+   [TARGET] apply ok=true strategy=cloudresearch_sentry_selection_signal reason=selected_marker_and_confirmation
+   [TARGET] apply ok=true strategy=target_id reason=applied
+   ```
+
+   Ce test valide :
+   - la correction de normalisation Unicode pour éviter le faux
+     `action_value_not_in_registry_options` ;
+   - la reconnaissance du signal de sélection CloudResearch Sentry ;
+   - l'absence de faux `action_validation_failure` lorsque l'action est
+     réellement appliquée.
+
+2. **Chemin failure IFOP zip2city**
+
+   Cas testé : widget IFOP `ifop_zip2city_widget` demandant un code postal
+   français, avec action `75001`.
+
+   Résultat observé :
+
+   ``` text
+   [TARGET] apply ok=false reason=ifop_zip2city_widget_failed target_id='single_25ab6372513b'
+   [OBSERVABILITY] validation_failure stage=action issues=['dispatcher_reported_failure']
+   ```
+
+   Le dossier créé contient le format attendu pour un échec d'action :
+
+   ``` text
+   frames/
+   actions_requested.json
+   meta.json
+   post_action_dom.html
+   post_action_viewport.png
+   question_blocks.json
+   validation_report.json
+   ```
+
+   `meta.json` indique explicitement :
+
+   ``` text
+   reason = action_validation_failure
+   capture_phase = post_action
+   artifacts.dom = post_action_dom.html
+   artifacts.screenshot = post_action_viewport.png
+   ```
+
+   Ce test valide :
+   - la création automatique du failure snapshot ;
+   - la conservation de l'action demandée ;
+   - la conservation des question_blocks ;
+   - la conservation du DOM post-action ;
+   - la conservation du screenshot post-action ;
+   - la normalisation de l'incident dans `validation_report.json` ;
+   - le caractère non bloquant de l'observabilité.
+
+### Décision de clôture 1A
+
+La Phase 1A est considérée **terminée**.
+
+Elle a rempli son objectif : détecter et documenter passivement les anomalies
+sans modifier le flux normal du bot.
+
+Le cas IFOP zip2city ne doit pas être corrigé dans 1A. Il devient le premier
+cas de travail de la Phase 1B, car il illustre exactement le problème suivant :
+
+``` text
+dispatcher_success = false
+≠
+preuve certaine que l'état attendu est absent du DOM
+```
+
+Le DOM post-action et le screenshot montrent que le code postal `75001` et la
+ville `Paris 01` sont visibles après tentative, alors que le dispatcher a
+retourné `ifop_zip2city_widget_failed`. La stabilisation de cet oracle relève
+de 1B.
 
 ------------------------------------------------------------------------
 
@@ -186,6 +263,54 @@ le patch fonctionne réellement sur les cas de référence.
 
 Objectif : réduire les faux positifs et augmenter progressivement la
 couverture.
+
+## Cas de départ 1B — IFOP zip2city
+
+Le premier cas de 1B est le snapshot :
+
+``` text
+20260907_201456_action_validation_failure
+```
+
+Symptôme observé :
+
+``` text
+dispatcher_reported_failure
+```
+
+Faits conservés par 1A :
+
+``` text
+action demandée : 75001
+itype : text
+target_id : single_25ab6372513b
+context.ifop_zip2city_widget : true
+post_action_dom.html présent
+post_action_viewport.png présent
+```
+
+Observation live :
+
+``` text
+le widget affiche 75001
+le libellé ville affiche Paris 01
+le dispatcher retourne pourtant ifop_zip2city_widget_failed
+```
+
+Objectif 1B pour ce cas :
+
+``` text
+distinguer un vrai échec d'insertion texte
+d'un dispatcher_failure contredit par un état DOM post-action fort
+```
+
+Règle importante :
+
+``` text
+ne pas transformer action_validator.py en second action_dispatcher
+ne pas ajouter une cascade de fallbacks
+ajouter seulement des invariants DOM forts, scopés et vérifiables
+```
 
 On teste les validators sur tes DOM réels existants.
 
@@ -1102,8 +1227,8 @@ Ce serait fragile.
 Je suivrais exactement cet ordre :
 
 ``` text
-1A  Observabilité passive — IMPLÉMENTÉE, validation live restante
-1B  Stabilisation des validators — après validation de 1A
+1A  Observabilité passive — TERMINÉE, validée en live attach
+1B  Stabilisation des validators — PROCHAINE ÉTAPE
 2   Failure cases normalisés
 3   Replay local
 4   Diagnostic automatique

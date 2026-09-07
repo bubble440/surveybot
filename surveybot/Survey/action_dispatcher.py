@@ -1317,6 +1317,45 @@ def _qualtrics_rank_order_dragdrop_apply(
     return False
 
 
+def _zappi_maxdiff_apply(driver, xpath: str) -> bool:
+    """
+    Clic sur le conteneur radio custom d'une ligne MaxDiff Zappi
+    (div.max-diff-radio-container), résolu par XPath ancré sur l'id numérique stable de
+    la ligne (cf. _extract_zappi_maxdiff_blocks, dom_extractors_misc.py). Pas d'input
+    natif actionnable (readonly, sans name/value) : le clic cible directement le
+    conteneur visuel, seul élément réellement cliquable de la ligne.
+    """
+    if not xpath:
+        return False
+    try:
+        cands = driver.query_selector_all("xpath=" + xpath)
+    except Exception:
+        cands = []
+    node = cands[0] if cands else None
+    if node is None:
+        return False
+    try:
+        node.evaluate("(el) => el.scrollIntoView({block: 'center'})")
+    except Exception:
+        pass
+    time.sleep(0.05)
+    try:
+        node.click()
+        return True
+    except Exception as _zmd_click_exc:
+        try:
+            node.hover()
+            node.click()
+            return True
+        except Exception as _zmd_hover_exc:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"zappi_maxdiff_apply: click_failed xpath={xpath!r} "
+                f"click_error={_short_exc(_zmd_click_exc)} hover_error={_short_exc(_zmd_hover_exc)}",
+            )
+            return False
+
+
 def _apply_by_target_id(
     driver,
     target_id: str,
@@ -2482,8 +2521,17 @@ def _apply_by_target_id(
             # Placé avant le bloc opt_map : l'interaction est un drag pointer, pas un clic.
             # value = libellé positionnel neutre retourné par IA ("Item N", sans contenu image) ;
             # résolu vers le data-choiceid réel via qualtrics_rank_order_dragdrop_choice_id_map.
-            # ordinal = position 1-based de cette action dans le plan (calculé dans
-            # execute_actions_plan, même schéma que aa_ranking_dragdrop ci-dessus).
+            #
+            # target_index n'est PAS dérivé de l'ordinal de cette action dans le plan (contrairement
+            # à aa_ranking_dragdrop/alchemer_rank_dragdrop) : les libellés "Item N" étant vides de
+            # sens, le LLM les renvoie systématiquement dans l'ordre reçu (aucun signal pour faire
+            # autrement) ce qui, avec un target_index ordinal, coïncide toujours avec la position
+            # DOM courante à l'extraction -> "already_in_place" systématique, jamais de drag réel
+            # (bug confirmé). target_index est donc calculé ici en rotation fixe de +1 (mod N) par
+            # rapport à la position de choice_id dans qualtrics_rank_order_dragdrop_choice_id_map
+            # (ordre d'insertion = ordre DOM au moment de l'extraction, cf. dict Python ordonné) :
+            # une permutation circulaire n'a aucun point fixe pour N>=2, donc chaque item nécessite
+            # réellement un drag, indépendamment de l'ordre/contenu de la réponse du LLM.
             if payload.get("qualtrics_rank_order_dragdrop") and resolved_itype == "checkbox":
                 _qro_ul_xp = payload.get("qualtrics_rank_order_dragdrop_ul_xpath") or ""
                 _qro_cid_map = payload.get("qualtrics_rank_order_dragdrop_choice_id_map") or {}
@@ -2496,8 +2544,13 @@ def _apply_by_target_id(
                     log_debug("[TARGET_DEBUG]", f"qualtrics_rank_order_dragdrop: item introuvable value={value!r}")
                     return False
 
-                _qro_ordinal = int(getattr(driver, "_qualtrics_rank_order_dragdrop_ordinal", 1) or 1)
-                _qro_target_index = max(0, _qro_ordinal - 1)
+                _qro_ids_in_extraction_order = list(_qro_cid_map.values())
+                _qro_n = len(_qro_ids_in_extraction_order)
+                try:
+                    _qro_extraction_index = _qro_ids_in_extraction_order.index(_qro_choice_id)
+                except ValueError:
+                    _qro_extraction_index = 0
+                _qro_target_index = (_qro_extraction_index + 1) % _qro_n if _qro_n > 1 else 0
 
                 _qro_ok = _qualtrics_rank_order_dragdrop_apply(driver, _qro_ul_xp, _qro_choice_id, _qro_target_index)
 
@@ -2512,6 +2565,96 @@ def _apply_by_target_id(
                         f"apply ok=true strategy=qualtrics_rank_order_dragdrop item={value!r} target_index={_qro_target_index}",
                     )
                 return _qro_ok
+
+            # Guard zappi_maxdiff : widget MaxDiff Zappi (data-collector.zappi.io), 2 blocs
+            # radio indépendants ("le plus"/"le moins") portant sur le même jeu de lignes
+            # (cf. _extract_zappi_maxdiff_blocks, dom_extractors_misc.py). Placé avant le
+            # bloc opt_map générique : résolution + clic dédiés (conteneur radio custom,
+            # pas d'input natif actionnable), avec application de la contrainte MaxDiff.
+            # Contrainte fonctionnelle MaxDiff : une seule ligne "le plus" ET une seule ligne
+            # "le moins", DIFFERENTE, sur l'ensemble du set. Les 2 blocs étant résolus
+            # indépendamment par le LLM sur des libellés positionnels sans signal
+            # différenciant ("Item N", cf. qualtrics_rank_order_dragdrop ci-dessus), rien ne
+            # garantit une réponse différente pour les 2 blocs. Ce garde-fou compare la ligne
+            # choisie à celle déjà appliquée par l'autre côté (état porté par driver, remis à
+            # zéro par execute_actions_plan) et substitue la première ligne disponible
+            # restante en cas de collision — une seule stratégie, pas de fallback empilé.
+            if payload.get("zappi_maxdiff") and resolved_itype == "radio":
+                _zmd_side = payload.get("zappi_maxdiff_side") or ""
+                _zmd_opt_map = payload.get("option_xpath_map") or {}
+                _zmd_row_map = payload.get("zappi_maxdiff_row_id_map") or {}
+                if not _zmd_opt_map or _zmd_side not in ("most", "least"):
+                    log_debug("[TARGET_DEBUG]", "zappi_maxdiff: option_xpath_map/side manquant")
+                    return False
+
+                _zmd_label = None
+                for _zmd_k in _zmd_opt_map:
+                    if v_norm and _norm_lc(_zmd_k) == v_norm:
+                        _zmd_label = _zmd_k
+                        break
+                if not _zmd_label:
+                    for _zmd_k in _zmd_opt_map:
+                        _zmd_k_norm = _norm_lc(_zmd_k)
+                        if v_norm and (v_norm in _zmd_k_norm or _zmd_k_norm in v_norm):
+                            _zmd_label = _zmd_k
+                            break
+                        if v_fold:
+                            _zmd_k_fold = _fold_norm_lc(_zmd_k)
+                            if v_fold == _zmd_k_fold or v_fold in _zmd_k_fold or _zmd_k_fold in v_fold:
+                                _zmd_label = _zmd_k
+                                break
+
+                if not _zmd_label:
+                    log_debug("[TARGET_DEBUG]", f"zappi_maxdiff: option introuvable value={value!r}")
+                    return False
+
+                _zmd_own_attr = (
+                    "_zappi_maxdiff_most_row_id" if _zmd_side == "most" else "_zappi_maxdiff_least_row_id"
+                )
+                _zmd_other_attr = (
+                    "_zappi_maxdiff_least_row_id" if _zmd_side == "most" else "_zappi_maxdiff_most_row_id"
+                )
+                _zmd_other_row_id = getattr(driver, _zmd_other_attr, None)
+                _zmd_row_id = _zmd_row_map.get(_zmd_label)
+
+                if _zmd_other_row_id is not None and _zmd_row_id == _zmd_other_row_id:
+                    _zmd_fallback_label = None
+                    for _zmd_lbl, _zmd_rid in _zmd_row_map.items():
+                        if _zmd_rid != _zmd_other_row_id and _zmd_lbl in _zmd_opt_map:
+                            _zmd_fallback_label = _zmd_lbl
+                            break
+                    if not _zmd_fallback_label:
+                        log_debug("[TARGET_DEBUG]", "zappi_maxdiff: collision sans ligne de repli disponible")
+                        return False
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        f"zappi_maxdiff: collision side={_zmd_side} label={_zmd_label!r} "
+                        f"row_id={_zmd_row_id!r} -> repli label={_zmd_fallback_label!r}",
+                    )
+                    _zmd_label = _zmd_fallback_label
+                    _zmd_row_id = _zmd_row_map.get(_zmd_label)
+
+                _zmd_xp = _zmd_opt_map.get(_zmd_label)
+                if not _zmd_xp:
+                    log_debug("[TARGET_DEBUG]", f"zappi_maxdiff: xpath introuvable label={_zmd_label!r}")
+                    return False
+
+                _zmd_ok = _zappi_maxdiff_apply(driver, _zmd_xp)
+                if _zmd_ok:
+                    try:
+                        setattr(driver, _zmd_own_attr, _zmd_row_id)
+                    except Exception:
+                        pass
+                    log_info(
+                        "[TARGET]",
+                        f"apply ok=true strategy=zappi_maxdiff side={_zmd_side} label={_zmd_label!r}",
+                    )
+                elif debug_target:
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        f"zappi_maxdiff: click_failed side={_zmd_side} label={_zmd_label!r} xpath={_zmd_xp!r}",
+                    )
+                return _zmd_ok
 
             if opt_map and resolved_itype in ("radio", "checkbox") and not _skip_opt_map_for_cached_checkbox:
 
@@ -8652,9 +8795,10 @@ def execute_actions_plan(
     driver._aa_ranking_dragdrop_counts = {}
     driver._aa_ranking_dragdrop_ordinal = 1
 
-    # Compteurs ordinaux qualtrics_rank_order_dragdrop : réinitialisés à chaque plan (par qid)
-    driver._qualtrics_rank_order_dragdrop_counts = {}
-    driver._qualtrics_rank_order_dragdrop_ordinal = 1
+    # État zappi_maxdiff (ligne "le plus"/"le moins" déjà appliquée) : réinitialisé à
+    # chaque plan (par qid), cf. garde-fou zappi_maxdiff dans _apply_by_target_id.
+    driver._zappi_maxdiff_most_row_id = None
+    driver._zappi_maxdiff_least_row_id = None
 
     try:
         url_before = driver.url
@@ -8803,24 +8947,6 @@ def execute_actions_plan(
                         driver._aa_ranking_dragdrop_ordinal = 1
                 except Exception:
                     driver._aa_ranking_dragdrop_ordinal = 1
-
-            # Qualtrics rank_order_dragdrop (jQuery UI Sortable) : rang ordinal (1-based) pour
-            # cette action dans le plan
-            if tid:
-                try:
-                    _qro_p = get_target(tid) or {}
-                    if _qro_p.get("qualtrics_rank_order_dragdrop"):
-                        _qro_key = qid or tid
-                        if not hasattr(driver, "_qualtrics_rank_order_dragdrop_counts"):
-                            driver._qualtrics_rank_order_dragdrop_counts = {}
-                        driver._qualtrics_rank_order_dragdrop_counts[_qro_key] = (
-                            driver._qualtrics_rank_order_dragdrop_counts.get(_qro_key, 0) + 1
-                        )
-                        driver._qualtrics_rank_order_dragdrop_ordinal = driver._qualtrics_rank_order_dragdrop_counts[_qro_key]
-                    else:
-                        driver._qualtrics_rank_order_dragdrop_ordinal = 1
-                except Exception:
-                    driver._qualtrics_rank_order_dragdrop_ordinal = 1
 
             if tid and qid:
                 instruction = f"{qid} //// {tid} //// {value} //// {itype} //// {context}"

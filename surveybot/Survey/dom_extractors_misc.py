@@ -7228,6 +7228,190 @@ def _extract_cloudresearch_sentry_blocks(driver, frame_chain: list[int] | None) 
     return blocks
 
 
+
+# ================================================================================
+# ZAPPI MAXDIFF - AFFIRMATIONS ILLUSTREES (COL GAUCHE=MOINS / COL DROITE=PLUS)
+# ================================================================================
+
+def _extract_zappi_maxdiff_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Zappi (data-collector.zappi.io) : widget MaxDiff — affirmations illustrées par image,
+    chacune encadrée d'un bouton radio custom "incite le moins" (gauche) et "incite le plus"
+    (droite).
+
+    Gate DOM strict (additif, n'active jamais un autre widget) :
+    - conteneur : div.max-diff-question-container
+    - >=2 lignes : div.max-diff-container.row, chacune avec un id numérique stable
+      (ex. "1996412", propre à la ligne — jamais réutilisé comme name/group radio)
+    - par ligne : div.max-diff-radio-container.left-radio-container ("incite le moins") et
+      .right-radio-container ("incite le plus"), chacun doublant un <input type="radio"
+      readonly> non actionnable (exclu du scan générique d'inputs, cf. bug) d'un
+      <div class="radio"><div class="inner-dot"></div></div> qui est la cible réelle du clic.
+
+    Contrainte fonctionnelle MaxDiff : une seule sélection "le plus" ET une seule sélection
+    "le moins" (différente) sur l'ensemble des lignes du set courant — pas une paire
+    indépendante par ligne. Modélisé ici par 2 blocs radio distincts (options = lignes du
+    set) ; la contrainte de distinction est appliquée au clic, cf. flag "zappi_maxdiff"
+    dans action_dispatcher._apply_by_target_id.
+
+    Les lignes ne portent aucun texte propre (affirmation illustrée uniquement par une
+    image) : les options sont donc des libellés positionnels ("Item 1".."Item N"), même
+    convention que qualtrics_rank_order_dragdrop pour les libellés sans contenu textuel.
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        rows = driver.query_selector_all("div.max-diff-question-container div.max-diff-container.row")
+    except Exception:
+        rows = []
+
+    if not rows or len(rows) < 2:
+        log_debug("[ZAPPI_MAXDIFF_DEBUG]", f"gate_no_match rows={len(rows or [])}")
+        return []
+
+    log_debug("[ZAPPI_MAXDIFF_DEBUG]", f"gate rows={len(rows)}")
+
+    question = ""
+    try:
+        q_els = driver.query_selector_all(".question-description-container .zappi-header-text")
+        for q_el in q_els:
+            try:
+                if not q_el.is_visible():
+                    continue
+                t = _norm(q_el.inner_text() or "")
+                if t and len(t) >= 5:
+                    question = t
+                    break
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    if not question:
+        log_debug("[ZAPPI_MAXDIFF_DEBUG]", "no_question_found -> return []")
+        return []
+
+    # Contexte "Set X of Y" (purement informatif dans le libellé envoyé au LLM)
+    set_label = ""
+    try:
+        for m in driver.query_selector_all(".header .middle"):
+            t = _norm(m.inner_text() or "")
+            if t:
+                set_label = t
+                break
+    except Exception:
+        pass
+
+    row_labels: list[str] = []
+    most_xpath_map: dict[str, str] = {}
+    least_xpath_map: dict[str, str] = {}
+    row_id_by_label: dict[str, str] = {}
+    row_ids: list[str] = []
+
+    idx = 0
+    for row in rows:
+        try:
+            row_id = (row.get_attribute("id") or "").strip()
+
+            left = row.query_selector(".left-radio-container")
+            right = row.query_selector(".right-radio-container")
+            if left is None or right is None:
+                log_debug("[ZAPPI_MAXDIFF_DEBUG]", f"row_skip reason=missing_radio_container row_id={row_id!r}")
+                continue
+            try:
+                if not left.is_visible() or not right.is_visible():
+                    log_debug("[ZAPPI_MAXDIFF_DEBUG]", f"row_skip reason=not_visible row_id={row_id!r}")
+                    continue
+            except Exception:
+                pass
+
+            if row_id:
+                left_xp = (
+                    "//div[contains(concat(' ', normalize-space(@class), ' '), ' max-diff-container ')"
+                    f" and @id='{row_id}']"
+                    "//div[contains(concat(' ', normalize-space(@class), ' '), ' left-radio-container ')]"
+                )
+                right_xp = (
+                    "//div[contains(concat(' ', normalize-space(@class), ' '), ' max-diff-container ')"
+                    f" and @id='{row_id}']"
+                    "//div[contains(concat(' ', normalize-space(@class), ' '), ' right-radio-container ')]"
+                )
+            else:
+                left_xp = _best_xpath_for_element(driver, left)
+                right_xp = _best_xpath_for_element(driver, right)
+
+            if not left_xp or not right_xp:
+                log_debug("[ZAPPI_MAXDIFF_DEBUG]", f"row_skip reason=no_xpath row_id={row_id!r}")
+                continue
+
+            idx += 1
+            label = f"Item {idx}"
+            row_key = row_id or label
+            row_labels.append(label)
+            most_xpath_map[label] = right_xp
+            least_xpath_map[label] = left_xp
+            row_id_by_label[label] = row_key
+            row_ids.append(row_key)
+            log_debug("[ZAPPI_MAXDIFF_DEBUG]", f"row_kept label={label!r} row_id={row_key!r}")
+        except Exception as _row_exc:
+            log_debug("[ZAPPI_MAXDIFF_DEBUG]", f"row_exception exc={type(_row_exc).__name__}: {_row_exc}")
+            continue
+
+    if len(row_labels) < 2:
+        log_debug("[ZAPPI_MAXDIFF_DEBUG]", f"not_enough_rows kept={len(row_labels)} -> return []")
+        return []
+
+    set_suffix = f" ({set_label})" if set_label else ""
+    rows_sig = _norm_key("|".join(row_ids))
+
+    blocks: list[dict] = []
+
+    for side, xpath_map, verb in (
+        ("most", most_xpath_map, "LE PLUS"),
+        ("least", least_xpath_map, "LE MOINS"),
+    ):
+        group_key = f"zappi_maxdiff:{side}:{_norm_key(question[:50])}:{rows_sig}"
+        target_id = make_target_id("group", group_key, question)
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "radio",
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": xpath_map,
+                "frame_chain": frame_chain,
+                "zappi_maxdiff": True,
+                "zappi_maxdiff_side": side,
+                "zappi_maxdiff_row_id_map": dict(row_id_by_label),
+            },
+        )
+        blocks.append(
+            {
+                "question": (
+                    f"{question}{set_suffix} — Parmi les {len(row_labels)} affirmations "
+                    f"illustrées ci-dessous, laquelle inciterait {verb} à acheter le produit ?"
+                ),
+                "itype": "radio",
+                "options": list(row_labels),
+                "max_select": 1,
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "zappi_maxdiff": True,
+                    "zappi_maxdiff_side": side,
+                },
+            }
+        )
+
+    log_debug(
+        "[ZAPPI_MAXDIFF_DEBUG]",
+        f"blocks_built rows={len(row_labels)} set_label={set_label!r} question_preview={question[:60]!r}",
+    )
+
+    return blocks
+
+
 def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """PureSpectrum mobile date picker: 2 roues (mois/année) en `ps-select-scroll`.
 
