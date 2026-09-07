@@ -305,7 +305,7 @@ d'un dispatcher_failure contredit par un état DOM post-action fort
 ```
 
 Règle importante :
-
+ 
 ``` text
 ne pas transformer action_validator.py en second action_dispatcher
 ne pas ajouter une cascade de fallbacks
