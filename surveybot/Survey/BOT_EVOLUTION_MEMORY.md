@@ -5155,3 +5155,76 @@ Vérification :
 Statut : patch validé par l'utilisateur en conditions réelles.
 
 ---
+
+## PLATEFORME : CLOUDRESEARCH / SENTRY
+Signature : `sentry.cloudresearch.com`, conteneur `<div role="main" id="sentry">` / `.cr-question-card`,
+rendu Vue.js. Options à choix unique en `div.choice-option[role="button"]` (pas d'`<input>` natif), texte
+dans `.cr-ct` / `div[class*="answer-choice"]` imbriqué.
+
+### _extract_cloudresearch_sentry_blocks
+Fichier : Survey/dom_extractors_misc.py
+Guard : `#sentry, .cr-question-card` (conteneur) + `.choice-option[role='button']` (≥1 option), sinon `[]`.
+Patterns couverts :
+- Question à choix unique (radio) : h1 via `h1[class*='question-prompt']` / `h1[id*='QuestionLabel']` /
+  `h1[id*='questionLabel']` / `h1.cr-custom-qt` / `.cr-question-card h1` / `#mainContent h1`.
+- Options : chaque `.choice-option[role='button']`, texte extrait via `.cr-ct`/`[class*='answer-choice']`
+  (priorité), puis fallback `div:not(:has(svg))`, puis texte brut du bouton. XPath stable par `@tabindex`
+  (`(//*[contains(@class,'choice-option') and @role='button' and @tabindex='{n}'])[1]`), fallback XPath
+  absolu si `tabindex` absent.
+Bug corrigé (2026-09-07) : `q_el.is_displayed()` et `btn.is_displayed()` — API Selenium — appelées sur des
+`ElementHandle` Playwright natifs (`driver.query_selector_all(...)`, driver = `Page` Playwright pur, cf.
+`launch_browser_playwright()` dans preselection/playwright_launcher.py, aucun shim). `ElementHandle` n'expose
+que `.is_visible()` (confirmé : `'is_displayed' in dir(ElementHandle)` → `False` dans le venv du projet).
+L'`AttributeError` levée sur CHAQUE candidat h1 était capturée par le `except Exception` par-candidat de la
+boucle question (qui fait `continue`) → `question` ne recevait jamais de valeur → `if not question: return []`
+systématique, y compris sur un DOM entièrement rendu et déjà interagi (option sélectionnée visible à l'écran,
+CTA actif). Mécanisme d'hydratation Vue.js écarté comme cause : bug déterministe, indépendant du timing.
+(Le second appel, `btn.is_displayed()` dans la boucle d'options, était enveloppé d'un `except Exception: pass`
+sans `continue` — l'exception y était silencieusement avalée sans bloquer l'extraction des options ; seule la
+boucle question était réellement cassée.)
+Correction : `is_displayed()` → `is_visible()` aux 2 points d'appel (question, option), même convention que le
+reste du projet (cf. Utils/PLAYWRIGHT_NATIVE_MIGRATION.md : « el.is_displayed() → el.is_visible() »). Aucune
+autre ligne modifiée.
+Patterns exclus :
+- Logique de dédoublonnage par clé normalisée (`_norm_key`), filtrage blacklist (`next`/`suivant`/etc.),
+  seuil minimum `len(options) < 2` : non touchés par ce patch.
+Diagnostic : instrumentation `log_debug("[CR_SENTRY_DEBUG]", ...)` ajoutée à chaque point de décision interne
+(gate, par sélecteur de question, par candidat, par option, résumé final) — a permis d'isoler la branche
+fautive avec certitude avant toute modification du corps de la fonction (AttributeError visible dans les logs
+DEBUG dès le premier candidat h1 testé). Conservée en place (coût nul hors LOG_LEVEL=DEBUG).
+Vérification :
+- DOM de référence `20260907_092033_after_dom_analyze` rejoué via `Page` Playwright réel headless (même type
+  de driver qu'en production) : avant patch → `[]` (AttributeError sur les 6 sélecteurs testés) ; après patch
+  → 1 bloc radio, question correcte (54 car.), 4 options (Mariée, Satisfaire, Carotte, Généralement),
+  `max_select=1`.
+- **Confirmé en conditions réelles par l'utilisateur** : logs `[CR_SENTRY_DEBUG] block_built options=4`,
+  `extracted_blocks count=1 itypes=['radio']`, prompt GPT généré correctement avec les 4 options.
+Statut : patch d'extraction validé par l'utilisateur en conditions réelles.
+
+Note (non résolu, hors périmètre de ce patch) : dans le même run de validation, la sélection/clic échoue en
+aval de l'extraction (`[TARGET] apply ok=false reason=no_strategy`, xpath `@tabindex` généré correctement mais
+aucune stratégie de `action_dispatcher.py`/`input_radio.py` ne gère le contexte `cloudresearch_sentry: True`
+— plusieurs stratégies génériques sans rapport (toluna_runtime_answerrow, kantar_rowpicker,
+ipsos_sharky_grid_progressive, vant_picker_column) sont tentées puis échouent). Cause probable : aucune
+stratégie de clic dédiée `.choice-option[role='button']` (div cliquable Vue.js) n'existe encore côté
+sélection — à diagnostiquer et patcher séparément.
+
+### _wait_for_cloudresearch_sentry_ready
+Fichier : Survey/dom_frame_selector.py
+Guard : `#sentry` (identique au garde-fou de `_extract_cloudresearch_sentry_blocks`), no-op strict sinon.
+Ajouté en même temps que le diagnostic ci-dessus, par hypothèse initiale (course de rendu Vue.js) — écartée
+depuis comme cause de CE bug précis (voir entrée ci-dessus, bug confirmé déterministe/API, pas timing).
+Conservé : garde-fou additif sans effet de bord, filet de sécurité générique si un DOM CloudResearch/Sentry
+scorait ses options `.choice-option[role="button"]` de façon réellement asynchrone sur une autre page.
+Patterns couverts :
+- Attend (poll 0.1s, budget 1.5s) `.choice-option[role="button"]` ≥ 2 avant scoring/extraction. Appelé aux 2
+  points d'entrée déjà établis pour les 3 garde-fous analogues (mrIWeb/SSI/Ask&Answer) : racine avant
+  `_select_best_frame_chain`, et relecture après résolution de frame.
+Patterns exclus :
+- Aucune modification des 3 garde-fous existants (`_wait_for_mriweb_ready`, `_wait_for_ssi_ciwweb_ready`,
+  `_wait_for_askandanswer_layout_ready`) — patron répliqué à l'identique, pas touché.
+Statut : additif, non testé comme correctif principal (le bug réel n'était pas un problème de timing) mais
+validé structurellement (budget respecté, no-op confirmé sur DOM non-CloudResearch, retour immédiat si
+options déjà présentes — cf. tests unitaires en session).
+
+---

@@ -254,6 +254,59 @@ def _wait_for_askandanswer_layout_ready(driver, timeout_s: float = 1.5, poll_s: 
         return
 
 
+def _wait_for_cloudresearch_sentry_ready(driver, timeout_s: float = 1.5, poll_s: float = 0.1) -> None:
+    """
+    Garde-fou additif, strictement scopé aux pages CloudResearch/Sentry (screener
+    sentry.cloudresearch.com : conteneur `#sentry`, cf.
+    _extract_cloudresearch_sentry_blocks dans dom_extractors_misc.py) : attend que
+    les options de réponse (`.choice-option[role="button"]`, rendues par le
+    composant Vue.js du screener) soient effectivement attachées au DOM avant de
+    laisser l'extraction se déclencher.
+
+    Confirmé sur DOM de référence (snapshot 20260907_092033_after_dom_analyze) :
+    le template Vue affiche déjà `#sentry`/`.cr-question-card` et le h1 de question
+    avant que ses `.choice-option[role="button"]` (options de réponse, ajoutées par
+    un rendu réactif ultérieur) ne soient attachées -- analyze_dom scanne cette
+    fenêtre intermédiaire et rapporte 0 bloc (_extract_cloudresearch_sentry_blocks
+    sort tôt sur son propre garde-fou : choice_btns vide), alors que le DOM capturé
+    juste après montre les 4 options pleinement rendues. Même classe de biais que
+    celle déjà documentée pour _wait_for_mriweb_ready / _wait_for_askandanswer_layout_ready :
+    _wait_for_survey_dom() (non modifiée) ne garantit pas la présence de ces noeuds
+    précis.
+
+    Garde-fou DOM strict : n'attend QUE si `#sentry` est présent (signature
+    CloudResearch/Sentry, identique au garde-fou de
+    _extract_cloudresearch_sentry_blocks). Sur toute autre plateforme, retour
+    immédiat sans attente ni effet de bord. Budget borné (poll_s, timeout_s) avec
+    abandon contrôlé et log (DOM_CONTEXT_DEBUG) si les options n'apparaissent jamais
+    dans le budget imparti (comportement alors identique à avant ce patch : pas de
+    blocage, _extract_cloudresearch_sentry_blocks retournera []).
+    """
+    try:
+        current_frame = getattr(driver, "_current_frame", driver)
+        is_cr_sentry = bool(
+            current_frame.evaluate("() => !!document.querySelector('#sentry')")
+        )
+        if not is_cr_sentry:
+            return
+
+        deadline = time.time() + max(0.0, timeout_s)
+        while time.time() < deadline:
+            ready = bool(
+                current_frame.evaluate(
+                    "() => document.querySelectorAll('.choice-option[role=\"button\"]').length >= 2"
+                )
+            )
+            if ready:
+                return
+            time.sleep(poll_s)
+
+        if _env_truthy("DOM_CONTEXT_DEBUG", "0"):
+            print(f"[DOM_CONTEXT_DEBUG] cloudresearch_sentry_ready_timeout timeout_s={timeout_s}")
+    except Exception:
+        return
+
+
 # ================================================================================
 # SCORING CONTEXTE DOM
 # ================================================================================

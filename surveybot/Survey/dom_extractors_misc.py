@@ -7032,9 +7032,15 @@ def _extract_cloudresearch_sentry_blocks(driver, frame_chain: list[int] | None) 
         # Pattern spécifique
         sentry_marker = driver.query_selector_all("#sentry, .cr-question-card")
         choice_btns = driver.query_selector_all(".choice-option[role='button']")
+        log_debug(
+            "[CR_SENTRY_DEBUG]",
+            f"gate sentry_marker={len(sentry_marker or [])} choice_btns={len(choice_btns or [])}",
+        )
         if not sentry_marker or not choice_btns:
+            log_debug("[CR_SENTRY_DEBUG]", "gate_no_match -> return []")
             return []
-    except Exception:
+    except Exception as _gate_exc:
+        log_debug("[CR_SENTRY_DEBUG]", f"gate_exception {type(_gate_exc).__name__}: {_gate_exc}")
         return []
 
     blocks: list[dict] = []
@@ -7055,23 +7061,39 @@ def _extract_cloudresearch_sentry_blocks(driver, frame_chain: list[int] | None) 
         for sel in question_selectors:
             try:
                 q_els = driver.query_selector_all(sel)
+                log_debug("[CR_SENTRY_DEBUG]", f"question_selector sel={sel!r} matches={len(q_els or [])}")
                 for q_el in q_els:
                     try:
-                        if not q_el.is_displayed():
+                        if not q_el.is_visible():
+                            log_debug("[CR_SENTRY_DEBUG]", f"question_candidate_skip sel={sel!r} reason=not_displayed")
                             continue
                         t = _norm(q_el.inner_text() or "")
                         if t and len(t) >= 5:
                             question = t
                             break
-                    except Exception:
+                        log_debug(
+                            "[CR_SENTRY_DEBUG]",
+                            f"question_candidate_skip sel={sel!r} reason=text_too_short len={len(t)}",
+                        )
+                    except Exception as _q_exc:
+                        log_debug(
+                            "[CR_SENTRY_DEBUG]",
+                            f"question_candidate_exception sel={sel!r} exc={type(_q_exc).__name__}: {_q_exc}",
+                        )
                         continue
                 if question:
                     break
-            except Exception:
+            except Exception as _qsel_exc:
+                log_debug(
+                    "[CR_SENTRY_DEBUG]",
+                    f"question_selector_exception sel={sel!r} exc={type(_qsel_exc).__name__}: {_qsel_exc}",
+                )
                 continue
 
         if not question:
+            log_debug("[CR_SENTRY_DEBUG]", "no_question_found -> return []")
             return []
+        log_debug("[CR_SENTRY_DEBUG]", f"question_found len={len(question)} preview={question[:60]!r}")
 
         # Pattern spécifique
         options: list[str] = []
@@ -7081,7 +7103,8 @@ def _extract_cloudresearch_sentry_blocks(driver, frame_chain: list[int] | None) 
             try:
                 # Pattern spécifique
                 try:
-                    if not btn.is_displayed():
+                    if not btn.is_visible():
+                        log_debug("[CR_SENTRY_DEBUG]", "option_skip reason=not_displayed")
                         continue
                 except Exception:
                     pass
@@ -7118,11 +7141,13 @@ def _extract_cloudresearch_sentry_blocks(driver, frame_chain: list[int] | None) 
                         opt_text = raw
 
                 if not opt_text or len(opt_text) < 1:
+                    log_debug("[CR_SENTRY_DEBUG]", "option_skip reason=empty_text")
                     continue
 
                 # Pattern spécifique
                 opt_lc = _norm_lc(opt_text)
                 if opt_lc in {"next", "suivant", "continue", "continuer", "please select"}:
+                    log_debug("[CR_SENTRY_DEBUG]", f"option_skip reason=blacklisted text={opt_text!r}")
                     continue
 
                 # XPath stable pour ce bouton
@@ -7140,19 +7165,29 @@ def _extract_cloudresearch_sentry_blocks(driver, frame_chain: list[int] | None) 
                     xp = _best_xpath_for_element(driver, btn)
 
                 if not xp:
+                    log_debug("[CR_SENTRY_DEBUG]", f"option_skip reason=no_xpath text={opt_text!r}")
                     continue
 
                 nk = _norm_key(opt_text)
                 if nk in option_xpath_map:
+                    log_debug("[CR_SENTRY_DEBUG]", f"option_skip reason=duplicate_key text={opt_text!r}")
                     continue
 
                 option_xpath_map[nk] = xp
                 options.append(opt_text)
+                log_debug("[CR_SENTRY_DEBUG]", f"option_kept text={opt_text!r}")
 
-            except Exception:
+            except Exception as _opt_exc:
+                log_debug("[CR_SENTRY_DEBUG]", f"option_exception exc={type(_opt_exc).__name__}: {_opt_exc}")
                 continue
 
+        log_debug(
+            "[CR_SENTRY_DEBUG]",
+            f"options_summary total_btns={len(choice_btns or [])} kept={len(options)}",
+        )
+
         if len(options) < 2 or not option_xpath_map:
+            log_debug("[CR_SENTRY_DEBUG]", f"not_enough_options kept={len(options)} -> return []")
             return []
 
         # Pattern spécifique
@@ -7182,9 +7217,13 @@ def _extract_cloudresearch_sentry_blocks(driver, frame_chain: list[int] | None) 
                 "context": {"kind": "group", "group_key": group_key, "cloudresearch_sentry": True},
             }
         )
+        log_debug(
+            "[CR_SENTRY_DEBUG]",
+            f"block_built options={len(options)} question_preview={question[:60]!r}",
+        )
 
-    except Exception:
-        pass
+    except Exception as _outer_exc:
+        log_debug("[CR_SENTRY_DEBUG]", f"outer_exception exc={type(_outer_exc).__name__}: {_outer_exc}")
 
     return blocks
 

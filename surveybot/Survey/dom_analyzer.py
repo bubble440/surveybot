@@ -53,7 +53,7 @@ try:
     from Survey.dom_frame_selector import (
         _wait_for_survey_dom, _score_dom_context, _select_best_frame_chain,
         _wait_for_mriweb_ready, _wait_for_ssi_ciwweb_ready,
-        _wait_for_askandanswer_layout_ready
+        _wait_for_askandanswer_layout_ready, _wait_for_cloudresearch_sentry_ready
     )
 
     # Extracteurs platform-spécifiques
@@ -190,7 +190,7 @@ except ImportError:
     from Survey.dom_frame_selector import (
         _wait_for_survey_dom, _score_dom_context, _select_best_frame_chain,
         _wait_for_mriweb_ready, _wait_for_ssi_ciwweb_ready,
-        _wait_for_askandanswer_layout_ready
+        _wait_for_askandanswer_layout_ready, _wait_for_cloudresearch_sentry_ready
     )
     from Survey.dom_extractors_decipher import (
         _extract_focusvision_answers_list_groups,
@@ -4581,6 +4581,11 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     # scoring/extraction, cf. _wait_for_askandanswer_layout_ready. No-op sur toute
     # autre plateforme.
     _wait_for_askandanswer_layout_ready(driver)
+    # Garde-fou additif scopé CloudResearch/Sentry (#sentry) : attend que les
+    # options de réponse (.choice-option[role="button"]) soient attachées par le
+    # rendu Vue.js avant scoring/extraction, cf. _wait_for_cloudresearch_sentry_ready.
+    # No-op sur toute autre plateforme.
+    _wait_for_cloudresearch_sentry_ready(driver)
 
     # Early exit: Kantar/mrIWeb page with unsupported metaType (e.g. dragndrop)
     _unsupported_meta = _detect_sejson_unsupported_metatype(driver)
@@ -4719,6 +4724,9 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         # dans _ctx, no-op strict sur tout contexte sans app-survey-page/
         # appQuestionContainer-*.
         _wait_for_askandanswer_layout_ready(driver)
+        # Même logique additive pour le garde-fou CloudResearch/Sentry : relecture
+        # dans _ctx, no-op strict sur tout contexte sans #sentry.
+        _wait_for_cloudresearch_sentry_ready(driver)
 
         # --- FocusVision/Decipher sliderpoints (matrix dropdowns) ---
         sp_blocks = extract_sliderpoints_question_blocks(_ctx)

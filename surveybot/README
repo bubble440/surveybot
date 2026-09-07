@@ -1,4 +1,3 @@
-
 powershell -ExecutionPolicy Bypass -File .\surveybot\run_tabs.ps1
 
 # Lancer attach-takeover sur le port 9009 (debug)
