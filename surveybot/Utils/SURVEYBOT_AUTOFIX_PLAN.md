@@ -1,31 +1,52 @@
-Voici le plan complet que je recommande, de **1A jusqu’au système d’auto-correction mature**. Je le découpe volontairement en étapes courtes et validables : on ne passe jamais à l’automatisation d’un niveau tant que le niveau précédent n’est pas fiable.
+Voici le plan complet que je recommande, de **1A jusqu'au système
+d'auto-correction mature**. Je le découpe volontairement en étapes
+courtes et validables : on ne passe jamais à l'automatisation d'un
+niveau tant que le niveau précédent n'est pas fiable.
 
-## Phase 1A — Observabilité passive
+## Phase 1A --- Observabilité passive
 
-Objectif : détecter les échecs que tu repères aujourd’hui visuellement, **sans modifier le comportement du bot**.
+**Statut : implémentée sur la branche `feature/phase-1a-observability`,
+validation live restante.**
 
-On ajoute :
+Objectif : détecter les échecs que tu repères aujourd'hui visuellement,
+**sans modifier le comportement du bot**.
 
-```text
+### Implémentation réalisée
+
+La Phase 1A est câblée autour du pipeline existant avec trois modules
+dédiés :
+
+``` text
 Survey/
     question_block_validator.py
     action_validator.py
     failure_recorder.py
 ```
 
+Le système réutilise `page_snapshot.py` au lieu de créer un second
+mécanisme de capture.
+
 ### Extraction
 
-Après :
+Le flux actuel est :
 
-```text
+``` text
 dom_analyzer.analyze_dom()
+        ↓
+QuestionBlockValidator
+        ↓
+PASS → flux normal inchangé
+FAIL → FailureRecorder
+        ↓
+snapshot + validation_report.json
+        ↓
+flux normal inchangé
 ```
 
-on valide les `question_blocks`.
+Le validator reste volontairement conservateur et cherche uniquement des
+incohérences fortes, notamment :
 
-Le validator cherche uniquement des incohérences fortes :
-
-```text
+``` text
 target_id absent du DOM_REGISTRY
 question vide/non exploitable
 radio/checkbox sans options
@@ -36,27 +57,34 @@ kind/context incompatible avec registry
 locator principal impossible à résoudre
 ```
 
-Pas encore de tentative de comprendre tout le DOM.
+Il ne tente pas de réinterpréter tout le DOM et ne constitue donc pas un
+second `dom_analyzer`.
 
-### Sélection
+### Sélection / insertion
 
-Après :
+Le flux actuel est :
 
-```text
+``` text
 action_dispatcher.execute_actions_plan()
+        ↓
+ActionValidator
+        ↓
+PASS → flux normal inchangé
+FAIL → FailureRecorder
+        ↓
+snapshot + validation_report.json
+        + actions_requested.json
+        ↓
+flux normal inchangé
 ```
 
-on compare :
+L'objectif est de comparer les actions demandées avec les incohérences
+objectivement vérifiables dans le DOM/registry, sans introduire de
+nouvelle stratégie d'insertion.
 
-```text
-actions demandées
-vs
-état DOM réellement observé
-```
+Exemple de mismatch visé :
 
-Exemple :
-
-```text
+``` text
 demandé :
 Nike
 Adidas
@@ -72,9 +100,10 @@ unexpected = Puma
 
 ### En cas d'erreur
 
-Création automatique d'un snapshot enrichi :
+Le `FailureRecorder` enrichit le système de snapshot existant. Un
+incident peut produire :
 
-```text
+``` text
 snapshot/
     dom_outer.html
     dom_body.html
@@ -87,29 +116,82 @@ snapshot/
     validation_report.json
 ```
 
-Le bot continue normalement.
+### Règle fondamentale de 1A
 
-### Critère de validation
+La Phase 1A est **strictement passive** :
 
-On utilise le bot en attach comme aujourd'hui et on vérifie :
+``` text
+aucun retry
+aucune auto-correction
+aucun fallback supplémentaire
+aucune modification des valeurs retournées par analyze_dom()
+aucune modification des valeurs retournées par execute_actions_plan()
+```
 
-> quand toi tu vois une extraction ou une sélection incorrecte, le validator doit également la signaler.
+Un échec de validation est observé et enregistré, puis le bot poursuit
+son flux normal.
 
-Cible : **forte précision**, même si on ne détecte encore que 60–70 % des vrais problèmes.
+### Activation
 
-Un faux positif est plus dangereux qu'un problème non détecté.
+Pour éviter un coût inutile sur le parc réel :
 
----
+``` text
+local / attach → observabilité activée par défaut
+prod           → observabilité désactivée par défaut
+```
 
-# Phase 1B — Fiabilisation des validators
+Activation explicite possible :
 
-Objectif : réduire les faux positifs et augmenter progressivement la couverture.
+``` text
+SURVEY_OBSERVABILITY=1
+```
+
+### État Git au terme de l'implémentation
+
+``` text
+branche : feature/phase-1a-observability
+base    : playwright-migration
+avance  : 5 commits
+retard  : 0 commit
+```
+
+Les changements concernent les trois modules d'observabilité et leur
+intégration au système de snapshot/pipeline existant.
+
+### Validation live restante
+
+1A n'est considérée **validée** qu'après un run attach réel.
+
+Deux vérifications sont nécessaires :
+
+1.  **Non-régression** : lorsqu'aucune anomalie n'est détectée, le bot
+    doit fonctionner exactement comme avant.
+2.  **Détection réelle** : lorsqu'un mauvais cas d'extraction ou
+    d'insertion apparaît, un dossier `*_validation_failure` doit être
+    créé avec le rapport attendu.
+
+Critère cible : privilégier une **forte précision** plutôt qu'une
+couverture maximale. Un faux positif est plus dangereux qu'un problème
+non détecté.
+
+### BEM
+
+`BOT_EVOLUTION_MEMORY.md` n'est pas mis à jour avant la validation live.
+La mise à jour éventuelle intervient uniquement après confirmation que
+le patch fonctionne réellement sur les cas de référence.
+
+------------------------------------------------------------------------
+
+# Phase 1B --- Fiabilisation des validators
+
+Objectif : réduire les faux positifs et augmenter progressivement la
+couverture.
 
 On teste les validators sur tes DOM réels existants.
 
 On construit une petite taxonomie :
 
-```text
+``` text
 EXTRACTION_FAILURE
     missing_block
     missing_options
@@ -131,13 +213,14 @@ ACTION_FAILURE
 
 Important : **pas 50 catégories**.
 
-Une dizaine de catégories fiables vaut mieux qu'une classification ultra-fine instable.
+Une dizaine de catégories fiables vaut mieux qu'une classification
+ultra-fine instable.
 
 ### Résultat attendu
 
 Chaque incident doit pouvoir être décrit comme :
 
-```json
+``` json
 {
   "stage": "action",
   "failure_type": "selection_not_applied",
@@ -150,13 +233,13 @@ Chaque incident doit pouvoir être décrit comme :
 
 À la fin de 1B, on possède un véritable **oracle automatique partiel**.
 
----
+------------------------------------------------------------------------
 
-# Phase 2 — Création automatique de cas de reproduction
+# Phase 2 --- Création automatique de cas de reproduction
 
 Aujourd'hui tu fais manuellement :
 
-```text
+``` text
 page live
 → snapshot
 → dom_body.html
@@ -169,7 +252,7 @@ Cette étape doit disparaître.
 
 Chaque failure enregistré devient automatiquement un **case** :
 
-```text
+``` text
 failure_cases/
     case_20260905_061542/
         manifest.json
@@ -185,7 +268,7 @@ failure_cases/
 
 Le `manifest.json` contient par exemple :
 
-```text
+``` text
 stage
 failure_type
 itype
@@ -198,17 +281,19 @@ provider/domain
 
 Mais il ne contient **aucune interprétation fragile du bug**.
 
----
+------------------------------------------------------------------------
 
-# Phase 3 — Replay local déterministe
+# Phase 3 --- Replay local déterministe
 
 C'est une étape essentielle.
 
-Avant de demander à une IA de modifier le code, on doit pouvoir reproduire les erreurs autant que possible sans dépendre de la page live.
+Avant de demander à une IA de modifier le code, on doit pouvoir
+reproduire les erreurs autant que possible sans dépendre de la page
+live.
 
 On crée :
 
-```text
+``` text
 tools/replay_failure.py
 ```
 
@@ -216,13 +301,13 @@ ou son équivalent.
 
 Il devra pouvoir charger :
 
-```text
+``` text
 failure_case
 ```
 
 et rejouer au minimum :
 
-```text
+``` text
 DOM
 → dom_analyzer
 → question_blocks
@@ -233,13 +318,13 @@ Pour les problèmes d'extraction, c'est extrêmement utile.
 
 Exemple :
 
-```text
+``` text
 python replay_failure.py case_20260905_061542
 ```
 
 résultat :
 
-```text
+``` text
 EXPECTED FAILURE:
 missing_options
 
@@ -252,7 +337,7 @@ REPRODUCED
 
 Après patch :
 
-```text
+``` text
 CURRENT RESULT:
 PASS
 
@@ -268,15 +353,16 @@ Donc le replay ne couvrira pas 100 % des problèmes de sélection.
 
 Ce n'est pas grave.
 
-On ne doit surtout pas construire un navigateur artificiel gigantesque juste pour atteindre 100 %.
+On ne doit surtout pas construire un navigateur artificiel gigantesque
+juste pour atteindre 100 %.
 
----
+------------------------------------------------------------------------
 
-# Phase 4 — Générateur automatique de diagnostic
+# Phase 4 --- Générateur automatique de diagnostic
 
 À ce stade, on dispose de :
 
-```text
+``` text
 DOM
 question_blocks
 registry
@@ -289,7 +375,7 @@ On peut commencer à automatiser ton travail actuel avec ChatGPT/Claude.
 
 On crée une couche :
 
-```text
+``` text
 failure_diagnoser.py
 ```
 
@@ -297,7 +383,7 @@ Elle ne modifie rien.
 
 Elle produit un dossier diagnostic :
 
-```text
+``` text
 diagnosis.json
 ```
 
@@ -305,7 +391,7 @@ et/ou un prompt destiné à Codex.
 
 Le diagnostic doit faire la distinction entre :
 
-```text
+``` text
 symptôme observé
 comportement attendu
 cause certaine
@@ -316,7 +402,7 @@ modules probablement concernés
 
 Exemple :
 
-```text
+``` text
 Symptôme :
 17 radios visibles, seulement 12 options dans question_blocks.
 
@@ -333,15 +419,15 @@ probable
 
 Il ne doit pas dire immédiatement :
 
-```text
+``` text
 ajoute telle fonction ligne 483
 ```
 
 C'est à l'agent de coding de déterminer le patch.
 
----
+------------------------------------------------------------------------
 
-# Phase 5 — Sélection automatique du contexte code
+# Phase 5 --- Sélection automatique du contexte code
 
 Actuellement tu dois envoyer plusieurs fichiers à Claude/Codex.
 
@@ -349,7 +435,7 @@ On automatise cela.
 
 À partir du type d'échec :
 
-```text
+``` text
 failure_type
 itype
 registry metadata
@@ -359,14 +445,14 @@ on sélectionne uniquement les modules pertinents.
 
 Exemple :
 
-```text
+``` text
 selection_not_applied
 itype=checkbox
 ```
 
 peut donner :
 
-```text
+``` text
 BOT_EVOLUTION_MEMORY.md
 action_dispatcher.py
 input_checkbox.py
@@ -376,13 +462,13 @@ frame_utils.py
 
 Alors qu'un problème :
 
-```text
+``` text
 missing_options
 ```
 
 donnera plutôt :
 
-```text
+``` text
 BOT_EVOLUTION_MEMORY.md
 dom_analyzer.py
 dom_extractors_*.py concerné
@@ -393,15 +479,15 @@ L'objectif n'est pas de transmettre tout le repo.
 
 Trop de contexte dégrade souvent le diagnostic.
 
----
+------------------------------------------------------------------------
 
-# Phase 6 — Génération automatique du prompt Codex
+# Phase 6 --- Génération automatique du prompt Codex
 
 À partir du dossier `failure_case`, on génère ton prompt standard.
 
 Exemple conceptuel :
 
-```text
+``` text
 CONTEXTE
 ...
 
@@ -415,11 +501,12 @@ CONTRAINTES
 ...
 ```
 
-La section **BUG IDENTIFIÉ** sera générée automatiquement à partir du diagnostic.
+La section **BUG IDENTIFIÉ** sera générée automatiquement à partir du
+diagnostic.
 
 Elle respectera tes règles existantes :
 
-```text
+``` text
 DOM-first
 pas de provider-wide logic
 patch additif
@@ -432,7 +519,7 @@ lecture BEM obligatoire
 
 À ce stade :
 
-```text
+``` text
 failure détectée
 → case
 → diagnostic
@@ -443,15 +530,15 @@ sera automatique.
 
 Mais **Codex ne sera pas encore exécuté automatiquement**.
 
----
+------------------------------------------------------------------------
 
-# Phase 7 — Génération automatique d'un patch dans une branche isolée
+# Phase 7 --- Génération automatique d'un patch dans une branche isolée
 
 Une fois Phase 6 fiable, on autorise l'agent à coder.
 
 Le pipeline devient :
 
-```text
+``` text
 failure
 → diagnostic
 → prompt
@@ -462,13 +549,13 @@ failure
 
 Exemple :
 
-```text
+``` text
 autofix/case_20260905_061542
 ```
 
 Jamais de modification directe de :
 
-```text
+``` text
 playwright-migration
 main
 prod
@@ -476,13 +563,13 @@ prod
 
 L'agent ne doit travailler que dans une copie/branche dédiée.
 
----
+------------------------------------------------------------------------
 
-# Phase 8 — Validation statique automatique
+# Phase 8 --- Validation statique automatique
 
 Avant même de tester le comportement :
 
-```text
+``` text
 python compile
 imports
 lint minimum
@@ -491,7 +578,7 @@ tests unitaires existants
 
 On cherche les erreurs triviales :
 
-```text
+``` text
 SyntaxError
 ImportError
 NameError évident
@@ -501,19 +588,19 @@ module absent
 
 Si ça échoue :
 
-```text
+``` text
 PATCH_REJECTED
 ```
 
 Aucun test live.
 
----
+------------------------------------------------------------------------
 
-# Phase 9 — Replay automatique du bug
+# Phase 9 --- Replay automatique du bug
 
 Si le cas est rejouable :
 
-```text
+``` text
 avant patch → FAIL
 après patch → PASS
 ```
@@ -526,7 +613,7 @@ on rejoue également quelques cas historiques voisins.
 
 Par exemple si on corrige :
 
-```text
+``` text
 Decipher checkbox
 ```
 
@@ -534,15 +621,15 @@ on rejoue automatiquement plusieurs snapshots Decipher déjà validés.
 
 Cela constitue progressivement ta **suite de non-régression DOM**.
 
----
+------------------------------------------------------------------------
 
-# Phase 10 — Test live attach contrôlé
+# Phase 10 --- Test live attach contrôlé
 
 Certains bugs ne peuvent être validés qu'avec une vraie page.
 
 On ajoute donc un mode :
 
-```text
+``` text
 AUTOFIX_LIVE_VALIDATE=1
 ```
 
@@ -550,7 +637,7 @@ En attach uniquement.
 
 Le système :
 
-```text
+``` text
 applique le patch
 → relance/recharge le code
 → analyse la page actuelle
@@ -566,7 +653,7 @@ Il teste uniquement la page/cas qui a déclenché l'incident.
 
 Budget strict :
 
-```text
+``` text
 1 patch
 1 validation
 éventuellement 1 deuxième correction
@@ -575,20 +662,20 @@ puis abandon
 
 Jamais :
 
-```text
+``` text
 while not fixed:
     ask_codex_again()
 ```
 
----
+------------------------------------------------------------------------
 
-# Phase 11 — Validation anti-régression
+# Phase 11 --- Validation anti-régression
 
 C'est là que `BOT_EVOLUTION_MEMORY.md` devient particulièrement utile.
 
 Avant d'accepter un patch :
 
-```text
+``` text
 cas actuel
 +
 cas historiques du même module
@@ -600,7 +687,7 @@ doivent continuer à fonctionner.
 
 On pourra conserver quelque chose comme :
 
-```text
+``` text
 regression_cases/
     radio/
     checkbox/
@@ -615,13 +702,13 @@ On ne cherche pas des milliers de tests.
 
 Une sélection de **DOM représentatifs** suffit.
 
----
+------------------------------------------------------------------------
 
-# Phase 12 — Score de confiance du patch
+# Phase 12 --- Score de confiance du patch
 
 On évite le choix binaire trop simpliste :
 
-```text
+``` text
 test passé = déployer
 ```
 
@@ -629,7 +716,7 @@ On calcule plutôt une confiance.
 
 Par exemple :
 
-```text
+``` text
 reproduction bug : PASS
 cas ciblé : PASS
 régressions : PASS
@@ -640,19 +727,19 @@ live validation : PASS
 
 alors :
 
-```text
+``` text
 confidence = HIGH
 ```
 
 Si le replay est impossible :
 
-```text
+``` text
 confidence = MEDIUM
 ```
 
 Si un test voisin échoue :
 
-```text
+``` text
 confidence = REJECT
 ```
 
@@ -660,21 +747,21 @@ Pas besoin d'une formule mathématique sophistiquée.
 
 Trois niveaux suffisent :
 
-```text
+``` text
 HIGH
 MEDIUM
 REJECT
 ```
 
----
+------------------------------------------------------------------------
 
-# Phase 13 — Validation humaine simplifiée
+# Phase 13 --- Validation humaine simplifiée
 
 À ce stade ton travail change complètement.
 
 Au lieu de :
 
-```text
+``` text
 observer le survey
 lire les logs
 repérer le bug
@@ -687,7 +774,7 @@ tester
 
 tu reçois :
 
-```text
+``` text
 BUG détecté
 
 Cause probable :
@@ -708,22 +795,22 @@ HIGH
 
 avec :
 
-```text
+``` text
 [APPROUVER]
 [REJETER]
 ```
 
 C'est le premier niveau réellement utile de semi-autonomie.
 
----
+------------------------------------------------------------------------
 
-# Phase 14 — Mise à jour automatique proposée de BEM
+# Phase 14 --- Mise à jour automatique proposée de BEM
 
 Après validation du patch seulement.
 
 Le système génère une proposition d'entrée :
 
-```text
+``` text
 BOT_EVOLUTION_MEMORY.md
 ```
 
@@ -731,22 +818,23 @@ mais ne l'écrit pas automatiquement au début.
 
 Tu valides :
 
-```text
+``` text
 Patch validé
 → générer entrée BEM
 → review
 → commit
 ```
 
-Plus tard, on pourra automatiser l'écriture pour les patches `HIGH confidence`.
+Plus tard, on pourra automatiser l'écriture pour les patches
+`HIGH confidence`.
 
----
+------------------------------------------------------------------------
 
-# Phase 15 — Commit automatique
+# Phase 15 --- Commit automatique
 
 Une fois :
 
-```text
+``` text
 patch PASS
 régression PASS
 live PASS
@@ -755,25 +843,25 @@ BEM mise à jour
 
 le système crée un commit propre :
 
-```text
+``` text
 fix(survey): support <pattern DOM>
 ```
 
 avec référence au case :
 
-```text
+``` text
 case_id=20260905_061542
 ```
 
 La branche reste séparée.
 
----
+------------------------------------------------------------------------
 
-# Phase 16 — Merge semi-automatique
+# Phase 16 --- Merge semi-automatique
 
 Première version :
 
-```text
+``` text
 HIGH confidence
 → proposer merge
 → confirmation humaine
@@ -785,7 +873,7 @@ Cela te permet d'observer le système pendant plusieurs semaines.
 
 On mesure notamment :
 
-```text
+``` text
 nombre de bugs détectés
 vrais positifs
 faux positifs
@@ -794,13 +882,13 @@ patches validés du premier coup
 régressions
 ```
 
----
+------------------------------------------------------------------------
 
-# Phase 17 — Auto-fix supervisé
+# Phase 17 --- Auto-fix supervisé
 
 Quand les statistiques deviennent bonnes :
 
-```text
+``` text
 certaines catégories
 +
 HIGH confidence
@@ -814,7 +902,7 @@ peuvent être mergées automatiquement.
 
 Exemple :
 
-```text
+``` text
 missing option simple
 locator cassé
 frame context oublié
@@ -823,7 +911,7 @@ nouveau pattern DOM strictement identifié
 
 Mais les changements touchant :
 
-```text
+``` text
 orchestration
 locks
 prod
@@ -835,13 +923,14 @@ prompt global
 
 restent obligatoirement manuels.
 
----
+------------------------------------------------------------------------
 
-# Phase 18 — Auto-fix live complet en attach
+# Phase 18 --- Auto-fix live complet en attach
 
-Le système peut alors fonctionner comme un développeur local automatisé :
+Le système peut alors fonctionner comme un développeur local automatisé
+:
 
-```text
+``` text
 survey tourne
     ↓
 bug détecté
@@ -863,19 +952,21 @@ validator PASS
 patch proposé
 ```
 
-À ce niveau tu peux littéralement laisser le bot parcourir des surveys pendant plusieurs heures.
+À ce niveau tu peux littéralement laisser le bot parcourir des surveys
+pendant plusieurs heures.
 
 Au retour tu regardes uniquement les incidents.
 
----
+------------------------------------------------------------------------
 
-# Phase 19 — Fleet learning / mémoire globale des extracteurs
+# Phase 19 --- Fleet learning / mémoire globale des extracteurs
 
-Une fois plusieurs bots en fonctionnement, les incidents deviennent une source d'apprentissage.
+Une fois plusieurs bots en fonctionnement, les incidents deviennent une
+source d'apprentissage.
 
 Exemple :
 
-```text
+``` text
 Bot A rencontre nouveau widget X.
 → patch validé.
 
@@ -883,11 +974,12 @@ Bot B rencontre widget X deux heures plus tard.
 → déjà supporté.
 ```
 
-Les snapshots et `failure_type` permettent également de déterminer quels extracteurs causent le plus de problèmes.
+Les snapshots et `failure_type` permettent également de déterminer quels
+extracteurs causent le plus de problèmes.
 
 Exemple :
 
-```text
+``` text
 input_radio       97.8 %
 input_checkbox    91.2 %
 dropdown          88.5 %
@@ -896,15 +988,16 @@ matrix            76.3 %
 
 On sait alors précisément où investir du temps.
 
----
+------------------------------------------------------------------------
 
-# Phase 20 — Production
+# Phase 20 --- Production
 
-Je ne recommande **pas** de faire tourner Codex directement dans le processus SurveyBot de production.
+Je ne recommande **pas** de faire tourner Codex directement dans le
+processus SurveyBot de production.
 
 Architecture finale plus saine :
 
-```text
+``` text
 PROD BOTS
    │
    └── détectent + enregistrent incidents
@@ -927,7 +1020,7 @@ Le bot de prod reste donc simple et prévisible.
 
 Il ne devient pas :
 
-```text
+``` text
 survey bot
 + coding agent
 + git client
@@ -937,11 +1030,11 @@ survey bot
 
 Ce serait fragile.
 
----
+------------------------------------------------------------------------
 
 # Architecture finale cible
 
-```text
+``` text
                        SURVEYBOT
                           │
               ┌───────────┴───────────┐
@@ -1008,9 +1101,9 @@ Ce serait fragile.
 
 Je suivrais exactement cet ordre :
 
-```text
-1A  Observabilité passive
-1B  Stabilisation des validators
+``` text
+1A  Observabilité passive — IMPLÉMENTÉE, validation live restante
+1B  Stabilisation des validators — après validation de 1A
 2   Failure cases normalisés
 3   Replay local
 4   Diagnostic automatique
@@ -1032,4 +1125,8 @@ Je suivrais exactement cet ordre :
 20  Pipeline de correction séparé de Prod
 ```
 
-Le point le plus important est que **1A → 12 constituent le vrai cœur du système**. Les étapes 13–20 sont principalement de l'automatisation opérationnelle. Si les validators, le replay et les tests de régression sont mauvais, automatiser davantage ne fera qu'accélérer la production de mauvais patches.
+Le point le plus important est que **1A → 12 constituent le vrai cœur du
+système**. Les étapes 13--20 sont principalement de l'automatisation
+opérationnelle. Si les validators, le replay et les tests de régression
+sont mauvais, automatiser davantage ne fera qu'accélérer la production
+de mauvais patches.

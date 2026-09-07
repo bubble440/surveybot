@@ -32,6 +32,7 @@ def record_validation_failure(
             driver,
             reason=f"{stage}_validation_failure",
             question_blocks=question_blocks,
+            artifact_profile="action_validation" if stage == "action" else None,
         )
         out = Path(folder)
         (out / "validation_report.json").write_text(

@@ -8,13 +8,17 @@ Les vérifications d'état DOM fin (checked/value/widget) seront élargies en 1B
 après collecte de cas réels afin d'éviter les faux positifs.
 """
 
+import unicodedata
 from typing import Any
 
 from Survey.dom_registry import get_target
 
 
 def _norm(value: Any) -> str:
-    return " ".join(str(value or "").split()).strip()
+    # Même forme canonique que la couche d'action : les libellés extraits du
+    # DOM et ceux renvoyés par le modèle peuvent différer uniquement par la
+    # composition Unicode d'un accent (NFC/NFD).
+    return " ".join(unicodedata.normalize("NFKC", str(value or "")).split()).strip()
 
 
 def _norm_lc(value: Any) -> str:

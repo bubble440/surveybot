@@ -4473,6 +4473,68 @@ def _apply_by_target_id(
 
                 _maybe_advance_mx_vertical_carousel_after_answer()
 
+                # CloudResearch/Sentry : les choix radio sont des divs Vue.js,
+                # sans input natif. Le clic ci-dessus est déjà celui qui applique
+                # correctement la sélection ; cette vérification additive lit le
+                # signal DOM propre au widget, au lieu de le classer à tort en
+                # échec parce que _is_selected() ne peut pas s'appliquer.
+                # Guard strict : payload de l'extracteur dédié + option
+                # .choice-option.random-choice dans #sentry + marqueur visuel ET
+                # confirmation textuelle post-action sur la même valeur.
+                if payload.get("cloudresearch_sentry") and resolved_itype == "radio":
+                    def _cloudresearch_sentry_selection_confirmed(node, expected: str) -> bool:
+                        try:
+                            return bool(node.evaluate("""(_el, expectedValue) => {
+                                const node = _el;
+                                if (!node || !node.matches(
+                                    'div.choice-option.random-choice[role="button"]'
+                                )) return false;
+                                const sentry = node.closest('#sentry[role="main"]');
+                                if (!sentry) return false;
+
+                                const norm = value => String(value || '')
+                                    .normalize('NFKC')
+                                    .replace(/\\s+/g, ' ')
+                                    .trim();
+                                const expected = norm(expectedValue);
+                                const selectedText = node.querySelector(
+                                    '.cr-ct.cr-custom-selected'
+                                );
+                                if (!expected || !selectedText || norm(selectedText.textContent) !== expected) {
+                                    return false;
+                                }
+
+                                const confirmation = sentry.querySelector('.cr-custom-dat');
+                                const confirmationLabel = confirmation && confirmation.previousElementSibling;
+                                return !!(
+                                    confirmation
+                                    && confirmationLabel
+                                    && confirmationLabel.classList.contains('cr-custom-info')
+                                    && norm(confirmation.textContent) === expected
+                                );
+                            }""", expected))
+                        except Exception:
+                            return False
+
+                    _crs_deadline = time.time() + 1.0
+                    while time.time() < _crs_deadline:
+                        _crs_current = _find_best_visible(xp) or el
+                        if _cloudresearch_sentry_selection_confirmed(_crs_current, value):
+                            log_info(
+                                "[TARGET]",
+                                "apply ok=true strategy=cloudresearch_sentry_selection_signal "
+                                "reason=selected_marker_and_confirmation",
+                            )
+                            return True
+                        time.sleep(0.05)
+                    if debug_target:
+                        log_debug(
+                            "[TARGET_DEBUG]",
+                            "cloudresearch_sentry_selection_signal: no matching post-click "
+                            f"selection signal value={value!r} xpath={xp!r}",
+                        )
+                    return False
+
                 def _ipsos_slider_value_matches(node, expected: str) -> bool:
                     """Validation DOM pour les sliders Likert IPSOS (bootstrap-slider)."""
                     if not payload.get("ipsos_slider"):

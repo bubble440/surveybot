@@ -71,7 +71,12 @@ def _wait_dom_settle(
         time.sleep(poll_s)
 
 
-def _dump_frames_best_effort(driver, folder: Path) -> List[Dict[str, Any]]:
+def _dump_frames_best_effort(
+    driver,
+    folder: Path,
+    *,
+    include_page_source: bool = True,
+) -> List[Dict[str, Any]]:
     """Dump les DOM des iframes dans ./frames (best-effort).
 
     Utilise frame_utils.iter_frame_chains / switch_to_frame_chain sur un objet
@@ -139,17 +144,20 @@ def _dump_frames_best_effort(driver, folder: Path) -> List[Dict[str, Any]]:
             except Exception:
                 outer = ""
 
-            try:
-                src = current_frame.content() or ""
-            except Exception:
-                src = ""
-
             chain_str = "_".join(str(x) for x in chain)
             outer_name = f"frame_{chain_str}.dom_outer.html"
-            src_name = f"frame_{chain_str}.page_source.html"
 
             (frames_dir / outer_name).write_text(outer, encoding="utf-8", errors="ignore")
-            (frames_dir / src_name).write_text(src, encoding="utf-8", errors="ignore")
+
+            files = {"dom_outer": f"frames/{outer_name}"}
+            if include_page_source:
+                try:
+                    src = current_frame.content() or ""
+                except Exception:
+                    src = ""
+                src_name = f"frame_{chain_str}.page_source.html"
+                (frames_dir / src_name).write_text(src, encoding="utf-8", errors="ignore")
+                files["page_source"] = f"frames/{src_name}"
 
             out.append(
                 {
@@ -159,10 +167,7 @@ def _dump_frames_best_effort(driver, folder: Path) -> List[Dict[str, Any]]:
                     "title": title,
                     "text_len": text_len,
                     "inputs_count": inputs_count,
-                    "files": {
-                        "dom_outer": f"frames/{outer_name}",
-                        "page_source": f"frames/{src_name}",
-                    },
+                    "files": files,
                 }
             )
 
@@ -183,6 +188,7 @@ def dump_page_snapshot(
     out_root: Optional[str] = None,
     question_blocks: Any = None,
     snapshot_name: Optional[str] = None,
+    artifact_profile: Optional[str] = None,
 ) -> str:
     """
     Sauvegarde un snapshot de page "debug" :
@@ -192,8 +198,14 @@ def dump_page_snapshot(
     - viewport.png (screenshot viewport)
     - page.mhtml (si Chrome/Chromium via CDP natif Playwright)
     - question_blocks.json (si fourni)
+
+    Le profil ``action_validation`` est réservé aux captures automatiques de
+    Phase 1A : les artefacts y sont explicitement post-action et les
+    représentations HTML/MHTML redondantes sont omises. Les autres appelants
+    conservent le format de snapshot historique.
     """
     page = driver
+    is_action_validation = artifact_profile == "action_validation"
 
     ts = time.strftime("%Y%m%d_%H%M%S")
 
@@ -271,6 +283,16 @@ def dump_page_snapshot(
         "url": url,
         "title": title,
     }
+    if is_action_validation:
+        meta.update(
+            {
+                "capture_phase": "post_action",
+                "artifacts": {
+                    "dom": "post_action_dom.html",
+                    "screenshot": "post_action_viewport.png",
+                },
+            }
+        )
     (folder / "meta.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -280,58 +302,66 @@ def dump_page_snapshot(
         outer = snapshot_ctx.evaluate("() => document.documentElement.outerHTML") or ""
     except Exception:
         outer = ""
-    (folder / "dom_outer.html").write_text(outer, encoding="utf-8", errors="ignore")
+    dom_name = "post_action_dom.html" if is_action_validation else "dom_outer.html"
+    (folder / dom_name).write_text(outer, encoding="utf-8", errors="ignore")
 
-    # DOM body
-    try:
-        body_outer = snapshot_ctx.evaluate("() => document.body ? document.body.outerHTML : ''") or ""
-    except Exception:
-        body_outer = ""
-    (folder / "dom_body.html").write_text(body_outer, encoding="utf-8", errors="ignore")
-
-    if forced:
+    if not is_action_validation:
+        # DOM body
         try:
-            (folder / f"{_slug(forced)}.dom_body.html").write_text(body_outer, encoding="utf-8", errors="ignore")
+            body_outer = snapshot_ctx.evaluate("() => document.body ? document.body.outerHTML : ''") or ""
+        except Exception:
+            body_outer = ""
+        (folder / "dom_body.html").write_text(body_outer, encoding="utf-8", errors="ignore")
+
+        if forced:
+            try:
+                (folder / f"{_slug(forced)}.dom_body.html").write_text(body_outer, encoding="utf-8", errors="ignore")
+            except Exception:
+                pass
+
+        # page_source
+        try:
+            src = snapshot_ctx.content() or ""
+        except Exception:
+            src = ""
+        (folder / "page_source.html").write_text(src, encoding="utf-8", errors="ignore")
+
+        # Texte visible
+        try:
+            body_text = page.evaluate("() => (document.body && (document.body.innerText || '')) || ''") or ""
+        except Exception:
+            body_text = ""
+        try:
+            (folder / "body_text.txt").write_text(body_text, encoding="utf-8", errors="ignore")
         except Exception:
             pass
 
-    # page_source
-    try:
-        src = snapshot_ctx.content() or ""
-    except Exception:
-        src = ""
-    (folder / "page_source.html").write_text(src, encoding="utf-8", errors="ignore")
-
-    # Texte visible
-    try:
-        body_text = page.evaluate("() => (document.body && (document.body.innerText || '')) || ''") or ""
-    except Exception:
-        body_text = ""
-    try:
-        (folder / "body_text.txt").write_text(body_text, encoding="utf-8", errors="ignore")
-    except Exception:
-        pass
-
     # Screenshot viewport
     try:
-        page.screenshot(path=str(folder / "viewport.png"))
+        screenshot_name = "post_action_viewport.png" if is_action_validation else "viewport.png"
+        page.screenshot(path=str(folder / screenshot_name))
     except Exception:
         pass
 
-    # MHTML via CDP natif Playwright
-    try:
-        cdp_session = page.context.new_cdp_session(page)
-        res = cdp_session.send("Page.captureSnapshot", {"format": "mhtml"})
-        cdp_session.detach()
-        data = (res or {}).get("data")
-        if data:
-            (folder / "page.mhtml").write_text(data, encoding="utf-8", errors="ignore")
-    except Exception as e:
-        (folder / "mhtml_error.txt").write_text(repr(e), encoding="utf-8")
+    if not is_action_validation:
+        # MHTML via CDP natif Playwright
+        try:
+            cdp_session = page.context.new_cdp_session(page)
+            res = cdp_session.send("Page.captureSnapshot", {"format": "mhtml"})
+            cdp_session.detach()
+            data = (res or {}).get("data")
+            if data:
+                (folder / "page.mhtml").write_text(data, encoding="utf-8", errors="ignore")
+        except Exception as e:
+            (folder / "mhtml_error.txt").write_text(repr(e), encoding="utf-8")
 
     # Dump frames
     try:
-        frames = _dump_frames_best_effort(driver, folder)
+        frames = _dump_frames_best_effort(
+            driver,
+            folder,
+            include_page_source=not is_action_validation,
+        )
     except Exception:
         frames = []
 
