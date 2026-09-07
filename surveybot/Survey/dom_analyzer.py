@@ -121,6 +121,7 @@ try:
         _extract_qualtrics_form_multi_text_blocks,
         _extract_qualtrics_te_matrix_multi_text_blocks,
         _extract_qualtrics_bankedsa_single_row_radio_blocks,
+        _extract_qualtrics_rank_order_dragdrop_blocks,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
         _extract_savanta_jqm_carousel_block,
@@ -254,6 +255,7 @@ except ImportError:
         _extract_qualtrics_form_multi_text_blocks,
         _extract_qualtrics_te_matrix_multi_text_blocks,
         _extract_qualtrics_bankedsa_single_row_radio_blocks,
+        _extract_qualtrics_rank_order_dragdrop_blocks,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
         _extract_savanta_jqm_carousel_block,
@@ -1700,6 +1702,18 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         qualtrics_bankedsa_blocks = _extract_qualtrics_bankedsa_single_row_radio_blocks(driver, frame_chain)
         if qualtrics_bankedsa_blocks:
             question_blocks.extend(qualtrics_bankedsa_blocks)
+            _qualtrics_page = True
+    except Exception:
+        pass
+
+    # --- 0h-bis-3h) Qualtrics Rank Order Drag&Drop visuel (div.ChoiceStructure > div.DND >
+    # ul.ui-sortable[role='list'], sans input natif) ---
+    # Couvre le cas Rank Order rendu en jQuery UI Sortable pur (aucun radio/checkbox/select),
+    # non couvert par 0h-bis-3/3b/3g qui exigent tous un input natif. Voir BOT_EVOLUTION_MEMORY.md.
+    try:
+        qualtrics_rank_order_dragdrop_blocks = _extract_qualtrics_rank_order_dragdrop_blocks(driver, frame_chain)
+        if qualtrics_rank_order_dragdrop_blocks:
+            question_blocks.extend(qualtrics_rank_order_dragdrop_blocks)
             _qualtrics_page = True
     except Exception:
         pass

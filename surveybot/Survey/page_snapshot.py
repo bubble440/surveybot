@@ -477,7 +477,7 @@ def _install_extraction_observer() -> None:
             blocks = result or []
             try:
                 _LAST_EXTRACTED_BLOCKS[id(driver)] = blocks
-                report = validate_question_blocks(blocks)
+                report = validate_question_blocks(blocks, driver=driver)
                 if not report.get("ok", True):
                     record_validation_failure(
                         driver,

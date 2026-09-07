@@ -25,10 +25,72 @@ def _norm_lc(value: Any) -> str:
     return _norm(value).lower()
 
 
-def validate_question_blocks(question_blocks: list[dict] | None) -> dict:
+def _qualtrics_ranked_choices_signal(driver) -> dict | None:
+    """Retourne un signal minimal pour un ranking Qualtrics non extrait.
+
+    Ce n'est pas un extracteur : il ne lit ni ne reconstruit les options. Il
+    constate uniquement le pattern DOM complet du widget de ranking observé,
+    afin d'éviter de classer un écran Qualtrics transitoire ou CTA-only comme
+    une anomalie d'extraction.
+    """
+    try:
+        current_frame = getattr(driver, "_current_frame", driver)
+        signal = current_frame.evaluate("""() => {
+            const root = document.querySelector('#Questions[role="main"]');
+            if (!root) return null;
+
+            const visible = node => {
+                if (!node || node.classList.contains('Hidden')) return false;
+                const style = getComputedStyle(node);
+                return style.display !== 'none'
+                    && style.visibility !== 'hidden'
+                    && node.getClientRects().length > 0;
+            };
+
+            for (const question of root.querySelectorAll(
+                '.QuestionOuter[id^="QID"]'
+            )) {
+                if (!visible(question)) continue;
+                const questionText = question.querySelector('.QuestionText');
+                const ranking = question.querySelector(
+                    '.ChoiceStructure .DND > ul.ui-sortable[role="list"]'
+                );
+                const choices = ranking
+                    ? ranking.querySelectorAll('li[role="listitem"][data-choiceid]')
+                    : [];
+                if (!questionText || questionText.textContent.trim().length < 8 || choices.length < 2) {
+                    continue;
+                }
+                const next = document.querySelector('#NextButton[type="button"]');
+                if (!next || !visible(next)) continue;
+                return {
+                    question_id: question.id || '',
+                    choices_count: choices.length,
+                };
+            }
+            return null;
+        }""")
+        return signal if isinstance(signal, dict) else None
+    except Exception:
+        return None
+
+
+def validate_question_blocks(question_blocks: list[dict] | None, *, driver=None) -> dict:
     """Retourne un rapport JSON-sérialisable sans effet de bord."""
     blocks = question_blocks or []
     issues: list[dict] = []
+
+    # Une liste vide est légitime sur les transitions et écrans sans question.
+    # Le seul cas signalé ici est le ranking Qualtrics complet, signal DOM
+    # strictement défini ci-dessus et confirmé par le DOM de reproduction.
+    if not blocks and driver is not None:
+        signal = _qualtrics_ranked_choices_signal(driver)
+        if signal:
+            issues.append({
+                "failure_type": "missing_block",
+                "dom_signal": "qualtrics_ranked_choices",
+                **signal,
+            })
 
     for idx, block in enumerate(blocks):
         if not isinstance(block, dict):

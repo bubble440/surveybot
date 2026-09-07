@@ -13707,6 +13707,188 @@ def _extract_qualtrics_bankedsa_single_row_radio_blocks(
 
 
 # ================================================================================
+# PLATEFORME : QUALTRICS NATIF — RANK ORDER DRAG & DROP (jQuery UI Sortable, sans input natif)
+# ================================================================================
+
+def _extract_qualtrics_rank_order_dragdrop_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Qualtrics natif — question "Rank Order" en variante Drag & Drop (widget jQuery UI
+    Sortable), sans aucun input natif exploitable (ni radio, ni checkbox, ni select, ni
+    champ caché). Items purement visuels (images composites sans alt informatif) — voir
+    BOT_EVOLUTION_MEMORY.md.
+
+    Structure DOM confirmée : div.QuestionOuter > ... > div.ChoiceStructure > div.DND >
+    ul.ui-sortable[role='list'] > li[data-choiceid] (rang courant affiché via
+    <span class="rank">, contenu de l'option porté par <label><img alt="..."></label>).
+
+    Non-couverture par les 7 extracteurs Qualtrics ChoiceStructure existants
+    (_extract_qualtrics_choice_structure_radio_blocks / checkbox_blocks /
+    _extract_qualtrics_bankedsa_single_row_radio_blocks, etc.) : ceux-ci exigent tous un
+    `input[type=radio/checkbox]` (ou un `<select>`) sous `ul.ChoiceStructure` ou
+    `table.ChoiceStructure` — absent ici (conteneur en `div.ChoiceStructure`, aucun input).
+
+    Garde DOM strict (additif, scoped à ce seul pattern) :
+    1. `div.ChoiceStructure > div.DND > ul.ui-sortable[role='list']`
+    2. >= 2 `li[data-choiceid]` dans ce `ul`
+    3. Aucun `input[type=radio]`, `input[type=checkbox]` ni `select` dans ce `ul`
+       (garantit la non-collision avec tout pattern à input natif, existant ou futur)
+
+    Bloc minimal, DOM-first strict : aucune lecture de `alt`/image (sans valeur
+    informative ici, cf. BOT_EVOLUTION_MEMORY.md), aucun texte à interpréter. Les
+    "options" exposées au pipeline sont des libellés positionnels neutres
+    ("Item 1".."Item N", générés uniquement à partir de la position DOM) afin que
+    l'ordre cible qui leur est assigné en aval (même mécanisme ordinal que
+    aa_ranking_dragdrop/alchemer_rank_dragdrop/decipher_ranksort_dropdown, cf.
+    action_dispatcher.py) ne puisse jamais dépendre du contenu visuel des images : aucun
+    signal dérivé de l'image n'est jamais transmis. L'application se fait par un drag
+    pointeur réellement simulé sur le widget jQuery UI Sortable (voir
+    _qualtrics_rank_order_dragdrop_apply, action_dispatcher.py) — pas de mutation de
+    valeur, pas de clic seul.
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+
+    try:
+        max_items = int(os.getenv("QUALTRICS_RANK_ORDER_DND_MAX_ITEMS", "12") or "12")
+        if max_items <= 0:
+            max_items = 12
+    except Exception:
+        max_items = 12
+
+    try:
+        containers = driver.query_selector_all("div.QuestionOuter")
+    except Exception:
+        return blocks
+
+    for idx, container in enumerate(containers):
+        try:
+            sortable_uls = container.query_selector_all(
+                "div.ChoiceStructure > div.DND > ul.ui-sortable[role='list']"
+            )
+        except Exception:
+            sortable_uls = []
+
+        for ul_idx, ul in enumerate(sortable_uls):
+            try:
+                items = ul.query_selector_all("li[data-choiceid]")
+            except Exception:
+                items = []
+            if len(items) < 2:
+                continue
+            if len(items) > max_items:
+                log_debug(
+                    "[DOM_QUALTRICS_RANK_ORDER_DND]",
+                    f"budget dépassé items={len(items)} max={max_items} — abandon",
+                )
+                continue
+
+            # Garde d'exclusion stricte : aucun input natif exploitable dans ce ul.
+            try:
+                native_inputs = ul.query_selector_all(
+                    "input[type='radio'], input[type='checkbox'], select"
+                )
+            except Exception:
+                native_inputs = []
+            if native_inputs:
+                continue
+
+            question = ""
+            for q_sel in (
+                "div.Inner fieldset legend div.QuestionText",
+                "fieldset legend div.QuestionText",
+                "legend .QuestionText",
+                "div.QuestionText",
+            ):
+                try:
+                    q_nodes = container.query_selector_all(q_sel)
+                except Exception:
+                    q_nodes = []
+                for qn in q_nodes:
+                    txt = _norm(qn.inner_text() or "")
+                    if txt:
+                        question = txt
+                        break
+                if question:
+                    break
+            if not question:
+                continue
+
+            try:
+                ul_id = (ul.get_attribute("id") or "").strip()
+            except Exception:
+                ul_id = ""
+            if not ul_id:
+                continue
+
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+            choice_id_map: dict[str, str] = {}
+            for item_idx, item in enumerate(items):
+                try:
+                    cid = (item.get_attribute("data-choiceid") or "").strip()
+                except Exception:
+                    cid = ""
+                if not cid:
+                    continue
+
+                label = f"Item {item_idx + 1}"
+                nk = _norm_key(label)
+                if not nk or nk in option_xpath_map:
+                    continue
+
+                xp = (
+                    "(//ul[@id=" + _xpath_literal(ul_id) + "]"
+                    "/li[@data-choiceid=" + _xpath_literal(cid) + "])[1]"
+                )
+                option_xpath_map[nk] = xp
+                choice_id_map[nk] = cid
+                options.append(label)
+
+            # Couverture stricte requise : un item sans data-choiceid exploitable rend le
+            # ul entier non fiable pour le drag (abandon contrôlé, DOM inattendu).
+            if len(options) != len(items) or len(options) < 2:
+                continue
+
+            group_key = f"qualtrics_rank_order_dragdrop:{ul_id}"
+            target_id = make_target_id("group", group_key, question)
+            ul_xpath = f"(//ul[@id={_xpath_literal(ul_id)}])[1]"
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "checkbox",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                    "qualtrics_rank_order_dragdrop": True,
+                    "qualtrics_rank_order_dragdrop_ul_xpath": ul_xpath,
+                    "qualtrics_rank_order_dragdrop_choice_id_map": choice_id_map,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "checkbox",
+                    "options": options,
+                    "max_select": len(options),
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                        "qualtrics_rank_order_dragdrop": True,
+                        "container_index": idx,
+                        "ul_index": ul_idx,
+                    },
+                }
+            )
+
+    log_info("[DOM_QUALTRICS_RANK_ORDER_DND]", f"blocks_extracted={len(blocks)}")
+    return blocks
+
+
+# ================================================================================
 # PLATEFORME : ALCHEMER / SURVEYGIZMO — RANKING DRAG-DROP
 # ================================================================================
 

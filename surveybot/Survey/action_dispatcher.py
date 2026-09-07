@@ -1142,6 +1142,181 @@ def _aa_ranking_dragdrop_apply(driver, drop_list_xpath: str, label: str, target_
     return False
 
 
+# --- Qualtrics natif : Rank Order drag & drop (jQuery UI Sortable, sans input natif) ---
+# Bloc posé par _extract_qualtrics_rank_order_dragdrop_blocks (dom_extractors_misc.py), flag
+# qualtrics_rank_order_dragdrop=True. Items purement visuels (pas de texte informatif) :
+# localisation par data-choiceid (pas par texte, contrairement à aa_ranking_dragdrop), même
+# technique de drag pointeur réellement simulé (mousedown/mousemove par pas/mouseup).
+def _qualtrics_rank_order_dragdrop_locate(driver, ul_xpath: str, choice_id: str):
+    """
+    Localise, dans le `ul.ui-sortable` visé par `ul_xpath`, le `li[data-choiceid]` correspondant
+    à `choice_id`. Retourne {"index": int, "count": int, "left"/"top"/"width"/"height": float}
+    ou None.
+    """
+    try:
+        _ul_sel = ul_xpath if ul_xpath.startswith(("xpath=", "//", "..")) else "xpath=" + ul_xpath
+        ul = driver.query_selector(_ul_sel)
+    except Exception:
+        ul = None
+    if not ul:
+        return None
+
+    needle = (choice_id or "").replace("\\", "\\\\").replace("'", "\\'")
+    try:
+        data = driver.evaluate(
+            f"""(_ul) => {{
+                const needle = '{needle}';
+                const items = Array.from(_ul.querySelectorAll('li[data-choiceid]'));
+                const idx = items.findIndex(it => it.getAttribute('data-choiceid') === needle);
+                if (idx === -1) return null;
+                const r = items[idx].getBoundingClientRect();
+                return {{index: idx, count: items.length, left: r.left, top: r.top, width: r.width, height: r.height}};
+            }}""",
+            ul,
+        )
+    except Exception:
+        data = None
+    return data if isinstance(data, dict) else None
+
+
+def _qualtrics_rank_order_dragdrop_slot_rect(driver, ul_xpath: str, slot_index: int):
+    """Rectangle du `li[data-choiceid]` actuellement à l'index `slot_index` dans le ul, ou None."""
+    try:
+        _ul_sel = ul_xpath if ul_xpath.startswith(("xpath=", "//", "..")) else "xpath=" + ul_xpath
+        ul = driver.query_selector(_ul_sel)
+    except Exception:
+        ul = None
+    if not ul:
+        return None
+    try:
+        data = driver.evaluate(
+            f"""(_ul) => {{
+                const items = Array.from(_ul.querySelectorAll('li[data-choiceid]'));
+                const it = items[{int(slot_index)}];
+                if (!it) return null;
+                const r = it.getBoundingClientRect();
+                return {{left: r.left, top: r.top, width: r.width, height: r.height}};
+            }}""",
+            ul,
+        )
+    except Exception:
+        data = None
+    return data if isinstance(data, dict) else None
+
+
+def _qualtrics_rank_order_dragdrop_suppress_native_img_drag(driver, ul_xpath: str) -> None:
+    """
+    Neutralise le drag natif HTML5 des <img> avant un drag pointeur simulé sur le ul.ui-sortable.
+
+    Cause : les items du widget ne portent que des <img> (aucun texte cliquable) ; un
+    mousedown+move simulé au-dessus d'une <img draggable> (comportement par défaut du
+    navigateur) déclenche le drag natif du navigateur en concurrence avec le drag jQuery UI
+    Sortable (mouse-based), au lieu de/en plus de celui-ci. Best-effort, jamais bloquant : ne
+    touche à aucun CTA/side-effect métier, même famille de fix que
+    _aa_ranking_dragdrop_suppress_text_selection ci-dessus (neutraliser un comportement natif
+    du navigateur qui casse un drag pointeur simulé).
+    """
+    try:
+        _ul_sel = ul_xpath if ul_xpath.startswith(("xpath=", "//", "..")) else "xpath=" + ul_xpath
+        ul = driver.query_selector(_ul_sel)
+    except Exception:
+        ul = None
+    if not ul:
+        return
+    try:
+        driver.evaluate(
+            "(_ul) => { _ul.querySelectorAll('img').forEach(img => { img.draggable = false; }); }",
+            ul,
+        )
+    except Exception:
+        pass
+
+
+def _qualtrics_rank_order_dragdrop_apply(
+    driver, ul_xpath: str, choice_id: str, target_index: int, *, max_attempts: int = 2
+) -> bool:
+    """
+    Déplace le `li[data-choiceid=choice_id]` du `ul.ui-sortable` Qualtrics vers l'index cible
+    `target_index` (0-based) via un drag pointeur simulé. Budget borné : `max_attempts`
+    tentatives, abandon contrôlé + log si non atteint (pas de fallback empilé).
+    """
+    if not ul_xpath:
+        return False
+
+    for attempt in range(1, max_attempts + 1):
+        _qualtrics_rank_order_dragdrop_suppress_native_img_drag(driver, ul_xpath)
+        loc = _qualtrics_rank_order_dragdrop_locate(driver, ul_xpath, choice_id)
+        if not loc:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"qualtrics_rank_order_dragdrop: attempt={attempt} item_not_found choice_id={choice_id!r}",
+            )
+            return False
+
+        cur_idx = loc["index"]
+        count = loc["count"]
+        if cur_idx == target_index:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"qualtrics_rank_order_dragdrop: already_in_place choice_id={choice_id!r} index={cur_idx}",
+            )
+            return True
+
+        clamped_target = max(0, min(target_index, count - 1))
+        target_rect = _qualtrics_rank_order_dragdrop_slot_rect(driver, ul_xpath, clamped_target)
+        if not target_rect:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"qualtrics_rank_order_dragdrop: attempt={attempt} target_slot_unavailable index={clamped_target}",
+            )
+            continue
+
+        start_x = loc["left"] + loc["width"] / 2
+        start_y = loc["top"] + loc["height"] / 2
+        end_x = target_rect["left"] + target_rect["width"] / 2
+        # Dépose au 1er quart de l'item cible en remontant (avant lui), au 3e quart en descendant
+        # (après lui) : évite les oscillations jQuery UI Sortable quand le point de dépôt tombe
+        # pile à la frontière entre deux items (même heuristique que aa_ranking_dragdrop).
+        if clamped_target < cur_idx:
+            end_y = target_rect["top"] + target_rect["height"] * 0.25
+        else:
+            end_y = target_rect["top"] + target_rect["height"] * 0.75
+
+        try:
+            driver.mouse.move(int(start_x), int(start_y))
+            driver.mouse.down()
+            steps = 10
+            for step in range(1, steps + 1):
+                ix = int(start_x + ((end_x - start_x) * step) / steps)
+                iy = int(start_y + ((end_y - start_y) * step) / steps)
+                driver.mouse.move(ix, iy)
+                time.sleep(0.02)
+            time.sleep(0.05)
+            driver.mouse.up()
+        except Exception as e:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"qualtrics_rank_order_dragdrop: attempt={attempt} drag_error={_short_exc(e)}",
+            )
+            continue
+
+        time.sleep(0.2)
+        after = _qualtrics_rank_order_dragdrop_locate(driver, ul_xpath, choice_id)
+        if after and after["index"] == target_index:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"qualtrics_rank_order_dragdrop: attempt={attempt} ok choice_id={choice_id!r} index={after['index']}",
+            )
+            return True
+        log_debug(
+            "[TARGET_DEBUG]",
+            f"qualtrics_rank_order_dragdrop: attempt={attempt} verify_failed choice_id={choice_id!r} "
+            f"index={(after or {}).get('index')} expected={target_index}",
+        )
+
+    return False
+
+
 def _apply_by_target_id(
     driver,
     target_id: str,
@@ -2301,6 +2476,42 @@ def _apply_by_target_id(
                         f"apply ok=true strategy=aa_ranking_dragdrop item={value!r} target_index={_ard_target_index}",
                     )
                 return _ard_ok
+
+            # Guard qualtrics_rank_order_dragdrop : 1 bloc checkbox, N items à classer par
+            # glisser-déposer (jQuery UI Sortable, Qualtrics natif, sans input natif exploitable).
+            # Placé avant le bloc opt_map : l'interaction est un drag pointer, pas un clic.
+            # value = libellé positionnel neutre retourné par IA ("Item N", sans contenu image) ;
+            # résolu vers le data-choiceid réel via qualtrics_rank_order_dragdrop_choice_id_map.
+            # ordinal = position 1-based de cette action dans le plan (calculé dans
+            # execute_actions_plan, même schéma que aa_ranking_dragdrop ci-dessus).
+            if payload.get("qualtrics_rank_order_dragdrop") and resolved_itype == "checkbox":
+                _qro_ul_xp = payload.get("qualtrics_rank_order_dragdrop_ul_xpath") or ""
+                _qro_cid_map = payload.get("qualtrics_rank_order_dragdrop_choice_id_map") or {}
+                if not _qro_ul_xp or not _qro_cid_map:
+                    log_debug("[TARGET_DEBUG]", "qualtrics_rank_order_dragdrop: ul_xpath/choice_id_map manquant")
+                    return False
+
+                _qro_choice_id = _qro_cid_map.get(v_norm) or (_qro_cid_map.get(v_fold) if v_fold else None)
+                if not _qro_choice_id:
+                    log_debug("[TARGET_DEBUG]", f"qualtrics_rank_order_dragdrop: item introuvable value={value!r}")
+                    return False
+
+                _qro_ordinal = int(getattr(driver, "_qualtrics_rank_order_dragdrop_ordinal", 1) or 1)
+                _qro_target_index = max(0, _qro_ordinal - 1)
+
+                _qro_ok = _qualtrics_rank_order_dragdrop_apply(driver, _qro_ul_xp, _qro_choice_id, _qro_target_index)
+
+                log_debug(
+                    "[TARGET_DEBUG]",
+                    f"qualtrics_rank_order_dragdrop: {'ok' if _qro_ok else 'ko'} item={value!r} "
+                    f"choice_id={_qro_choice_id!r} target_index={_qro_target_index}",
+                )
+                if _qro_ok:
+                    log_info(
+                        "[TARGET]",
+                        f"apply ok=true strategy=qualtrics_rank_order_dragdrop item={value!r} target_index={_qro_target_index}",
+                    )
+                return _qro_ok
 
             if opt_map and resolved_itype in ("radio", "checkbox") and not _skip_opt_map_for_cached_checkbox:
 
@@ -8441,6 +8652,10 @@ def execute_actions_plan(
     driver._aa_ranking_dragdrop_counts = {}
     driver._aa_ranking_dragdrop_ordinal = 1
 
+    # Compteurs ordinaux qualtrics_rank_order_dragdrop : réinitialisés à chaque plan (par qid)
+    driver._qualtrics_rank_order_dragdrop_counts = {}
+    driver._qualtrics_rank_order_dragdrop_ordinal = 1
+
     try:
         url_before = driver.url
     except Exception:
@@ -8588,6 +8803,24 @@ def execute_actions_plan(
                         driver._aa_ranking_dragdrop_ordinal = 1
                 except Exception:
                     driver._aa_ranking_dragdrop_ordinal = 1
+
+            # Qualtrics rank_order_dragdrop (jQuery UI Sortable) : rang ordinal (1-based) pour
+            # cette action dans le plan
+            if tid:
+                try:
+                    _qro_p = get_target(tid) or {}
+                    if _qro_p.get("qualtrics_rank_order_dragdrop"):
+                        _qro_key = qid or tid
+                        if not hasattr(driver, "_qualtrics_rank_order_dragdrop_counts"):
+                            driver._qualtrics_rank_order_dragdrop_counts = {}
+                        driver._qualtrics_rank_order_dragdrop_counts[_qro_key] = (
+                            driver._qualtrics_rank_order_dragdrop_counts.get(_qro_key, 0) + 1
+                        )
+                        driver._qualtrics_rank_order_dragdrop_ordinal = driver._qualtrics_rank_order_dragdrop_counts[_qro_key]
+                    else:
+                        driver._qualtrics_rank_order_dragdrop_ordinal = 1
+                except Exception:
+                    driver._qualtrics_rank_order_dragdrop_ordinal = 1
 
             if tid and qid:
                 instruction = f"{qid} //// {tid} //// {value} //// {itype} //// {context}"
