@@ -513,13 +513,19 @@ def _install_action_observer() -> None:
         def observed_execute_actions_plan(driver, actions, *args, **kwargs):
             result = original(driver, actions, *args, **kwargs)
             try:
-                report = validate_actions(actions, dispatcher_success=bool(result))
+                question_blocks = _LAST_EXTRACTED_BLOCKS.get(id(driver))
+                report = validate_actions(
+                    actions,
+                    dispatcher_success=bool(result),
+                    driver=driver,
+                    question_blocks=question_blocks,
+                )
                 if not report.get("ok", True):
                     record_validation_failure(
                         driver,
                         stage="action",
                         report=report,
-                        question_blocks=_LAST_EXTRACTED_BLOCKS.get(id(driver)),
+                        question_blocks=question_blocks,
                         actions=actions,
                     )
             except Exception as exc:
