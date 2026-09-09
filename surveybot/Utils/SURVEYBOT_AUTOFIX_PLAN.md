@@ -10,6 +10,11 @@ niveau tant que le niveau précédent n'est pas fiable.
 > Mise à jour 2026-09-07 soir : 1B.1 IFOP zip2city et 1B.2 capture pre-action validés live.
 > Mise à jour 2026-09-09 : décision de ne pas bloquer la roadmap sur la collecte complète des cas 1B.
 > La Phase 1B reste ouverte en tâche de fond ; le chantier principal passe à la Phase 2.
+> Mise à jour 2026-09-09 (suite) : Phase 2 clôturée. `Survey/failure_case_builder.py` +
+> `tools/create_failure_case.py` implémentés et validés après 2 correctifs (résolution
+> itype scopée au target_id retenu ; sanitisation des attributs href/src des DOM HTML
+> copiés, en plus du nettoyage déjà en place sur meta.json). Le chantier principal passe
+> à la Phase 3 (replay local déterministe).
 
 ## Contexte de travail actuel
 
@@ -36,7 +41,8 @@ incident détecté
 ``` text
 1A  terminée
 1B  ouverte en tâche de fond
-2   prochain chantier principal
+2   terminée
+3   prochain chantier principal
 ```
 
 Décision importante :
@@ -526,12 +532,13 @@ Chaque incident doit pouvoir être décrit comme :
 
 # Phase 2 --- Création automatique de cas de reproduction
 
-**Statut : PROCHAIN CHANTIER PRINCIPAL.**
+**Statut : TERMINÉE — `Survey/failure_case_builder.py` + `tools/create_failure_case.py`
+implémentés et validés (2 correctifs appliqués).**
 
 Objectif : transformer automatiquement chaque snapshot d'incident en cas de
 reproduction exploitable par le pipeline de diagnostic et d'auto-fix supervisé.
 
-Aujourd'hui tu fais manuellement :
+Avant cette phase, la transformation était manuelle :
 
 ``` text
 page live
@@ -542,38 +549,81 @@ page live
 → prompt Claude/Codex
 ```
 
-Cette étape doit disparaître.
+Cette étape a disparu : `tools/create_failure_case.py <snapshot_dir>...` convertit
+un ou plusieurs snapshots `snapshots/*_validation_failure/` en cases normalisés,
+en lecture seule sur le snapshot source (jamais modifié ni déplacé).
 
-Chaque failure enregistré devient automatiquement un **case** :
+### Structure réelle produite
 
 ``` text
 failure_cases/
-    case_20260905_061542/
+    case_<nom_du_snapshot>/
         manifest.json
-        dom_outer.html
-        dom_body.html
-        page_source.html
-        question_blocks.json
-        validation_report.json
-        actions_requested.json
-        viewport.png
-        frames/
+        artifacts/
+            meta.json                    (sanitisé)
+            validation_report.json
+            question_blocks.json
+            actions_requested.json
+            pre_action_dom.html          (sanitisé)
+            post_action_dom.html         (sanitisé)
+            post_action_viewport.png
+            dom_outer.html                (sanitisé, profil historique)
+            dom_body.html                 (sanitisé, profil historique)
+            page_source.html              (sanitisé, profil historique)
+            viewport.png                  (profil historique)
+            frames/
+                frame_*.dom_outer.html    (sanitisé)
+                frame_*.page_source.html  (sanitisé)
 ```
 
-Le `manifest.json` contient par exemple :
+Seuls les noms de fichiers connus (produits par `page_snapshot.py` /
+`failure_recorder.py`) sont copiés — pas de copie générique du dossier snapshot.
 
-``` text
-stage
-failure_type
-itype
-target_id
-frame_chain
-snapshot_path
-timestamp
-provider/domain
+### Manifest réel
+
+``` json
+{
+  "schema_version": "1.0",
+  "case_id": "...",
+  "created_at": "...",
+  "source_snapshot": "...",
+  "stage": "action|extraction|unknown",
+  "reason": "...",
+  "failure_types": ["..."],
+  "itype": "...",
+  "target_id": "...",
+  "frame_chain": ["..."],
+  "provider_domain": "...",
+  "artifacts": { "meta.json": true, "...": false },
+  "incomplete": false,
+  "warnings": ["..."]
+}
 ```
 
-Mais il ne contient **aucune interprétation fragile du bug**.
+`failure_types` est dérivé strictement de `validation_report.json` (pas de
+nouvelle taxonomie). `itype`/`target_id` ne sont jamais renseignés de façon
+incohérente entre eux : si aucune source rattachée au `target_id` retenu ne
+fournit d'`itype`, celui-ci reste `null` plutôt que d'être emprunté à un issue
+sans rapport. Aucun champ spéculatif (ex. estimation de « replayability ») n'a
+été ajouté à ce stade — ce sera à la Phase 3 de le déterminer par un test réel,
+pas par une heuristique déclarée ici.
+
+### Idempotence et secrets
+
+Un case déjà existant fait échouer la commande par défaut (`FailureCaseExistsError`) ;
+`--force` régénère, avec garde-fou (refuse de supprimer un dossier qui ne contient
+pas de `manifest.json`, pour ne jamais effacer autre chose par erreur).
+
+`meta.json` et l'ensemble des fichiers DOM HTML copiés (`pre_action_dom.html`,
+`post_action_dom.html`, `dom_outer.html`, `dom_body.html`, `page_source.html`,
+`frames/*.html`) sont nettoyés avant copie : la query string et le fragment de
+tout champ/attribut porteur d'URL (`url` en JSON, `href`/`src` en HTML) sont
+retirés, car ils peuvent porter un token de session (observé en pratique : JWT
+Zappi, WID/XID CloudResearch). Le nettoyage HTML est fait par substitution
+ciblée sur la syntaxe d'attribut, jamais par reparsing/reserialization, pour ne
+jamais risquer d'altérer la structure DOM dont la Phase 3 (replay) dépendra.
+`page.mhtml` / `body_text.txt` / `mhtml_error.txt` sont exclus de ce nettoyage
+(risque de corruption d'un format d'archive/encodage) et copiés tels quels.
 
 ------------------------------------------------------------------------
 
@@ -1398,8 +1448,8 @@ Je suivrais exactement cet ordre :
 ``` text
 1A  Observabilité passive — TERMINÉE, validée en live attach
 1B  Stabilisation des validators — OUVERTE EN TÂCHE DE FOND (1B.1 et 1B.2 validés)
-2   Failure cases normalisés — PROCHAIN CHANTIER PRINCIPAL
-3   Replay local
+2   Failure cases normalisés — TERMINÉE (failure_case_builder.py + CLI, 2 correctifs validés)
+3   Replay local — PROCHAIN CHANTIER PRINCIPAL
 4   Diagnostic automatique
 5   Sélection automatique du contexte code
 6   Génération du prompt Codex

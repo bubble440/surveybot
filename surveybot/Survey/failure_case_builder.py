@@ -21,13 +21,19 @@ aboutit) :
 Si aucune de ces sources ne désigne un target_id non ambigu, target_id reste à
 null plutôt que d'être deviné.
 
-Règle de résolution itype (indépendante de target_id : un issue "missing_target_id"
-/ "action_missing_target_id" porte un itype exploitable sans jamais porter de
-target_id — c'est précisément l'échec constaté) : itype du même issue que celui
-ayant fourni target_id (ou celui d'actions_requested.json / question_blocks.json
-pour ce target_id, ex. "max_select_exceeds_options" qui ne porte pas itype), sinon
-premier issue de validation_report.json qui porte un itype, sinon celui déjà trouvé
-via le fallback target_id commun (actions_requested.json puis question_blocks.json).
+Règle de résolution itype : toujours rattaché avec certitude au target_id retenu
+ci-dessus — itype du même issue que celui ayant fourni target_id, ou celui
+d'actions_requested.json / question_blocks.json pour CE target_id précis (ex.
+"max_select_exceeds_options" qui ne porte pas itype dans l'issue lui-même), ou
+celui déjà trouvé par le fallback target_id commun (actions_requested.json puis
+question_blocks.json, où il est garanti univoque pour ce target_id). Si un
+target_id a été retenu mais qu'aucune de ces sources rattachées ne fournit
+d'itype, itype reste null — jamais emprunté à un issue sans rapport avec ce
+target_id. Seule exception : quand target_id lui-même reste null (ex. issue
+"missing_target_id" / "action_missing_target_id", qui décrit un itype fautif
+sans jamais porter de target_id — c'est l'échec constaté), itype peut alors
+provenir du premier issue qui en porte un, puisqu'il n'y a pas de target_id
+avec lequel il pourrait être incohérent.
 
 frame_chain : lu depuis meta.json (best_frame.chain, résolu par la même logique
 que analyze_dom au moment de la capture) puis, à défaut, depuis un champ
@@ -36,16 +42,32 @@ frame_chain porté directement par le bloc résolu de question_blocks.json.
 provider_domain : hostname extrait de meta.json["url"] (urlparse), sans mapping
 vers un nom de plateforme — pas d'heuristique.
 
-Secrets : meta.json est le seul fichier connu du snapshot à porter des URLs de
-survey, potentiellement assorties d'un token de session en query string (observé
-en pratique : JWT Zappi, WID/XID CloudResearch). La copie de meta.json dans le
-case retire donc la query string et le fragment de tout champ "url" (top-level,
-frames[].url, best_frame.url) avant écriture — sinon meta.json n'est pas copié.
-Les autres artefacts (JSON/HTML/PNG) sont copiés tels quels : ils ne portent pas
-d'URL dans leur schéma connu, et leur contenu DOM n'est pas réinterprété ici.
+Secrets : meta.json porte des URLs de survey, potentiellement assorties d'un
+token de session en query string (observé en pratique : JWT Zappi, WID/XID
+CloudResearch) — sa copie retire donc la query string et le fragment de tout
+champ "url" (top-level, frames[].url, best_frame.url) avant écriture, sinon
+meta.json n'est pas copié. Les fichiers DOM HTML copiés (pre_action_dom.html,
+post_action_dom.html, dom_outer.html, dom_body.html, page_source.html, et les
+fichiers frames/*.dom_outer.html / frames/*.page_source.html) peuvent porter la
+même donnée de session dans des attributs href/src (liens, ressources, formulaires
+avec token en query string) : le même nettoyage (retrait de la query string et du
+fragment) leur est donc appliqué avant copie, via une substitution ciblée sur la
+syntaxe d'attribut href="..."/src="..." — jamais par reparsing/reserialization du
+HTML, qui risquerait de reformater des parties non concernées du document (le
+replay Phase 3 dépend de cette structure restant intacte). Le contenu des blocs
+<script>/<style> est explicitement exclu de cette substitution (une chaîne JS
+contenant "href=" ou "src=" n'est pas un attribut HTML) ; seuls les attributs
+href/src de la balise <script>/<style> elle-même sont concernés. Aucune nouvelle
+dépendance n'est nécessaire pour cela (beautifulsoup4 est déjà déclaré dans
+requirements.txt mais volontairement pas utilisé ici, précisément parce qu'un
+parse+reserialize ne garantit pas l'absence de reformatage). page.mhtml,
+body_text.txt et mhtml_error.txt sont copiés tels quels : ce ne sont pas du HTML
+attribut-adressable (mhtml est un format d'archive multipart, un nettoyage naïf
+par substitution de texte pourrait y corrompre l'encodage base64/quoted-printable).
 """
 
 import json
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -83,6 +105,27 @@ _KNOWN_FILES = (
 # et frame_<chain>.page_source.html. Tout fichier de frames/ qui ne matche pas ce
 # pattern est ignoré (et signalé) plutôt que copié aveuglément.
 _FRAME_FILE_SUFFIXES = (".dom_outer.html", ".page_source.html")
+
+# Fichiers HTML (hors frames/, qui portent déjà les mêmes suffixes que
+# _FRAME_FILE_SUFFIXES) dont les attributs href/src sont nettoyés avant copie —
+# cf. section "Secrets" ci-dessus.
+_HTML_FILES_TO_SANITIZE = {
+    "pre_action_dom.html",
+    "post_action_dom.html",
+    "dom_outer.html",
+    "dom_body.html",
+    "page_source.html",
+}
+
+# <script>/<style> capturés en (tag_ouvrant, contenu, tag_fermant) : seul
+# tag_ouvrant passe par la substitution href/src (il peut porter <script
+# src="...">), contenu ne doit jamais être touché (ce n'est pas de l'attribut
+# HTML), tag_fermant ne porte pas d'attribut.
+_SCRIPT_STYLE_RE = re.compile(r"(?is)(<(?:script|style)\b[^>]*>)(.*?)(</(?:script|style)>)")
+
+# (?<![\w-]) exclut data-src="..."/xsrc="..." (src précédé d'un caractère mot ou
+# d'un trait d'union) sans exiger un contexte de balise complet.
+_HREF_SRC_ATTR_RE = re.compile(r'(?i)(?<![\w-])(href|src)(\s*=\s*)"([^"]*)"')
 
 
 class FailureCaseError(Exception):
@@ -157,6 +200,56 @@ def _sanitize_meta(meta: dict) -> tuple[dict, bool]:
     return _walk(out), stripped
 
 
+def _strip_html_attrs_segment(segment: str) -> tuple[str, bool]:
+    """Applique _strip_url aux attributs href="..."/src="..." d'un fragment HTML."""
+    stripped = False
+
+    def _replace(match: "re.Match[str]") -> str:
+        nonlocal stripped
+        attr, sep, value = match.group(1), match.group(2), match.group(3)
+        new_value = _strip_url(value)
+        if new_value != value:
+            stripped = True
+        return f'{attr}{sep}"{new_value}"'
+
+    return _HREF_SRC_ATTR_RE.sub(_replace, segment), stripped
+
+
+def _sanitize_html(html_text: str) -> tuple[str, bool]:
+    """Retire query string/fragment des attributs href/src d'un DOM HTML.
+
+    Substitution ciblée par regex sur la syntaxe d'attribut, jamais par
+    reparsing/reserialization : le reste du document (structure, autres
+    attributs, whitespace, ordre) reste strictement identique. Le contenu des
+    blocs <script>/<style> est exclu de la substitution — seuls les attributs
+    de la balise <script>/<style> elle-même (ex. <script src="...">) y sont
+    soumis.
+    """
+    stripped_any = False
+    out: list[str] = []
+    last_end = 0
+
+    for m in _SCRIPT_STYLE_RE.finditer(html_text):
+        gap, gap_stripped = _strip_html_attrs_segment(html_text[last_end:m.start()])
+        out.append(gap)
+        stripped_any = stripped_any or gap_stripped
+
+        opening_tag, inner, closing_tag = m.group(1), m.group(2), m.group(3)
+        new_opening, opening_stripped = _strip_html_attrs_segment(opening_tag)
+        out.append(new_opening)
+        stripped_any = stripped_any or opening_stripped
+        out.append(inner)  # contenu JS/CSS jamais touché
+        out.append(closing_tag)
+
+        last_end = m.end()
+
+    tail, tail_stripped = _strip_html_attrs_segment(html_text[last_end:])
+    out.append(tail)
+    stripped_any = stripped_any or tail_stripped
+
+    return "".join(out), stripped_any
+
+
 def _common_target_itype(entries: Any) -> tuple[str | None, str | None]:
     """target_id (+ itype si univoque) partagé par toutes les entrées de la liste."""
     if not isinstance(entries, list):
@@ -213,7 +306,13 @@ def _resolve_itype_target_id(
         if not target_id:
             target_id, itype = _common_target_itype(question_blocks)
 
-    if not itype:
+    # Dernier recours : itype d'un issue quelconque du rapport, mais seulement
+    # quand aucun target_id n'a été retenu (cas "missing_target_id" : l'issue
+    # décrit bien l'itype fautif mais ne porte structurellement pas de
+    # target_id). Si un target_id a été retenu (Pass 1/2 ci-dessus) et qu'aucune
+    # source rattachée à CE target_id n'a fourni d'itype, itype doit rester None
+    # plutôt que d'emprunter celui d'un issue sans rapport avec ce target_id.
+    if not itype and not target_id:
         for issue in issues:
             candidate = _clean_str(issue.get("itype"))
             if candidate:
@@ -295,6 +394,38 @@ def _resolve_stage(report: Any, snapshot_dir: Path) -> str:
     return "unknown"
 
 
+def _copy_sanitized_html(src: Path, dst: Path, *, warnings: list[str]) -> bool:
+    """Copie un fichier DOM HTML après nettoyage href/src. False si non copié.
+
+    Politique symétrique à meta.json : si le fichier n'est pas lisible/décodable
+    de façon fiable, il n'est pas copié tel quel (on ne peut pas garantir qu'un
+    éventuel token en query string y ait été retiré) plutôt que de risquer une
+    copie non nettoyée.
+    """
+    try:
+        raw = src.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        warnings.append(f"{src.name}: lecture impossible pour nettoyage href/src ({exc})")
+        log_debug("[FAILURE_CASE]", f"read error {src}: {exc}")
+        return False
+
+    sanitized, stripped = _sanitize_html(raw)
+
+    try:
+        dst.write_text(sanitized, encoding="utf-8")
+    except OSError as exc:
+        warnings.append(f"{src.name}: écriture échouée ({exc})")
+        log_debug("[FAILURE_CASE]", f"write failed {dst}: {exc}")
+        return False
+
+    if stripped:
+        warnings.append(
+            f"{src.name}: query string/fragment retirée d'un ou plusieurs "
+            "attributs href/src avant copie (donnée de session potentielle)"
+        )
+    return True
+
+
 def _copy_known_files(
     snapshot_dir: Path,
     artifacts_dir: Path,
@@ -333,6 +464,10 @@ def _copy_known_files(
                 presence[name] = False
             continue
 
+        if name in _HTML_FILES_TO_SANITIZE:
+            presence[name] = _copy_sanitized_html(src, artifacts_dir / name, warnings=warnings)
+            continue
+
         try:
             shutil.copy2(src, artifacts_dir / name)
             presence[name] = True
@@ -352,11 +487,14 @@ def _copy_known_files(
                 continue
             try:
                 (artifacts_dir / "frames").mkdir(parents=True, exist_ok=True)
-                shutil.copy2(item, artifacts_dir / "frames" / item.name)
-                frame_copied = True
             except OSError as exc:
-                warnings.append(f"frames/{item.name}: copie échouée ({exc})")
-                log_debug("[FAILURE_CASE]", f"copy failed {item}: {exc}")
+                warnings.append(f"frames/{item.name}: dossier frames non créé ({exc})")
+                log_debug("[FAILURE_CASE]", f"mkdir failed {artifacts_dir / 'frames'}: {exc}")
+                continue
+            # Fichiers frame_*.dom_outer.html / frame_*.page_source.html : du
+            # HTML au même titre que les fichiers DOM racine, même nettoyage.
+            if _copy_sanitized_html(item, artifacts_dir / "frames" / item.name, warnings=warnings):
+                frame_copied = True
     presence["frames"] = frame_copied
 
     return presence
