@@ -8,6 +8,61 @@ niveau tant que le niveau précédent n'est pas fiable.
 > Le snapshot IFOP zip2city `20260907_201456_action_validation_failure`
 > devient le premier cas de stabilisation de la Phase 1B.
 > Mise à jour 2026-09-07 soir : 1B.1 IFOP zip2city et 1B.2 capture pre-action validés live.
+> Mise à jour 2026-09-09 : décision de ne pas bloquer la roadmap sur la collecte complète des cas 1B.
+> La Phase 1B reste ouverte en tâche de fond ; le chantier principal passe à la Phase 2.
+
+## Contexte de travail actuel
+
+Nous développons le module d'observabilité, de diagnostic et d'auto-correction supervisée de SurveyBot.
+
+Le travail en cours ne consiste pas à renforcer directement tous les extracteurs
+ou sélecteurs un par un. L'objectif est de construire une boucle outillée :
+
+``` text
+incident détecté
+→ snapshot normalisé
+→ failure case
+→ replay local
+→ diagnostic
+→ sélection du contexte code
+→ prompt Codex
+→ patch isolé
+→ validation
+→ score de confiance
+```
+
+État actuel :
+
+``` text
+1A  terminée
+1B  ouverte en tâche de fond
+2   prochain chantier principal
+```
+
+Décision importante :
+
+``` text
+la collecte complète des cas 1B ne doit pas bloquer la progression vers la Phase 2
+```
+
+Raison :
+
+``` text
+les surveys problématiques n'apparaissent pas sur commande
+attendre 15 à 20 cas réels avant de continuer figerait le développement
+```
+
+Donc la Phase 1B continue en parallèle. Pendant les tests des Phases 2 et
+suivantes, tout nouveau cas utile pour les validators doit être capturé,
+classé, puis traité par un patch 1B.x ciblé.
+
+Rappel opérationnel :
+
+``` text
+penser régulièrement à améliorer 1B dès qu'un nouveau faux positif
+ou faux négatif clair apparaît pendant les tests
+```
+
 
 ## Phase 1A --- Observabilité passive
 
@@ -262,8 +317,29 @@ de 1B.
 
 # Phase 1B --- Fiabilisation des validators
 
-Objectif : réduire les faux positifs et augmenter progressivement la
-couverture.
+**Statut : OUVERTE EN TÂCHE DE FOND — 1B.1 et 1B.2 validés.**
+
+Objectif : réduire les faux positifs, réduire les faux négatifs et augmenter
+progressivement la couverture des validators.
+
+Décision de roadmap :
+
+``` text
+ne pas attendre la collecte complète de tous les cas 1B pour passer à la Phase 2
+```
+
+La Phase 1B sera améliorée opportunément au fil des tests. Chaque fois qu'un
+nouveau survey révèle un cas clair, on crée un patch 1B.x ciblé, sans interrompre
+le chantier principal.
+
+Les quatre familles de cas à conserver sont :
+
+``` text
+1. Extraction mauvaise mais aucun extraction_validation_failure
+2. Extraction signalée mauvaise alors qu'elle est correcte
+3. Sélection/action mauvaise mais aucun action_validation_failure
+4. Action signalée mauvaise alors que le DOM final est correct
+```
 
 ## Cas de départ 1B — IFOP zip2city
 
@@ -449,6 +525,11 @@ Chaque incident doit pouvoir être décrit comme :
 ------------------------------------------------------------------------
 
 # Phase 2 --- Création automatique de cas de reproduction
+
+**Statut : PROCHAIN CHANTIER PRINCIPAL.**
+
+Objectif : transformer automatiquement chaque snapshot d'incident en cas de
+reproduction exploitable par le pipeline de diagnostic et d'auto-fix supervisé.
 
 Aujourd'hui tu fais manuellement :
 
@@ -1316,8 +1397,8 @@ Je suivrais exactement cet ordre :
 
 ``` text
 1A  Observabilité passive — TERMINÉE, validée en live attach
-1B  Stabilisation des validators — EN COURS (1B.1 et 1B.2 validés)
-2   Failure cases normalisés
+1B  Stabilisation des validators — OUVERTE EN TÂCHE DE FOND (1B.1 et 1B.2 validés)
+2   Failure cases normalisés — PROCHAIN CHANTIER PRINCIPAL
 3   Replay local
 4   Diagnostic automatique
 5   Sélection automatique du contexte code
