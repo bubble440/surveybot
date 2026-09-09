@@ -7,6 +7,7 @@ niveau tant que le niveau précédent n'est pas fiable.
 > Mise à jour 2026-09-07 : Phase 1A clôturée après validation live attach.
 > Le snapshot IFOP zip2city `20260907_201456_action_validation_failure`
 > devient le premier cas de stabilisation de la Phase 1B.
+> Mise à jour 2026-09-07 soir : 1B.1 IFOP zip2city et 1B.2 capture pre-action validés live.
 
 ## Phase 1A --- Observabilité passive
 
@@ -312,7 +313,94 @@ ne pas ajouter une cascade de fallbacks
 ajouter seulement des invariants DOM forts, scopés et vérifiables
 ```
 
+## Patch 1B.1 — classification IFOP zip2city
+
+**Statut : TERMINÉ — validé live.**
+
+Le validator distingue maintenant le cas :
+
+``` text
+dispatcher_success = false
+mais état DOM post-action fort observé
+```
+
+du vrai échec brut du dispatcher.
+
+Pour IFOP zip2city, lorsque le DOM post-action contient le code postal demandé
+et un libellé ville concret, le rapport peut classer l'incident comme :
+
+``` text
+dispatcher_false_negative
+dom_signal = ifop_zip2city_resolved
+```
+
+Exemple validé :
+
+``` text
+value = 75001
+city_label = Paris 01
+```
+
+Le signal dispatcher reste visible dans les snapshots d'observabilité. Le patch
+ne transforme pas ce cas en succès silencieux.
+
+## Patch 1B.2 — capture pre-action légère
+
+**Statut : TERMINÉ — validé live.**
+
+Les snapshots `action_validation_failure` contiennent désormais aussi :
+
+``` text
+pre_action_dom.html
+```
+
+en plus de :
+
+``` text
+post_action_dom.html
+post_action_viewport.png
+validation_report.json
+actions_requested.json
+question_blocks.json
+meta.json
+frames/
+```
+
+Objectif :
+
+``` text
+savoir si l'état observé après action existait déjà avant l'action,
+ou si le bot l'a réellement créé pendant la tentative d'insertion
+```
+
+Cette capture reste passive :
+
+``` text
+aucun clic
+aucune navigation
+aucun retry
+aucune modification du résultat dispatcher
+```
+
 On teste les validators sur tes DOM réels existants.
+
+Objectif pratique pour clôturer 1B :
+
+``` text
+minimum : 8 à 12 incidents réels utiles
+idéal   : 15 à 20 incidents
+```
+
+Répartition cible :
+
+``` text
+4 à 6 cas action/sélection
+3 à 5 cas extraction
+2 à 4 cas ambigus/faux positifs validator
+```
+
+1B ne cherche pas à couvrir tous les providers. Elle cherche à fiabiliser les
+validators sur les familles les plus fréquentes, avec priorité à la précision.
 
 On construit une petite taxonomie :
 
@@ -1228,7 +1316,7 @@ Je suivrais exactement cet ordre :
 
 ``` text
 1A  Observabilité passive — TERMINÉE, validée en live attach
-1B  Stabilisation des validators — PROCHAINE ÉTAPE
+1B  Stabilisation des validators — EN COURS (1B.1 et 1B.2 validés)
 2   Failure cases normalisés
 3   Replay local
 4   Diagnostic automatique

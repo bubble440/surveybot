@@ -181,6 +181,27 @@ def _slug(s: str) -> str:
     return (s[:60] or "snapshot")
 
 
+def _capture_current_outer_html(driver) -> str:
+    """Capture légère du DOM courant avant action, sans wait/clic/navigation."""
+    page = driver
+    snapshot_ctx = page
+    try:
+        from Survey.dom_frame_selector import _select_best_frame_chain
+        from Survey.frame_utils import switch_to_frame_chain as _switch_ctx
+
+        _best_chain, _ = _select_best_frame_chain(driver)
+        with _switch_ctx(driver, _best_chain) as _ok:
+            if _ok:
+                snapshot_ctx = getattr(driver, "_current_frame", page)
+    except Exception:
+        snapshot_ctx = page
+
+    try:
+        return snapshot_ctx.evaluate("() => document.documentElement.outerHTML") or ""
+    except Exception:
+        return ""
+
+
 def dump_page_snapshot(
     driver,
     *,
@@ -189,6 +210,7 @@ def dump_page_snapshot(
     question_blocks: Any = None,
     snapshot_name: Optional[str] = None,
     artifact_profile: Optional[str] = None,
+    pre_action_dom: Optional[str] = None,
 ) -> str:
     """
     Sauvegarde un snapshot de page "debug" :
@@ -200,7 +222,9 @@ def dump_page_snapshot(
     - question_blocks.json (si fourni)
 
     Le profil ``action_validation`` est réservé aux captures automatiques de
-    Phase 1A : les artefacts y sont explicitement post-action et les
+    Phase 1A/1B : les artefacts y sont explicitement orientés action.
+    Le DOM post-action reste obligatoire ; un DOM pre-action léger peut être
+    fourni par l’observer d’action pour faciliter le diagnostic. Les
     représentations HTML/MHTML redondantes sont omises. Les autres appelants
     conservent le format de snapshot historique.
     """
@@ -288,11 +312,19 @@ def dump_page_snapshot(
             {
                 "capture_phase": "post_action",
                 "artifacts": {
+                    "pre_action_dom": "pre_action_dom.html" if pre_action_dom else None,
                     "dom": "post_action_dom.html",
                     "screenshot": "post_action_viewport.png",
                 },
             }
         )
+    if is_action_validation:
+        try:
+            artifacts = meta.get("artifacts")
+            if isinstance(artifacts, dict):
+                meta["artifacts"] = {k: v for k, v in artifacts.items() if v}
+        except Exception:
+            pass
     (folder / "meta.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -304,6 +336,16 @@ def dump_page_snapshot(
         outer = ""
     dom_name = "post_action_dom.html" if is_action_validation else "dom_outer.html"
     (folder / dom_name).write_text(outer, encoding="utf-8", errors="ignore")
+
+    if is_action_validation and pre_action_dom:
+        try:
+            (folder / "pre_action_dom.html").write_text(
+                pre_action_dom,
+                encoding="utf-8",
+                errors="ignore",
+            )
+        except Exception:
+            pass
 
     if not is_action_validation:
         # DOM body
@@ -511,6 +553,12 @@ def _install_action_observer() -> None:
             return
 
         def observed_execute_actions_plan(driver, actions, *args, **kwargs):
+            pre_action_dom = ""
+            try:
+                pre_action_dom = _capture_current_outer_html(driver)
+            except Exception:
+                pre_action_dom = ""
+
             result = original(driver, actions, *args, **kwargs)
             try:
                 question_blocks = _LAST_EXTRACTED_BLOCKS.get(id(driver))
@@ -527,6 +575,7 @@ def _install_action_observer() -> None:
                         report=report,
                         question_blocks=question_blocks,
                         actions=actions,
+                        pre_action_dom=pre_action_dom,
                     )
             except Exception as exc:
                 try:

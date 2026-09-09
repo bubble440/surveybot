@@ -16,6 +16,7 @@ def record_validation_failure(
     report: dict,
     question_blocks: Any = None,
     actions: Any = None,
+    pre_action_dom: Optional[str] = None,
 ) -> Optional[str]:
     """Capture le contexte d'un validator en échec, sans jamais casser le survey.
 
@@ -33,6 +34,7 @@ def record_validation_failure(
             reason=f"{stage}_validation_failure",
             question_blocks=question_blocks,
             artifact_profile="action_validation" if stage == "action" else None,
+            pre_action_dom=pre_action_dom if stage == "action" else None,
         )
         out = Path(folder)
         (out / "validation_report.json").write_text(
