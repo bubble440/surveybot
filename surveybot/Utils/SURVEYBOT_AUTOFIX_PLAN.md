@@ -26,6 +26,18 @@ niveau tant que le niveau précédent n'est pas fiable.
 > un bug de sélection de frame elle-même, seulement l'extraction/validation à
 > l'intérieur d'une frame déjà correctement choisie. Le chantier principal passe à la
 > Phase 4 (diagnostic automatique).
+> Mise à jour 2026-09-10 (suite 3) : Phase 4 clôturée. `Survey/failure_diagnosis.py`
+> (niveau de cause dérivé uniquement du verdict de replay ; attribution de modules
+> limitée à une recherche exacte de signaux structurés — flags de contexte, group_key —
+> dans BOT_EVOLUTION_MEMORY.md, provider_domain délibérément exclu car source de faux
+> positifs vérifiée en pratique ; confiance plafonnée à "plausible" si le case est
+> incomplete) + `tools/diagnose_failure.py`, sortie `diagnoses/case_<id>/diagnosis.json`.
+> Aucun prompt Codex généré (hors périmètre, prévu Phase 6). Point de vigilance acté :
+> la table `_EXPECTED_BEHAVIOR` (description du comportement attendu par failure_type)
+> est maintenue à la main en miroir du code des validators — à mettre à jour
+> explicitement lors de tout futur patch touchant action_validator.py/
+> question_block_validator.py, sinon elle peut devenir silencieusement obsolète. Le
+> chantier principal passe à la Phase 5 (sélection automatique du contexte code).
 
 ## Contexte de travail actuel
 
@@ -54,7 +66,8 @@ incident détecté
 1B  ouverte en tâche de fond
 2   terminée
 3   terminée
-4   prochain chantier principal
+4   terminée
+5   prochain chantier principal
 ```
 
 Décision importante :
@@ -744,70 +757,68 @@ tourner ; l'auto-update R2 ne pousse jamais de nouvelles dépendances).
 
 # Phase 4 --- Générateur automatique de diagnostic
 
-À ce stade, on dispose de :
+**Statut : TERMINÉE — `Survey/failure_diagnosis.py` + `tools/diagnose_failure.py`
+implémentés et validés.**
+
+Objectif atteint : transformer un failure_case (Phase 2) et son résultat de
+replay (Phase 3, recalculé à la volée) en diagnostic structuré, sans jamais
+prescrire de patch :
 
 ``` text
-DOM
-question_blocks
-registry
-failure report
-actions
-éventuellement replay
+manifest.json + artifacts/ (Phase 2)
+→ replay_failure_case() (Phase 3, réutilisé tel quel)
+→ diagnosis.json
 ```
 
-On peut commencer à automatiser ton travail actuel avec ChatGPT/Claude.
-
-On crée une couche :
+### Contenu réel du diagnostic
 
 ``` text
-failure_diagnoser.py
+symptom              : issues de validation_report.json, recopiées telles quelles
+expected_behavior    : description par failure_type, citant la fonction exacte du
+                        validator dont elle est extraite (table statique tenue à
+                        jour à la main — voir "Point de vigilance" ci-dessous) ;
+                        "non documenté" plutôt qu'une description inventée si le
+                        failure_type n'est pas dans la table
+replay               : verdict + détails complets de Survey/failure_replay.py
+cause.level          : dérivé UNIQUEMENT du verdict de replay — REPRODUIT -> certain,
+                        DIFFERENT -> probable, NON_REPRODUIT/NON_REJOUABLE/absence
+                        de verdict -> plausible (jamais déduit du symptôme seul)
+cause.justification  : texte traçable à la donnée du replay utilisée pour ce niveau
+modules_likely_involved : voir ci-dessous — vide si rien de fiable
+confidence_global    : = cause.level, plafonné à "plausible" si manifest.incomplete
+warnings              : notamment si aucun module trouvé, ou si le plafonnement
+                        incomplete a été appliqué
 ```
 
-Elle ne modifie rien.
+Aucun prompt destiné à un agent de coding n'est généré ici — c'est le rôle des
+Phases 5/6.
 
-Elle produit un dossier diagnostic :
+### Attribution de modules : recherche exacte, jamais heuristique
 
-``` text
-diagnosis.json
-```
+`modules_likely_involved` ne cherche jamais dans le code source. La recherche
+se limite à des correspondances exactes (sous-chaîne, insensible à la casse)
+entre des signaux structurés déjà présents dans `question_blocks.json` (un
+flag booléen `=true` du `context` d'un bloc, ou son `group_key` — entier, ou
+préfixe non générique) et le contenu des entrées `### ...` de
+`BOT_EVOLUTION_MEMORY.md`. Le ou les fichiers associés viennent de la ligne
+`Fichier : X` de l'entrée trouvée (ou de l'en-tête `### nom — Survey/x.py`
+quand elle en tient lieu) — jamais devinés.
 
-et/ou un prompt destiné à Codex.
+`provider_domain` est délibérément exclu de cette recherche : vérifié en
+pratique, un même hostname héberge des dizaines de widgets différents et
+génère des faux positifs — pas une supposition, un cas constaté.
 
-Le diagnostic doit faire la distinction entre :
+Si aucun signal ne correspond à une entrée mémoire, la liste reste vide.
 
-``` text
-symptôme observé
-comportement attendu
-cause certaine
-cause probable
-cause plausible
-modules probablement concernés
-```
+### Point de vigilance : `_EXPECTED_BEHAVIOR` maintenue à la main
 
-Exemple :
-
-``` text
-Symptôme :
-17 radios visibles, seulement 12 options dans question_blocks.
-
-Cause probable :
-l'extracteur a filtré 5 options durant la construction du groupe.
-
-Zone probable :
-Survey/dom_analyzer.py
-Survey/dom_extractors_decipher.py
-
-Confiance :
-probable
-```
-
-Il ne doit pas dire immédiatement :
-
-``` text
-ajoute telle fonction ligne 483
-```
-
-C'est à l'agent de coding de déterminer le patch.
+La table qui associe chaque `failure_type` à sa description de comportement
+attendu vit dans `Survey/failure_diagnosis.py`, en miroir du code réel des
+validators, mais **sans mécanisme qui la garde synchronisée**. Contrairement à
+`BOT_EVOLUTION_MEMORY.md`, aucune discipline de mise à jour n'existe encore
+pour elle. Règle à appliquer dès le prochain patch touchant
+`action_validator.py` ou `question_block_validator.py` : mettre à jour cette
+table dans le même mouvement que BEM, pas après coup.
 
 ------------------------------------------------------------------------
 
@@ -1490,8 +1501,8 @@ Je suivrais exactement cet ordre :
 1B  Stabilisation des validators — OUVERTE EN TÂCHE DE FOND (1B.1 et 1B.2 validés)
 2   Failure cases normalisés — TERMINÉE (failure_case_builder.py + CLI, 2 correctifs validés)
 3   Replay local — TERMINÉE (dom_replay_shim.py + failure_replay.py + CLI)
-4   Diagnostic automatique — PROCHAIN CHANTIER PRINCIPAL
-5   Sélection automatique du contexte code
+4   Diagnostic automatique — TERMINÉE (failure_diagnosis.py + CLI)
+5   Sélection automatique du contexte code — PROCHAIN CHANTIER PRINCIPAL
 6   Génération du prompt Codex
 7   Patch dans branche isolée
 8   Tests statiques

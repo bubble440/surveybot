@@ -518,7 +518,7 @@ def build_failure_case(
 
     case_id = snapshot_dir.name
     out_root = Path(out_root)
-    case_dir = out_root / f"case_{case_id}"
+    case_dir = out_root / f"{case_id}"
 
     if case_dir.exists():
         if not force:

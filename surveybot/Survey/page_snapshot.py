@@ -6,8 +6,9 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from config import RUN_ENV
+from Survey.log_utils import log_debug
 
 
 
@@ -69,6 +70,80 @@ def _wait_dom_settle(
             last = cur
 
         time.sleep(poll_s)
+
+
+# document.documentElement.outerHTML ne capture jamais les règles CSS injectées
+# directement dans l'objet CSSStyleSheet du navigateur (ex. moteurs CSS-in-JS
+# type emotion/tss utilisés par des providers MUI, qui appellent insertRule()
+# plutôt que d'écrire dans le texte de la balise <style>) : la balise existe
+# dans le DOM mais son textContent reste vide, alors que sa feuille associée
+# (el.sheet.cssRules) porte les règles réellement appliquées. Rejoué hors ligne,
+# ce DOM figé perd donc ces règles, faussant tout calcul de visibilité/état basé
+# dessus. Stratégie unique : sur un CLONE détaché de document.documentElement
+# (jamais le document live — capture strictement passive), pour toute balise
+# <style> dont le textContent est vide et dont la feuille live porte des règles,
+# réinjecte le texte reconstruit depuis cssRules[i].cssText avant sérialisation.
+# Boucles bornées (budget N, abandon contrôlé) ; toute erreur (contexte détruit,
+# feuille cross-origin, etc.) dégrade vers le outerHTML brut, sans jamais lever.
+_OUTER_HTML_CSSOM_JS = """() => {
+    const MAX_STYLE_TAGS = 500;
+    const MAX_RULES_PER_SHEET = 5000;
+    const liveStyles = Array.from(document.querySelectorAll('style'));
+    const scanCount = Math.min(liveStyles.length, MAX_STYLE_TAGS);
+    let truncated = liveStyles.length > MAX_STYLE_TAGS;
+    const patches = [];
+    for (let i = 0; i < scanCount; i++) {
+        const el = liveStyles[i];
+        if ((el.textContent || '').trim()) continue;
+        let cssomText = '';
+        try {
+            const sheet = el.sheet;
+            if (sheet && sheet.cssRules && sheet.cssRules.length) {
+                const rules = Array.from(sheet.cssRules);
+                if (rules.length > MAX_RULES_PER_SHEET) truncated = true;
+                cssomText = rules.slice(0, MAX_RULES_PER_SHEET).map(r => r.cssText).join('\\n');
+            }
+        } catch (e) {
+            cssomText = '';
+        }
+        if (cssomText) patches.push([i, cssomText]);
+    }
+    let html;
+    if (patches.length) {
+        const clone = document.documentElement.cloneNode(true);
+        const cloneStyles = clone.querySelectorAll('style');
+        for (const [i, text] of patches) {
+            if (cloneStyles[i]) cloneStyles[i].textContent = text;
+        }
+        html = clone.outerHTML;
+    } else {
+        html = document.documentElement.outerHTML;
+    }
+    return { html: (html || ''), patched: patches.length, truncated };
+}"""
+
+
+def _capture_outer_html_cssom_safe(ctx) -> Tuple[str, int, bool]:
+    """outerHTML(ctx), avec reconstruction best-effort des <style> vides dont la
+    feuille CSSOM live porte des règles (cf. commentaire ci-dessus). Retourne
+    (html, patched_count, truncated). Sur toute erreur (y compris échec de
+    l'évaluation elle-même), dégrade vers un outerHTML brut identique au
+    comportement précédent ; ne lève jamais.
+    """
+    try:
+        result = ctx.evaluate(_OUTER_HTML_CSSOM_JS)
+        if isinstance(result, dict):
+            return (
+                result.get("html") or "",
+                int(result.get("patched") or 0),
+                bool(result.get("truncated")),
+            )
+    except Exception:
+        pass
+    try:
+        return (ctx.evaluate("() => document.documentElement.outerHTML") or ""), 0, False
+    except Exception:
+        return "", 0, False
 
 
 def _dump_frames_best_effort(
@@ -139,12 +214,15 @@ def _dump_frames_best_effort(
             if inputs_count <= 0 and text_len < 200:
                 continue
 
-            try:
-                outer = current_frame.evaluate("() => document.documentElement.outerHTML") or ""
-            except Exception:
-                outer = ""
-
             chain_str = "_".join(str(x) for x in chain)
+            outer, patched, truncated = _capture_outer_html_cssom_safe(current_frame)
+            if patched > 0:
+                log_debug(
+                    "[SNAPSHOT_DEBUG]",
+                    f"frame_{chain_str}: {patched} balise(s) <style> reconstruite(s) depuis CSSOM",
+                )
+            if truncated:
+                log_debug("[SNAPSHOT_DEBUG]", f"frame_{chain_str}: budget style tags dépassé, scan tronqué")
             outer_name = f"frame_{chain_str}.dom_outer.html"
 
             (frames_dir / outer_name).write_text(outer, encoding="utf-8", errors="ignore")
@@ -196,10 +274,15 @@ def _capture_current_outer_html(driver) -> str:
     except Exception:
         snapshot_ctx = page
 
-    try:
-        return snapshot_ctx.evaluate("() => document.documentElement.outerHTML") or ""
-    except Exception:
-        return ""
+    html, patched, truncated = _capture_outer_html_cssom_safe(snapshot_ctx)
+    if patched > 0:
+        log_debug(
+            "[SNAPSHOT_DEBUG]",
+            f"pre_action_dom: {patched} balise(s) <style> reconstruite(s) depuis CSSOM",
+        )
+    if truncated:
+        log_debug("[SNAPSHOT_DEBUG]", "pre_action_dom: budget style tags dépassé, scan tronqué")
+    return html
 
 
 def dump_page_snapshot(
@@ -330,11 +413,15 @@ def dump_page_snapshot(
     )
 
     # DOM outerHTML
-    try:
-        outer = snapshot_ctx.evaluate("() => document.documentElement.outerHTML") or ""
-    except Exception:
-        outer = ""
     dom_name = "post_action_dom.html" if is_action_validation else "dom_outer.html"
+    outer, patched, truncated = _capture_outer_html_cssom_safe(snapshot_ctx)
+    if patched > 0:
+        log_debug(
+            "[SNAPSHOT_DEBUG]",
+            f"{dom_name}: {patched} balise(s) <style> reconstruite(s) depuis CSSOM",
+        )
+    if truncated:
+        log_debug("[SNAPSHOT_DEBUG]", f"{dom_name}: budget style tags dépassé, scan tronqué")
     (folder / dom_name).write_text(outer, encoding="utf-8", errors="ignore")
 
     if is_action_validation and pre_action_dom:
