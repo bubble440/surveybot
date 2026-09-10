@@ -13,6 +13,7 @@ import unicodedata
 from typing import Any
 
 from Survey.dom_registry import get_target
+from Survey.input_utils import is_checked
 
 
 def _norm(value: Any) -> str:
@@ -119,6 +120,113 @@ def _ifop_zip2city_false_negative_issue(
     }
 
 
+def _checkbox_radio_option_xpath(payload: Any, value: str) -> str | None:
+    """Résout la même `option_xpath_map` (registry) que la vérification existante
+    `action_value_not_in_registry_options` ci-dessous, sans hypothèse de provider.
+    Même garde-fou : map plate uniquement (matrices/nested maps ignorées).
+    """
+    if not isinstance(payload, dict):
+        return None
+    option_map = payload.get("option_xpath_map")
+    if not isinstance(option_map, dict) or not option_map:
+        return None
+    if not all(not isinstance(v, dict) for v in option_map.values()):
+        return None
+
+    target_value = _norm_lc(value)
+    for label, xpath in option_map.items():
+        if isinstance(xpath, str) and xpath and _norm_lc(label) == target_value:
+            return xpath
+    return None
+
+
+def _checkbox_radio_dom_checked_signal(driver, xpath: str) -> bool | None:
+    """Lit uniquement l'état `checked` réel de l'élément ciblé par `xpath`, sans
+    interaction. Réutilise `Survey.input_utils.is_checked` (déjà générique :
+    input natif -> aria-checked -> classes "checked"/"is-checked"). Si `xpath`
+    résout un `<label>` plutôt que l'input lui-même, on descend au premier
+    input checkbox/radio qu'il contient avant de lire son état.
+    """
+    try:
+        current_frame = getattr(driver, "_current_frame", driver)
+        el = current_frame.query_selector("xpath=" + xpath)
+    except Exception:
+        return None
+    if el is None:
+        return None
+
+    target_el = el
+    try:
+        tag = (el.evaluate("e => e.tagName") or "").lower()
+    except Exception:
+        tag = ""
+    if tag != "input":
+        try:
+            nested = el.query_selector("input[type='checkbox'], input[type='radio']")
+        except Exception:
+            nested = None
+        if nested is None:
+            return None
+        target_el = nested
+
+    try:
+        return bool(is_checked(target_el))
+    except Exception:
+        return None
+
+
+def _checkbox_radio_false_negative_issue(action: Any, *, driver) -> dict | None:
+    """Faux négatif dispatcher générique pour itype checkbox/radio (cf.
+    `_ifop_zip2city_false_negative_issue` ci-dessus, référence pour ce type de
+    détection — non modifiée). Constat DOM passif scopé à l'élément ciblé par
+    le `target_id` de l'action via le registry, sans hypothèse de provider :
+    couvre aussi bien les widgets déjà supportés par une stratégie du
+    dispatcher que les futurs widgets checkbox/radio qui n'en ont pas encore.
+    """
+    if not isinstance(action, dict) or driver is None:
+        return None
+
+    target_id = _norm(action.get("target_id"))
+    itype = _norm_lc(action.get("itype"))
+    value = _norm(action.get("value"))
+    if itype not in {"checkbox", "radio"} or not target_id or not value:
+        return None
+
+    payload = get_target(target_id)
+    xpath = _checkbox_radio_option_xpath(payload, value)
+    if not xpath:
+        return None
+
+    if _checkbox_radio_dom_checked_signal(driver, xpath) is not True:
+        return None
+
+    return {
+        "failure_type": "dispatcher_false_negative",
+        "target_id": target_id,
+        "itype": itype,
+        "value": value,
+        "dom_signal": "checkbox_radio_checked",
+    }
+
+
+def _dispatcher_false_negative_issue(
+    action: Any,
+    *,
+    driver,
+    question_blocks: Any,
+) -> dict | None:
+    """Point d'appel combiné : essaie d'abord la détection ifop_zip2city de
+    référence (non modifiée), puis en complément la détection générique
+    checkbox/radio. Chaque détecteur reste indépendant et scopé à son propre
+    garde-fou DOM ; aucune des deux fonctions n'est modifiée par l'autre.
+    """
+    return _ifop_zip2city_false_negative_issue(
+        action,
+        driver=driver,
+        question_blocks=question_blocks,
+    ) or _checkbox_radio_false_negative_issue(action, driver=driver)
+
+
 def validate_actions(
     actions: list[dict] | None,
     *,
@@ -187,7 +295,7 @@ def validate_actions(
         false_negatives = [
             issue
             for action in requested
-            if (issue := _ifop_zip2city_false_negative_issue(
+            if (issue := _dispatcher_false_negative_issue(
                 action,
                 driver=driver,
                 question_blocks=question_blocks,

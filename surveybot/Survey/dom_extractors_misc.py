@@ -3407,6 +3407,175 @@ def _extract_single_checkbox_no_form_cta_block(driver, frame_chain: list[int] | 
     ]
 
 
+def _extract_mui_checkbox_consent_cta_block(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction ciblée écran consentement Material-UI (MUI) checkbox + CTA désactivé.
+
+    Stratégie nommée distincte de `_extract_single_checkbox_no_form_cta_block` (non modifiée) :
+    couvre les écrans MUI/React où le <input type="checkbox"> n'est PAS enfant direct du
+    <label> mais imbriqué dans un <span class="MuiCheckbox-root"> intermédiaire
+    (ex. community.focaldata.com : case "J'accepte..." + bouton "Commencer" Mui-disabled).
+    Le sélecteur `label > input[type='checkbox']` de l'extracteur voisin ne matche donc
+    jamais ce DOM — d'où blocks_extracted=0 malgré un élément actionnable réel présent.
+
+    Garde-fou DOM strict (budget borné, abandon contrôlé) :
+    - label[class*='MuiFormControlLabel'] contenant, via un span[class*='MuiCheckbox']
+      intermédiaire, un input[type=checkbox] descendant (pas enfant direct)
+    - le wrapper parent immédiat du label ne contient QUE ce checkbox
+      (exactement 1 checkbox, 0 radio) — isole le pattern d'un éventuel doublon
+      haut/bas du même bloc consentement sur un écran CGU longues
+    - le frère direct suivant (`following-sibling::*[1]`) de ce wrapper contient un
+      bouton disabled — le CTA ("Commencer"/"Accept") bloqué tant que non coché
+    Ne retient que la 1ère occurrence actionnable trouvée dans l'ordre du document.
+    """
+
+    frame_chain = list(frame_chain or [])
+
+    try:
+        candidates = driver.query_selector_all(
+            "label[class*='MuiFormControlLabel'] span[class*='MuiCheckbox'] input[type='checkbox']"
+        )
+    except Exception:
+        candidates = []
+
+    cb = None
+    label = None
+
+    for candidate in candidates:
+        try:
+            candidate_label = candidate.query_selector("xpath=" + "ancestor::label[1]")
+        except Exception:
+            candidate_label = None
+        if candidate_label is None:
+            continue
+
+        try:
+            wrapper = candidate_label.query_selector("xpath=" + "parent::*[1]")
+        except Exception:
+            wrapper = None
+        if wrapper is None:
+            continue
+
+        try:
+            cbs_in_wrapper = wrapper.query_selector_all("input[type='checkbox']")
+            radios_in_wrapper = wrapper.query_selector_all("input[type='radio']")
+        except Exception:
+            continue
+        if len(cbs_in_wrapper) != 1 or radios_in_wrapper:
+            continue
+
+        try:
+            next_sibling = wrapper.query_selector("xpath=" + "following-sibling::*[1]")
+        except Exception:
+            next_sibling = None
+        if next_sibling is None:
+            log_debug("[MUI_CONSENT_CB]", "pas de frère suivant — abandon pour ce candidat")
+            continue
+
+        try:
+            disabled_ctas = next_sibling.query_selector_all(
+                "button[disabled], input[type='submit'][disabled], input[type='button'][disabled]"
+            )
+        except Exception:
+            disabled_ctas = []
+        if not disabled_ctas:
+            log_debug("[MUI_CONSENT_CB]", "pas de CTA disabled dans le frère suivant — abandon pour ce candidat")
+            continue
+
+        cb = candidate
+        label = candidate_label
+        break
+
+    if cb is None:
+        return []
+
+    try:
+        label_txt = _norm(label.inner_text() or "")
+    except Exception:
+        label_txt = ""
+
+    if not label_txt:
+        return []
+
+    try:
+        cb_id = (cb.get_attribute("id") or "").strip()
+        cb_name = (cb.get_attribute("name") or "").strip()
+    except Exception:
+        cb_id = ""
+        cb_name = ""
+
+    question = ""
+    try:
+        heading_txt = _norm(_find_heading_tag_near_choice_group(driver, cb, [label_txt]) or "")
+        if heading_txt:
+            question = heading_txt
+    except Exception:
+        question = ""
+
+    if not question:
+        try:
+            inferred = _norm(_find_question_text_near_element(driver, cb) or "")
+            if inferred:
+                question = inferred
+        except Exception:
+            pass
+
+    if not question:
+        question = label_txt
+
+    group_base = cb_name or cb_id
+    if not group_base:
+        try:
+            group_base = _best_xpath_for_element(driver, cb)
+        except Exception:
+            group_base = ""
+    if not group_base:
+        return []
+
+    group_key = f"checkbox:name:{_norm_lc(group_base)}"
+    target_id = make_target_id("group", group_key, question)
+
+    if cb_id:
+        id_lit = _xpath_literal(cb_id)
+        option_xpath = f"(//label[@for={id_lit}] | //*[@id={id_lit}])[1]"
+    elif cb_name:
+        name_lit = _xpath_literal(cb_name)
+        option_xpath = f"(//input[@type='checkbox' and @name={name_lit}]/ancestor::label[1] | //input[@type='checkbox' and @name={name_lit}])[1]"
+    else:
+        option_xpath = _best_xpath_for_element(driver, cb)
+
+    option_xpath_map = {_norm_key(label_txt): option_xpath}
+
+    register_target(
+        target_id,
+        {
+            "kind": "group",
+            "itype": "checkbox",
+            "group_key": group_key,
+            "question": question,
+            "option_xpath_map": option_xpath_map,
+            "frame_chain": frame_chain,
+            "mui_consent_checkbox": True,
+        },
+    )
+
+    log_info("[MUI_CONSENT_CB]", f"bloc produit id={cb_id or cb_name or 'n/a'}")
+
+    return [
+        {
+            "question": question,
+            "itype": "checkbox",
+            "options": [label_txt],
+            "max_select": _compute_max_select("checkbox", [label_txt]),
+            "target_id": target_id,
+            "context": {
+                "kind": "group",
+                "group_key": group_key,
+                "mui_consent_checkbox": True,
+            },
+        }
+    ]
+
+
 def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) -> list[dict]:
     """Extraction ciblée d'un écran consentement modal radio + bouton confirmer.
 

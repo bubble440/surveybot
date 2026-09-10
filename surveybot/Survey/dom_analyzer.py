@@ -104,6 +104,7 @@ try:
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
         _extract_single_checkbox_no_form_cta_block,
+        _extract_mui_checkbox_consent_cta_block,
         _extract_consent_modal_radio_block,
         _extract_confirmit_wix_checkbox_grid_blocks,
         _extract_confirmit_wix_fieldset_radio_block,
@@ -239,6 +240,7 @@ except ImportError:
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
         _extract_single_checkbox_no_form_cta_block,
+        _extract_mui_checkbox_consent_cta_block,
         _extract_consent_modal_radio_block,
         _extract_confirmit_wix_checkbox_grid_blocks,
         _extract_confirmit_wix_fieldset_radio_block,
@@ -1768,6 +1770,18 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         no_form_checkbox_blocks = _extract_single_checkbox_no_form_cta_block(driver, frame_chain)
         if no_form_checkbox_blocks:
             return no_form_checkbox_blocks
+    except Exception:
+        pass
+
+    # --- 0h-quater-ter) Checkbox unique MUI (Material-UI/React) + CTA conditionnel ---
+    # Objectif: couvrir les écrans MUI où le checkbox est imbriqué dans un span
+    # (ex. community.focaldata.com), non couverts par 0h-quater-bis (guard `label > input`
+    # à enfant direct, incompatible avec le wrapper span MUI). Additif, essayé uniquement
+    # si 0h-quater et 0h-quater-bis n'ont rien produit.
+    try:
+        mui_checkbox_blocks = _extract_mui_checkbox_consent_cta_block(driver, frame_chain)
+        if mui_checkbox_blocks:
+            return mui_checkbox_blocks
     except Exception:
         pass
 

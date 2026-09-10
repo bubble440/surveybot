@@ -16,6 +16,9 @@ pillow              # pour les captures d'écran (via screenshot_analyzer)
 numpy               # utile si tu fais du traitement image/texte
 tqdm                # pour les barres de progression (optionnel)
 beautifulsoup4      # parsing HTML si ajouté plus tard
+lxml                # remplacement DOM statique (Survey/dom_replay_shim.py) pour rejouer
+cssselect           # dom_analyzer sur un DOM figé (failure_case) sans navigateur réel —
+                    # outil dev uniquement, jamais importé par main.py / embarqué Nuitka
 
 # --- (optionnel mais recommandé en prod) ---
 urllib3>=1.26.0

@@ -317,6 +317,17 @@ def click_checkbox_buttonish_by_label(driver, label: str, context_hint: str | No
                         return True
                 except Exception:
                     pass
+            else:
+                # Input natif imbriqué sans for=... (ex. MUI FormControlLabel) : le
+                # clic ci-dessus peut avoir coché l'input via le forwarding natif
+                # label->contrôle sans que linked (None ici) ni la classe
+                # ui-checkbox-on (jQuery-Mobile) ne le détectent.
+                try:
+                    nested_inp = best.query_selector("input[type='checkbox'], input[type='radio']")
+                    if nested_inp is not None and nested_inp.is_checked():
+                        return True
+                except Exception:
+                    pass
             cls = (best.get_attribute("class") or "").lower()
             if "ui-checkbox-on" in cls:
                 return True

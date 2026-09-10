@@ -1884,6 +1884,84 @@ Patterns exclus :
 
 ---
 
+## PLATEFORME : FOCALDATA (community.focaldata.com) — CONSENTEMENT MUI CHECKBOX + CTA DÉSACTIVÉ
+Signature DOM : `label[class*="MuiFormControlLabel"]` contenant, via un `span[class*="MuiCheckbox"]`
+intermédiaire, un `input[type="checkbox"]` NON enfant direct du `label` ; wrapper parent immédiat du
+label avec exactement 1 checkbox et 0 radio ; frère direct suivant du wrapper contenant un CTA
+`button[disabled]` ("Commencer"/"Accept").
+
+### _extract_mui_checkbox_consent_cta_block
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py step `0h-quater-ter`, après `_extract_single_consent_checkbox_block`
+(0h-quater) et `_extract_single_checkbox_no_form_cta_block` (0h-quater-bis) — essayé seulement si les
+deux n'ont rien produit.
+Bug corrigé : `_extract_single_checkbox_no_form_cta_block` cible `label > input[type='checkbox']`
+(enfant direct) et ne matche donc jamais ce DOM MUI, l'input étant imbriqué dans un
+`span.MuiCheckbox-root` intermédiaire. Sans ce patch : `blocks_extracted=0` sur tous les extracteurs
+testés, seul le textarea recaptcha invisible est vu (rejeté par SINGLES_SKIP), et l'absence
+d'élément actionnable déclenchait une boucle RELOAD_RETRY sans jamais progresser.
+Patterns couverts :
+- Écrans de consentement MUI/React (ex. community.focaldata.com) : checkbox unique dans wrapper
+  `span.MuiCheckbox-root`, CTA "Commencer" `Mui-disabled` tant que non coché
+- Retient uniquement la 1ère occurrence actionnable dans l'ordre du document (budget borné)
+Patterns exclus :
+- `label > input[type='checkbox']` enfant direct → `_extract_single_checkbox_no_form_cta_block`
+- Conteneurs id/class contenant `consent`/`consentContainer` → `_extract_single_consent_checkbox_block`
+- Wrapper avec plusieurs checkboxes ou tout radio présent → aucun extracteur (hors scope, évite un
+  faux positif sur un écran CGU avec doublon haut/bas du même bloc consentement)
+Flag payload : `mui_consent_checkbox=True`
+
+### click_checkbox_buttonish_by_label — vérification de l'état réel quand linked=None
+Date : 2026-09-09
+Fichier : Survey/input_checkbox.py (fonction `click_checkbox_buttonish_by_label`, ligne ~245),
+stratégie `checkbox_buttonish` (2e du chemin de repli générique checkbox dans
+action_dispatcher.py::execute_action, après `checkbox_main`).
+Bug corrigé : sur ce bloc consentement MUI (aucun `id`/`name` sur l'`<input>`, donc aucun
+`for=...` sur le `<label>`), `_apply_by_target_id` échoue (`element not found for xpath` — le
+xpath absolu résolu par `_best_xpath_for_element` ne matche plus rien au moment du clic) puis
+`checkbox_main` (`click_checkbox_by_label`) épuise tous ses chemins sans effet (guards DOM
+d'autres providers, plus ses 2 derniers recours JS `fallback_click_checkbox_js_alchemer`/
+`_generic` cassés par un bug séparé — voir entrée ci-dessous). Le repli suivant,
+`click_checkbox_buttonish_by_label`, matche ce label via son garde `.//label[... or .//span]`
+(trop large, mais additif et non touché ici) et exécute jusqu'à 3 clics réels sur le label
+(`native`/`ac`/`js`) — chacun bascule réellement la checkbox via le forwarding natif
+label→input (fonctionne sans `for=...`, l'input étant descendant direct du label). Mais la
+vérification post-clic ne testait que `linked.is_selected()` (jamais atteint : `linked` est
+`None` en l'absence de `for=...`) et la classe `ui-checkbox-on` (convention jQuery-Mobile,
+jamais présente sur MUI) — jamais l'état réel de l'input natif imbriqué. Résultat observé :
+3 clics = 3 bascules (non coché → coché → non coché → coché, nombre impair), aucune reconnue,
+`apply ok=false reason=no_strategy` final malgré une checkbox réellement cochée (confirmé par
+diff pre_action_dom.html/post_action_dom.html du même essai, avant toute pause CTA).
+Correction : quand `linked is None`, lecture de l'input natif descendant du label
+(`best.query_selector("input[type='checkbox'], input[type='radio']")`) et vérification via
+`is_checked()` (Playwright natif, même convention que `_is_selected` dans action_dispatcher.py
+— jamais `is_selected()`, inexistant sur Playwright). Ajouté en `else` du bloc
+`if linked is not None:` existant — aucune modification du chemin `for=...`, du garde DOM, du
+nombre de clics tentés, ni de `force_label_for_checkbox_js`.
+Patterns couverts :
+- Tout label matché par `click_checkbox_buttonish_by_label` dont l'input natif est un
+  descendant direct du label sans `for=...` (ex. MUI FormControlLabel) : succès dès le 1er
+  clic (`native`) si l'input est effectivement coché, au lieu d'enchaîner les 2 clics suivants.
+Patterns exclus :
+- Chemin `linked is not None` (checkbox jQuery-Mobile classique avec `for=...`) : inchangé,
+  y compris son usage de `linked.is_selected()` (bug latent distinct, hors scope de ce patch).
+- Garde DOM de sélection du label (`.//label[... or .//span]`) : non modifié.
+Bugs annexes confirmés mais non corrigés dans ce patch (hors scope, signalés) :
+- `_apply_toluna_runtime_answerrow_cached` (action_dispatcher.py, ~ligne 1424) : `value.evaluate(...)`
+  appelé sur une `str` → `AttributeError` systématique (probe read-only, jamais de clic — inoffensif
+  mais toujours en échec).
+- `fallback_click_checkbox_js_alchemer`/`fallback_click_checkbox_js_generic`/
+  `force_label_for_checkbox_js` (Survey/input_checkbox.py) : `driver.evaluate("(arg) => {...}", ...)`
+  où le corps JS référence `_el` jamais déclaré (ni comme paramètre, ni destructuré) →
+  `ReferenceError` systématique, avalée silencieusement (`except Exception: return False`).
+Vérification : confirmé en conditions réelles sur le DOM de référence de ce case
+(`20260909_195344_action_validation_failure`) — log avant patch : cascade complète jusqu'à
+`apply ok=false reason=no_strategy` ; log après patch : `apply ok=true strategy=checkbox_buttonish
+reason=applied` dès le 1er clic, plus de cascade vers `checkbox_fallback_radio`.
+Statut : patch validé par l'utilisateur en conditions réelles.
+
+---
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
@@ -1905,6 +1983,7 @@ Patterns exclus :
 | Decipher/FocusVision card rating | _extract_decipher_cardrating_blocks | button_group générique | `div.sq-cardrating-widget[data-uid]` avec config `rows`/`cardrating:completion` lisible — retour immédiat si match, guard négatif additif sur button_group pour ce widget |
 | Decipher/FocusVision card rating | _extract_decipher_cardrating_blocks | extracteur générique answers-list/matrice (vue QA) | même `data-uid` de widget déjà couvert par `_extract_decipher_cardrating_blocks` → bloc `radio:name:{uid}` de la vue QA cachée supprimé par guard négatif additif |
 | Ipsos/simstore MUI | _extract_image_labelledby_choice_checkbox_blocks | _extract_image_only_choice_checkbox_blocks | inputs SANS `name` + libellé résolu via `aria-labelledby` (vs inputs avec `name` + wrapper label/parent direct) |
+| Focaldata (MUI React) | _extract_mui_checkbox_consent_cta_block | _extract_single_checkbox_no_form_cta_block | `input[type=checkbox]` imbriqué dans `span.MuiCheckbox-root` intermédiaire, non enfant direct du label (vs `label > input` enfant direct) — essayé seulement après échec du second (0h-quater-ter, après 0h-quater-bis) |
 | Ask&Answer/FirstInsight | _extract_askandanswer_ranking_dragdrop_blocks | _extract_askandanswer_selection_list_questions | `data-question-type='RANKING_DRAG_AND_DROP'` + `div.cdk-drop-list`/`div.cdk-drag` (vs `mat-selection-list`/`mat-radio-group`) — les deux sont fusionnés (non exclusifs) par dom_analyzer.py étape 0c, pas de retour anticipé |
 | QDTech/KuaiJueCe | _extract_qdtech_qdradio_icon_choice_blocks | extracteur générique input/role radio-checkbox | `.radio-ctn` + `i[class*='qd-radio']` sans input natif ni role (vs input[type=radio/checkbox]/[role=radio/checkbox] pour le chemin générique) — retour anticipé si match |
 | QDTech/KuaiJueCe | _extract_qdtech_qdcheckbox_icon_choice_blocks | _extract_qdtech_qdradio_icon_choice_blocks | `i[class*='qd-checkbox']` (choix multiple) vs `i[class*='qd-radio']` (sélection unique) sous le même conteneur `.radio-ctn` — sélecteurs d'icône disjoints, aucun recouvrement ; libellé résolu via l'ancêtre commun `.radio-ctn-body-list-item` (vs parent/grand-parent direct pour la variante radio) |
