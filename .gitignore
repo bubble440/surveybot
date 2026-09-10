@@ -46,3 +46,6 @@ dist_nuitka_dev/
 ./tools/attach_tab.ps1
 dist_zip/
 dist_orchestration/
+failure_cases/
+diag_test_cases/
+diagnoses/

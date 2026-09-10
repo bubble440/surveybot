@@ -15,6 +15,17 @@ niveau tant que le niveau précédent n'est pas fiable.
 > itype scopée au target_id retenu ; sanitisation des attributs href/src des DOM HTML
 > copiés, en plus du nettoyage déjà en place sur meta.json). Le chantier principal passe
 > à la Phase 3 (replay local déterministe).
+> Mise à jour 2026-09-09 (suite 2) : Phase 3 clôturée. `Survey/dom_replay_shim.py`
+> (driver statique lxml, surface Playwright minimale, `evaluate()` limité à deux
+> idiomes structurels reconnus, décline honnêtement le reste) + `Survey/failure_replay.py`
+> (chargement DOM à stratégie unique par stage, verdicts REPRODUIT/NON_REPRODUIT/
+> DIFFERENT/NON_REJOUABLE) + `tools/replay_failure.py`. `lxml`/`cssselect` ajoutés en
+> dépendance dev-only (jamais embarqués dans le binaire Nuitka de distribution tiers,
+> à revérifier avant la prochaine release). Limite structurelle actée : `child_frames`
+> toujours vide (DOM figé post-résolution de frame) — ce replay ne peut pas re-tester
+> un bug de sélection de frame elle-même, seulement l'extraction/validation à
+> l'intérieur d'une frame déjà correctement choisie. Le chantier principal passe à la
+> Phase 4 (diagnostic automatique).
 
 ## Contexte de travail actuel
 
@@ -42,7 +53,8 @@ incident détecté
 1A  terminée
 1B  ouverte en tâche de fond
 2   terminée
-3   prochain chantier principal
+3   terminée
+4   prochain chantier principal
 ```
 
 Décision importante :
@@ -629,76 +641,104 @@ jamais risquer d'altérer la structure DOM dont la Phase 3 (replay) dépendra.
 
 # Phase 3 --- Replay local déterministe
 
-C'est une étape essentielle.
+**Statut : TERMINÉE — `Survey/dom_replay_shim.py` + `Survey/failure_replay.py` +
+`tools/replay_failure.py` implémentés et validés.**
 
-Avant de demander à une IA de modifier le code, on doit pouvoir
-reproduire les erreurs autant que possible sans dépendre de la page
-live.
-
-On crée :
+Objectif atteint : reproduire un incident sans dépendre de la page live, en
+rejouant sur le HTML figé du failure_case :
 
 ``` text
-tools/replay_failure.py
-```
-
-ou son équivalent.
-
-Il devra pouvoir charger :
-
-``` text
-failure_case
-```
-
-et rejouer au minimum :
-
-``` text
-DOM
-→ dom_analyzer
+DOM (artifacts/ du case)
+→ dom_replay_shim (driver statique, surface Playwright minimale)
+→ dom_analyzer.analyze_dom()
 → question_blocks
-→ validator
+→ validator concerné (question_block_validator ou action_validator)
 ```
 
-Pour les problèmes d'extraction, c'est extrêmement utile.
+### Architecture réelle
 
-Exemple :
+`Survey/dom_replay_shim.py` expose un `StaticPage`/`StaticElementHandle` en
+lecture seule (lxml + cssselect), suffisant pour que `dom_analyzer.py` et les
+validators tournent sans modification (injection par le paramètre `driver`
+déjà existant — aucune touche à leur code). Aucune méthode d'interaction
+(click/fill/type) n'est exposée : ce shim ne couvre que l'extraction/l'analyse,
+jamais le dispatch.
+
+`evaluate()` n'exécute aucun JS générique — il ne reconnaît que deux idiomes
+structurels observés tels quels dans `dom_analyzer.py` (lecture de `tagName`,
+recherche d'ancêtre via `closest()`), calculables sans layout. Tout le reste
+(`getComputedStyle`, `getBoundingClientRect`, signaux de widget spécifiques)
+décline proprement (`JsEvaluationUnavailable`) plutôt que de deviner un
+résultat — le code appelant existant absorbe déjà ce cas comme en prod face à
+un `evaluate()` qui échoue. Les compteurs `evaluate_handled`/`evaluate_declined`
+sont reportés dans chaque résultat de replay pour garder cette limite visible.
+
+`Survey/failure_replay.py` orchestre : une seule stratégie de chargement DOM
+par stage, jamais de cascade essai/erreur sur plusieurs fichiers en espérant
+qu'un match :
 
 ``` text
-python replay_failure.py case_20260905_061542
+stage=action      → post_action_dom.html exclusivement
+                     (pre_action_dom.html : comparaison informative seulement,
+                     jamais analysé)
+stage=extraction  → dom_outer.html, sinon page_source.html, sinon dom_body.html
+                     (ordre de fidélité décroissante, premier présent utilisé)
 ```
 
-résultat :
+Fichier requis absent des artifacts du case (`manifest.artifacts`, jamais une
+présence supposée) → `NON_REJOUABLE` immédiat, sans tenter d'alternative.
+
+### Verdicts
 
 ``` text
-EXPECTED FAILURE:
-missing_options
-
-CURRENT RESULT:
-missing_options
-
-STATUS:
-REPRODUCED
+python tools/replay_failure.py failure_cases/case_20260907_213458_action_validation_failure
 ```
 
-Après patch :
+Les `failure_types` du replay (mêmes listes que `failure_case_builder.py`,
+dérivées de `validation_report.json`) sont comparés à ceux du case d'origine :
 
 ``` text
-CURRENT RESULT:
-PASS
-
-STATUS:
-FIXED
+REPRODUIT       : ensembles de failure_types strictement identiques
+NON_REPRODUIT   : le replay ne signale plus aucun problème
+DIFFERENT       : le replay signale un problème, mais un ensemble différent
+NON_REJOUABLE   : DOM requis absent / artefact illisible / erreur non
+                  recouvrable pendant l'extraction ou la validation
 ```
 
-### Limite
+### Limite actée : sélection de frame hors de portée
 
-Certains problèmes d'interaction nécessitent JavaScript/runtime réel.
+Un failure_case ne fige qu'un seul document déjà résolu — `page_snapshot.py`
+capture le DOM **après** sélection de la meilleure chaîne de frames. Le shim
+expose donc toujours `child_frames = []`. Conséquence assumée : ce replay peut
+valider l'extraction/la validation à l'intérieur d'une frame déjà correctement
+choisie, mais **ne peut pas** re-tester un bug de sélection de frame elle-même
+(catégorie « frame context oublié », citée en Phase 17). La Phase 4
+(diagnostic automatique) devra identifier ces cas en amont plutôt que de leur
+appliquer un replay qui ne peut que produire `NON_REJOUABLE` ou un faux signal.
 
-Donc le replay ne couvrira pas 100 % des problèmes de sélection.
+### Limite actée : réutilisation de dispatcher_success
 
-Ce n'est pas grave.
+Pour `stage=action`, le replay tourne sur exactement le même DOM qui a servi à
+produire le rapport d'origine, avec le `dispatcher_success` d'origine réutilisé
+tel quel (aucun dispatcher réel ne tourne pendant le replay). Tant qu'aucun
+patch n'a modifié le code, `REPRODUIT` est donc attendu par construction pour
+ces cas — ce n'est pas un défaut, c'est la vérification de référence avant
+patch. La valeur diagnostique réelle (confirmer qu'un patch a fait disparaître
+le problème) s'active en Phase 9 (replay post-patch), en rejouant le même
+outil après modification du code.
 
-On ne doit surtout pas construire un navigateur artificiel gigantesque
-juste pour atteindre 100 %.
+### Dépendances
+
+``` text
+lxml         (nouveau, dev-only)
+cssselect    (nouveau, dev-only)
+```
+
+Ajoutés à `requirements.txt`, jamais importés par `main.py` ni embarqués dans
+le binaire Nuitka de distribution tiers (à revérifier explicitement avant la
+prochaine `nuitka_build_release.ps1`, et à installer manuellement — via
+`setup_machine.ps1` ou pip — sur toute machine où `replay_failure.py` doit
+tourner ; l'auto-update R2 ne pousse jamais de nouvelles dépendances).
 
 ------------------------------------------------------------------------
 
@@ -1449,8 +1489,8 @@ Je suivrais exactement cet ordre :
 1A  Observabilité passive — TERMINÉE, validée en live attach
 1B  Stabilisation des validators — OUVERTE EN TÂCHE DE FOND (1B.1 et 1B.2 validés)
 2   Failure cases normalisés — TERMINÉE (failure_case_builder.py + CLI, 2 correctifs validés)
-3   Replay local — PROCHAIN CHANTIER PRINCIPAL
-4   Diagnostic automatique
+3   Replay local — TERMINÉE (dom_replay_shim.py + failure_replay.py + CLI)
+4   Diagnostic automatique — PROCHAIN CHANTIER PRINCIPAL
 5   Sélection automatique du contexte code
 6   Génération du prompt Codex
 7   Patch dans branche isolée

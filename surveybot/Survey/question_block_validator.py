@@ -136,6 +136,61 @@ def _zappi_max_diff_signal(driver) -> dict | None:
         return None
 
 
+def _focaldata_response_option_cards_signal(driver) -> dict | None:
+    """Retourne un signal minimal pour des cartes de réponse focaldata non extraites.
+
+    Ce n'est pas un extracteur : il ne lit ni ne reconstruit les options. Il
+    constate uniquement le pattern DOM complet observé sur
+    community.focaldata.com — titre de question rendu via l'éditeur Draft.js,
+    cartes d'options MUI Paper/Grid portant un attribut `data-cy` discriminant
+    et un marqueur de sélection, sans input natif radio/checkbox, avec un CTA
+    "Suivant"/"Next" présent mais désactivé — afin d'éviter de classer un écran
+    focaldata transitoire ou sans question comme une anomalie d'extraction.
+    """
+    try:
+        current_frame = getattr(driver, "_current_frame", driver)
+        signal = current_frame.evaluate("""() => {
+            if (location.hostname !== 'community.focaldata.com') return null;
+
+            const visible = node => {
+                if (!node) return false;
+                const style = getComputedStyle(node);
+                return style.display !== 'none'
+                    && style.visibility !== 'hidden'
+                    && node.getClientRects().length > 0;
+            };
+
+            const editor = document.querySelector(
+                '[data-test-id="editor-input"] .public-DraftEditor-content'
+            );
+            if (!visible(editor) || editor.textContent.trim().length < 8) return null;
+
+            const options = Array.from(
+                document.querySelectorAll('[data-cy^="response-option-"]')
+            ).filter(visible);
+            if (options.length < 2) return null;
+
+            for (const option of options) {
+                if (option.querySelector('input[type="radio"], input[type="checkbox"]')) {
+                    return null;
+                }
+                if (!option.querySelector('[class*="responseOptionMarker"]')) return null;
+            }
+
+            const next = Array.from(document.querySelectorAll('button[type="button"]')).find(
+                btn => visible(btn) && /suivant|next/i.test(btn.textContent || '')
+            );
+            if (!next || !next.disabled) return null;
+
+            return {
+                options_count: options.length,
+            };
+        }""")
+        return signal if isinstance(signal, dict) else None
+    except Exception:
+        return None
+
+
 def validate_question_blocks(question_blocks: list[dict] | None, *, driver=None) -> dict:
     """Retourne un rapport JSON-sérialisable sans effet de bord."""
     blocks = question_blocks or []
@@ -160,6 +215,14 @@ def validate_question_blocks(question_blocks: list[dict] | None, *, driver=None)
                     "dom_signal": "zappi_max_diff",
                     **signal,
                 })
+            else:
+                signal = _focaldata_response_option_cards_signal(driver)
+                if signal:
+                    issues.append({
+                        "failure_type": "missing_block",
+                        "dom_signal": "focaldata_response_option_cards",
+                        **signal,
+                    })
 
     for idx, block in enumerate(blocks):
         if not isinstance(block, dict):
