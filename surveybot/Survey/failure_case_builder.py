@@ -99,6 +99,13 @@ _KNOWN_FILES = (
     "page.mhtml",
     "body_text.txt",
     "mhtml_error.txt",
+    # Browser Capsule (Phase 3B, additif) : faits d'état runtime et déroulé
+    # structuré d'action, produits par Survey/browser_capsule.py via le hook
+    # d'action existant. Optionnels (stage=action uniquement, et seulement
+    # lorsque le registry a permis de résoudre au moins une cible) — leur
+    # absence n'est jamais un warning, cf. _load_json.
+    "runtime_state.json",
+    "action_trace.json",
 )
 
 # Noms générés par page_snapshot._dump_frames_best_effort : frame_<chain>.dom_outer.html
@@ -115,6 +122,15 @@ _HTML_FILES_TO_SANITIZE = {
     "dom_outer.html",
     "dom_body.html",
     "page_source.html",
+}
+
+# Browser Capsule (Phase 3B, additif) : JSON dont certains champs peuvent porter
+# une URL (ex. "href" d'un élément observé par Survey/browser_capsule.py) —
+# même règle de retrait query string/fragment que meta.json/le HTML ci-dessus,
+# étendue aux clés "href"/"src" en plus de "url" (cf. _sanitize_capsule_json).
+_CAPSULE_JSON_FILES_TO_SANITIZE = {
+    "runtime_state.json",
+    "action_trace.json",
 }
 
 # <script>/<style> capturés en (tag_ouvrant, contenu, tag_fermant) : seul
@@ -186,6 +202,38 @@ def _sanitize_meta(meta: dict) -> tuple[dict, bool]:
         if isinstance(node, dict):
             for key, value in list(node.items()):
                 if key == "url" and isinstance(value, str):
+                    new_value = _strip_url(value)
+                    if new_value != value:
+                        stripped = True
+                    node[key] = new_value
+                else:
+                    node[key] = _walk(value)
+            return node
+        if isinstance(node, list):
+            return [_walk(item) for item in node]
+        return node
+
+    return _walk(out), stripped
+
+
+def _sanitize_capsule_json(data: Any) -> tuple[Any, bool]:
+    """Retire query string/fragment de tout champ "url"/"href"/"src" avant copie.
+
+    Généralisation additive de _sanitize_meta (qui ne connaît que "url", le seul
+    champ porteur d'URL de meta.json) pour les artefacts Browser Capsule
+    (runtime_state.json/action_trace.json), qui peuvent porter "href" par
+    élément observé (cf. Survey/browser_capsule.py). _sanitize_meta lui-même
+    n'est pas modifié.
+    """
+    stripped = False
+    out = json.loads(json.dumps(data))  # copie profonde indépendante de l'original
+    url_like_keys = {"url", "href", "src"}
+
+    def _walk(node: Any) -> Any:
+        nonlocal stripped
+        if isinstance(node, dict):
+            for key, value in list(node.items()):
+                if key in url_like_keys and isinstance(value, str):
                     new_value = _strip_url(value)
                     if new_value != value:
                         stripped = True
@@ -466,6 +514,28 @@ def _copy_known_files(
 
         if name in _HTML_FILES_TO_SANITIZE:
             presence[name] = _copy_sanitized_html(src, artifacts_dir / name, warnings=warnings)
+            continue
+
+        if name in _CAPSULE_JSON_FILES_TO_SANITIZE:
+            data, ok = _load_json(src, warnings)
+            if ok:
+                sanitized, stripped = _sanitize_capsule_json(data)
+                (artifacts_dir / name).write_text(
+                    json.dumps(sanitized, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                if stripped:
+                    warnings.append(
+                        f"{name}: query string/fragment retirée d'un ou plusieurs "
+                        "champs 'href'/'src'/'url' avant copie (donnée de session potentielle)"
+                    )
+                presence[name] = True
+            else:
+                warnings.append(
+                    f"{name}: présent mais illisible/JSON invalide — non copié "
+                    "(contenu non vérifiable, risque de token non filtré)"
+                )
+                presence[name] = False
             continue
 
         try:

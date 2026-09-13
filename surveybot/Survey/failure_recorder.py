@@ -17,11 +17,19 @@ def record_validation_failure(
     question_blocks: Any = None,
     actions: Any = None,
     pre_action_dom: Optional[str] = None,
+    runtime_state: Any = None,
+    action_trace: Any = None,
 ) -> Optional[str]:
     """Capture le contexte d'un validator en échec, sans jamais casser le survey.
 
     Réutilise page_snapshot comme source unique de capture DOM/frame/screenshot.
     Les artefacts propres à l'observabilité sont ajoutés dans le même dossier.
+
+    runtime_state/action_trace (Browser Capsule, Phase 3B, additifs) : fournis
+    par le hook d'action de page_snapshot.py via Survey/browser_capsule.py.
+    Optionnels (None par défaut) — absents, ils ne changent rien au comportement
+    existant ; fournis, ils sont écrits en plus des artefacts déjà produits,
+    jamais à leur place.
     """
     if not isinstance(report, dict) or report.get("ok", True):
         return None
@@ -44,6 +52,16 @@ def record_validation_failure(
         if actions is not None:
             (out / "actions_requested.json").write_text(
                 json.dumps(actions, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        if runtime_state is not None:
+            (out / "runtime_state.json").write_text(
+                json.dumps(runtime_state, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        if action_trace is not None:
+            (out / "action_trace.json").write_text(
+                json.dumps(action_trace, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
 

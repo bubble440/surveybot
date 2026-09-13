@@ -110,6 +110,28 @@ niveau tant que le niveau précédent n'est pas fiable.
 > partager une seule fonction oracle, pas deux implémentations parallèles. Les schémas
 > de fichiers (`runtime_state.json` etc.) sont explicitement indicatifs, pas figés. Le
 > chantier principal reste la Phase 3B ; l'ordre de priorité 3B avant 3C est inchangé.
+> Mise à jour 2026-09-13 (suite 8) : Phase 3B PARTIELLEMENT clôturée — 3B.1, 3B.2,
+> 3B.5, 3B.6 et 3B.8 implémentés et validés (`Survey/browser_capsule.py`, additif,
+> appelé depuis le hook d'action déjà existant dans `Survey/page_snapshot.py` ;
+> `runtime_state.json`/`action_trace.json` ajoutés à `Survey/failure_case_builder.py`
+> — `_KNOWN_FILES` + sanitisation dédiée `href`/`src`/`url` en plus de celle déjà en
+> place sur `meta.json`/le HTML). 3B.3 (frames) et 3B.4 (Shadow DOM) restent
+> délibérément différées, non traitées par ce patch, dans l'attente de la mesure sur
+> cas réels prévue depuis la suite 6/7. Compromis assumé explicitement : la capture
+> de l'état runtime "avant" et l'installation du `MutationObserver` s'exécutent sur
+> chaque action du plan (pas seulement celles qui échouent), car l'état "avant" doit
+> être capturé avant de savoir si l'action va échouer — le coût (jusqu'à 40 éléments,
+> budget déjà borné) est donc systématique tant que l'observabilité est active, pas
+> seulement au moment d'un incident, contrairement à l'intention initiale de ce
+> chantier. Atténuation actée : ce hook reste conditionné par `SURVEY_OBSERVABILITY`,
+> désactivé par défaut en prod, donc le coût inconditionnel ne s'applique pas au parc
+> réel tant que l'observabilité n'y est pas explicitement activée. Point de vigilance
+> ouvert, à surveiller sur les premiers cas réels : si l'action provoque une
+> navigation avant la lecture du `MutationObserver`, celui-ci est perdu avec l'ancien
+> contexte et la collecte redescend silencieusement à "aucune mutation" plutôt que de
+> disclose explicitement cette limite. Le chantier principal reste la Phase 3B pour
+> 3B.3/3B.4, mesurée avant construction ; la Phase 7 peut continuer à être préparée
+> en parallèle pour les cas `STATIC_DOM`.
 
 ## Contexte de travail actuel
 
@@ -138,11 +160,13 @@ incident détecté
 1A  terminée
 1B  ouverte en tâche de fond
 2   terminée
-3   PARTIELLEMENT TERMINÉE (3A terminée ; 3B/3C/3D à faire — voir Phase 3)
+3   PARTIELLEMENT TERMINÉE (3A terminée ; 3B.1/3B.2/3B.5/3B.6/3B.8 terminés ;
+    3B.3/3B.4/3C/3D à faire — voir Phase 3)
 4   terminée
 5   terminée
 6   terminée (point de vigilance data ouvert — voir note ci-dessus)
-7   en attente de 3B/3C (préparation possible en parallèle pour les cas STATIC_DOM)
+7   en attente de 3C pour les cas hors STATIC_DOM (préparation possible en parallèle
+    pour les cas STATIC_DOM)
 ```
 
 Décision importante :
@@ -729,9 +753,10 @@ jamais risquer d'altérer la structure DOM dont la Phase 3 (replay) dépendra.
 
 # Phase 3 --- Replay local déterministe et capsule navigateur
 
-**Statut : PARTIELLEMENT TERMINÉE — Phase 3A implémentée et validée ; Phases
-3B, 3C et 3D à implémenter avant d'engager la génération automatique de
-patchs de la Phase 7 en conditions réelles.**
+**Statut : PARTIELLEMENT TERMINÉE — Phase 3A implémentée et validée ; Phase 3B
+implémentée et validée pour 3B.1/3B.2/3B.5/3B.6/3B.8 ; 3B.3, 3B.4, 3C et 3D
+restent à implémenter avant d'engager la génération automatique de patchs de
+la Phase 7 en conditions réelles pour les cas hors STATIC_DOM.**
 
 Objectif : transformer chaque incident utile en cas de test durable,
 rejouable localement après disparition de la page live.
@@ -880,7 +905,14 @@ tourner ; l'auto-update R2 ne pousse jamais de nouvelles dépendances).
 
 ## Phase 3B --- Capture enrichie : Browser Capsule
 
-**Statut : À FAIRE — prochain chantier principal.**
+**Statut : PARTIELLEMENT TERMINÉE — 3B.1, 3B.2, 3B.5, 3B.6 et 3B.8 implémentés
+et validés (`Survey/browser_capsule.py`, additif, appelé depuis le hook
+d'action déjà existant de `Survey/page_snapshot.py` ; artefacts reconnus,
+copiés et sanitisés par `Survey/failure_case_builder.py`). 3B.3 et 3B.4
+restent délibérément différées (voir avertissement de cadrage ci-dessous et
+la mise à jour d'historique correspondante) : prochain sous-chantier une fois
+mesuré, sur des cas réels `NON_REJOUABLE` par 3A, le volume effectivement
+bloqué par une sélection de frame ou un Shadow DOM fermé.**
 
 Objectif : enrichir le failure case au moment même de l'incident afin de
 conserver les informations qu'un simple `outerHTML` perd.
@@ -906,6 +938,8 @@ par une sélection de frame ou un Shadow DOM fermé.
 
 ### 3B.1 --- DOM et CSS
 
+**Statut : TERMINÉE.**
+
 La capture existante de `page_snapshot.py` reste la base : elle conserve
 déjà `outerHTML`, le DOM pré/post-action, les `question_blocks`, les actions
 demandées, les frames, le screenshot, un `page.mhtml` best-effort sur les
@@ -930,6 +964,16 @@ propriétés CSS nécessaires à l'actionability/visibilité
 
 ### 3B.2 --- État runtime
 
+**Statut : TERMINÉE — `Survey/browser_capsule.py::capture_runtime_state`,
+scopé aux cibles/options/deux niveaux d'ancêtres des actions demandées,
+écrit dans `runtime_state.json` (état "après" ; le détail avant/après complet
+vit dans `action_trace.json`, cf. 3B.5). Compromis assumé : capturé sur
+chaque action du plan, pas seulement celles en échec, faute de pouvoir
+connaître l'issue avant de capturer l'état "avant" — cf. mise à jour
+d'historique correspondante pour le détail de ce compromis et son
+atténuation (hook conditionné par `SURVEY_OBSERVABILITY`, désactivé par
+défaut en prod).**
+
 Artefact indicatif : `runtime_state.json`. Objectif : conserver les états
 DOM que la sérialisation HTML ne garantit pas.
 
@@ -942,6 +986,10 @@ Le replay doit pouvoir restaurer cet état avant de relancer l'analyse.
 Ne jamais supposer que `outerHTML == état JavaScript réel du contrôle`.
 
 ### 3B.3 --- Frames
+
+**Statut : DIFFÉRÉE — non traitée par le patch 3B.1/3B.2/3B.5/3B.6/3B.8.
+Prochain sous-chantier une fois mesuré, sur des cas réels `NON_REJOUABLE` par
+3A, le volume effectivement bloqué par une sélection de frame.**
 
 Artefact indicatif : `frame_tree.json`. La capture actuelle des frames
 (présente depuis la Phase 1A) doit évoluer vers une représentation
@@ -965,6 +1013,10 @@ maximal de frames, abandon contrôlé, warning explicite si capture tronquée.
 
 ### 3B.4 --- Shadow DOM
 
+**Statut : DIFFÉRÉE — non traitée par le patch 3B.1/3B.2/3B.5/3B.6/3B.8.
+Prochain sous-chantier une fois mesuré, sur des cas réels `NON_REJOUABLE` par
+3A, le volume effectivement bloqué par un Shadow DOM fermé.**
+
 Artefact indicatif : `shadow_roots.json` — pour chaque host, un fingerprint
 structurel stable et le HTML du shadow root capturé (open uniquement). Les
 shadow roots **fermés** ne donnent lieu à aucune tentative intrusive : un
@@ -972,6 +1024,16 @@ case qui en dépend est déclaré `replay limitation = closed_shadow_root`, sa
 fidélité dégradée explicitement plutôt que contournée.
 
 ### 3B.5 --- Trace d'action
+
+**Statut : TERMINÉE — `Survey/browser_capsule.py::build_action_trace`, écrit
+dans `action_trace.json` via le hook d'action existant. Écart assumé avec le
+schéma indicatif ci-dessous, constaté à l'implémentation : `action_dispatcher.py`
+ne retourne qu'un booléen (`dispatcher_success`) — ni « stratégie principale
+utilisée » ni « raison retournée » n'existent sous forme structurée (seulement
+dans des logs non structurés `log_debug`/`log_info`). `action_trace.json` ne
+porte donc pas ces deux champs ; à la place, il réutilise tel quel ce que le
+validator concerné a déjà calculé de façon structurée (`dom_signal`/`observed`
+d'un issue) — aucun parsing de logs tenté, jugé fragile et hors périmètre.**
 
 Pour `stage=action`, compléter `pre_action_dom.html` / `post_action_dom.html` /
 `actions_requested.json` par une trace structurée : `action_trace.json`.
@@ -997,6 +1059,14 @@ after:   input.value = "75001", city_label = "Paris 01"
 
 ### 3B.6 --- Mutations DOM ciblées
 
+**Statut : TERMINÉE — `Survey/browser_capsule.py::install_mutation_observer`/
+`collect_mutation_observer`, bornée à 50 mutations. Limite constatée à
+l'implémentation, non disclosée explicitement dans l'artefact : si l'action
+provoque une navigation avant la collecte, l'observer est perdu avec l'ancien
+contexte et la collecte redescend silencieusement à « aucune mutation »,
+indiscernable d'une absence réelle de mutation — point à surveiller sur les
+premiers cas réels.**
+
 Observation bornée des mutations DOM autour d'une action (attribut `checked`
 ajouté, `aria-selected` modifié, classe `selected` ajoutée, texte de
 confirmation créé, nœud d'erreur ajouté, option devenue active), utile en
@@ -1007,12 +1077,23 @@ existant.
 
 ### 3B.7 --- MHTML
 
+**Statut : TERMINÉE — déjà acquise avant ce patch (capture best-effort déjà
+présente dans `Survey/page_snapshot.py`, cf. Phase 1A/3A). Aucune action
+requise dans le patch 3B.1/3B.2/3B.5/3B.6/3B.8.**
+
 Artefact secondaire lorsqu'il est disponible (préserve plus de ressources
 que l'HTML seul), jamais l'unique source du replay. Le failure case reste
 exploitable à partir de ses artefacts structurés même si le MHTML est
 absent, illisible, ou qu'une ressource n'est pas restaurable.
 
 ### 3B.8 --- Secrets et données sensibles
+
+**Statut : TERMINÉE — `Survey/failure_case_builder.py::_sanitize_capsule_json`
+généralise la sanitisation déjà en place sur `meta.json`/le HTML (retrait
+query string/fragment) aux clés `href`/`src` en plus de `url`, appliquée
+récursivement à `runtime_state.json`/`action_trace.json` avant copie dans le
+failure_case. Aucun cookie/storage/token/header n'est capturé par
+`Survey/browser_capsule.py`.**
 
 La Browser Capsule augmente mécaniquement la quantité d'état capturé. Cette
 extension ne doit jamais entraîner la conservation de cookies,
@@ -2038,7 +2119,9 @@ Je suivrais exactement cet ordre :
 1B  Stabilisation des validators — OUVERTE EN TÂCHE DE FOND (1B.1 et 1B.2 validés)
 2   Failure cases normalisés — TERMINÉE (failure_case_builder.py + CLI, 2 correctifs validés)
 3A  Replay DOM statique — TERMINÉE (dom_replay_shim.py + failure_replay.py + CLI)
-3B  Capture enrichie (browser capsule) — PROCHAIN CHANTIER PRINCIPAL
+3B  Capture enrichie (browser capsule) — PARTIELLEMENT TERMINÉE
+    (3B.1/3B.2/3B.5/3B.6/3B.8 faits ; 3B.3/3B.4 différées, prochain
+    sous-chantier après mesure sur cas réels)
 3C  Replay Chromium local
 3D  Classification de rejouabilité (STATIC_DOM/BROWSER_CAPSULE/TRACE_REPLAY/
     EXTERNAL_NON_REPLAYABLE)

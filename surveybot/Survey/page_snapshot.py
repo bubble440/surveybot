@@ -646,6 +646,20 @@ def _install_action_observer() -> None:
             except Exception:
                 pre_action_dom = ""
 
+            # Additif (Browser Capsule, Phase 3B) : faits d'état runtime "avant"
+            # et installation d'un MutationObserver passif, en complément de
+            # pre_action_dom ci-dessus. N'observe que le flux normal existant
+            # (original() ci-dessous) — n'en modifie ni n'en déclenche rien.
+            # Toute erreur dégrade silencieusement vers None/False, jamais une
+            # cause d'échec pour le survey.
+            runtime_state_before = None
+            try:
+                from Survey.browser_capsule import capture_runtime_state, install_mutation_observer
+                runtime_state_before = capture_runtime_state(driver, actions)
+                install_mutation_observer(driver, actions)
+            except Exception:
+                runtime_state_before = None
+
             result = original(driver, actions, *args, **kwargs)
             try:
                 question_blocks = _LAST_EXTRACTED_BLOCKS.get(id(driver))
@@ -656,6 +670,33 @@ def _install_action_observer() -> None:
                     question_blocks=question_blocks,
                 )
                 if not report.get("ok", True):
+                    # Additif (Browser Capsule, Phase 3B) : faits d'état "après",
+                    # mutations bornées observées pendant original() ci-dessus, et
+                    # déroulé structuré — uniquement calculés lorsqu'un incident
+                    # est déjà enregistré (même déclenchement que le reste de
+                    # l'observabilité), jamais recalculés différemment.
+                    runtime_state_after = None
+                    action_trace = None
+                    try:
+                        from Survey.browser_capsule import (
+                            build_action_trace,
+                            capture_runtime_state,
+                            collect_mutation_observer,
+                        )
+                        runtime_state_after = capture_runtime_state(driver, actions)
+                        mutations = collect_mutation_observer(driver, actions)
+                        action_trace = build_action_trace(
+                            actions=actions,
+                            dispatcher_success=bool(result),
+                            report=report,
+                            before_state=runtime_state_before,
+                            after_state=runtime_state_after,
+                            mutations=mutations,
+                        )
+                    except Exception:
+                        runtime_state_after = None
+                        action_trace = None
+
                     record_validation_failure(
                         driver,
                         stage="action",
@@ -663,6 +704,13 @@ def _install_action_observer() -> None:
                         question_blocks=question_blocks,
                         actions=actions,
                         pre_action_dom=pre_action_dom,
+                        # runtime_state.json capture le même instant que
+                        # post_action_dom.html (l'état "après", cf. 3B.2 du
+                        # plan) ; le détail avant/après complet vit dans
+                        # action_trace.json (before_state/after_state), pas
+                        # dupliqué ici.
+                        runtime_state=runtime_state_after,
+                        action_trace=action_trace,
                     )
             except Exception as exc:
                 try:
