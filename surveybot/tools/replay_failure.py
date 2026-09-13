@@ -1,5 +1,5 @@
 """
-replay_failure.py — Rejoue localement un failure_case (failure_cases/case_<id>/)
+replay_failure.py — Rejoue localement un failure_case (failure_cases/<id>/)
 contre dom_analyzer.analyze_dom() et le validator concerné, sur le HTML figé du
 case — sans navigateur réel, sans dispatch/interaction, sans réseau.
 
@@ -10,7 +10,7 @@ Toute la logique vit dans Survey/failure_replay.py ; ce script n'est qu'une
 façade CLI.
 
 Usage :
-    python tools\\replay_failure.py failure_cases\\case_<id>
+    python tools\\replay_failure.py failure_cases\\<id>
 """
 
 from __future__ import annotations

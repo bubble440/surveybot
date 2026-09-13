@@ -1,6 +1,6 @@
 """
 create_failure_case.py — Convertit un ou plusieurs snapshots d'observabilité
-(snapshots/*_validation_failure/) en cases normalisés sous failure_cases/case_<id>/.
+(snapshots/*_validation_failure/) en cases normalisés sous failure_cases/<id>/.
 
 Outil autonome de transformation, en lecture seule sur le pipeline bot : ne modifie
 ni ne déplace jamais les snapshots source, n'exécute aucun diagnostic, aucun replay,
@@ -8,7 +8,7 @@ aucune réparation. Toute la logique d'extraction vit dans
 Survey/failure_case_builder.py ; ce script n'est qu'une façade CLI.
 
 Usage :
-    python tools\\create_failure_case.py <snapshot_dir> [<snapshot_dir> ...]
+    python tools\\create_failure_case.py <snapshot_dir>
     python tools\\create_failure_case.py <snapshot_dir> --out-root failure_cases
     python tools\\create_failure_case.py <snapshot_dir> --force
 
@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Convertit un snapshot d'observabilité (action_validation_failure / "
-            "extraction_validation_failure) en case normalisé failure_cases/case_<id>/."
+            "extraction_validation_failure) en case normalisé failure_cases/<id>/."
         )
     )
     parser.add_argument(

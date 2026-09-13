@@ -26,7 +26,7 @@ niveau tant que le niveau précédent n'est pas fiable.
 > un bug de sélection de frame elle-même, seulement l'extraction/validation à
 > l'intérieur d'une frame déjà correctement choisie. Le chantier principal passe à la
 > Phase 4 (diagnostic automatique).
-> Mise à jour 2026-09-09 (suite 3) : Phase 4 clôturée. `Survey/failure_diagnosis.py`
+> Mise à jour 2026-09-11 (suite 3) : Phase 4 clôturée. `Survey/failure_diagnosis.py`
 > (niveau de cause dérivé uniquement du verdict de replay ; attribution de modules
 > limitée à une recherche exacte de signaux structurés — flags de contexte, group_key —
 > dans BOT_EVOLUTION_MEMORY.md, provider_domain délibérément exclu car source de faux
@@ -38,7 +38,7 @@ niveau tant que le niveau précédent n'est pas fiable.
 > explicitement lors de tout futur patch touchant action_validator.py/
 > question_block_validator.py, sinon elle peut devenir silencieusement obsolète. Le
 > chantier principal passe à la Phase 5 (sélection automatique du contexte code).
-> Mise à jour 2026-09-09 (suite 4) : Phase 5 clôturée. `Survey/context_selector.py` +
+> Mise à jour 2026-09-11 (suite 4) : Phase 5 clôturée. `Survey/context_selector.py` +
 > `tools/select_context.py`. Investigation documentée avant écriture : aucune table de
 > mapping itype/stage -> fichier n'existe dans le code (action_dispatcher.py route par
 > ~150 branches if/elif inline, dom_analyzer.py par cascade try/except séquentielle,
@@ -54,6 +54,23 @@ niveau tant que le niveau précédent n'est pas fiable.
 > explicitement le cas code_files vide comme "revue manuelle nécessaire", pas générer
 > un prompt Codex normal avec zéro fichier ciblé. Le chantier principal passe à la
 > Phase 6 (génération automatique du prompt Codex).
+> Mise à jour 2026-09-13 (suite 5) : Phase 6 clôturée. `Survey/prompt_generator.py` +
+> `tools/generate_prompt.py` — gabarit Claude Code reproduit verbatim (seule BUG
+> IDENTIFIÉ est dynamique), garde-fou d'éligibilité (code_files non vide ET
+> confidence_global in {probable, certain}) sinon `MANUAL_REVIEW_REQUIRED.txt` à la
+> place d'un prompt, jamais un entre-deux. Cas verdict=DIFFERENT correctement traité :
+> le symptôme décrit ce que le replay a réellement reconfirmé, pas le rapport
+> d'origine resté non reproduit. Aucune mécanique de pipeline (case_id, verdict,
+> confiance, provider_domain, target_id/action_index/block_index) exposée dans le
+> texte du prompt généré. Point de vigilance sérieux ouvert, à vérifier avant tout
+> usage en volume : le champ `value` d'un issue de validation_report.json est recopié
+> tel quel dans le prompt généré, alors que ce fichier n'a jamais été sanitisé
+> (contrairement à meta.json/aux DOM HTML en Phase 2) — si ce champ contient parfois
+> une donnée réellement saisie pour le répondant (ex. un code postal), elle fuiterait
+> sans filtre dans une conversation Codex externe. À vérifier sur des cases réels avant
+> la Phase 7 ; si confirmé, sanitiser à la source (Phase 2, validation_report.json) ou
+> exclure le champ en Phase 6. Le chantier principal passe à la Phase 7 (génération
+> automatique d'un patch dans une branche isolée).
 
 ## Contexte de travail actuel
 
@@ -84,7 +101,8 @@ incident détecté
 3   terminée
 4   terminée
 5   terminée
-6   prochain chantier principal
+6   terminée (point de vigilance data ouvert — voir note ci-dessus)
+7   prochain chantier principal
 ```
 
 Décision importante :
@@ -910,50 +928,63 @@ Trop de contexte dégrade souvent le diagnostic.
 
 À partir du dossier `failure_case`, on génère ton prompt standard.
 
-Exemple conceptuel :
+**Statut : TERMINÉE — `Survey/prompt_generator.py` + `tools/generate_prompt.py`
+implémentés et validés. Un point de vigilance data reste ouvert (voir ci-dessous)
+avant tout usage en volume.**
 
-``` text
-CONTEXTE
-...
+### Fidélité au gabarit réel, pas à l'esquisse conceptuelle
 
-BUG IDENTIFIÉ
-...
+Le gabarit effectivement utilisé n'est pas la version simplifiée envisagée au
+départ (CONTEXTE / BUG IDENTIFIÉ / FICHIERS À ANALYSER / CONTRAINTES) : c'est
+le gabarit complet déjà en usage pour chaque prompt de ce projet (BEM, règles
+de lecture, variabilité intra-source, RÈGLE DURE zéro modification, logs,
+CTA/clics, RÈGLES STRICTES, ACTION REQUISE) — reproduit **verbatim,
+caractère pour caractère**. Seule la section BUG IDENTIFIÉ est générée
+dynamiquement. Les fichiers probablement concernés (Phase 5) s'intègrent dans
+cette section, comme déjà prévu par la règle existante de rédaction des
+BUG IDENTIFIÉ — pas dans une section séparée inventée pour l'occasion.
 
-FICHIERS À ANALYSER
-...
+### Garde-fou d'éligibilité
 
-CONTRAINTES
-...
-```
+Un prompt exploitable (`prompt.txt`) n'est produit que si `context_selection.json`
+contient au moins un fichier de code **et** si `diagnosis.json` indique une
+confiance globale `probable` ou `certain`. Dans tous les autres cas —
+notamment tout case plafonné à `plausible` par la Phase 4 (NON_REJOUABLE,
+NON_REPRODUIT, ou aucun fichier trouvé) — la sortie est
+`MANUAL_REVIEW_REQUIRED.txt`, un format et un nom délibérément différents,
+avec un en-tête et un pied de page explicites ("NE PAS TRANSMETTRE À CODEX" /
+"CECI N'EST PAS UN PROMPT"), pour ne jamais pouvoir être confondu avec un
+prompt exploitable ni transmis par erreur en aval.
 
-La section **BUG IDENTIFIÉ** sera générée automatiquement à partir du
-diagnostic.
+### Ce que BUG IDENTIFIÉ peut et ne peut pas dire
 
-Elle respectera tes règles existantes :
+Le symptôme reprend les faits d'origine (itype, valeur, question, décomptes...)
+**sauf** si le verdict de replay est `DIFFERENT` : dans ce cas, seuls les
+`failure_types` réellement rejoués sont décrits, jamais le rapport d'origine
+resté non reproduit tel quel. Le comportement attendu vient de
+`expected_behavior` (Phase 4), jamais recalculé ; "non documenté" si absent
+plutôt qu'une description inventée.
 
-``` text
-DOM-first
-pas de provider-wide logic
-patch additif
-pas de fallback empilé
-budgets bornés
-compatibilité Local / Prod
-logs via log_debug
-lecture BEM obligatoire
-```
+Sont explicitement exclus du texte généré : `case_id`, le nom du verdict de
+replay, le niveau de confiance, `provider_domain`, le chemin du snapshot, et
+les identifiants de registry internes (`target_id`, `action_index`,
+`block_index`) — cette section doit se lire comme un bug rapporté normalement,
+jamais comme un export de données de pipeline.
 
-À ce stade :
+### Point de vigilance ouvert : `value` d'un issue, non sanitisé
 
-``` text
-failure détectée
-→ case
-→ diagnostic
-→ prompt Codex
-```
+Le champ `value` d'un issue de `validation_report.json` (repris dans le
+symptôme via `_SAFE_ISSUE_FIELDS`) n'a jamais transité par la sanitisation mise
+en place en Phase 2 — celle-ci ne couvre que `meta.json` et les DOM HTML, pas
+`validation_report.json`. Si ce champ contient parfois une donnée réellement
+saisie pour le répondant (ex. un code postal, cf. le cas de référence IFOP
+zip2city), elle se retrouve recopiée sans filtre dans un texte destiné à une
+conversation Codex externe. **À vérifier sur des cases réels avant d'utiliser
+cet outil en volume ou avant la Phase 7** ; si confirmé, sanitiser à la source
+(Phase 2, sur `validation_report.json`) ou exclure ce champ ici.
 
-sera automatique.
-
-Mais **Codex ne sera pas encore exécuté automatiquement**.
+Mais **Codex ne sera pas encore exécuté automatiquement** — c'est l'objet de
+la Phase 7.
 
 ------------------------------------------------------------------------
 
@@ -1533,8 +1564,8 @@ Je suivrais exactement cet ordre :
 3   Replay local — TERMINÉE (dom_replay_shim.py + failure_replay.py + CLI)
 4   Diagnostic automatique — TERMINÉE (failure_diagnosis.py + CLI)
 5   Sélection automatique du contexte code — TERMINÉE (context_selector.py + CLI)
-6   Génération du prompt Codex — PROCHAIN CHANTIER PRINCIPAL
-7   Patch dans branche isolée
+6   Génération du prompt Codex — TERMINÉE (prompt_generator.py + CLI, vigilance data ouverte)
+7   Patch dans branche isolée — PROCHAIN CHANTIER PRINCIPAL
 8   Tests statiques
 9   Replay post-patch
 10  Validation live attach
