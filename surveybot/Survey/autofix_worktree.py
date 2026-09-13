@@ -36,11 +36,16 @@ garde-fou de cohérence avec un diagnostic déjà calculé, pas une seconde preu
 ── Stratégie Git unique, sans fallback ────────────────────────────────────────
 1. git rev-parse --show-toplevel (dépôt réel, jamais un chemin codé en dur)
 2. git rev-parse HEAD                    -> base_sha, résolu une seule fois
-3. git show-ref --verify (branche)       -> refuse si autofix/<case_id> existe
-4. vérifie que le chemin cible du worktree n'existe pas déjà
-5. git branch autofix/<case_id> <base_sha>   (ne touche jamais HEAD/le checkout)
-6. git worktree add <chemin> autofix/<case_id>
-Si l'étape 6 échoue après que l'étape 5 a réussi : rollback immédiat de la
+3. git symbolic-ref -q --short HEAD      -> source_branch, purement informatif
+   (jamais utilisé pour une décision : si le dépôt est resté sur une vieille
+   branche de feature ou en detached HEAD, ce n'est pas cet outil qui bloque —
+   c'est affiché pour qu'un humain le remarque avant de perdre du temps dans
+   le worktree créé)
+4. git show-ref --verify (branche)       -> refuse si autofix/<case_id> existe
+5. vérifie que le chemin cible du worktree n'existe pas déjà
+6. git branch autofix/<case_id> <base_sha>   (ne touche jamais HEAD/le checkout)
+7. git worktree add <chemin> autofix/<case_id>
+Si l'étape 7 échoue après que l'étape 6 a réussi : rollback immédiat de la
 branche créée par CETTE invocation (jamais une branche préexistante) avant de
 relancer l'erreur. Aucune tentative alternative, aucun --force.
 
@@ -214,6 +219,7 @@ class WorktreeResult:
     branch: str
     worktree_path: Path
     base_sha: str
+    source_branch: str
     prompt_path: Path
 
 
@@ -224,6 +230,20 @@ def _default_worktrees_root(repo_root: Path) -> Path:
 def _git_ref_exists(repo_root: Path, ref: str) -> bool:
     result = _run_git(["show-ref", "--verify", "--quiet", f"refs/heads/{ref}"], cwd=repo_root)
     return result.returncode == 0
+
+
+def _current_branch_label(repo_root: Path) -> str:
+    """Nom de la branche courante, pour affichage humain uniquement — jamais
+    utilisé pour une décision programmatique, jamais un critère de refus. Un
+    dépôt resté sur une vieille branche de feature ou en detached HEAD n'est
+    pas bloqué par cet outil (hypothèse fragile sur le workflow git du
+    développeur à éviter) ; l'information est simplement rapportée pour qu'un
+    humain le remarque avant de perdre du temps dans le worktree créé.
+    """
+    result = _run_git(["symbolic-ref", "-q", "--short", "HEAD"], cwd=repo_root)
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+    return "HEAD (detached)"
 
 
 def prepare_autofix_worktree(
@@ -278,6 +298,10 @@ def prepare_autofix_worktree(
         raise AutofixWorktreeError(f"impossible de résoudre HEAD : {head.stderr.strip()}")
     base_sha = head.stdout.strip()
 
+    # 3bis) Branche source courante — purement informatif (cf. docstring de
+    # _current_branch_label). Ne peut jamais faire échouer cette fonction.
+    source_branch = _current_branch_label(repo_root)
+
     # 4) Aucun état préexistant ne doit être réutilisé/écrasé — refus explicite.
     if _git_ref_exists(repo_root, branch):
         raise AutofixWorktreeExistsError(f"la branche {branch!r} existe déjà")
@@ -303,7 +327,8 @@ def prepare_autofix_worktree(
 
     log_info(
         _TAG,
-        f"worktree créé case={case_id} branch={branch} base_sha={base_sha[:12]} -> {target}",
+        f"worktree créé case={case_id} branch={branch} base_sha={base_sha[:12]} "
+        f"source_branch={source_branch} -> {target}",
     )
 
     return WorktreeResult(
@@ -311,5 +336,6 @@ def prepare_autofix_worktree(
         branch=branch,
         worktree_path=target,
         base_sha=base_sha,
+        source_branch=source_branch,
         prompt_path=prompt_dir / "prompt.txt",
     )

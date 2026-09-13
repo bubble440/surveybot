@@ -132,6 +132,40 @@ niveau tant que le niveau précédent n'est pas fiable.
 > disclose explicitement cette limite. Le chantier principal reste la Phase 3B pour
 > 3B.3/3B.4, mesurée avant construction ; la Phase 7 peut continuer à être préparée
 > en parallèle pour les cas `STATIC_DOM`.
+> Mise à jour 2026-09-13 (suite 9) : Phase 7 PARTIELLEMENT clôturée pour le
+> sous-ensemble `stage="extraction"` — `Survey/autofix_worktree.py` +
+> `tools/prepare_autofix_worktree.py` implémentés et validés. Ne lance aucun agent
+> de coding, n'applique aucun patch, ne commit/push/merge rien : prépare
+> uniquement une branche `autofix/<case_id>` et un worktree Git dédié, en amont
+> d'un lancement manuel de Codex/Claude Code sur le `prompt.txt` déjà produit par
+> la Phase 6. Éligibilité vérifiée intégralement avant tout effet de bord
+> (`stage="extraction"`, `replay.verdict="REPRODUIT"`, `confidence_global="certain"`,
+> `case_incomplete=false`, `prompt.txt` réel et non `MANUAL_REVIEW_REQUIRED.txt`,
+> `case_id` cohérent entre manifest/diagnosis/dossiers et sûr comme composant de
+> chemin/référence Git via `git check-ref-format`) — refus explicite avec la liste
+> complète des raisons si une seule condition manque, jamais un état partiel.
+> Restriction volontaire actée : `stage="action"` reste explicitement hors
+> périmètre de cette phase, car le replay (3A/3B) ne réexécute jamais le
+> dispatcher réel pour ces cases — un verdict `REPRODUIT` y est attendu par
+> construction et ne constitue pas une preuve suffisante pour déclencher une
+> préparation automatique d'espace de travail. Ce sous-ensemble restera bloqué sur
+> la Phase 3C (et, pour l'automatisation complète du schéma `... → Codex → patch`
+> du pipeline, potentiellement sur une décision ultérieure distincte : cette phase
+> ne fait que préparer l'espace isolé, elle n'invoque aucun agent par programme).
+> Stratégie Git strictement séquentielle sans fallback (branche créée depuis un
+> `base_sha` figé une seule fois, jamais un `git checkout` qui bougerait le dépôt
+> principal du développeur ; rollback ciblé de la seule branche créée par
+> l'invocation en cours si `worktree add` échoue). Amélioration ajoutée après
+> revue : la branche source courante (`git symbolic-ref` sur HEAD, ou
+> `HEAD (detached)`) est rapportée dans la sortie CLI à titre purement informatif
+> — jamais un critère de blocage, pour rester cohérent avec l'objectif "pas
+> d'hypothèse fragile sur le workflow git du développeur". Point de vigilance
+> mineur non bloquant, noté en revue : `PROTECTED_BRANCHES` ne peut structurellement
+> jamais se déclencher (le nom de branche calculé est toujours préfixé
+> `autofix/`) — défense en profondeur symbolique, pas une vraie protection
+> supplémentaire ; à clarifier ou nettoyer si retouché. Le chantier principal
+> reste la Phase 3B pour 3B.3/3B.4 ; la Phase 7 pour `stage="action"` reste
+> en attente de 3C.
 
 ## Contexte de travail actuel
 
@@ -165,8 +199,9 @@ incident détecté
 4   terminée
 5   terminée
 6   terminée (point de vigilance data ouvert — voir note ci-dessus)
-7   en attente de 3C pour les cas hors STATIC_DOM (préparation possible en parallèle
-    pour les cas STATIC_DOM)
+7   PARTIELLEMENT TERMINÉE (préparation d'espace Git isolé faite pour
+    stage="extraction" REPRODUIT/certain ; stage="action" en attente de 3C ;
+    aucune invocation automatique d'agent de coding — voir Phase 7)
 ```
 
 Décision importante :
@@ -1521,6 +1556,24 @@ la Phase 7.
 
 # Phase 7 --- Génération automatique d'un patch dans une branche isolée
 
+**Statut : PARTIELLEMENT TERMINÉE — `Survey/autofix_worktree.py` +
+`tools/prepare_autofix_worktree.py` implémentés et validés, pour le seul
+sous-ensemble `stage="extraction"` avec `replay.verdict="REPRODUIT"` et
+`confidence_global="certain"` (le sous-ensemble `STATIC_DOM` le plus solide,
+sans attendre la Phase 3D). `stage="action"` reste hors périmètre : un
+verdict `REPRODUIT` y est attendu par construction (le replay ne réexécute
+jamais le dispatcher réel), donc pas une preuve suffisante pour déclencher
+une préparation automatique — en attente de la Phase 3C.**
+
+**Précision sur le périmètre réellement couvert :** cette phase prépare
+l'espace de travail isolé (branche + worktree Git dédiés) et s'arrête là —
+elle n'invoque aucun agent de coding par programme, n'applique aucun patch,
+ne commit/push/merge rien. L'étape « Codex » du schéma ci-dessous reste, à
+ce stade, un lancement manuel de l'opérateur dans l'espace préparé, dans la
+continuité du fonctionnement de tous les outils du pipeline en amont
+(Phases 2 à 6), qui sont des façades CLI actionnées manuellement, jamais
+enchaînées automatiquement entre elles.
+
 Une fois Phase 6 fiable, on autorise l'agent à coder.
 
 Le pipeline devient :
@@ -2128,7 +2181,10 @@ Je suivrais exactement cet ordre :
 4   Diagnostic automatique — TERMINÉE (failure_diagnosis.py + CLI)
 5   Sélection automatique du contexte code — TERMINÉE (context_selector.py + CLI)
 6   Génération du prompt Codex — TERMINÉE (prompt_generator.py + CLI, vigilance data ouverte)
-7   Patch dans branche isolée — en attente de 3B/3C pour les cas hors STATIC_DOM
+7   Patch dans branche isolée — PARTIELLEMENT TERMINÉE (autofix_worktree.py +
+    CLI, préparation branche/worktree pour stage="extraction"
+    REPRODUIT/certain ; stage="action" en attente de 3C ; pas d'invocation
+    automatique d'agent de coding à ce stade)
 8   Tests statiques
 9   Replay post-patch
 10  Validation live attach — devient la voie normale des cas EXTERNAL_NON_REPLAYABLE (post-3D)

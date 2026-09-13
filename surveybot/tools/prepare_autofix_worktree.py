@@ -17,6 +17,12 @@ sa place), case_id cohérent entre manifest/diagnosis/dossiers et sûr comme
 composant de chemin et référence Git. Les cases stage="action" sont hors
 périmètre (le replay ne réexécute jamais le dispatcher réel pour ces cases).
 
+La branche source affichée (résolue via git symbolic-ref sur HEAD, ou
+"HEAD (detached)") est purement informative : elle ne bloque jamais l'exécution,
+elle permet seulement à l'opérateur de remarquer immédiatement si son dépôt
+était resté sur une mauvaise branche avant de perdre du temps dans le worktree
+créé.
+
 Usage :
     python tools\\prepare_autofix_worktree.py failure_cases\\<case_id> diagnoses\\<case_id> prompts\\<case_id>
     python tools\\prepare_autofix_worktree.py failure_cases\\<case_id> diagnoses\\<case_id> prompts\\<case_id> --worktrees-root D:\\autofix-worktrees
@@ -65,6 +71,7 @@ def main(argv: "list[str] | None" = None) -> int:
         return 1
 
     print(f"case_id      : {result.case_id}")
+    print(f"branche source (avant création, informatif) : {result.source_branch}")
     print(f"branche      : {result.branch}")
     print(f"base_sha     : {result.base_sha}")
     print(f"worktree     : {result.worktree_path}")
