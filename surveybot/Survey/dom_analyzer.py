@@ -106,6 +106,7 @@ try:
         _extract_single_checkbox_no_form_cta_block,
         _extract_mui_checkbox_consent_cta_block,
         _extract_consent_modal_radio_block,
+        _extract_mui_card_single_choice_block,
         _extract_confirmit_wix_checkbox_grid_blocks,
         _extract_confirmit_wix_fieldset_radio_block,
         _extract_confirmit_wix_fieldset_text_sibling_blocks,
@@ -242,6 +243,7 @@ except ImportError:
         _extract_single_checkbox_no_form_cta_block,
         _extract_mui_checkbox_consent_cta_block,
         _extract_consent_modal_radio_block,
+        _extract_mui_card_single_choice_block,
         _extract_confirmit_wix_checkbox_grid_blocks,
         _extract_confirmit_wix_fieldset_radio_block,
         _extract_confirmit_wix_fieldset_text_sibling_blocks,
@@ -1791,6 +1793,20 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         consent_modal_blocks = _extract_consent_modal_radio_block(driver, frame_chain)
         if consent_modal_blocks:
             return consent_modal_blocks
+    except Exception:
+        pass
+
+    # --- 0h-quinquies-bis) Choix unique MUI en "cards" (data-cy response-option-N
+    # + marqueur *-markerSingleChoice), sans input natif ni [role='button'] ---
+    # Objectif: couvrir les questions à choix unique MUI/React où les options sont
+    # des <div> stylées en carte (ex. community.focaldata.com, "Quel âge avez-vous?"),
+    # non couvertes par le groupement radio/checkbox natif (0 input) ni par le
+    # détecteur générique bouton-cliquable (aucun de ces divs n'a de rôle bouton).
+    # Additif, essayé uniquement si rien avant n'a produit de bloc.
+    try:
+        mui_card_single_choice_blocks = _extract_mui_card_single_choice_block(driver, frame_chain)
+        if mui_card_single_choice_blocks:
+            return mui_card_single_choice_blocks
     except Exception:
         pass
 

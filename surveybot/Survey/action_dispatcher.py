@@ -3976,6 +3976,45 @@ def _apply_by_target_id(
                         time.sleep(0.05)
                     return False
 
+                def _wait_marker_selected_like(node, timeout_s: float = 1.0) -> bool:
+                    """Constat DOM passif pour widgets radio/checkbox SANS input natif dont l'état
+                    sélectionné n'est porté ni par `node` lui-même ni par un ancêtre (cas déjà couvert
+                    par `_selected_like`/`_wait_selected_like` ci-dessus, non modifiées), mais par une
+                    div marqueur DESCENDANTE (ex. cartes MUI community.focaldata.com : la classe
+                    "selected" apparaît sur un enfant du conteneur d'option, pas sur le conteneur lui-
+                    même). Fonction nouvelle et distincte, appelée uniquement au point précis où la
+                    cascade ci-dessous a déjà constaté l'absence d'input natif (`if not inp:`) — ne
+                    touche à aucun chemin où un input natif existe (label-for, mat-radio-button, input
+                    direct, plus bas dans cette même fonction). Même vocabulaire de classes "selected"
+                    (hors négations un-/de-/not-selected) que le signal `checkbox_radio_marker_selected`
+                    déjà validé côté `Survey/action_validator.py` (Phase 1B) pour ce type de widget.
+                    """
+                    import time
+                    end = time.time() + timeout_s
+                    while time.time() < end:
+                        try:
+                            if node.evaluate("""(_el) => {
+                                const el = _el;
+                                if (!el) return false;
+                                if (el.querySelector("input[type='checkbox'], input[type='radio']")) return false;
+                                const neg = /(?:un|de|not)-?selected/i;
+                                const pos = /selected/i;
+                                const nodes = [el, ...el.querySelectorAll('*')];
+                                for (const n of nodes) {
+                                    const raw = n.className;
+                                    const cls = (raw && raw.baseVal !== undefined) ? raw.baseVal : (raw || '');
+                                    if (typeof cls !== 'string' || !cls) continue;
+                                    if (neg.test(cls)) continue;
+                                    if (pos.test(cls)) return true;
+                                }
+                                return false;
+}"""):
+                                return True
+                        except Exception:
+                            pass
+                        time.sleep(0.05)
+                    return False
+
                 def _wait_decipher_clickable_ranking_effect(node, timeout_s: float = 1.0) -> bool:
                     """Validation DOM stricte pour Decipher clickable ranking."""
                     import time
@@ -4931,6 +4970,10 @@ def _apply_by_target_id(
                 inp = _first_input_under(el)
                 if not inp:
                     if _wait_selected_like(el, timeout_s=1.0):
+                        return True
+                    if _wait_marker_selected_like(el, timeout_s=1.0):
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"marker_selected_like: selected marker class found value='{value}' xpath='{xp}'")
                         return True
 
                 # AreYouNet: la sélection est stockée dans un <input type=hidden name=...>

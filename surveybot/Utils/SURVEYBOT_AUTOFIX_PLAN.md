@@ -26,7 +26,7 @@ niveau tant que le niveau précédent n'est pas fiable.
 > un bug de sélection de frame elle-même, seulement l'extraction/validation à
 > l'intérieur d'une frame déjà correctement choisie. Le chantier principal passe à la
 > Phase 4 (diagnostic automatique).
-> Mise à jour 2026-09-10 (suite 3) : Phase 4 clôturée. `Survey/failure_diagnosis.py`
+> Mise à jour 2026-09-09 (suite 3) : Phase 4 clôturée. `Survey/failure_diagnosis.py`
 > (niveau de cause dérivé uniquement du verdict de replay ; attribution de modules
 > limitée à une recherche exacte de signaux structurés — flags de contexte, group_key —
 > dans BOT_EVOLUTION_MEMORY.md, provider_domain délibérément exclu car source de faux
@@ -38,6 +38,22 @@ niveau tant que le niveau précédent n'est pas fiable.
 > explicitement lors de tout futur patch touchant action_validator.py/
 > question_block_validator.py, sinon elle peut devenir silencieusement obsolète. Le
 > chantier principal passe à la Phase 5 (sélection automatique du contexte code).
+> Mise à jour 2026-09-09 (suite 4) : Phase 5 clôturée. `Survey/context_selector.py` +
+> `tools/select_context.py`. Investigation documentée avant écriture : aucune table de
+> mapping itype/stage -> fichier n'existe dans le code (action_dispatcher.py route par
+> ~150 branches if/elif inline, dom_analyzer.py par cascade try/except séquentielle,
+> le seul dict itype trouvé — _TYPE_ALIASES — mappe vers des synonymes texte, pas des
+> fichiers) — cette source de signal contribue donc 0 fichier, documenté explicitement
+> plutôt que masqué. La sélection repose à 100% sur modules_likely_involved (Phase 4),
+> filtré (références obsolètes exclues) et plafonné (8 fichiers par défaut, troncature
+> déterministe et tracée). BOT_EVOLUTION_MEMORY.md toujours inclus, hors plafond.
+> Deux points de vigilance ajoutés à la même checklist que la Phase 4 : (a) si
+> action_dispatcher.py/dom_analyzer.py sont un jour refactorés vers une vraie table de
+> dispatch, revisiter la Source 2 de context_selector.py ; (b) pour un pattern non
+> encore documenté dans BEM, la sélection sera vide — la Phase 6 doit traiter
+> explicitement le cas code_files vide comme "revue manuelle nécessaire", pas générer
+> un prompt Codex normal avec zéro fichier ciblé. Le chantier principal passe à la
+> Phase 6 (génération automatique du prompt Codex).
 
 ## Contexte de travail actuel
 
@@ -67,7 +83,8 @@ incident détecté
 2   terminée
 3   terminée
 4   terminée
-5   prochain chantier principal
+5   terminée
+6   prochain chantier principal
 ```
 
 Décision importante :
@@ -828,51 +845,64 @@ Actuellement tu dois envoyer plusieurs fichiers à Claude/Codex.
 
 On automatise cela.
 
-À partir du type d'échec :
+**Statut : TERMINÉE — `Survey/context_selector.py` + `tools/select_context.py`
+implémentés et validés.**
+
+### Deux sources de signal prévues, une seule active
+
+À l'origine, deux sources étaient envisagées : les modules déjà trouvés par la
+Phase 4 (`modules_likely_involved`, ancrés dans BOT_EVOLUTION_MEMORY.md), et
+une éventuelle table de mapping itype/stage → fichier déjà existante dans le
+code. Investigation menée avant d'écrire le module (grep exhaustif de noms de
+structure usuels, puis de tout dict littéral indexé par itype) : **cette
+seconde source n'existe pas dans ce codebase.**
 
 ``` text
-failure_type
-itype
-registry metadata
+action_dispatcher.py::_apply_by_target_id  -> ~150 branches if/elif inline
+dom_analyzer.py::_analyze_dom_current_context -> cascade try/except séquentielle
+_TYPE_ALIASES (seul dict itype trouvé)      -> synonymes texte, pas des fichiers
 ```
 
-on sélectionne uniquement les modules pertinents.
+Reconstruire une association à partir de ces enchaînements aurait été de
+l'interprétation par ressemblance — exactement ce qui est exclu. Cette source
+contribue donc 0 fichier aujourd'hui, documenté explicitement
+(`mapping_table_signal` dans la sortie) plutôt que masqué.
 
-Exemple :
-
-``` text
-selection_not_applied
-itype=checkbox
-```
-
-peut donner :
+Les deux exemples ci-dessous restent illustratifs de ce qu'*aurait pu* donner
+une Source 2 si elle existait — ils ne correspondent pas (encore) à un
+comportement réel de l'outil :
 
 ``` text
-BOT_EVOLUTION_MEMORY.md
-action_dispatcher.py
-input_checkbox.py
-input_utils.py
-frame_utils.py
-```
+selection_not_applied, itype=checkbox
+→ BOT_EVOLUTION_MEMORY.md, action_dispatcher.py, input_checkbox.py, input_utils.py, frame_utils.py
 
-Alors qu'un problème :
-
-``` text
 missing_options
+→ BOT_EVOLUTION_MEMORY.md, dom_analyzer.py, dom_extractors_*.py concerné, dom_question_extractor.py
 ```
 
-donnera plutôt :
+### Comportement réel
 
-``` text
-BOT_EVOLUTION_MEMORY.md
-dom_analyzer.py
-dom_extractors_*.py concerné
-dom_question_extractor.py
-```
+La sélection repose à 100 % sur `modules_likely_involved` de la Phase 4,
+filtrée (les fichiers qui n'existent plus sur disque sont exclus et consignés
+dans `stale_references`) et plafonnée (`DEFAULT_CODE_FILES_CAP=8` fichiers de
+code, hors BEM ; au-delà, troncature déterministe consignée dans
+`dropped_files`, jamais d'extension silencieuse). `BOT_EVOLUTION_MEMORY.md` est
+toujours inclus séparément, hors plafond.
 
 L'objectif n'est pas de transmettre tout le repo.
 
 Trop de contexte dégrade souvent le diagnostic.
+
+### Deux points de vigilance
+
+1. Si `action_dispatcher.py`/`dom_analyzer.py` sont un jour refactorés vers une
+   vraie table de dispatch énumérable, revisiter la Source 2 de
+   `context_selector.py` — la conclusion "n'existe pas" est vraie aujourd'hui,
+   pas garantie dans le temps (même famille de risque que `_EXPECTED_BEHAVIOR`,
+   Phase 4).
+2. Pour un pattern non encore documenté dans BEM, `code_files` sera vide. La
+   Phase 6 doit traiter ce cas explicitement comme "revue manuelle nécessaire"
+   plutôt que générer un prompt Codex normal avec zéro fichier ciblé.
 
 ------------------------------------------------------------------------
 
@@ -1502,8 +1532,8 @@ Je suivrais exactement cet ordre :
 2   Failure cases normalisés — TERMINÉE (failure_case_builder.py + CLI, 2 correctifs validés)
 3   Replay local — TERMINÉE (dom_replay_shim.py + failure_replay.py + CLI)
 4   Diagnostic automatique — TERMINÉE (failure_diagnosis.py + CLI)
-5   Sélection automatique du contexte code — PROCHAIN CHANTIER PRINCIPAL
-6   Génération du prompt Codex
+5   Sélection automatique du contexte code — TERMINÉE (context_selector.py + CLI)
+6   Génération du prompt Codex — PROCHAIN CHANTIER PRINCIPAL
 7   Patch dans branche isolée
 8   Tests statiques
 9   Replay post-patch

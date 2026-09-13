@@ -157,7 +157,7 @@ def _checkbox_radio_dom_checked_signal(driver, xpath: str) -> bool | None:
 
     target_el = el
     try:
-        tag = (el.evaluate("e => e.tagName") or "").lower()
+        tag = (el.evaluate("e => e.tagName.toLowerCase()") or "").lower()
     except Exception:
         tag = ""
     if tag != "input":
@@ -209,6 +209,101 @@ def _checkbox_radio_false_negative_issue(action: Any, *, driver) -> dict | None:
     }
 
 
+_SELECTED_MARKER_CLASS_RE = re.compile(r"selected", re.IGNORECASE)
+_SELECTED_MARKER_NEGATION_RE = re.compile(r"(?:un|de|not)-?selected", re.IGNORECASE)
+
+
+def _checkbox_radio_marker_selected_signal(driver, xpath: str) -> bool | None:
+    """Constat DOM passif pour widgets checkbox/radio SANS input natif (ex: options
+    en cartes stylées MUI, uniquement une div marqueur de sélection). Fonction
+    nouvelle et distincte, complémentaire à `_checkbox_radio_dom_checked_signal`
+    ci-dessus (référence, non modifiée) : même résolution `xpath` via le registry,
+    mais garde-fou strict inversé — ne se déclenche QUE si aucun
+    `<input type=checkbox|radio>` n'existe dans le sous-arbre de l'élément résolu
+    (sinon la détection existante à base d'input natif reste seule responsable).
+    N'élargit pas `input_utils.is_checked()` (autres appelants dans
+    `input_checkbox.py`) : lit directement les classes des descendants de
+    l'élément ciblé et reconnaît le vocabulaire "selected" (hors négations
+    un-/de-/not-selected) comme équivalent à un état sélectionné.
+    """
+    try:
+        current_frame = getattr(driver, "_current_frame", driver)
+        el = current_frame.query_selector("xpath=" + xpath)
+    except Exception:
+        return None
+    if el is None:
+        return None
+
+    try:
+        tag = (el.evaluate("e => e.tagName.toLowerCase()") or "").lower()
+    except Exception:
+        tag = ""
+    if tag == "input":
+        return None
+
+    try:
+        has_native_input = el.query_selector(
+            "input[type='checkbox'], input[type='radio']"
+        ) is not None
+    except Exception:
+        return None
+    if has_native_input:
+        return None
+
+    try:
+        class_list = el.evaluate(
+            "e => [e, ...e.querySelectorAll('*')].map(n => "
+            "(n.className && n.className.baseVal !== undefined) "
+            "? n.className.baseVal : (n.className || ''))"
+        )
+    except Exception:
+        return None
+    if not isinstance(class_list, list):
+        return None
+
+    for cls in class_list:
+        if not isinstance(cls, str) or not cls:
+            continue
+        if _SELECTED_MARKER_NEGATION_RE.search(cls):
+            continue
+        if _SELECTED_MARKER_CLASS_RE.search(cls):
+            return True
+    return False
+
+
+def _checkbox_radio_marker_false_negative_issue(action: Any, *, driver) -> dict | None:
+    """Faux négatif dispatcher pour checkbox/radio sans input natif (cf.
+    `_checkbox_radio_false_negative_issue` ci-dessus, référence pour ce type de
+    détection — non modifiée). Même résolution `option_xpath_map` que celle-ci,
+    mais constat d'état via `_checkbox_radio_marker_selected_signal` (marqueur de
+    sélection stylé) au lieu d'un input natif.
+    """
+    if not isinstance(action, dict) or driver is None:
+        return None
+
+    target_id = _norm(action.get("target_id"))
+    itype = _norm_lc(action.get("itype"))
+    value = _norm(action.get("value"))
+    if itype not in {"checkbox", "radio"} or not target_id or not value:
+        return None
+
+    payload = get_target(target_id)
+    xpath = _checkbox_radio_option_xpath(payload, value)
+    if not xpath:
+        return None
+
+    if _checkbox_radio_marker_selected_signal(driver, xpath) is not True:
+        return None
+
+    return {
+        "failure_type": "dispatcher_false_negative",
+        "target_id": target_id,
+        "itype": itype,
+        "value": value,
+        "dom_signal": "checkbox_radio_marker_selected",
+    }
+
+
 def _dispatcher_false_negative_issue(
     action: Any,
     *,
@@ -216,15 +311,21 @@ def _dispatcher_false_negative_issue(
     question_blocks: Any,
 ) -> dict | None:
     """Point d'appel combiné : essaie d'abord la détection ifop_zip2city de
-    référence (non modifiée), puis en complément la détection générique
-    checkbox/radio. Chaque détecteur reste indépendant et scopé à son propre
-    garde-fou DOM ; aucune des deux fonctions n'est modifiée par l'autre.
+    référence (non modifiée), puis la détection générique checkbox/radio à input
+    natif (non modifiée), puis en complément la détection pour widgets
+    checkbox/radio sans input natif (marqueur de sélection stylé). Chaque
+    détecteur reste indépendant et scopé à son propre garde-fou DOM ; aucune des
+    fonctions existantes n'est modifiée par les autres.
     """
-    return _ifop_zip2city_false_negative_issue(
-        action,
-        driver=driver,
-        question_blocks=question_blocks,
-    ) or _checkbox_radio_false_negative_issue(action, driver=driver)
+    return (
+        _ifop_zip2city_false_negative_issue(
+            action,
+            driver=driver,
+            question_blocks=question_blocks,
+        )
+        or _checkbox_radio_false_negative_issue(action, driver=driver)
+        or _checkbox_radio_marker_false_negative_issue(action, driver=driver)
+    )
 
 
 def validate_actions(

@@ -3751,6 +3751,194 @@ def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) ->
     ]
 
 
+def _extract_mui_card_single_choice_block(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction ciblée choix unique MUI rendu en "cards" cliquables sans input natif.
+
+    Stratégie nommée distincte des extracteurs radio/checkbox natifs existants
+    (non modifiés) : couvre les écrans MUI/React où chaque option de réponse est un
+    <div> stylé en carte (MuiPaper-root), sans <input type=radio/checkbox> ni
+    [role='button'], identifiable uniquement par un attribut data-cy
+    ("response-option-N", séquentiel) et une div descendante porteuse d'un marqueur
+    visuel dédié au choix unique (classe *-markerSingleChoice)
+    (ex. community.focaldata.com, question "Quel âge avez-vous?").
+    Ni le groupement radio/checkbox natif (0 input natif sur ce DOM), ni le détecteur
+    générique d'éléments cliquables (button/[role='button']/.sq-cardrating-button,
+    ces divs n'en portant aucun) ne matchent ce DOM -> blocks_extracted=0 malgré une
+    vraie question affichée (confirmé par le validator d'extraction, signal
+    missing_block).
+
+    Garde-fou DOM strict (attributs discriminants obligatoires) :
+    - div[data-cy^='response-option-'] visible, ayant pour descendant un élément
+      [class*='markerSingleChoice'] (marqueur "choix unique" propre à ce provider ;
+      un éventuel pendant "choix multiple" porterait un autre marqueur — hors
+      scope ici, non couvert)
+    - >=2 occurrences requises dans le même groupe (isole d'un faux positif sur une
+      occurrence isolée)
+    - regroupement scopé au plus proche ancêtre <ul> commun (évite de fusionner deux
+      groupes de cartes distincts si plusieurs étaient présents sur la même page) ;
+      ne retient que le PREMIER groupe valide trouvé dans l'ordre du document.
+    """
+
+    frame_chain = list(frame_chain or [])
+
+    try:
+        candidates = driver.query_selector_all("div[data-cy^='response-option-']")
+    except Exception:
+        candidates = []
+
+    if len(candidates) < 2:
+        return []
+
+    def _is_visible(el) -> bool:
+        """Best-effort visibilité DOM sans hypothèse provider globale (même
+        approche que `_extract_consent_modal_radio_block` ci-dessus : lecture
+        d'attributs, pas de getComputedStyle/getBoundingClientRect)."""
+        if el is None:
+            return False
+        try:
+            if hasattr(el, "is_displayed") and not el.is_displayed():
+                return False
+        except Exception:
+            return False
+        try:
+            style = _norm_lc(el.get_attribute("style") or "")
+        except Exception:
+            style = ""
+        if "display:none" in style or "visibility:hidden" in style:
+            return False
+        try:
+            aria_hidden = _norm_lc(el.get_attribute("aria-hidden") or "")
+        except Exception:
+            aria_hidden = ""
+        if aria_hidden == "true":
+            return False
+        return True
+
+    groups_order: list[str] = []
+    groups: dict[str, list[tuple]] = {}
+
+    for cand in candidates:
+        try:
+            cy = (cand.get_attribute("data-cy") or "").strip()
+            if not cy:
+                continue
+            if not _is_visible(cand):
+                continue
+            marker = cand.query_selector("[class*='markerSingleChoice']")
+            if marker is None:
+                continue
+            label_txt = _norm(cand.inner_text() or "")
+            if not label_txt:
+                continue
+        except Exception:
+            continue
+
+        try:
+            ul_nodes = cand.query_selector_all("xpath=" + "ancestor::ul[1]")
+            ul_node = ul_nodes[0] if ul_nodes else None
+        except Exception:
+            ul_node = None
+
+        try:
+            group_dom_key = _best_xpath_for_element(driver, ul_node) if ul_node is not None else "no_ul"
+        except Exception:
+            group_dom_key = "no_ul"
+
+        if group_dom_key not in groups:
+            groups[group_dom_key] = []
+            groups_order.append(group_dom_key)
+        groups[group_dom_key].append((cy, label_txt, cand))
+
+    if not groups_order:
+        return []
+
+    entries = groups[groups_order[0]]
+    if len(entries) < 2:
+        return []
+
+    def _cy_sort_key(item: tuple) -> int:
+        m = re.search(r"(\d+)$", item[0])
+        return int(m.group(1)) if m else 0
+
+    entries.sort(key=_cy_sort_key)
+
+    options: list[str] = []
+    option_xpath_map: dict[str, str] = {}
+    valid_els: list[Any] = []
+
+    for cy, label_txt, cand in entries:
+        key = _norm_key(label_txt)
+        if key in option_xpath_map:
+            continue
+        option_xpath_map[key] = f"//div[@data-cy={_xpath_literal(cy)}]"
+        options.append(label_txt)
+        valid_els.append(cand)
+
+    if len(options) < 2:
+        return []
+
+    anchor = valid_els[0]
+    try:
+        ul_nodes = anchor.query_selector_all("xpath=" + "ancestor::ul[1]")
+        if ul_nodes:
+            anchor = ul_nodes[0]
+    except Exception:
+        pass
+
+    question = ""
+    try:
+        heading_txt = _norm(_find_heading_tag_near_choice_group(driver, anchor, options) or "")
+        if heading_txt:
+            question = heading_txt
+    except Exception:
+        question = ""
+
+    if not question:
+        try:
+            inferred = _norm(_find_question_text_near_element(driver, anchor) or "")
+            if inferred:
+                question = inferred
+        except Exception:
+            pass
+
+    if not question:
+        log_debug("[MUI_CARD_SC]", "question introuvable — abandon")
+        return []
+
+    group_key = "radio:mui_card:" + "|".join(sorted(_norm_key(o) for o in options))
+    target_id = make_target_id("group", group_key, question)
+
+    register_target(
+        target_id,
+        {
+            "kind": "group",
+            "itype": "radio",
+            "group_key": group_key,
+            "question": question,
+            "option_xpath_map": option_xpath_map,
+            "frame_chain": frame_chain,
+            "mui_card_single_choice": True,
+        },
+    )
+
+    log_info("[MUI_CARD_SC]", f"bloc produit options={len(options)}")
+
+    return [
+        {
+            "question": question,
+            "itype": "radio",
+            "options": options,
+            "max_select": _compute_max_select("radio", options),
+            "target_id": target_id,
+            "context": {
+                "kind": "group",
+                "group_key": group_key,
+                "mui_card_single_choice": True,
+            },
+        }
+    ]
+
+
 def _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain: list[int] | None) -> list[dict]:
     """Extraction radio Confirmit/Wix natif (fieldset[id^="fieldset_"] + confirmit-table).
 
