@@ -71,6 +71,45 @@ niveau tant que le niveau précédent n'est pas fiable.
 > la Phase 7 ; si confirmé, sanitiser à la source (Phase 2, validation_report.json) ou
 > exclure le champ en Phase 6. Le chantier principal passe à la Phase 7 (génération
 > automatique d'un patch dans une branche isolée).
+> Mise à jour 2026-09-13 (suite 6) : réexamen du replay avant de poursuivre la Phase 7.
+> Deux limites déjà actées en Phase 3 (renommée 3A) restent bloquantes pour la valeur
+> de la Phase 9 : le dispatcher n'est jamais réellement réexécuté par le replay
+> (`stage=action` réutilise le `dispatcher_success` d'origine, aucun dispatcher réel ne
+> tourne), et la sélection de frame reste hors de portée (`child_frames` toujours vide).
+> Concrètement, un patch touchant `action_dispatcher.py` ou la sélection de frame n'est
+> aujourd'hui vérifié par aucun replay local, avant comme après correction. Décision :
+> insérer un chantier de fiabilisation du replay avant de considérer un verdict de
+> Phase 9 comme un signal de confiance pour ces catégories de patch. Phase 3 devient
+> 3A (statut inchangé, TERMINÉE) ; nouvelles phases 3B (replay navigateur local —
+> capsule runtime, incluant un trace replay pour les cas action), 3C (reconstruction
+> frames + Shadow DOM) et 3D (classificateur de rejouabilité `static_dom` /
+> `browser_capsule` / `external_non_replayable`, qui fait de la Phase 10 la voie
+> normale des cas non rejouables localement plutôt qu'un recours tardif isolé). Le
+> chantier principal passe à la Phase 3B. La Phase 7 peut être préparée en parallèle
+> pour les cas `static_dom` déjà bien couverts par 3A, mais n'est pas considérée
+> fiable pour le reste tant que 3B n'existe pas. Priorité affichée entre les nouvelles
+> phases : 3B avant 3C — 3C (frames/Shadow DOM) est plus coûteuse et ne doit être
+> construite qu'après avoir mesuré, sur des cas réels, le volume d'incidents
+> réellement bloqués par la frame ou un Shadow DOM fermé, pour ne pas construire un
+> replay plus complexe que les bugs qu'il couvre réellement.
+> Mise à jour 2026-09-13 (suite 7) : affinement de la structure ci-dessus. Phase 3
+> redevient un chapeau unique (3A à 3D, un seul critère de clôture commun) plutôt que
+> quatre phases numérotées séparément, avec une séparation plus nette capture/moteur :
+> 3B ne fait que capturer (DOM+CSS, `runtime_state.json`, `frame_tree.json`,
+> `shadow_roots.json`, `action_trace.json`, mutations bornées, MHTML, règles secrets/
+> données sensibles) ; 3C exécute le replay Chromium local à partir de cette capture
+> (isolation réseau, reconstruction, extraction/frame selection, actions). La
+> classification 3D gagne un quatrième mode explicite, `TRACE_REPLAY` (état avant/après
+> suffisant sans réexécution fidèle du dispatcher), distinct de `BROWSER_CAPSULE` — les
+> deux n'ont pas le même niveau de preuve et ne doivent pas être traités à égalité par
+> la Phase 9/le score de confiance (Phase 12). Deux garde-fous ajoutés : (a) toute
+> exécution réelle du dispatcher en 3C.4 est bornée par un timeout explicite, avec
+> déclassement automatique vers `TRACE_REPLAY` en cas de dépassement, jamais un replay
+> qui pend ; (b) le pari `dispatcher_success=false` mais DOM prouvant le succès (déjà
+> posé par `action_validator.py` en Phase 1B.1) et le mode `TRACE_REPLAY` doivent
+> partager une seule fonction oracle, pas deux implémentations parallèles. Les schémas
+> de fichiers (`runtime_state.json` etc.) sont explicitement indicatifs, pas figés. Le
+> chantier principal reste la Phase 3B ; l'ordre de priorité 3B avant 3C est inchangé.
 
 ## Contexte de travail actuel
 
@@ -83,7 +122,8 @@ ou sélecteurs un par un. L'objectif est de construire une boucle outillée :
 incident détecté
 → snapshot normalisé
 → failure case
-→ replay local
+→ classification de rejouabilité
+→ replay local (statique / capsule navigateur)
 → diagnostic
 → sélection du contexte code
 → prompt Codex
@@ -98,11 +138,11 @@ incident détecté
 1A  terminée
 1B  ouverte en tâche de fond
 2   terminée
-3   terminée
+3   PARTIELLEMENT TERMINÉE (3A terminée ; 3B/3C/3D à faire — voir Phase 3)
 4   terminée
 5   terminée
 6   terminée (point de vigilance data ouvert — voir note ci-dessus)
-7   prochain chantier principal
+7   en attente de 3B/3C (préparation possible en parallèle pour les cas STATIC_DOM)
 ```
 
 Décision importante :
@@ -687,7 +727,49 @@ jamais risquer d'altérer la structure DOM dont la Phase 3 (replay) dépendra.
 
 ------------------------------------------------------------------------
 
-# Phase 3 --- Replay local déterministe
+# Phase 3 --- Replay local déterministe et capsule navigateur
+
+**Statut : PARTIELLEMENT TERMINÉE — Phase 3A implémentée et validée ; Phases
+3B, 3C et 3D à implémenter avant d'engager la génération automatique de
+patchs de la Phase 7 en conditions réelles.**
+
+Objectif : transformer chaque incident utile en cas de test durable,
+rejouable localement après disparition de la page live.
+
+### Principe fondamental
+
+``` text
+la page live sert à capturer l'incident une seule fois
+→ elle ne doit pas être nécessaire pour reproduire ou valider le bug ensuite
+```
+
+Le replay live attach (Phase 10) ne constitue donc pas le mécanisme principal
+de validation. Une page de survey peut être fermée, expirer, rediriger,
+devenir inaccessible, changer de contenu, ou dépendre d'une session devenue
+invalide — le moteur d'autofix ne doit pas dépendre de sa conservation.
+
+La Phase 3 est divisée en quatre niveaux :
+
+``` text
+3A — replay DOM statique
+3B — capture enrichie (browser capsule)
+3C — replay Chromium local
+3D — classification de rejouabilité
+```
+
+Le système choisit toujours le niveau le plus simple capable de reproduire
+honnêtement le cas. Il ne doit jamais inventer un état manquant pour rendre
+artificiellement un incident rejouable.
+
+Note de fidélité : les schémas de fichiers indiqués dans les sections
+suivantes (`runtime_state.json`, `frame_tree.json`, etc.) sont indicatifs —
+ils fixent l'intention et le contenu minimal attendu, pas un format figé à
+l'avance. Comme pour `dom_replay_shim.py` en 3A, l'implémentation réelle
+ajustera ces champs au contact du code existant.
+
+------------------------------------------------------------------------
+
+## Phase 3A --- Replay DOM statique
 
 **Statut : TERMINÉE — `Survey/dom_replay_shim.py` + `Survey/failure_replay.py` +
 `tools/replay_failure.py` implémentés et validés.**
@@ -763,6 +845,8 @@ choisie, mais **ne peut pas** re-tester un bug de sélection de frame elle-même
 (catégorie « frame context oublié », citée en Phase 17). La Phase 4
 (diagnostic automatique) devra identifier ces cas en amont plutôt que de leur
 appliquer un replay qui ne peut que produire `NON_REJOUABLE` ou un faux signal.
+Cette limite est levée par la capture du frame_tree (Phase 3B.3) et sa
+réexécution dans le replay Chromium (Phase 3C.3).
 
 ### Limite actée : réutilisation de dispatcher_success
 
@@ -773,7 +857,11 @@ patch n'a modifié le code, `REPRODUIT` est donc attendu par construction pour
 ces cas — ce n'est pas un défaut, c'est la vérification de référence avant
 patch. La valeur diagnostique réelle (confirmer qu'un patch a fait disparaître
 le problème) s'active en Phase 9 (replay post-patch), en rejouant le même
-outil après modification du code.
+outil après modification du code. Limite non résolue tant que le dispatcher
+lui-même n'est jamais réellement réexécuté par le replay : voir la trace
+d'action (Phase 3B.5), sa réexécution ou son analyse en Phase 3C.4, et le
+mode `TRACE_REPLAY` de la Phase 3D pour les cas où le dispatcher réel ne peut
+pas tourner localement.
 
 ### Dépendances
 
@@ -787,6 +875,368 @@ le binaire Nuitka de distribution tiers (à revérifier explicitement avant la
 prochaine `nuitka_build_release.ps1`, et à installer manuellement — via
 `setup_machine.ps1` ou pip — sur toute machine où `replay_failure.py` doit
 tourner ; l'auto-update R2 ne pousse jamais de nouvelles dépendances).
+
+------------------------------------------------------------------------
+
+## Phase 3B --- Capture enrichie : Browser Capsule
+
+**Statut : À FAIRE — prochain chantier principal.**
+
+Objectif : enrichir le failure case au moment même de l'incident afin de
+conserver les informations qu'un simple `outerHTML` perd.
+
+``` text
+incident live
+→ capture passive enrichie
+→ failure case autonome
+→ page live ensuite inutile
+```
+
+La capture reste strictement passive : aucun retry, aucune correction,
+aucune navigation ni clic supplémentaire, aucune modification du résultat du
+bot. Elle n'est déclenchée que lorsqu'un incident utile est enregistré, pour
+ne pas imposer ce coût à chaque page normale.
+
+Avertissement de cadrage : 3B.1 (DOM/CSS), 3B.2 (état runtime) et 3B.5
+(trace d'action) couvrent vraisemblablement l'essentiel des cas aujourd'hui
+bloqués en 3A. 3B.3 (frames) et 3B.4 (Shadow DOM) sont plus coûteuses à
+capturer et à exploiter : à ne construire qu'après avoir mesuré, sur des cas
+réels classés `NON_REJOUABLE` par 3A, combien restent bloqués spécifiquement
+par une sélection de frame ou un Shadow DOM fermé.
+
+### 3B.1 --- DOM et CSS
+
+La capture existante de `page_snapshot.py` reste la base : elle conserve
+déjà `outerHTML`, le DOM pré/post-action, les `question_blocks`, les actions
+demandées, les frames, le screenshot, un `page.mhtml` best-effort sur les
+profils qui le permettent, et une reconstruction best-effort des règles CSS
+injectées dans le CSSOM.
+
+La Browser Capsule complète ces données avec les faits nécessaires à un
+navigateur local pour restituer plus fidèlement la page — pour les éléments
+réellement pertinents au cas (cible, options, wrapper/conteneur proche,
+ancêtres nécessaires, CTA, éléments référencés par le validator), pas pour
+tous les nœuds du document :
+
+``` text
+tag/type, target_id ou fingerprint structurel
+value, checked, selected, selectedIndex, disabled, readOnly
+indeterminate, contenteditable
+classes, attributs aria pertinents
+texte observable, visibilité observée
+bounding rectangle
+propriétés CSS nécessaires à l'actionability/visibilité
+```
+
+### 3B.2 --- État runtime
+
+Artefact indicatif : `runtime_state.json`. Objectif : conserver les états
+DOM que la sérialisation HTML ne garantit pas.
+
+``` text
+HTML capturé :         <input value="">
+état runtime observé : input.value = "75001"
+```
+
+Le replay doit pouvoir restaurer cet état avant de relancer l'analyse.
+Ne jamais supposer que `outerHTML == état JavaScript réel du contrôle`.
+
+### 3B.3 --- Frames
+
+Artefact indicatif : `frame_tree.json`. La capture actuelle des frames
+(présente depuis la Phase 1A) doit évoluer vers une représentation
+explicite de leur hiérarchie, pas seulement de la frame déjà choisie :
+
+``` text
+chain, parent_chain
+DOM, URL nettoyée
+id/name/title/src utiles
+dimensions observées, text_len, inputs_count
+frame sélectionnée lors de l'incident
+```
+
+Le replay (Phase 3C) doit pouvoir vérifier : avec la hiérarchie observée
+lors de l'incident, `dom_frame_selector` choisit-il maintenant la bonne
+frame ? — ce qui rend enfin rejouable la catégorie « frame context oublié »
+(Phase 17), hors de portée de 3A.
+
+Toute boucle de capture de frames reste bornée : profondeur maximale, nombre
+maximal de frames, abandon contrôlé, warning explicite si capture tronquée.
+
+### 3B.4 --- Shadow DOM
+
+Artefact indicatif : `shadow_roots.json` — pour chaque host, un fingerprint
+structurel stable et le HTML du shadow root capturé (open uniquement). Les
+shadow roots **fermés** ne donnent lieu à aucune tentative intrusive : un
+case qui en dépend est déclaré `replay limitation = closed_shadow_root`, sa
+fidélité dégradée explicitement plutôt que contournée.
+
+### 3B.5 --- Trace d'action
+
+Pour `stage=action`, compléter `pre_action_dom.html` / `post_action_dom.html` /
+`actions_requested.json` par une trace structurée : `action_trace.json`.
+Pas un log verbeux du dispatcher — uniquement les faits nécessaires à la
+reproduction et au diagnostic :
+
+``` text
+action demandée, target résolu
+stratégie principale utilisée, résultat retourné, raison retournée
+état cible avant action / après action
+changements DOM forts observés autour de l'action
+```
+
+Exemple (le cas IFOP zip2city de la Phase 1B, rendu durable même si la page
+live disparaît) :
+
+``` text
+requested value = 75001
+before:  input.value = ""
+dispatcher: success = false, reason = ifop_zip2city_widget_failed
+after:   input.value = "75001", city_label = "Paris 01"
+```
+
+### 3B.6 --- Mutations DOM ciblées
+
+Observation bornée des mutations DOM autour d'une action (attribut `checked`
+ajouté, `aria-selected` modifié, classe `selected` ajoutée, texte de
+confirmation créé, nœud d'erreur ajouté, option devenue active), utile en
+complément de 3B.5. Bornes obligatoires : fenêtre temporelle courte, nombre
+maximal de mutations, taille maximale de sortie, arrêt automatique. L'observer
+ne produit jamais de mutation lui-même — il observe uniquement le flux normal
+existant.
+
+### 3B.7 --- MHTML
+
+Artefact secondaire lorsqu'il est disponible (préserve plus de ressources
+que l'HTML seul), jamais l'unique source du replay. Le failure case reste
+exploitable à partir de ses artefacts structurés même si le MHTML est
+absent, illisible, ou qu'une ressource n'est pas restaurable.
+
+### 3B.8 --- Secrets et données sensibles
+
+La Browser Capsule augmente mécaniquement la quantité d'état capturé. Cette
+extension ne doit jamais entraîner la conservation de cookies,
+`localStorage`/`sessionStorage` complets, tokens d'authentification, headers
+réseau, credentials ou secrets applicatifs. Les URLs suivent les règles de
+sanitisation déjà en place (Phase 2). Les valeurs runtime capturées pour le
+seul replay local sont des données de reproduction — elles ne doivent jamais
+être injectées automatiquement dans un prompt Codex (Phase 6) sans passer par
+la même sélection explicite des faits nécessaires au diagnostic.
+
+------------------------------------------------------------------------
+
+## Phase 3C --- Replay Chromium local
+
+**Statut : À FAIRE.**
+
+Objectif : lorsqu'un replay lxml (3A) est insuffisant, reconstruire
+localement une page dans un vrai Chromium Playwright, sans dépendre du
+provider. Ce navigateur de replay tourne dans le worker local/dev
+d'autofix, jamais dans le processus SurveyBot de production (Phase 20) : le
+bot de prod détecte/capture/enregistre/continue, le worker charge le failure
+case, reconstruit la capsule, rejoue, diagnostique, valide.
+
+### 3C.1 --- Isolation réseau
+
+Par défaut : aucune navigation libre, aucun accès au provider original,
+aucune dépendance au survey live. Le replay utilise uniquement les artefacts
+du failure case. Une ressource absente n'est jamais récupérée silencieusement
+depuis Internet pour améliorer artificiellement la fidélité du replay.
+
+### 3C.2 --- Reconstruction
+
+Le worker reconstruit, dans la mesure des artefacts disponibles : document
+principal, styles utiles, état runtime, frames, shadow roots ouverts, état
+des contrôles — puis réutilise les vrais modules SurveyBot
+(`dom_frame_selector`, `dom_analyzer`, `question_block_validator`,
+`action_validator`) tels qu'ils existent dans le code courant. L'objectif
+n'est pas d'écrire un second moteur d'analyse.
+
+### 3C.3 --- Extraction / frame selection
+
+Pour les bugs d'extraction, le replay Chromium doit permettre de retester
+frame selection, visibilité, CSS/layout, DOM dynamique déjà capturé,
+extraction, registry, `question_blocks` et validator. Résultat comparé au
+failure case d'origine avec les mêmes verdicts que 3A.
+
+### 3C.4 --- Actions
+
+Deux catégories, à distinguer explicitement.
+
+**Action réellement rejouable** — si la capsule contient assez d'état pour
+exécuter le dispatcher localement sans dépendance externe :
+
+``` text
+pre-action capsule
+→ dispatcher courant
+→ état post-action local
+→ validator
+```
+
+Le bug peut alors être validé réellement : avant patch → FAIL, après patch
+→ PASS.
+
+Garde-fou obligatoire : toute exécution réelle du dispatcher ici doit être
+bornée par un timeout explicite (attente réseau, promesse non résolue,
+callback jamais déclenché). Un dépassement de budget n'est jamais silencieux
+et ne bloque jamais le replay : il déclasse automatiquement le cas vers
+`TRACE_REPLAY` (Phase 3D) plutôt que de laisser le worker pendre ou de
+forcer un verdict.
+
+**Action non entièrement réexécutable** — dépendance à des listeners JS non
+sérialisables, un état mémoire applicatif, un backend provider, un
+WebSocket, une requête API, un timer serveur, une session distante ou un
+captcha. Le système ne prétend alors pas avoir rejoué le dispatcher : il
+utilise uniquement les faits capturés (pre-state, action demandée, trace
+d'action, mutations observées, post-state) pour rejouer l'analyse/validation
+disponible. Le résultat est identifié explicitement comme replay partiel
+(`TRACE_REPLAY`). Aucun faux `PASS` n'est produit en faisant semblant que
+l'interaction provider a été reproduite.
+
+Ce pari (`dispatcher_success=false` mais état DOM prouvant que l'état
+attendu a été atteint) est déjà posé une première fois par le validator à
+l'incident — voir Phase 1B.1, `dispatcher_false_negative`/`dom_signal`, cas
+IFOP zip2city. `TRACE_REPLAY` applique la même logique côté replay
+post-patch. Pour éviter deux implémentations parallèles du même pari, cette
+logique doit vivre dans **une fonction oracle unique**, appelée à la fois par
+`action_validator.py` (Phase 1B) et par le replay (Phase 3C/3D) — pas dans
+deux endroits différents.
+
+------------------------------------------------------------------------
+
+## Phase 3D --- Classification automatique de rejouabilité
+
+**Statut : À FAIRE.**
+
+Chaque failure case reçoit un mode de replay explicite :
+
+``` text
+STATIC_DOM               → reproductible par 3A (structure DOM pure)
+                            ex. question block incohérent, option absente,
+                            target_id invalide, registry incompatible,
+                            contrainte min/max impossible
+
+BROWSER_CAPSULE           → HTML statique insuffisant, mais 3B/3C suffisent
+                            ex. visibilité CSS, layout, bounding boxes,
+                            frame selection, shadow DOM ouvert, état
+                            runtime d'un contrôle
+
+TRACE_REPLAY              → interaction non réexécutable fidèlement, mais
+                            l'état avant/après et les mutations observées
+                            suffisent à rejouer l'oracle ou le diagnostic
+                            ex. dispatcher retourne false mais mutation DOM
+                            forte prouve que l'état attendu a été atteint
+
+EXTERNAL_NON_REPLAYABLE   → dépendance intrinsèque à une donnée externe non
+                            capturable de façon fiable
+                            ex. validation serveur, captcha distant, état
+                            backend, WebSocket, session distante expirée,
+                            réponse réseau future
+```
+
+`EXTERNAL_NON_REPLAYABLE` n'est pas un échec du moteur, c'est une conclusion
+explicite : les artefacts disponibles ne permettent pas une validation
+locale fiable. Le système préfère ce verdict à une simulation fragile — ces
+cas sont orientés vers la Phase 10 (test live attach), qui devient leur voie
+de validation normale, pas un recours tardif isolé.
+
+La Phase 4 (diagnostic) devra lire ce champ pour ne pas attendre un verdict
+`REPRODUIT`/`NON_REPRODUIT` d'un case classé `EXTERNAL_NON_REPLAYABLE` — une
+extension à prévoir, pas une réécriture rétroactive de la Phase 4 déjà
+livrée.
+
+------------------------------------------------------------------------
+
+## Compatibilité avec les Phases 4, 5 et 6 déjà implémentées
+
+Les Phases 4, 5 et 6 ont déjà été construites sur la sortie du replay
+existant. La correction de la Phase 3 ne doit donc pas casser leur contrat
+sans nécessité. Les verdicts principaux restent
+`REPRODUIT`/`NON_REPRODUIT`/`DIFFERENT`/`NON_REJOUABLE` ; la Phase 3 enrichie
+ajoute des métadonnées (`replay_mode`, `replay_fidelity`, `limitations`,
+`artifacts_used`) sans toucher aux champs déjà consommés par
+`Survey/failure_diagnosis.py`, `Survey/context_selector.py` et
+`Survey/prompt_generator.py`. Ces modules pourront exploiter progressivement
+les nouvelles métadonnées par patches minimaux, sans réécriture gratuite.
+
+La Phase 9 (replay post-patch) consomme les mêmes verdicts et doit être
+étendue dans le même esprit : un verdict obtenu en `TRACE_REPLAY` est une
+preuve plus faible qu'un `REPRODUIT`/`NON_REPRODUIT` obtenu en `STATIC_DOM`
+ou `BROWSER_CAPSULE` — la Phase 9 (et le score de confiance, Phase 12) doit
+pouvoir les distinguer plutôt que les traiter à égalité. Un replay partiel
+n'est pas une preuve certaine qu'un patch est correct.
+
+------------------------------------------------------------------------
+
+## Validation de la Phase 3 enrichie
+
+La Phase 3 corrigée est considérée terminée lorsque les quatre niveaux ont
+été validés sur des cas représentatifs :
+
+``` text
+1 cas STATIC_DOM                          → reproduit par 3A
+1 cas nécessitant layout/CSS runtime      → non fiable en 3A,
+                                             reproduit par BROWSER_CAPSULE
+1 cas impliquant une frame                → frame tree reconstruit,
+                                             sélection de frame rejouable
+1 cas d'action avec état avant/après      → dispatcher ou trace rejoué
+                                             selon sa capacité réelle
+1 cas intrinsèquement externe             → classifié EXTERNAL_NON_REPLAYABLE,
+                                             aucune tentative de faux replay
+```
+
+Pour chaque cas rejouable : code avant correction → incident reproduit ;
+patch → même failure case → incident disparu ; cas voisins pertinents →
+absence de régression. Aucune page live originale ne doit être nécessaire
+pour ces validations.
+
+------------------------------------------------------------------------
+
+## Règles de simplicité
+
+Cette extension ne doit pas devenir un système général d'archivage complet
+du Web. Ne pas chercher à sérialiser fidèlement toute la mémoire
+JavaScript, tous les listeners, tout le trafic réseau, tous les storages
+navigateur, ou tout le backend du provider. Le but est uniquement de
+capturer les faits nécessaires aux bugs réellement rencontrés par SurveyBot.
+
+``` text
+si un nouvel artefact améliore clairement
+la reproduction, le diagnostic, la validation ou la non-régression
+→ il est justifié
+sinon
+→ ne pas l'ajouter
+```
+
+Toute boucle de capture ou de reconstruction a un budget maximal, un
+abandon contrôlé, un `log_debug` utile, et jamais de boucle infinie.
+
+------------------------------------------------------------------------
+
+## Décision de clôture
+
+La Phase 3A existante reste valide et constitue le premier niveau, rapide,
+du replay. Elle n'est plus considérée comme représentant à elle seule
+l'ensemble de la Phase 3, qui devient :
+
+``` text
+incident détecté
+        ↓
+failure case enrichi
+        ↓
+classification de rejouabilité
+        ↓
+STATIC_DOM / BROWSER_CAPSULE / TRACE_REPLAY / EXTERNAL_NON_REPLAYABLE
+        ↓
+replay local le plus fidèle disponible
+        ↓
+diagnostic / contexte / prompt Codex existants
+        ↓
+validation du futur patch sur le même case
+```
+
+Objectif final : une page problématique n'est observée qu'une seule fois en
+live pour devenir ensuite un cas de test durable du moteur d'autofix.
 
 ------------------------------------------------------------------------
 
@@ -1077,6 +1527,18 @@ on rejoue automatiquement plusieurs snapshots Decipher déjà validés.
 
 Cela constitue progressivement ta **suite de non-régression DOM**.
 
+### Limite actuelle (avant Phases 3B/3C)
+
+Pour les cas `stage=action`, cette phase ne peut rejouer que ce que couvre le
+replay disponible. Tant que les Phases 3B/3C n'existent pas, un patch
+touchant `action_dispatcher.py` n'est vérifié par aucun replay local — voir
+la limite actée en Phase 3A. Une fois 3D en place, un verdict `TRACE_REPLAY`
+doit être traité comme une preuve plus faible qu'un `REPRODUIT`/`NON_REPRODUIT`
+obtenu en `STATIC_DOM`/`BROWSER_CAPSULE` (voir « Compatibilité avec les
+Phases 4, 5 et 6 », en Phase 3). Pour les cas classés
+`EXTERNAL_NON_REPLAYABLE`, seule la Phase 10 (live attach) constitue une
+validation réelle.
+
 ------------------------------------------------------------------------
 
 # Phase 10 --- Test live attach contrôlé
@@ -1122,6 +1584,14 @@ Jamais :
 while not fixed:
     ask_codex_again()
 ```
+
+### Rôle après la Phase 3D
+
+Une fois le classificateur de rejouabilité (Phase 3D) en place, cette phase
+devient la voie de validation *normale* pour tout case classé
+`EXTERNAL_NON_REPLAYABLE` — pas seulement un filet de sécurité tardif pour
+quelques cas exceptionnels. Son fonctionnement décrit ci-dessus ne change
+pas ; seul son déclenchement devient systématique pour cette catégorie.
 
 ------------------------------------------------------------------------
 
@@ -1553,6 +2023,12 @@ Ce serait fragile.
                                     Merge
 ```
 
+Note : le nœud « Replay Test » de ce schéma recouvre les niveaux détaillés
+en Phase 3 (3A statique, 3B capture enrichie, 3C replay Chromium local,
+3D classification `STATIC_DOM`/`BROWSER_CAPSULE`/`TRACE_REPLAY`/
+`EXTERNAL_NON_REPLAYABLE`) ; « Live Validation » correspond à la Phase 10,
+devenue le chemin normal pour les cas classés `EXTERNAL_NON_REPLAYABLE`.
+
 ## Ordre concret de développement
 
 Je suivrais exactement cet ordre :
@@ -1561,14 +2037,18 @@ Je suivrais exactement cet ordre :
 1A  Observabilité passive — TERMINÉE, validée en live attach
 1B  Stabilisation des validators — OUVERTE EN TÂCHE DE FOND (1B.1 et 1B.2 validés)
 2   Failure cases normalisés — TERMINÉE (failure_case_builder.py + CLI, 2 correctifs validés)
-3   Replay local — TERMINÉE (dom_replay_shim.py + failure_replay.py + CLI)
+3A  Replay DOM statique — TERMINÉE (dom_replay_shim.py + failure_replay.py + CLI)
+3B  Capture enrichie (browser capsule) — PROCHAIN CHANTIER PRINCIPAL
+3C  Replay Chromium local
+3D  Classification de rejouabilité (STATIC_DOM/BROWSER_CAPSULE/TRACE_REPLAY/
+    EXTERNAL_NON_REPLAYABLE)
 4   Diagnostic automatique — TERMINÉE (failure_diagnosis.py + CLI)
 5   Sélection automatique du contexte code — TERMINÉE (context_selector.py + CLI)
 6   Génération du prompt Codex — TERMINÉE (prompt_generator.py + CLI, vigilance data ouverte)
-7   Patch dans branche isolée — PROCHAIN CHANTIER PRINCIPAL
+7   Patch dans branche isolée — en attente de 3B/3C pour les cas hors STATIC_DOM
 8   Tests statiques
 9   Replay post-patch
-10  Validation live attach
+10  Validation live attach — devient la voie normale des cas EXTERNAL_NON_REPLAYABLE (post-3D)
 11  Suite de régression
 12  Score de confiance
 13  UI/review humaine simplifiée
