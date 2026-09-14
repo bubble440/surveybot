@@ -191,6 +191,71 @@ def _focaldata_response_option_cards_signal(driver) -> dict | None:
         return None
 
 
+def _netsurvey_choice_buttons_signal(driver) -> dict | None:
+    """Retourne un signal minimal pour un choix unique Net-Survey/Soft Concept non extrait.
+
+    Ce n'est pas un extracteur : il ne lit ni ne reconstruit les options. Il
+    constate uniquement le pattern DOM complet observé sur des enquêtes
+    générées par le moteur Soft Concept NET-Survey (script `ethnos.dll`,
+    domaine variable selon le client) — bloc question `.ns-zq.ns-quali`
+    portant un libellé `.ns-zlq`, au moins deux boutons de réponse cliquables
+    `.ns-bouton-cont-vert button.ns-bouton.ns-zlr[ntsrep]`, avec un CTA
+    "Suivant" (`input.ns-next[name="SENDBTN"]`) visible — afin d'éviter de
+    classer un écran Net-Survey transitoire ou sans question comme une
+    anomalie d'extraction. Le domaine du client n'est jamais utilisé comme
+    critère : seule la signature du moteur (méta `SCSoftware`) l'est.
+    """
+    try:
+        current_frame = getattr(driver, "_current_frame", driver)
+        signal = current_frame.evaluate("""() => {
+            const scMeta = document.querySelector(
+                'meta[name="SCSoftware"][content="NET-Survey"]'
+            );
+            if (!scMeta) return null;
+
+            const visible = node => {
+                if (!node) return false;
+                const style = getComputedStyle(node);
+                return style.display !== 'none'
+                    && style.visibility !== 'hidden'
+                    && node.getClientRects().length > 0;
+            };
+
+            const questions = Array.from(
+                document.querySelectorAll('.ns-zq.ns-quali[data-ns-zq]')
+            );
+            for (const question of questions) {
+                if (!visible(question)) continue;
+
+                const questionText = question.querySelector('.ns-zlq');
+                if (!questionText || questionText.textContent.trim().length < 8) {
+                    continue;
+                }
+
+                const buttons = Array.from(
+                    question.querySelectorAll(
+                        '.ns-bouton-cont-vert button.ns-bouton.ns-zlr[ntsrep]'
+                    )
+                ).filter(visible);
+                if (buttons.length < 2) continue;
+
+                const next = document.querySelector(
+                    '.button-bloc input.ns-next[name="SENDBTN"]'
+                );
+                if (!next || !visible(next)) continue;
+
+                return {
+                    question_id: question.getAttribute('data-ns-zq') || question.id || '',
+                    buttons_count: buttons.length,
+                };
+            }
+            return null;
+        }""")
+        return signal if isinstance(signal, dict) else None
+    except Exception:
+        return None
+
+
 def validate_question_blocks(question_blocks: list[dict] | None, *, driver=None) -> dict:
     """Retourne un rapport JSON-sérialisable sans effet de bord."""
     blocks = question_blocks or []
@@ -223,6 +288,14 @@ def validate_question_blocks(question_blocks: list[dict] | None, *, driver=None)
                         "dom_signal": "focaldata_response_option_cards",
                         **signal,
                     })
+                else:
+                    signal = _netsurvey_choice_buttons_signal(driver)
+                    if signal:
+                        issues.append({
+                            "failure_type": "missing_block",
+                            "dom_signal": "netsurvey_choice_buttons",
+                            **signal,
+                        })
 
     for idx, block in enumerate(blocks):
         if not isinstance(block, dict):

@@ -115,8 +115,9 @@ _EXPECTED_BEHAVIOR: dict[str, dict[str, str]] = {
         "source": "Survey/action_validator.py::validate_actions (_ifop_zip2city_false_negative_issue)",
     },
     "missing_block": {
-        "description": "Un signal DOM fort et reconnu (widget qualtrics_ranked_choices ou zappi_max_diff) "
-        "est présent, mais aucun bloc de question n'a été extrait pour lui.",
+        "description": "Un signal DOM fort et reconnu (widget qualtrics_ranked_choices, zappi_max_diff, "
+        "focaldata_response_option_cards ou netsurvey_choice_buttons) est présent, mais aucun "
+        "bloc de question n'a été extrait pour lui.",
         "source": "Survey/question_block_validator.py::validate_question_blocks",
     },
     "invalid_block_shape": {
