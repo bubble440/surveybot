@@ -15088,3 +15088,111 @@ def _extract_qdtech_qdcheckbox_icon_choice_blocks(driver, frame_chain: list[int]
         log_info("[DOM_QDTECH_QDCHECKBOX]", f"blocks_extracted={len(blocks)}")
 
     return blocks
+
+
+# ================================================================================
+# NET-SURVEY / SOFT CONCEPT - CHOIX UNIQUE A IMAGE (vision requise)
+# ================================================================================
+
+def _extract_netsurvey_image_choice_vision_block(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Net-Survey (Soft Concept, script ethnos.dll) : choix unique dont la réponse
+    dépend d'une image (« Pour cela, merci d'indiquer ce que vous voyez : »).
+
+    Gate DOM strict (tous requis) :
+    - méta `SCSoftware` = NET-Survey (signature du moteur, jamais le domaine client) ;
+    - bloc visible `.ns-zq.ns-quali[data-ns-zq]` portant un libellé `.ns-zlq`,
+      une image `.ns-imgq img` et >= 2 boutons `.ns-bouton-cont-vert button.ns-bouton.ns-zlr[ntsrep]`.
+
+    Produit 1 bloc radio `requires_vision` (schéma du précédent Walr Image Evaluation) ;
+    la sélection est faite par `_handle_netsurvey_image_choice_blocks` (survey_executor.py).
+    Un choix unique Net-Survey SANS image n'est pas couvert ici.
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        data = driver.evaluate("""() => {
+            if (!document.querySelector('meta[name="SCSoftware"][content="NET-Survey"]')) return null;
+            const visible = n => {
+                if (!n) return false;
+                const s = getComputedStyle(n);
+                return s.display !== 'none' && s.visibility !== 'hidden' && n.getClientRects().length > 0;
+            };
+            for (const zq of document.querySelectorAll('.ns-zq.ns-quali[data-ns-zq]')) {
+                if (!visible(zq)) continue;
+                const lbl = zq.querySelector('.ns-zlq');
+                const img = zq.querySelector('.ns-imgq img');
+                if (!lbl || !img) continue;
+                const btns = Array.from(zq.querySelectorAll(
+                    '.ns-bouton-cont-vert button.ns-bouton.ns-zlr[ntsrep]')).filter(visible);
+                if (btns.length < 2) continue;
+                return {
+                    qid: zq.getAttribute('data-ns-zq') || '',
+                    question: (lbl.textContent || '').trim(),
+                    image_url: img.currentSrc || img.src || '',
+                    options: btns.map(b => ({
+                        text: (b.textContent || '').trim(),
+                        rep: b.getAttribute('ntsrep') || '',
+                    })),
+                };
+            }
+            return null;
+        }""")
+    except Exception as _exc:
+        log_debug("[NETSURVEY_IMG]", f"gate_exception {type(_exc).__name__}: {_exc}")
+        return []
+
+    if not isinstance(data, dict):
+        return []
+
+    qid = _norm(data.get("qid"))
+    question = _norm(data.get("question"))
+    image_url = (data.get("image_url") or "").strip()
+    if not qid or not question or not image_url.startswith("http"):
+        log_debug("[NETSURVEY_IMG]", f"gate_incomplete qid={qid!r} question_len={len(question)} image={image_url[:40]!r}")
+        return []
+
+    options: list[str] = []
+    option_xpath_map: dict[str, str] = {}
+    for opt in data.get("options") or []:
+        text = _norm(opt.get("text"))
+        rep = (opt.get("rep") or "").strip()
+        nk = _norm_key(text)
+        if not text or not rep or nk in option_xpath_map:
+            continue
+        option_xpath_map[nk] = (
+            f"//*[@data-ns-zq={_xpath_literal(qid)}]"
+            f"//button[contains(@class,'ns-bouton') and @ntsrep={_xpath_literal(rep)}]"
+        )
+        options.append(text)
+
+    if len(options) < 2:
+        return []
+
+    group_key = f"netsurvey_image_choice:{qid}"
+    target_id = make_target_id("group", group_key, question)
+    register_target(
+        target_id,
+        {
+            "kind": "group",
+            "itype": "radio",
+            "group_key": group_key,
+            "question": question,
+            "option_xpath_map": option_xpath_map,
+            "frame_chain": frame_chain,
+            "netsurvey_image_choice": True,
+        },
+    )
+
+    log_info("[NETSURVEY_IMG]", f"block qid={qid} options={len(options)} image={image_url[:80]}")
+    return [
+        {
+            "question": question,
+            "itype": "radio",
+            "options": options,
+            "max_select": 1,
+            "target_id": target_id,
+            "requires_vision": True,
+            "image_url": image_url,
+            "context": {"kind": "group", "group_key": group_key, "netsurvey_image_choice": True},
+        }
+    ]

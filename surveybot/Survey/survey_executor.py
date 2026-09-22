@@ -1483,6 +1483,124 @@ def _handle_cf_carousel_image_blocks(driver, question_blocks: list, api_key: str
     return any_clicked
 
 
+def _handle_netsurvey_image_choice_blocks(driver, question_blocks: list, api_key: str) -> bool:
+    """
+    Net-Survey / Soft Concept : choix unique dépendant d'une image (bloc requires_vision
+    produit par _extract_netsurvey_image_choice_vision_block). Un seul appel Vision,
+    aucun clic de repli : sans réponse exploitable, retourne False (flux standard).
+    """
+    import base64
+    import requests
+    from Survey.dom_registry import get_target
+
+    page = driver
+
+    blocks = [
+        b for b in question_blocks
+        if b.get("requires_vision")
+        and (b.get("context") or {}).get("netsurvey_image_choice")
+        and b.get("image_url")
+    ]
+    if not blocks:
+        return False
+
+    block = blocks[0]
+    image_url = block["image_url"]
+    question = (block.get("question") or "").strip()
+    options = block.get("options") or []
+
+    registry_data = get_target(block.get("target_id") or "")
+    option_xpath_map = (registry_data or {}).get("option_xpath_map") or {}
+    frame_chain = (registry_data or {}).get("frame_chain") or []
+    if not option_xpath_map:
+        log_info("[NETSURVEY_IMG_VISION]", "SKIP - target absent du registry ou sans option_xpath_map")
+        return False
+
+    try:
+        resp = requests.get(image_url, timeout=15)
+        resp.raise_for_status()
+        img_data = base64.b64encode(resp.content).decode("utf-8")
+        media_type = resp.headers.get("Content-Type", "image/jpeg").split(";")[0].strip().lower()
+        if media_type not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+            media_type = "image/jpeg"
+    except Exception as e:
+        log_info("[NETSURVEY_IMG_VISION]", f"Téléchargement image FAILED: {e}")
+        return False
+
+    options_str = ", ".join(f'"{opt}"' for opt in options)
+    vision_prompt = (
+        "Look at this image and answer the question.\n\n"
+        f"Question: {question}\n\n"
+        f"Available options: {options_str}\n\n"
+        "Respond with EXACTLY one of the available options, nothing else. "
+        "Choose the option describing what is depicted; choose the option saying the image "
+        "is not visible only if the image is blank or unreadable."
+    )
+
+    try:
+        client = openai.OpenAI(api_key=api_key)
+        vision_response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{img_data}", "detail": "low"}},
+                    {"type": "text", "text": vision_prompt},
+                ],
+            }],
+            max_tokens=50,
+        )
+        chosen_raw = (vision_response.choices[0].message.content or "").strip().strip("\"'")
+        log_info("[NETSURVEY_IMG_VISION]", f"réponse Vision: {chosen_raw!r}")
+    except Exception as e:
+        log_info("[NETSURVEY_IMG_VISION]", f"Vision API FAILED: {e}")
+        return False
+
+    chosen_lc = _norm_lc(chosen_raw)
+    matched_option = matched_xpath = None
+    for opt, xp in option_xpath_map.items():
+        if _norm_lc(opt) == chosen_lc:
+            matched_option, matched_xpath = opt, xp
+            break
+    if not matched_xpath and chosen_lc:
+        for opt, xp in option_xpath_map.items():
+            opt_lc = _norm_lc(opt)
+            if chosen_lc in opt_lc or opt_lc in chosen_lc:
+                matched_option, matched_xpath = opt, xp
+                break
+    if not matched_xpath:
+        log_info("[NETSURVEY_IMG_VISION]", f"Aucune option ne correspond à {chosen_raw!r} -> aucun clic")
+        return False
+
+    try:
+        frame = page.main_frame
+        for frame_idx in frame_chain:
+            iframes = frame.query_selector_all("iframe")
+            if frame_idx < len(iframes):
+                child_frame = iframes[frame_idx].content_frame()
+                if child_frame:
+                    frame = child_frame
+    except Exception as e:
+        log_debug("[NETSURVEY_IMG_VISION]", f"Frame navigation error (non-fatal): {e}")
+        frame = page.main_frame
+
+    try:
+        btn = frame.query_selector(f"xpath={matched_xpath}")
+        if btn is None:
+            log_info("[NETSURVEY_IMG_VISION]", f"Bouton introuvable xpath={matched_xpath}")
+            return False
+        btn.evaluate("(el) => el.scrollIntoView({block: 'center'})")
+        time.sleep(0.3)
+        btn.hover()
+        btn.click()
+        log_info("[NETSURVEY_IMG_VISION]", f"clicked {matched_option!r}")
+        time.sleep(0.5)
+        return True
+    except Exception as e:
+        log_info("[NETSURVEY_IMG_VISION]", f"Click FAILED: {e}")
+        return False
+
+
 def _handle_phone_verification(driver):
     """
     Détecte et traite l'écran interstitiel "Courte pause – Vérifie ton profil" sur topsurveys.app.
@@ -2255,6 +2373,15 @@ def execute_survey_page(driver, account_id, api_key, ctx=None, platform=None):
                     )
             except Exception as _cta_e:
                 print(f"[CF_CAROUSEL_VISION] CTA error (non-bloquant): {_cta_e}")
+            # page_snapshot est hors-périmètre → passer driver (= shim)
+            try:
+                page_snapshot.snapshot_if_enabled(
+                    driver,
+                    reason="after_dom_analyze",
+                    question_blocks=extracted_question_blocks,
+                )
+            except Exception:
+                pass
             return True
     except Exception as e:
         print(f"[CF_CAROUSEL_VISION] Exception: {e}")
@@ -2267,11 +2394,53 @@ def execute_survey_page(driver, account_id, api_key, ctx=None, platform=None):
     try:
         if question_blocks and _handle_walr_image_eval_blocks(driver, question_blocks, api_key):
             print("[WALR_IMG_VISION] Bloc traite avec succes -> return True")
+            # page_snapshot est hors-périmètre → passer driver (= shim)
+            try:
+                page_snapshot.snapshot_if_enabled(
+                    driver,
+                    reason="after_dom_analyze",
+                    question_blocks=extracted_question_blocks,
+                )
+            except Exception:
+                pass
             return True
     except Exception as e:
         print(f"[WALR_IMG_VISION] Exception: {e}")
         import traceback
         traceback.print_exc()
+
+    # =========================================================================
+    # NET-SURVEY IMAGE CHOICE: Vision API AVANT le flux standard
+    # =========================================================================
+    try:
+        if question_blocks and _handle_netsurvey_image_choice_blocks(driver, question_blocks, api_key):
+            intercept_only = is_cta_intercept_only()
+            try:
+                before_url = page.url
+                before_sig = redirect_watcher._dom_signature(driver)
+                time.sleep(PAUSE_BEFORE_CTA)
+                _local_pause_before_cta("navigation_cta")
+                clicked = input_handler.try_click_navigation_cta_any_context(driver)
+                if intercept_only:
+                    log_info("[NETSURVEY_IMG_VISION]", f"CTA_INTERCEPT_ONLY — clic={'OK' if clicked else 'NOT FOUND'}, pas de navigation")
+                elif clicked:
+                    redirect_watcher.wait_for_navigation_or_dom_change(
+                        driver, before_url=before_url, before_sig=before_sig, timeout=10
+                    )
+            except Exception as _cta_e:
+                log_debug("[NETSURVEY_IMG_VISION]", f"CTA error (non-bloquant): {_cta_e}")
+            # page_snapshot est hors-périmètre → passer driver (= shim)
+            try:
+                page_snapshot.snapshot_if_enabled(
+                    driver,
+                    reason="after_dom_analyze",
+                    question_blocks=extracted_question_blocks,
+                )
+            except Exception:
+                pass
+            return True
+    except Exception as e:
+        log_info("[NETSURVEY_IMG_VISION]", f"Exception: {e}")
 
     if not question_blocks:
         try:

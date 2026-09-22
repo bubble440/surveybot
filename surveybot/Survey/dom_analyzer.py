@@ -162,6 +162,7 @@ try:
         _extract_qdtech_qdradio_icon_choice_blocks,
         _extract_qdtech_qdcheckbox_icon_choice_blocks,
         _extract_zappi_maxdiff_blocks,
+        _extract_netsurvey_image_choice_vision_block,
     )
 
     # Registre et utilitaires
@@ -299,6 +300,7 @@ except ImportError:
         _extract_qdtech_qdradio_icon_choice_blocks,
         _extract_qdtech_qdcheckbox_icon_choice_blocks,
         _extract_zappi_maxdiff_blocks,
+        _extract_netsurvey_image_choice_vision_block,
     )
 
 
@@ -2075,6 +2077,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         zappi_maxdiff_blocks = _extract_zappi_maxdiff_blocks(driver, frame_chain)
         if zappi_maxdiff_blocks:
             return zappi_maxdiff_blocks
+    except Exception:
+        pass
+
+    # --- 0i-sexdecies) Net-Survey / Soft Concept : choix unique à image (vision requise) ---
+    # Guard DOM strict : meta SCSoftware=NET-Survey + .ns-zq.ns-quali + .ns-imgq img
+    # + >=2 button.ns-bouton.ns-zlr[ntsrep]. Bloc requires_vision traité par survey_executor.
+    try:
+        netsurvey_img_blocks = _extract_netsurvey_image_choice_vision_block(driver, frame_chain)
+        if netsurvey_img_blocks:
+            return netsurvey_img_blocks
     except Exception:
         pass
 
