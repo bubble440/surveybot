@@ -5496,3 +5496,80 @@ côtés) : le second côté bascule automatiquement sur "Item 2"/ligne suivante,
 le bon conteneur gauche/droite.
 
 ---
+
+## PLATEFORME : NET-SURVEY / SOFT CONCEPT (ethnos.dll) — QUESTION À CHOIX UNIQUE DÉPENDANTE D'UNE IMAGE (VISION)
+
+### _extract_netsurvey_image_choice_vision_block
+Fichier : Survey/dom_analyzer.py (point d'appel ligne ~2083-2091, corps dans les extracteurs importés en
+début de fichier).
+Contexte : widget Net-Survey/Soft Concept (ex. enquetes.panelia.fr/ethnos.dll) où la bonne réponse dépend
+de l'identification visuelle d'une image (« Pour cela, merci d'indiquer ce que vous voyez : »), options
+textuelles ne portant aucune info exploitable en DOM-only sur le contenu de l'image.
+Guard DOM strict : balise meta SCSoftware=NET-Survey + conteneur .ns-zq.ns-quali + image .ns-imgq img +
+au moins 2 boutons .ns-bouton.ns-zlr[ntsrep]. Produit un bloc radio taggé requires_vision=True,
+context.netsurvey_image_choice=True, avec image_url et les options textuelles.
+Patterns couverts :
+- Widget Net-Survey de ce type, quel que soit le domaine (guard sur la meta plateforme, pas sur le
+  hostname — contrairement à Zappi/focaldata dans question_block_validator.py).
+Patterns exclus :
+- Aucune interprétation du contenu de l'image à ce stade (extraction pure) — la résolution vision a lieu
+  séparément dans survey_executor.py (_handle_netsurvey_image_choice_blocks).
+- Toute autre question Net-Survey sans image associée : hors périmètre, suit le pipeline générique.
+Log discriminant : [NETSURVEY_IMG] block qid=<id> options=<n> image=<url>.
+Statut : confirmé fonctionnel en conditions réelles (extraction 1 bloc radio/7 options, réponse Vision
+correcte, clic confirmé visuellement sur l'option correspondante).
+
+### _handle_netsurvey_image_choice_blocks
+Fichier : Survey/survey_executor.py (execute_survey_page, bloc "NET-SURVEY IMAGE CHOICE", avant le flux
+standard — même position de principe que WALR_IMG_VISION et CF_CAROUSEL_VISION).
+Rôle : consomme le bloc requires_vision+netsurvey_image_choice produit par l'extracteur ci-dessus. Un
+seul appel Vision (gpt-4o, image + question + options en prompt, réponse contrainte à une option exacte),
+matching exact puis substring sur option_xpath_map (registry), clic unique via xpath. Sans bloc
+correspondant ou sans réponse exploitable : retourne False, aucun clic de repli (pas de fallback Vision
+générique — un seul appel, un seul essai).
+Patterns couverts :
+- Résolution complète question→clic pour ce widget, suivie du clic CTA existant
+  (try_click_navigation_cta_any_context, respecte CTA_INTERCEPT_ONLY).
+Patterns exclus :
+- Aucune modification des handlers WALR_IMG_VISION / CF_CAROUSEL_VISION eux-mêmes (voir entrée séparée
+  ci-dessous pour le patch qui les concerne tous les trois).
+Log discriminant : [NETSURVEY_IMG_VISION] réponse Vision: '...' / clicked '...'.
+Statut : confirmé fonctionnel en conditions réelles par l'utilisateur.
+
+---
+
+## MODULE TRANSVERSAL : CAPTURE after_dom_analyze SUR RÉSOLUTION VISION (survey_executor.py) — SNAPSHOT ABSENT SUR SUCCÈS + ORDRE RELATIF À LA PAUSE CTA
+
+### WALR_IMG_VISION / CF_CAROUSEL_VISION / NETSURVEY_IMG_VISION — ajout de la capture snapshot manquante
+Fichier : Survey/survey_executor.py (execute_survey_page).
+Bug corrigé : les trois handlers de résolution assistée par vision retournaient True immédiatement après
+le clic (et l'éventuelle navigation CTA), sans jamais atteindre l'appel générique
+page_snapshot.snapshot_if_enabled(reason="after_dom_analyze", ...) plus loin dans le flux standard.
+Résultat : aucun dossier de snapshot n'était produit pour un run résolu avec succès par l'un de ces trois
+handlers, contrairement à tous les autres chemins (échec, flux standard).
+Correction : ajout du même appel snapshot_if_enabled (même try/except: pass que le flux standard) dans
+les trois blocs, avant leur retour.
+Statut : confirmé fonctionnel — dossier "<timestamp>_after_dom_analyze" produit après un run réussi via
+NETSURVEY_IMG_VISION.
+
+### CF_CAROUSEL_VISION / NETSURVEY_IMG_VISION — ordre de la capture relatif au sous-bloc CTA
+Fichier : Survey/survey_executor.py (execute_survey_page).
+Bug corrigé (suite du patch ci-dessus) : dans ces deux handlers, l'appel snapshot ajouté avait été placé
+APRÈS le sous-bloc de clic CTA (qui contient _local_pause_before_cta, bloquant en mode attach/local).
+C'est l'inverse de la convention déjà en place partout ailleurs dans ce fichier — le flux standard et
+l'ancien chemin de secours cta_only_fallback capturent tous deux AVANT toute pause locale, précisément
+pour que la page live reste inspectable avant qu'une validation humaine ou une navigation ne s'opère.
+Placée après, la capture n'avait lieu qu'une fois la navigation déjà effectuée — trop tard pour auditer
+l'état "réponse sélectionnée", et la page live était perdue dès que l'utilisateur validait la pause.
+Correction : appel snapshot déplacé juste après le clic de résolution vision, avant le sous-bloc CTA
+(pause locale, clic navigation, attente de changement DOM).
+Patterns couverts :
+- CF_CAROUSEL_VISION, NETSURVEY_IMG_VISION — ordre capture-avant-pause désormais cohérent avec le reste
+  du fichier.
+Patterns exclus :
+- WALR_IMG_VISION non concerné : pas de sous-bloc CTA entre le clic et la capture, ordre déjà correct
+  avant ce patch.
+Statut : confirmé fonctionnel par l'utilisateur (dossier after_dom_analyze présent avant la pause, page
+live toujours disponible pour inspection avant validation).
+
+---

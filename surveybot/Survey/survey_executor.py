@@ -2358,6 +2358,17 @@ def execute_survey_page(driver, account_id, api_key, ctx=None, platform=None):
     try:
         if question_blocks and _handle_cf_carousel_image_blocks(driver, question_blocks, api_key):
             print("[CF_CAROUSEL_VISION] Blocs traités avec succès -> CTA")
+            # page_snapshot est hors-périmètre → passer driver (= shim)
+            # Capture AVANT le sous-bloc CTA (pause locale bloquante en mode attach) :
+            # la page doit rester inspectable dans l'état juste après la sélection Vision.
+            try:
+                page_snapshot.snapshot_if_enabled(
+                    driver,
+                    reason="after_dom_analyze",
+                    question_blocks=extracted_question_blocks,
+                )
+            except Exception:
+                pass
             intercept_only = is_cta_intercept_only()
             try:
                 before_url = page.url
@@ -2373,15 +2384,6 @@ def execute_survey_page(driver, account_id, api_key, ctx=None, platform=None):
                     )
             except Exception as _cta_e:
                 print(f"[CF_CAROUSEL_VISION] CTA error (non-bloquant): {_cta_e}")
-            # page_snapshot est hors-périmètre → passer driver (= shim)
-            try:
-                page_snapshot.snapshot_if_enabled(
-                    driver,
-                    reason="after_dom_analyze",
-                    question_blocks=extracted_question_blocks,
-                )
-            except Exception:
-                pass
             return True
     except Exception as e:
         print(f"[CF_CAROUSEL_VISION] Exception: {e}")
@@ -2414,6 +2416,17 @@ def execute_survey_page(driver, account_id, api_key, ctx=None, platform=None):
     # =========================================================================
     try:
         if question_blocks and _handle_netsurvey_image_choice_blocks(driver, question_blocks, api_key):
+            # page_snapshot est hors-périmètre → passer driver (= shim)
+            # Capture AVANT le sous-bloc CTA (pause locale bloquante en mode attach) :
+            # la page doit rester inspectable dans l'état juste après la sélection Vision.
+            try:
+                page_snapshot.snapshot_if_enabled(
+                    driver,
+                    reason="after_dom_analyze",
+                    question_blocks=extracted_question_blocks,
+                )
+            except Exception:
+                pass
             intercept_only = is_cta_intercept_only()
             try:
                 before_url = page.url
@@ -2429,15 +2442,6 @@ def execute_survey_page(driver, account_id, api_key, ctx=None, platform=None):
                     )
             except Exception as _cta_e:
                 log_debug("[NETSURVEY_IMG_VISION]", f"CTA error (non-bloquant): {_cta_e}")
-            # page_snapshot est hors-périmètre → passer driver (= shim)
-            try:
-                page_snapshot.snapshot_if_enabled(
-                    driver,
-                    reason="after_dom_analyze",
-                    question_blocks=extracted_question_blocks,
-                )
-            except Exception:
-                pass
             return True
     except Exception as e:
         log_info("[NETSURVEY_IMG_VISION]", f"Exception: {e}")
