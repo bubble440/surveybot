@@ -12852,6 +12852,154 @@ def _extract_image_only_choice_checkbox_blocks(driver, frame_chain: list[int] | 
     return blocks
 
 
+def _qualtrics_carousel_option_label(driver, el) -> str:
+    """
+    Libellé visible d'une option de `ul.CarouselAnswerButtonList` (Qualtrics carousel) :
+    texte du `label.CarouselAnswerButton` externe, hors `img` (alt générique), hors
+    `label.q-checkbox` (rendu visuel de la case) et hors spans `display:none` ("[", "]").
+    """
+    try:
+        txt = driver.evaluate(
+            """(input) => {
+            const li = input.closest('li');
+            const lab = li && li.querySelector('label.CarouselAnswerButton');
+            if (!lab) return '';
+            const clone = lab.cloneNode(true);
+            clone.querySelectorAll("img, label.q-checkbox, [style*='display:none'], [style*='display: none']")
+                 .forEach((n) => n.remove());
+            return (clone.textContent || '').replace(/\\s+/g, ' ').trim();
+            }""",
+            el,
+        )
+        return _norm(txt) if txt else ""
+    except Exception:
+        return ""
+
+
+def _extract_qualtrics_carousel_checkbox_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    Qualtrics "carousel" à choix multiple : une carte (raison) visible à la fois
+    (`div.CarouselCard` sans `NoDisplay`) + `ul.CarouselAnswerButtonList` de checkbox
+    (marques) partageant le même `name`.
+
+    Problème résolu :
+    Le libellé de chaque option est imbriqué dans un `label.CarouselAnswerButton`
+    (externe) contenant un `label.q-checkbox` (rendu visuel, sans texte), éventuellement
+    précédé d'une `<img alt="1">` (alt générique). `_find_associated_label()` ne résout
+    rien → tous les inputs sont ignorés → `options=[]` et la question se rabat sur le
+    texte agrégé du conteneur.
+
+    Guard DOM strict (tous requis) :
+    1. ≥2 `ul.CarouselAnswerButtonList input[type='checkbox'][name]` de même `name`
+    2. Chaque input : `id` + libellé non vide et unique via `label.CarouselAnswerButton`
+    3. Un `.QuestionText` (intitulé) dans le conteneur de la question
+
+    Question = intitulé + texte de la carte visible (comme le `aria-labelledby` de la
+    légende cachée de Qualtrics). Options = libellés visibles réels.
+
+    Patterns exclus :
+    - Checkbox hors `ul.CarouselAnswerButtonList` → pipeline existant
+    - Radios carousel → hors scope
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        checkboxes = driver.query_selector_all(
+            "ul.CarouselAnswerButtonList input[type='checkbox'][name]"
+        )
+    except Exception:
+        return []
+    if len(checkboxes) < 2:
+        return []
+
+    grouped: dict[str, list] = {}
+    for cb in checkboxes:
+        try:
+            name = (cb.get_attribute("name") or "").strip()
+            if name:
+                grouped.setdefault(name, []).append(cb)
+        except Exception:
+            continue
+
+    blocks: list[dict] = []
+    for name, els in grouped.items():
+        if len(els) < 2:
+            continue
+
+        options: list[str] = []
+        option_xpath_map: dict[str, str] = {}
+        ok = True
+        for el in els:
+            lbl = _qualtrics_carousel_option_label(driver, el)
+            el_id = (el.get_attribute("id") or "").strip()
+            nk = _norm_key(lbl) if lbl else ""
+            if not lbl or not nk or not el_id or nk in option_xpath_map:
+                ok = False
+                break
+            id_lit = _xpath_literal(el_id)
+            option_xpath_map[nk] = (
+                f"(//label[@for={id_lit} and contains(@class,'CarouselAnswerButton')])[1]"
+            )
+            options.append(lbl)
+        if not ok:
+            continue
+
+        try:
+            info = driver.evaluate(
+                """(input) => {
+                const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim();
+                const root = input.closest('.QuestionOuter') || document;
+                const q = root.querySelector('.QuestionText');
+                const card = root.querySelector('div.CarouselCard:not(.NoDisplay) .CarouselCardText');
+                return {q: q ? norm(q.textContent) : '', card: card ? norm(card.textContent) : ''};
+                }""",
+                els[0],
+            ) or {}
+        except Exception:
+            info = {}
+        stem = _norm(info.get("q") or "")
+        card = _norm(info.get("card") or "")
+        if not stem:
+            continue
+        question = f"{stem} {card}".strip() if card else stem
+
+        group_key = f"checkbox:qualtrics_carousel:{_norm_lc(name)}"
+        target_id = make_target_id("group", group_key, question)
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "checkbox",
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "qualtrics_carousel_checkbox": True,
+            },
+        )
+        blocks.append(
+            {
+                "question": question,
+                "itype": "checkbox",
+                "options": options,
+                "max_select": _compute_max_select("checkbox", options, question),
+                "min_select": 1,
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "qualtrics_carousel_checkbox": True,
+                },
+            }
+        )
+        log_debug(
+            "[QUALTRICS_CAROUSEL_CB]",
+            f"name={name!r} card={card!r} options={options}",
+        )
+
+    return blocks
+
+
 def _image_labelledby_option_alt(driver, el) -> str:
     """
     Comme `_image_only_option_alt` ci-dessus, mais résout le libellé de

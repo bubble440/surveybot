@@ -5729,6 +5729,45 @@ Point de vigilance : toute page Qualtrics à case unique seule passe désormais 
 → retour anticipé) au lieu du chemin générique / 0h-quater.
 
 ---
+## PLATEFORME : QUALTRICS NATIF — CAROUSEL CHECKBOX (ul.CarouselAnswerButtonList)
+
+Signature : Qualtrics natif (ex. `mcresearch2.co1.qualtrics.com`), `div.QuestionOuter` > `fieldset > legend > label.QuestionText`
+puis `div.QuestionBody.CarouselQuestionBody` : cartes `div.CarouselCard` (UNE visible, les autres `.NoDisplay`, texte dans
+`label.CarouselCardText`) + `ul.CarouselAnswerButtonList` de `li` > `input[type=checkbox][name="QR~QIDn~ANSWER"]` (même `name`,
+`id="QR~QIDn~ANSWER~k"`) + `label.CarouselAnswerButton[for=<id>]` externe contenant `label.q-checkbox` (rendu visuel, sans texte,
+`aria-hidden`), puis selon l'option `<img alt="1">` (alt générique) `<br>` et `<span>` texte avec spans `display:none` « [ » / « ] ».
+DOM de référence : snapshot `20260923_211155_extraction_validation_failure` (QID168, « Lesquels des services de VTC/Taxi … n'utilisez-vous
+pas davantage parce que… ? », carte « Il n'est pas disponible dans ma ville », options Heetch / Bolt / Taxi G7 / Uber / Ne s'applique à aucune marque).
+
+Cause du bug d'origine : `_find_associated_label()` ne résout aucun libellé (labels imbriqués à double niveau + img à alt générique) →
+la boucle générique ignore les 5 inputs → `options=[]`, `question` = texte agrégé du conteneur → `choice_without_options`
+(validateur correct, cause en amont). Aucun extracteur existant modifié.
+
+### _qualtrics_carousel_option_label / _extract_qualtrics_carousel_checkbox_blocks
+Fichier : Survey/dom_extractors_misc.py (avant `_image_labelledby_option_alt`).
+Enregistré dans : dom_analyzer.py, étape `0i-undecies-bis` (juste après `_extract_image_labelledby_choice_checkbox_blocks`, avant `0i-duodecies` ;
+import ajouté dans les deux branches). Le `name` du groupe (brut et `checkbox:name:<name>`) est ajouté à `image_only_choice_names`
+→ le pipeline générique ne produit pas de doublon vide.
+Guard (tous requis) : ≥2 `ul.CarouselAnswerButtonList input[type='checkbox'][name]` de même `name` ; chaque input avec `id` et libellé
+non vide et unique (texte du `label.CarouselAnswerButton` hors `img`, `label.q-checkbox`, spans `display:none`) ; `.QuestionText` non vide
+dans `.QuestionOuter`. Si un input échoue → groupe entier laissé au pipeline générique.
+Patterns couverts :
+- 1 bloc `itype=checkbox`, `options` = libellés visibles réels, `max_select` via `_compute_max_select`, `min_select=1`,
+  `group_key=checkbox:qualtrics_carousel:<name lc>`, `option_xpath_map={norm_key(libellé): (//label[@for=<id> and contains(@class,'CarouselAnswerButton')])[1]}` ;
+  flag `qualtrics_carousel_checkbox=True`.
+- `question` = intitulé (`.QuestionText`) + texte de la carte visible (`div.CarouselCard:not(.NoDisplay) .CarouselCardText`), reproduisant la
+  légende cachée `aria-labelledby` de Qualtrics ; la carte change à chaque étape du carousel → ré-extraction à chaque page/étape.
+Patterns exclus :
+- Checkbox hors `ul.CarouselAnswerButtonList` → pipeline existant / extracteurs Qualtrics `ChoiceStructure`.
+- Radios carousel → hors scope (non couvert).
+- Options sans libellé texte (image seule) → `_extract_image_only_choice_checkbox_blocks` / pipeline existant.
+- Aucun fallback Vision. Aucun CTA touché (CTA_INTERCEPT_ONLY non concerné).
+Log discriminant : `[QUALTRICS_CAROUSEL_CB] name=… card=… options=[…]` (debug).
+Statut : vérifié hors-ligne (Playwright sur le snapshot de référence : 5 options correctes, `max_select=5`) ET en run réel pour l'extraction
+(log bot : `blocks_count=1`, `options_count=5`, prompt GPT correct, plus de `choice_without_options` ni de `DOM_ONLY_ABORT`).
+Clic (`option_xpath_map` → `label[for]`) non encore confirmé en run réel.
+
+---
 ## PLATEFORME : LIMESURVEY — SÉLECTEUR DE LANGUE DE PAGE (form-change-lang)
 
 Contexte : les pages LimeSurvey (ex. env3.surveysip.com/index.php/<sid>) affichent, hors du

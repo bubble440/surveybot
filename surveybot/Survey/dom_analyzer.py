@@ -159,6 +159,7 @@ try:
         _extract_alchemer_sg_table_checkbox_matrix_block,
         _extract_image_only_choice_checkbox_blocks,
         _extract_image_labelledby_choice_checkbox_blocks,
+        _extract_qualtrics_carousel_checkbox_blocks,
         _extract_studystream_contenteditable_open_text_blocks,
         _extract_mriweb_grid_num_row_blocks,
         _extract_qdtech_qdradio_icon_choice_blocks,
@@ -300,6 +301,7 @@ except ImportError:
         _extract_alchemer_sg_table_checkbox_matrix_block,
         _extract_image_only_choice_checkbox_blocks,
         _extract_image_labelledby_choice_checkbox_blocks,
+        _extract_qualtrics_carousel_checkbox_blocks,
         _extract_studystream_contenteditable_open_text_blocks,
         _extract_mriweb_grid_num_row_blocks,
         _extract_qdtech_qdradio_icon_choice_blocks,
@@ -2129,6 +2131,25 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 _nm = _group_key.split("checkbox:image_labelledby:", 1)[1].strip()
                 if _nm:
                     image_only_choice_names.add(_nm)
+    except Exception:
+        pass
+
+    # --- 0i-undecies-bis) Qualtrics carousel checkbox (ul.CarouselAnswerButtonList) ---
+    # Guard DOM strict : ≥2 checkbox[name] partagé dans ul.CarouselAnswerButtonList, libellé
+    # résolu via label.CarouselAnswerButton (imbriqué, img alt générique ignoré).
+    # image_only_choice_names exclut le groupe du pipeline générique (doublon options=[]).
+    try:
+        for _blk in _extract_qualtrics_carousel_checkbox_blocks(driver, frame_chain):
+            if not isinstance(_blk, dict):
+                continue
+            question_blocks.append(_blk)
+            _ctx = (_blk.get("context") or {}) if isinstance(_blk.get("context"), dict) else {}
+            _group_key = _norm_lc(_ctx.get("group_key") or "")
+            if _group_key.startswith("checkbox:qualtrics_carousel:"):
+                _nm = _group_key.split("checkbox:qualtrics_carousel:", 1)[1].strip()
+                if _nm:
+                    image_only_choice_names.add(_nm)
+                    image_only_choice_names.add(f"checkbox:name:{_nm}")
     except Exception:
         pass
 
