@@ -943,6 +943,25 @@ def _is_ifop_zip2city_input(el) -> bool:
         return False
 
 
+def _is_limesurvey_page_language_selector(el) -> bool:
+    """
+    Garde-fou DOM strict : sélecteur de langue de page LimeSurvey
+    (<div class="form-change-lang"> contenant <select name="lang"> et
+    <button name="move" value="changelang">). Hors conteneur de question :
+    ce n'est jamais une question de sondage. Voir BOT_EVOLUTION_MEMORY.md :
+    "LIMESURVEY — SÉLECTEUR DE LANGUE DE PAGE".
+    """
+    try:
+        return bool(el.evaluate(
+            """e => e.tagName.toLowerCase() === 'select' && e.name === 'lang' && (() => {
+                const c = e.closest('.form-change-lang');
+                return !!c && !!c.querySelector('button[name="move"][value="changelang"]');
+            })()"""
+        ))
+    except Exception:
+        return False
+
+
 def _is_surveyjs_sd_dropdown_filter_input(el) -> bool:
     """
     Garde-fou DOM strict pour le widget dropdown recherchable du thème SurveyJS
@@ -3794,6 +3813,12 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     _el_id = (el.get_attribute("id") or "").strip()
                     _el_name = (el.get_attribute("name") or "").strip()
                     log_debug("[SINGLES_SKIP]", f"hidden_or_system itype={itype} id={_el_id!r} name={_el_name!r}")
+                continue
+
+            # --- Détection additive : sélecteur de langue de page LimeSurvey (non-question) ---
+            if itype == "dropdown" and _is_limesurvey_page_language_selector(el):
+                if is_debug():
+                    log_debug("[SINGLES_SKIP]", "limesurvey_page_language_selector")
                 continue
 
             # Pattern spécifique

@@ -5625,3 +5625,65 @@ Statut : confirmé fonctionnel par l'utilisateur (dossier after_dom_analyze pré
 live toujours disponible pour inspection avant validation).
 
 ---
+
+---
+
+## PLATEFORME : QUALTRICS NATIF — CONSTANT SUM (répartition, N inputs texte + total en lecture seule)
+
+Signature : Qualtrics natif (ex. `mcresearch2.co1.qualtrics.com/jfe/form/...`), question `Constant Sum`
+(`div.QuestionOuter.CS`). Structure : `fieldset > legend > div.QuestionText` puis `div.QuestionBody` >
+`ul.ChoiceStructure` > N `li.Selection` (chacun : `div.SumInput > input.InputText[type=text][name^="QR~"]`
+valeur initiale `"0"` + `span.LabelWrapper > label[for=<id input>]`), et un dernier `li.Total`
+(`div.SumTotal > input[readonly]`, id `QID<n>_Total`, sans `name="QR~..."`). Les labels de ligne peuvent
+contenir une `<img>` + `<br>` + texte enveloppé de `<span style="display:none">[ ]</span>` — `inner_text()`
+donne le libellé court propre (`Taxi G7`). La contrainte de somme est dans la consigne
+(`Votre total doit être égal à 5`) et dans `#QR~QID<n>~VALIDATION` (`Les choix doivent totaliser 5.`).
+DOM de référence : snapshots `20260923_185812_after_dom_analyze` et `20260923_185646_after_dom_analyze`
+(QID161, 4 marques + `Autre (non mentionné ici)`, total = 5).
+
+Cause du bug d'origine : aucun extracteur ne couvrait ce DOM (les extracteurs Qualtrics exigent
+radio/checkbox/select, ou `div.Inner.FORM` / `div.Inner.TE`). Les inputs tombaient dans la boucle
+générique de `dom_analyzer.py` : `label[for]` de « Taxi G7 »/« Heetch »/« Bolt »/« Uber » rejeté par
+`_is_question_text` → repli `_extract_question_from_container` = texte du fieldset entier → même
+signature pour les 4 lignes → `[SINGLES_SKIP] duplicate_sig` n'en gardait qu'une ; seule la ligne
+« Autre » passait le filtre (bloc isolé, sans lien avec la consigne). Résultat : 2 blocs au lieu de 5,
+lignes non remplies restées à `0`, total ≠ 5 (erreur de validation formulaire). La boucle générique et
+`_is_question_text` n'ont PAS été modifiées.
+
+### _extract_qualtrics_sum_input_text_blocks
+Fichier : Survey/dom_extractors_misc.py (fin de fichier ; constante `QUALTRICS_SUM_INPUT_MAX_ROWS`, défaut 30).
+Enregistré dans : dom_analyzer.py, `_analyze_dom_current_context`, étape `0h-bis-3i` (après `0h-bis-3h` /
+rank order DND, avant le `if _qualtrics_page and question_blocks` de retour anticipé — accumulation additive).
+Import ajouté dans les deux branches d'import de dom_analyzer.py.
+Guard : `div.QuestionOuter` contenant ≥2 `ul.ChoiceStructure li.Selection div.SumInput
+input[type='text'][name^='QR~']`. Le champ Total est exclu par construction (`li.Total`, pas de
+`div.SumInput`, pas de `name="QR~"`) et les inputs `readonly`/`disabled` sont ignorés. Budget 30 lignes.
+Patterns couverts :
+- 1 bloc `single`/`itype=text`/`max_select=1` par ligne éditable ; `question` = texte de `label[for=<id>]`
+  de la ligne (libellé court) ; ligne sans label exploitable → ignorée.
+- Contexte du bloc : `qualtrics_sum_input=True`, `group_id` (id du QuestionOuter), `group_question`
+  (texte de `div.QuestionText`, consigne mère), `sum_total` (entier extrait par regex
+  `(total|somme|totalis*|sum)\D{0,40}?(\d+)` sur la consigne ; absent si non trouvé — aucune valeur inventée).
+- Registre : `register_target` kind `single`, xpath + alt_xpaths (id, name), `sum_total` si connu.
+  `target_id` stable entre rescans (clé `qualtrics_sum_input:<qid>:<id input>` + libellé de ligne).
+Patterns exclus :
+- Layouts multi-texte Qualtrics FORM (`div.Inner.FORM`) et Matrix-TE (`table.ChoiceStructure tr.ChoiceRow`)
+  → extracteurs existants, non modifiés. Pas de `kind=multi_text` : son remplissage saute les champs déjà
+  non vides (ici `"0"`) et son prompt impose « valeurs différentes ».
+- Aucun fallback Vision. Aucun CTA touché (CTA_INTERCEPT_ONLY non concerné).
+Log discriminant : `[DOM_QUALTRICS_SUM_INPUT] blocks_extracted=N` (debug).
+
+### prompt_builder.py — bloc `qualtrics_sum_input`
+Fichier : Survey/prompt_builder.py, dans la boucle de construction des questions, juste avant le bloc
+`decipher_table_text_rows`, à la suite du bloc `confirmit_cf_numeric_list` (non modifié, spécifique
+pourcentage/Confirmit).
+Si `ctx["qualtrics_sum_input"]` : ajoute `groupe_contexte: <group_question>` (si différent de `contexte`)
+et, si `ctx["sum_total"]` est défini, `contrainte_somme:` (somme de TOUTES les lignes du groupe = N,
+entier ≥ 0, lignes non utilisées = 0). Sans ce bloc le modèle ne voit ni la consigne ni le total.
+Statut : confirmé fonctionnel en conditions réelles par l'utilisateur — `blocks_extracted=5`, prompt à 5
+questions avec libellés courts + `groupe_contexte` + `contrainte_somme`, réponses 2|1|0|2|0 (somme = 5),
+`[TARGET] apply ok=true strategy=text_input` sur les 5 lignes. Non-régression : balayage des 117 snapshots
+existants → seuls les 2 snapshots de ce sondage déclenchent l'extracteur (aucun faux positif).
+Point de vigilance : chaque ligne est un bloc `single` indépendant ; la cohérence de la somme repose sur le
+fait que les 5 lignes partagent le même prompt batch (contrainte non revalidée côté code). Si un run
+futur produit une somme ≠ N, étudier une validation post-réponse dédiée plutôt que d'élargir ce bloc.
