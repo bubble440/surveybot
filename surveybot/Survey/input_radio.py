@@ -25,6 +25,7 @@ import time
 from Survey.input_utils import (
     norms_txt,
     normt_txt,
+    norm_txt,
     xpath_literal,
     safe_click,
     find_question_container_by_ctx,
@@ -1184,6 +1185,199 @@ def click_qdtech_qdcheckbox_icon(driver, label: str) -> bool:
 
     log_debug("[TARGET_DEBUG]", f"qdtech_qdcheckbox: native_verify={'ok' if ok else 'ko'} label={label!r}")
     return ok
+
+
+# =============================================================================
+# SURVEYJS MODERN — TAGBOX (choix multiple à tags, sd-tagbox + sd-dropdown)
+# =============================================================================
+
+_SD_TAGBOX_OPEN_MAX_POLLS = 10
+_SD_TAGBOX_OPEN_POLL_DELAY_S = 0.2  # budget ~2s pour aria-expanded="true"
+
+_SD_TAGBOX_OPTION_MAX_POLLS = 15
+_SD_TAGBOX_OPTION_POLL_DELAY_S = 0.2  # budget ~3s pour le rendu de la liste d'options
+
+_SD_TAGBOX_VERIFY_MAX_ATTEMPTS = 10
+_SD_TAGBOX_VERIFY_RETRY_DELAY_S = 0.1  # budget ~1s pour aria-selected="true"
+
+
+def click_surveyjs_sd_tagbox_option(
+    driver,
+    value: str,
+    container_xpath: str | None = None,
+    frame_chain=None,
+) -> bool:
+    """
+    Sélection dédiée pour le widget "tagbox" (choix multiple à tags) du thème
+    SurveyJS Modern. Voir dom_extractors_misc.py::_extract_surveyjs_sd_tagbox_blocks
+    et BOT_EVOLUTION_MEMORY.md : "SURVEYJS MODERN — TAGBOX (choix multiple)".
+
+    N'écrit JAMAIS dans l'input filtre readOnly (sd-tagbox__filter-string-input) :
+    il est en lecture seule et recouvert par ses wrappers ancêtres
+    (sd-tagbox__hint-suffix-wrapper), qui interceptent les événements pointeur
+    (timeout Playwright "intercepts pointer events" confirmé sur ce DOM). Même
+    principe que fill_surveyjs_sd_dropdown_widget (input_text.py, widget
+    dropdown simple), adapté au tagbox : conteneur résolu par xpath (posé par
+    l'extracteur dans le registry, `container_xpath`), PAS par scan générique.
+
+    Interaction en 3 temps :
+    1. Si le menu n'est pas déjà ouvert (aria-expanded != "true" — un tagbox
+       peut rester ouvert entre deux appels successifs pour plusieurs enfants),
+       clic sur le conteneur lui-même (élément non recouvert, contrairement à
+       l'input filtre) pour l'ouvrir, puis poll de aria-expanded="true"
+       (budget _SD_TAGBOX_OPEN_MAX_POLLS=10, _SD_TAGBOX_OPEN_POLL_DELAY_S=0.2s,
+       soit ~2s).
+    2. Poll des options rendues ([role='option'] au sein de la liste
+       référencée par aria-controls — budget _SD_TAGBOX_OPTION_MAX_POLLS=15,
+       _SD_TAGBOX_OPTION_POLL_DELAY_S=0.2s, soit ~3s) jusqu'à trouver un texte
+       correspondant EXACTEMENT (comparaison normalisée via norm_txt) à value,
+       puis clic dessus.
+    3. Vérification du succès réel : poll de aria-selected="true" sur le <li>
+       ciblé (budget _SD_TAGBOX_VERIFY_MAX_ATTEMPTS=10,
+       _SD_TAGBOX_VERIFY_RETRY_DELAY_S=0.1s, soit ~1s) — pas seulement "le
+       clic a été exécuté sans erreur".
+
+    Une seule stratégie, pas de fallback empilé : échec à n'importe quelle
+    étape (conteneur introuvable, guard DOM non satisfait, clic ouverture
+    échoué, menu non ouvert après budget, aria-controls manquant, aucune
+    option correspondante après budget, clic option échoué, aria-selected
+    jamais vrai après vérification) -> retourne False sans retomber sur une
+    autre stratégie checkbox générique.
+
+    Args:
+        driver: WebDriver (Page Playwright ou frame résolu)
+        value: libellé de l'option à sélectionner (ex: "Garçon de 3 ans"),
+            tel que produit par GPT parmi les options réellement extraites.
+        container_xpath: xpath du conteneur widget (registry
+            DOM_REGISTRY["container_xpath"], posé par l'extracteur).
+        frame_chain: liste d'indices d'iframes imbriquées, ou None/[].
+
+    Returns:
+        True si une option correspondant exactement à value a été
+        sélectionnée ET vérifiée via aria-selected="true".
+    """
+    target = norm_txt(value)
+    if not target:
+        log_debug("[SD_TAGBOX]", f"value vide/invalide: value={value!r}")
+        return False
+    if not container_xpath:
+        log_debug("[SD_TAGBOX]", "container_xpath manquant")
+        return False
+
+    def _apply(ctx_driver) -> bool:
+        try:
+            container = ctx_driver.query_selector(f"xpath={container_xpath}")
+            if container is None:
+                raise LookupError(f"no element for xpath={container_xpath!r}")
+        except Exception as exc:
+            log_debug("[SD_TAGBOX]", f"conteneur introuvable xpath={container_xpath!r}: {type(exc).__name__}: {exc}")
+            return False
+
+        try:
+            cls = (container.get_attribute("class") or "").lower().split()
+            role = (container.get_attribute("role") or "").strip().lower()
+        except Exception as exc:
+            log_debug("[SD_TAGBOX]", f"lecture attributs conteneur échouée: {type(exc).__name__}: {exc}")
+            return False
+
+        if "sd-input" not in cls or "sd-tagbox" not in cls or "sd-dropdown" not in cls or role != "combobox":
+            log_debug("[SD_TAGBOX]", f"guard non satisfait class={cls!r} role={role!r}")
+            return False
+
+        try:
+            expanded_before = (container.get_attribute("aria-expanded") or "").strip().lower()
+        except Exception:
+            expanded_before = ""
+
+        if expanded_before != "true":
+            try:
+                container.click()
+            except Exception as exc:
+                log_debug("[SD_TAGBOX]", f"clic ouverture menu échoué: {type(exc).__name__}: {exc}")
+                return False
+
+            opened = False
+            attempt = 0
+            for attempt in range(_SD_TAGBOX_OPEN_MAX_POLLS):
+                try:
+                    expanded = (container.get_attribute("aria-expanded") or "").strip().lower()
+                except Exception:
+                    expanded = ""
+                if expanded == "true":
+                    opened = True
+                    break
+                time.sleep(_SD_TAGBOX_OPEN_POLL_DELAY_S)
+            if not opened:
+                log_debug("[SD_TAGBOX]", f"menu non ouvert après {attempt + 1} polls")
+                return False
+
+        try:
+            list_id = (container.get_attribute("aria-controls") or "").strip()
+        except Exception:
+            list_id = ""
+        if not list_id:
+            log_debug("[SD_TAGBOX]", "aria-controls manquant sur le conteneur")
+            return False
+
+        option = None
+        attempt = 0
+        for attempt in range(_SD_TAGBOX_OPTION_MAX_POLLS):
+            try:
+                option_list = ctx_driver.query_selector(f"#{list_id}")
+                options = option_list.query_selector_all("[role='option']") if option_list else []
+            except Exception:
+                options = []
+            for opt in options:
+                try:
+                    opt_text = norm_txt(opt.inner_text() or "")
+                except Exception:
+                    continue
+                if opt_text == target:
+                    option = opt
+                    break
+            if option is not None:
+                break
+            time.sleep(_SD_TAGBOX_OPTION_POLL_DELAY_S)
+
+        if option is None:
+            log_debug("[SD_TAGBOX]", f"aucune option correspondant à value={value!r} après {attempt + 1} polls")
+            return False
+
+        try:
+            option.click()
+        except Exception as exc:
+            log_debug("[SD_TAGBOX]", f"clic option échoué: {type(exc).__name__}: {exc}")
+            return False
+
+        selected = False
+        for _verify_attempt in range(_SD_TAGBOX_VERIFY_MAX_ATTEMPTS):
+            try:
+                selected = (option.get_attribute("aria-selected") or "").strip().lower() == "true"
+            except Exception:
+                selected = False
+            if selected:
+                break
+            time.sleep(_SD_TAGBOX_VERIFY_RETRY_DELAY_S)
+
+        log_debug(
+            "[SD_TAGBOX]",
+            f"container_xpath={container_xpath!r} target={value!r} selected={selected} frame_chain={frame_chain!r}",
+        )
+        return selected
+
+    if frame_chain:
+        try:
+            from Survey.frame_utils import switch_to_frame_chain  # type: ignore
+        except Exception:
+            switch_to_frame_chain = None  # type: ignore
+        if switch_to_frame_chain is not None:
+            with switch_to_frame_chain(driver, frame_chain) as ok:
+                if not ok:
+                    log_debug("[SD_TAGBOX]", f"switch_to_frame_chain échoué chain={frame_chain!r}")
+                    return False
+                return _apply(driver)
+
+    return _apply(driver)
 
 
 # =============================================================================

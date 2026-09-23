@@ -8165,6 +8165,34 @@ def execute_action(
                         return True
                     return False
 
+                # SurveyJS Modern tagbox (choix multiple à tags, sd-tagbox + sd-dropdown) :
+                # voir BOT_EVOLUTION_MEMORY.md "SURVEYJS MODERN — TAGBOX (choix multiple)".
+                # Flag posé par _extract_surveyjs_sd_tagbox_blocks (dom_extractors_misc.py).
+                # Court-circuit AVANT _apply_by_target_id, même schéma que
+                # kantar_rowpicker_radio/mui_dialog_question_checkbox_option/
+                # qdtech_qdcheckbox_icon ci-dessus : l'input filtre de ce widget est en
+                # lecture seule et recouvert par ses wrappers ancêtres (intercepte les
+                # événements pointeur) -> tout chemin générique passant par cet input
+                # échouerait de la même façon que le widget dropdown simple avant son
+                # propre patch dédié.
+                if _p.get("surveyjs_sd_tagbox_widget") and itype == "checkbox":
+                    skip_apply_by_target_id = True
+                    from Survey.input_radio import click_surveyjs_sd_tagbox_option
+                    _sdtb_ok = click_surveyjs_sd_tagbox_option(
+                        driver,
+                        value,
+                        container_xpath=_p.get("container_xpath"),
+                        frame_chain=_p.get("frame_chain"),
+                    )
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        f"surveyjs_sd_tagbox_dispatch: {'ok' if _sdtb_ok else 'ko'} value={value!r}",
+                    )
+                    if _sdtb_ok:
+                        log_info("[TARGET]", "apply ok=true strategy=surveyjs_sd_tagbox_direct reason=applied")
+                        return True
+                    return False
+
             except Exception as e:
                 # meme en exception: pas de fallback générique pour sliderpoints
                 continue

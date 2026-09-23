@@ -13052,6 +13052,170 @@ def _extract_image_labelledby_choice_checkbox_blocks(driver, frame_chain: list[i
 
 
 # ================================================================================
+# SURVEYJS MODERN — TAGBOX (choix multiple à tags, sd-tagbox + sd-dropdown)
+# ================================================================================
+
+def _extract_surveyjs_sd_tagbox_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    Extraction dédiée pour le widget "tagbox" (choix multiple à tags) du thème
+    SurveyJS Modern (préfixe de classe "sd-*", ex. runtime Decipher/FocusVision).
+    Distinct du widget dropdown simple (single-select) déjà couvert par
+    `_is_surveyjs_sd_dropdown_filter_input` (dom_analyzer.py, itype="text") :
+    ce widget combine les classes "sd-tagbox" ET "sd-dropdown" sur le même
+    conteneur (`<div class="sd-input sd-tagbox sd-dropdown ...">`), avec un
+    input filtre imbriqué un niveau plus profond (`sd-tagbox__value` >
+    `sd-tagbox__hint` > `sd-tagbox__hint-suffix-wrapper` >
+    `input.sd-tagbox__filter-string-input`), ce qui explique que le garde-fou
+    du dropdown simple (qui exige que le parent IMMÉDIAT de l'input porte la
+    classe `sd-dropdown__value`) ne se déclenche pas sur ce DOM — comportement
+    correct, pas une régression.
+
+    Problème résolu : les options réelles (libellés composés, ex. "Garçon de
+    3 ans") sont déjà présentes dans le DOM au chargement, dans un
+    `<ul role="listbox">` lié au conteneur via `aria-controls`, mais masquées
+    en CSS (`display:none` sur le popup ancêtre) tant que le widget n'est pas
+    ouvert. Le pipeline générique d'extraction ne lit que les inputs
+    interactables visibles -> ce champ tombe en itype="text" avec options=[]
+    (aucune option exposée à GPT), qui ne peut alors produire qu'une réponse
+    texte libre ne correspondant à aucune option réelle.
+
+    Guard DOM strict cumulatif :
+    1. `div[role="combobox"]` portant simultanément les classes "sd-input",
+       "sd-tagbox" ET "sd-dropdown"
+    2. `aria-controls` non vide, résolvant vers un élément `role="listbox"`
+       existant dans le DOM (visible ou non — la liste est lue AVANT
+       ouverture, volontairement, car elle est déjà entièrement rendue au
+       chargement sur ce widget, contrairement au dropdown simple dont la
+       liste est vide tant qu'il n'est pas ouvert)
+    3. >=2 `[role="option"]` dans cette liste, chacun avec un texte non vide
+
+    Le bloc produit est `itype="checkbox"` (choix multiple), cohérent avec la
+    nature tagbox du widget (plusieurs enfants possibles) — PAS "text".
+
+    Patterns exclus :
+    - Widget dropdown simple (sans classe "sd-tagbox") -> chemin dédié
+      distinct existant (`_is_surveyjs_sd_dropdown_filter_input`, itype="text"),
+      non concerné par cet extracteur.
+    - Liste absente, vide ou <2 options -> aucun bloc produit (laissé tel
+      quel au pipeline générique).
+    - Plusieurs widgets tagbox simultanés sur la même page : chacun produit
+      son propre bloc (boucle sur tous les conteneurs matchés), pas de
+      limitation artificielle à un seul.
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        containers = driver.query_selector_all("div[role='combobox']")
+    except Exception:
+        return []
+    if not containers:
+        return []
+
+    blocks: list[dict] = []
+
+    for container in containers:
+        try:
+            cls = (container.get_attribute("class") or "").lower().split()
+        except Exception:
+            continue
+        if "sd-input" not in cls or "sd-tagbox" not in cls or "sd-dropdown" not in cls:
+            continue
+
+        try:
+            list_id = (container.get_attribute("aria-controls") or "").strip()
+        except Exception:
+            list_id = ""
+        if not list_id:
+            continue
+
+        try:
+            option_list = driver.query_selector(f"#{list_id}")
+        except Exception:
+            option_list = None
+        if option_list is None:
+            continue
+
+        try:
+            list_role = (option_list.get_attribute("role") or "").strip().lower()
+        except Exception:
+            list_role = ""
+        if list_role != "listbox":
+            continue
+
+        try:
+            option_els = option_list.query_selector_all("[role='option']")
+        except Exception:
+            option_els = []
+
+        labels: list[str] = []
+        seen_norm: set[str] = set()
+        for opt_el in option_els:
+            try:
+                txt = (opt_el.inner_text() or "").strip()
+            except Exception:
+                txt = ""
+            if not txt:
+                continue
+            nk = _norm_key(txt)
+            if not nk or nk in seen_norm:
+                continue
+            seen_norm.add(nk)
+            labels.append(txt)
+
+        if len(labels) < 2:
+            continue
+
+        question = _find_question_text_near_element(driver, container)
+        if not question:
+            continue
+
+        container_xpath = _best_xpath_for_element(driver, container)
+        if not container_xpath:
+            continue
+
+        group_key = f"surveyjs_sd_tagbox:{list_id}"
+        target_id = make_target_id("group", group_key, question)
+
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "checkbox",
+                "group_key": group_key,
+                "question": question,
+                "frame_chain": frame_chain,
+                "surveyjs_sd_tagbox_widget": True,
+                "container_xpath": container_xpath,
+                "list_id": list_id,
+            },
+        )
+
+        max_sel = _compute_max_select("checkbox", labels, question)
+        blocks.append(
+            {
+                "question": question,
+                "itype": "checkbox",
+                "options": labels,
+                "max_select": max_sel,
+                "min_select": 1,
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "surveyjs_sd_tagbox_widget": True,
+                },
+            }
+        )
+
+        log_debug(
+            "[DOM_SURVEYJS_SD_TAGBOX]",
+            f"list_id={list_id!r} question={question!r} options_count={len(labels)}",
+        )
+
+    return blocks
+
+
+# ================================================================================
 # ASKIA — RANKING ISOTOPE (div.adc-ranking-isotope + div.statement[data-value])
 # ================================================================================
 
@@ -15196,3 +15360,133 @@ def _extract_netsurvey_image_choice_vision_block(driver, frame_chain: list[int] 
             "context": {"kind": "group", "group_key": group_key, "netsurvey_image_choice": True},
         }
     ]
+
+
+# ================================================================================
+# QUALTRICS — CONSTANT SUM (répartition, N inputs texte + total en lecture seule)
+# ================================================================================
+
+QUALTRICS_SUM_INPUT_MAX_ROWS = 30  # budget anti-explosion
+
+
+def _extract_qualtrics_sum_input_text_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Qualtrics Constant Sum : une ligne éditable par marque, total imposé en lecture seule.
+
+    Gate DOM strict (additif) :
+    - div.QuestionOuter contenant ul.ChoiceStructure > li.Selection > div.SumInput > input[type='text'][name^='QR~']
+    - ≥2 inputs éditables (le total `li.Total input[readonly]` est exclu par construction)
+
+    Un bloc `single` par ligne : libellé court = label[for=id] de la ligne, contexte parent
+    (`group_question`) et contrainte de somme (`sum_total`) portés par le contexte.
+    Ne couvre PAS les layouts FORM/TE/Matrix (autres extracteurs Qualtrics multi-texte).
+    Log discriminant : [DOM_QUALTRICS_SUM_INPUT] blocks_extracted=N
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.query_selector_all("div.QuestionOuter")
+    except Exception:
+        return blocks
+
+    for container in containers:
+        try:
+            inputs = container.query_selector_all(
+                "ul.ChoiceStructure li.Selection div.SumInput input[type='text'][name^='QR~']"
+            )
+        except Exception:
+            inputs = []
+        if len(inputs) < 2:
+            continue
+
+        question = ""
+        for q_sel in ("fieldset legend div.QuestionText", "legend .QuestionText", "div.QuestionText"):
+            try:
+                qn = container.query_selector(q_sel)
+                txt = _norm((qn.inner_text() or "") if qn else "")
+            except Exception:
+                txt = ""
+            if txt:
+                question = txt
+                break
+        if not question:
+            continue
+
+        q_id = (container.get_attribute("id") or "").strip()
+
+        sum_total: int | None = None
+        m_total = re.search(r"(?:total|somme|totalis\w*|sum)\D{0,40}?(\d+)", question, re.IGNORECASE)
+        if m_total:
+            sum_total = int(m_total.group(1))
+
+        for inp in inputs[:QUALTRICS_SUM_INPUT_MAX_ROWS]:
+            try:
+                inp_id = (inp.get_attribute("id") or "").strip()
+                inp_name = (inp.get_attribute("name") or "").strip()
+                if not inp_id and not inp_name:
+                    continue
+                if inp.get_attribute("readonly") is not None or inp.get_attribute("disabled") is not None:
+                    continue
+
+                row_label = ""
+                if inp_id:
+                    try:
+                        lbl = container.query_selector(f"label[for='{inp_id}']")
+                        row_label = _norm((lbl.inner_text() or "") if lbl else "")
+                    except Exception:
+                        row_label = ""
+                if not row_label:
+                    continue
+
+                xpath = _best_xpath_for_element(driver, inp)
+                alt_xpaths: list[str] = []
+                if inp_id:
+                    alt_xpaths.append(f"//*[@id='{inp_id}']")
+                if inp_name:
+                    alt_xpaths.append(f"//input[@name={_xpath_literal(inp_name)}]")
+                alt_xpaths = [x for x in dict.fromkeys(alt_xpaths) if x and x != xpath][:4]
+
+                target_id = make_target_id("single", f"qualtrics_sum_input:{q_id}:{inp_id or inp_name}", row_label)
+
+                block_ctx: dict = {
+                    "kind": "single",
+                    "tag": "input",
+                    "name": inp_name,
+                    "id": inp_id,
+                    "qualtrics_sum_input": True,
+                    "group_id": q_id,
+                    "group_question": question,
+                }
+                registry_payload: dict = {
+                    "kind": "single",
+                    "itype": "text",
+                    "question": row_label,
+                    "xpath": xpath,
+                    "alt_xpaths": alt_xpaths,
+                    "tag": "input",
+                    "name": inp_name,
+                    "id": inp_id,
+                    "frame_chain": frame_chain,
+                    "qualtrics_sum_input": True,
+                }
+                if sum_total is not None:
+                    block_ctx["sum_total"] = sum_total
+                    registry_payload["sum_total"] = sum_total
+                register_target(target_id, registry_payload)
+
+                blocks.append(
+                    {
+                        "question": row_label,
+                        "itype": "text",
+                        "options": [],
+                        "max_select": 1,
+                        "min_select": 1,
+                        "target_id": target_id,
+                        "context": block_ctx,
+                    }
+                )
+            except Exception:
+                continue
+
+    log_debug("[DOM_QUALTRICS_SUM_INPUT]", f"blocks_extracted={len(blocks)}")
+    return blocks

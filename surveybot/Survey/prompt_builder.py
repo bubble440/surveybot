@@ -769,6 +769,16 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                 f" La somme de TOUTES les valeurs du groupe doit être exactement {int(ctx['multi_sum_total'])}."
                 " Choisis une valeur entière cohérente avec les autres lignes du groupe."
             )
+        if ctx.get("qualtrics_sum_input"):
+            group_q = _escape(str(ctx.get("group_question", "") or ""))
+            if group_q and group_q != q:
+                lines.append(f"groupe_contexte: {group_q}")
+            if ctx.get("sum_total") is not None:
+                lines.append(
+                    f"contrainte_somme: Ce champ est une ligne d'une répartition. La somme de TOUTES les lignes"
+                    f" du groupe doit être exactement {int(ctx['sum_total'])}. Réponds par un entier >= 0,"
+                    " cohérent avec les autres lignes du groupe (les lignes non utilisées valent 0)."
+                )
         if ctx.get("decipher_table_text_rows") is True:
             row_label = _escape(str(ctx.get("row_label", "")))
             if row_label:

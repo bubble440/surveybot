@@ -124,6 +124,7 @@ try:
         _extract_qualtrics_te_matrix_multi_text_blocks,
         _extract_qualtrics_bankedsa_single_row_radio_blocks,
         _extract_qualtrics_rank_order_dragdrop_blocks,
+        _extract_qualtrics_sum_input_text_blocks,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
         _extract_savanta_jqm_carousel_block,
@@ -163,6 +164,7 @@ try:
         _extract_qdtech_qdcheckbox_icon_choice_blocks,
         _extract_zappi_maxdiff_blocks,
         _extract_netsurvey_image_choice_vision_block,
+        _extract_surveyjs_sd_tagbox_blocks,
     )
 
     # Registre et utilitaires
@@ -262,6 +264,7 @@ except ImportError:
         _extract_qualtrics_te_matrix_multi_text_blocks,
         _extract_qualtrics_bankedsa_single_row_radio_blocks,
         _extract_qualtrics_rank_order_dragdrop_blocks,
+        _extract_qualtrics_sum_input_text_blocks,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
         _extract_savanta_jqm_carousel_block,
@@ -301,6 +304,7 @@ except ImportError:
         _extract_qdtech_qdcheckbox_icon_choice_blocks,
         _extract_zappi_maxdiff_blocks,
         _extract_netsurvey_image_choice_vision_block,
+        _extract_surveyjs_sd_tagbox_blocks,
     )
 
 
@@ -1775,6 +1779,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         pass
 
+    # --- 0h-bis-3i) Qualtrics Constant Sum (ul.ChoiceStructure > li.Selection > div.SumInput > input texte,
+    # total en lecture seule) : une ligne éditable = un bloc, libellé court + contexte parent + somme imposée.
+    try:
+        qualtrics_sum_input_blocks = _extract_qualtrics_sum_input_text_blocks(driver, frame_chain)
+        if qualtrics_sum_input_blocks:
+            question_blocks.extend(qualtrics_sum_input_blocks)
+            _qualtrics_page = True
+    except Exception:
+        pass
+
     if _qualtrics_page and question_blocks:
         return question_blocks
 
@@ -2136,6 +2150,19 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         netsurvey_img_blocks = _extract_netsurvey_image_choice_vision_block(driver, frame_chain)
         if netsurvey_img_blocks:
             return netsurvey_img_blocks
+    except Exception:
+        pass
+
+    # --- 0i-septendecies) SurveyJS Modern : tagbox (choix multiple à tags, sd-tagbox) ---
+    # Guard DOM strict : div[role="combobox"] classes "sd-input"+"sd-tagbox"+"sd-dropdown",
+    # aria-controls -> [role="listbox"] avec >=2 [role="option"]. Distinct du dropdown simple
+    # (itype="text", _is_surveyjs_sd_dropdown_filter_input) : ce widget produit un bloc
+    # itype="checkbox" avec les libellés d'options réellement présents en DOM (masqués en CSS
+    # avant ouverture, mais déjà rendus — contrairement au dropdown simple).
+    try:
+        sd_tagbox_blocks = _extract_surveyjs_sd_tagbox_blocks(driver, frame_chain)
+        if sd_tagbox_blocks:
+            return sd_tagbox_blocks
     except Exception:
         pass
 
