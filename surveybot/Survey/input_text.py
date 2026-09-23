@@ -453,6 +453,204 @@ def fill_ifop_zip2city_widget(driver, value: str, xpath: str, frame_chain=None) 
 
 
 # =============================================================================
+# DROPDOWN RECHERCHABLE SURVEYJS MODERN (input.sd-dropdown__filter-string-input,
+# thème "sd-*", ex. runtime Decipher/FocusVision)
+# =============================================================================
+
+_SD_DROPDOWN_OPEN_MAX_POLLS = 10
+_SD_DROPDOWN_OPEN_POLL_DELAY_S = 0.2  # budget ~2s pour aria-expanded="true"
+
+_SD_DROPDOWN_OPTION_MAX_POLLS = 15
+_SD_DROPDOWN_OPTION_POLL_DELAY_S = 0.2  # budget ~3s pour le rendu de la liste d'options
+
+_SD_DROPDOWN_VERIFY_MAX_ATTEMPTS = 10
+_SD_DROPDOWN_VERIFY_RETRY_DELAY_S = 0.1  # budget ~1s pour la fermeture + valeur affichée
+
+
+def fill_surveyjs_sd_dropdown_widget(driver, value: str, xpath: str, frame_chain=None) -> bool:
+    """
+    Sélection dédiée pour le widget dropdown recherchable du thème SurveyJS
+    "Modern" (préfixe de classe "sd-*"). Voir
+    dom_analyzer.py::_is_surveyjs_sd_dropdown_filter_input et
+    BOT_EVOLUTION_MEMORY.md : "SURVEYJS MODERN — DROPDOWN RECHERCHABLE
+    (sd-dropdown)".
+
+    N'appelle PAS fill_text_input : l'input cible (sd-dropdown__filter-string-input)
+    est en lecture seule et intégralement recouvert par son parent immédiat
+    <div class="sd-dropdown__value">, qui intercepte les événements pointeur —
+    un simple clic/frappe sur l'input échoue systématiquement (timeout Playwright
+    "intercepts pointer events"). Interaction en 3 temps :
+    1. Clic sur le parent <div class="sd-dropdown__value"> (élément réellement au
+       sommet de la pile de rendu à cet endroit, PAS l'input recouvert) pour ouvrir
+       le menu.
+    2. Poll du grand-parent <div class="sd-input sd-dropdown" role="combobox"> pour
+       détecter aria-expanded="true" (budget _SD_DROPDOWN_OPEN_MAX_POLLS).
+    3. Poll des options rendues (sélecteur ARIA [role="option"], scopé au wrapper
+       du widget) jusqu'à trouver un texte correspondant exactement (comparaison
+       normalisée via norm_txt) à value, puis clic dessus.
+
+    Une seule stratégie, pas de fallback empilé : en cas d'échec à n'importe
+    quelle étape (élément introuvable, guard DOM non satisfait, menu non ouvert,
+    aucune option correspondante après budget, clic échoué, valeur non appliquée
+    après sélection), retourne False sans retomber sur fill_text_input.
+
+    Args:
+        driver: WebDriver (Page Playwright ou frame résolu)
+        value: libellé de l'option à sélectionner (ex: "Paris"), tel que produit
+            par GPT pour ce champ (traité comme un champ texte ouvert côté prompt).
+        xpath: xpath de l'input sd-dropdown__filter-string-input (registry
+            DOM_REGISTRY["xpath"]).
+        frame_chain: liste d'indices d'iframes imbriquées, ou None/[].
+
+    Returns:
+        True si une option correspondant exactement à value a été sélectionnée
+        ET la valeur affichée dans le champ filtre a bien été mise à jour.
+    """
+    target = norm_txt(value)
+    if not target:
+        log_debug("[SD_DROPDOWN]", f"value vide/invalide: value={value!r}")
+        return False
+
+    def _apply(ctx_driver) -> bool:
+        try:
+            field = ctx_driver.query_selector(f"xpath={xpath}")
+            if field is None:
+                raise LookupError(f"no element for xpath={xpath!r}")
+        except Exception as exc:
+            log_debug("[SD_DROPDOWN]", f"input introuvable xpath={xpath!r}: {type(exc).__name__}: {exc}")
+            return False
+
+        try:
+            cls = (field.get_attribute("class") or "").lower().split()
+            role = (field.get_attribute("role") or "").strip().lower()
+        except Exception as exc:
+            log_debug("[SD_DROPDOWN]", f"lecture attributs input échouée: {type(exc).__name__}: {exc}")
+            return False
+
+        if "sd-dropdown__filter-string-input" not in cls or role != "combobox":
+            log_debug("[SD_DROPDOWN]", f"guard non satisfait (input) class={cls!r} role={role!r}")
+            return False
+
+        try:
+            value_divs = field.query_selector_all("xpath=..")
+            value_div = value_divs[0] if value_divs else None
+            container_divs = field.query_selector_all("xpath=../..")
+            container = container_divs[0] if container_divs else None
+        except Exception as exc:
+            log_debug("[SD_DROPDOWN]", f"résolution parent/grand-parent échouée: {type(exc).__name__}: {exc}")
+            return False
+
+        if value_div is None or container is None:
+            log_debug("[SD_DROPDOWN]", "parent (.sd-dropdown__value) ou grand-parent introuvable")
+            return False
+
+        try:
+            value_div_cls = (value_div.get_attribute("class") or "").lower().split()
+            container_cls = (container.get_attribute("class") or "").lower().split()
+        except Exception as exc:
+            log_debug("[SD_DROPDOWN]", f"lecture attributs parent/grand-parent échouée: {type(exc).__name__}: {exc}")
+            return False
+
+        if "sd-dropdown__value" not in value_div_cls:
+            log_debug("[SD_DROPDOWN]", f"guard non satisfait (parent) class={value_div_cls!r}")
+            return False
+        if "sd-input" not in container_cls or "sd-dropdown" not in container_cls:
+            log_debug("[SD_DROPDOWN]", f"guard non satisfait (grand-parent) class={container_cls!r}")
+            return False
+
+        try:
+            value_div.click()
+        except Exception as exc:
+            log_debug("[SD_DROPDOWN]", f"clic ouverture menu échoué: {type(exc).__name__}: {exc}")
+            return False
+
+        opened = False
+        attempt = 0
+        for attempt in range(_SD_DROPDOWN_OPEN_MAX_POLLS):
+            try:
+                expanded = (container.get_attribute("aria-expanded") or "").strip().lower()
+            except Exception:
+                expanded = ""
+            if expanded == "true":
+                opened = True
+                break
+            time.sleep(_SD_DROPDOWN_OPEN_POLL_DELAY_S)
+
+        if not opened:
+            log_debug("[SD_DROPDOWN]", f"menu non ouvert après {attempt + 1} polls")
+            return False
+
+        try:
+            wrapper_nodes = field.query_selector_all("xpath=../../..")
+            wrapper = wrapper_nodes[0] if wrapper_nodes else None
+        except Exception:
+            wrapper = None
+        scope = wrapper if wrapper is not None else ctx_driver
+
+        option = None
+        attempt = 0
+        for attempt in range(_SD_DROPDOWN_OPTION_MAX_POLLS):
+            try:
+                options = scope.query_selector_all("[role='option']")
+            except Exception:
+                options = []
+            for opt in options:
+                try:
+                    opt_text = norm_txt(opt.inner_text() or "")
+                except Exception:
+                    continue
+                if opt_text == target:
+                    option = opt
+                    break
+            if option is not None:
+                break
+            time.sleep(_SD_DROPDOWN_OPTION_POLL_DELAY_S)
+
+        if option is None:
+            log_debug("[SD_DROPDOWN]", f"aucune option correspondant à value={value!r} après {attempt + 1} polls")
+            return False
+
+        try:
+            option.click()
+        except Exception as exc:
+            log_debug("[SD_DROPDOWN]", f"clic option échoué: {type(exc).__name__}: {exc}")
+            return False
+
+        current = ""
+        for _verify_attempt in range(_SD_DROPDOWN_VERIFY_MAX_ATTEMPTS):
+            try:
+                current = norm_txt(ctx_driver.evaluate("(e) => e.value", field) or "")
+            except Exception:
+                try:
+                    current = norm_txt(field.get_attribute("value") or "")
+                except Exception:
+                    current = ""
+            if current == target:
+                break
+            time.sleep(_SD_DROPDOWN_VERIFY_RETRY_DELAY_S)
+
+        log_debug(
+            "[SD_DROPDOWN]",
+            f"xpath={xpath!r} target={value!r} after={current!r} frame_chain={frame_chain!r}",
+        )
+        return current == target
+
+    if frame_chain:
+        try:
+            from Survey.frame_utils import switch_to_frame_chain  # type: ignore
+        except Exception:
+            switch_to_frame_chain = None  # type: ignore
+        if switch_to_frame_chain is not None:
+            with switch_to_frame_chain(driver, frame_chain) as ok:
+                if not ok:
+                    log_debug("[SD_DROPDOWN]", f"switch_to_frame_chain échoué chain={frame_chain!r}")
+                    return False
+                return _apply(driver)
+
+    return _apply(driver)
+
+
+# =============================================================================
 # CHAMP TEXT/NUMBER RÉSOLU DANS UN FRAME_CHAIN DU REGISTRY
 # (ex: Ipsos/mrIWeb GRID/NUM par ligne, _extract_mriweb_grid_num_row_blocks)
 # =============================================================================

@@ -939,6 +939,55 @@ def _is_ifop_zip2city_input(el) -> bool:
         return False
 
 
+def _is_surveyjs_sd_dropdown_filter_input(el) -> bool:
+    """
+    Garde-fou DOM strict pour le widget dropdown recherchable du thème SurveyJS
+    "Modern" (préfixe de classe "sd-*", ex. runtime Decipher/FocusVision) :
+    <input class="sd-dropdown__filter-string-input" role="combobox" readonly>
+    dont le parent immédiat est <div class="sd-dropdown__value"> et le
+    grand-parent est <div class="sd-input sd-dropdown ..." role="combobox"
+    aria-controls="...">. Voir BOT_EVOLUTION_MEMORY.md : "SURVEYJS MODERN —
+    DROPDOWN RECHERCHABLE (sd-dropdown)".
+
+    Additif, aucun impact hors de ce guard : _detect_itype() (dom_utils.py,
+    inchangé) classe déjà cet input en itype="text" (input type="text") ; ce
+    garde-fou ne fait que poser un flag supplémentaire pour permettre à
+    action_dispatcher.py de router vers une stratégie de saisie dédiée
+    (ouverture du menu + sélection d'option) au lieu du remplissage texte
+    générique, qui échoue car ce champ est en lecture seule et recouvert par
+    son propre parent (intercepte les événements pointeur).
+    """
+    try:
+        if (el.evaluate("e => e.tagName.toLowerCase()") or "").strip().lower() != "input":
+            return False
+        cls = (el.get_attribute("class") or "").lower().split()
+        if "sd-dropdown__filter-string-input" not in cls:
+            return False
+        if not el.get_attribute("readonly") and not bool(el.evaluate("e => e.readOnly")):
+            return False
+        if (el.get_attribute("role") or "").strip().lower() != "combobox":
+            return False
+        parent_nodes = el.query_selector_all("xpath=..")
+        parent = parent_nodes[0] if parent_nodes else None
+        if parent is None:
+            return False
+        parent_cls = (parent.get_attribute("class") or "").lower().split()
+        if "sd-dropdown__value" not in parent_cls:
+            return False
+        grandparent_nodes = el.query_selector_all("xpath=../..")
+        grandparent = grandparent_nodes[0] if grandparent_nodes else None
+        if grandparent is None:
+            return False
+        gp_cls = (grandparent.get_attribute("class") or "").lower().split()
+        if "sd-input" not in gp_cls or "sd-dropdown" not in gp_cls:
+            return False
+        if not (grandparent.get_attribute("aria-controls") or "").strip():
+            return False
+        return True
+    except Exception:
+        return False
+
+
 def _is_modal_related_control(driver, el) -> bool:
     """
     Ignore les contrôles UI liés à des modals/dialogs (confirmation/info)
@@ -3692,6 +3741,26 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                             f"ifop_zip2city_input_detected data_prefix={(el.get_attribute('data-prefix') or '')!r}",
                         )
 
+            # --- Détection additive : dropdown recherchable SurveyJS Modern (sd-*) ---
+            # <input class="sd-dropdown__filter-string-input" role="combobox" readonly> :
+            # déjà classé itype="text" par _detect_itype() (input type="text", inchangé).
+            # Ce champ est en lecture seule et recouvert par son parent
+            # div.sd-dropdown__value qui intercepte les événements pointeur -> le remplissage
+            # texte générique (fill_text_input) plante sur un timeout Playwright
+            # "intercepts pointer events". Voir BOT_EVOLUTION_MEMORY.md : "SURVEYJS MODERN —
+            # DROPDOWN RECHERCHABLE (sd-dropdown)".
+            _surveyjs_sd_dropdown = False
+            if itype == "text":
+                try:
+                    _surveyjs_sd_dropdown = _is_surveyjs_sd_dropdown_filter_input(el)
+                except Exception:
+                    _surveyjs_sd_dropdown = False
+                if _surveyjs_sd_dropdown and is_debug():
+                    log_debug(
+                        "[SINGLES_DETECT]",
+                        f"surveyjs_sd_dropdown_input_detected id={(el.get_attribute('id') or '')!r}",
+                    )
+
             # 1) On ignore les champs techniques/hidden
             if itype == "hidden" or _looks_like_system_field(el):
                 if is_debug():
@@ -4525,6 +4594,11 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     # (code postal + sélection ville dans le dropdown), sans toucher au chemin
                     # générique text/fill_text_input.
                     "ifop_zip2city_widget": _ifop_zip2city,
+                    # Flag additif (voir _is_surveyjs_sd_dropdown_filter_input plus haut) :
+                    # permet à action_dispatcher.py de router vers la stratégie de saisie
+                    # dédiée (ouverture du menu + sélection d'option), sans toucher au chemin
+                    # générique text/fill_text_input.
+                    "surveyjs_sd_dropdown_widget": _surveyjs_sd_dropdown,
                 },
             )
 
@@ -4542,6 +4616,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     "role": el.get_attribute("role"),
                     "native_date_input": _is_native_date_input,
                     "ifop_zip2city_widget": _ifop_zip2city,
+                    "surveyjs_sd_dropdown_widget": _surveyjs_sd_dropdown,
                 },
             }
             

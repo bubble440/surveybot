@@ -4928,6 +4928,58 @@ def _apply_by_target_id(
                         )
                     return False
 
+                # DataDiggers iControl (AngularJS screener, ng-app="dataDiggerBackendApp") :
+                # options radio = div.survey_radioBtn cliqué (cf. note DOM de
+                # _extract_datadiggers_icontrol_radio_block, Survey/dom_extractors_misc.py).
+                # Le clic ci-dessus met bien checked=true sur l'input imbriqué, mais le double
+                # binding ng-model + ng-checked de ce DOM fait clignoter l'attribut checked
+                # (ajouté/retiré/réajouté) le temps que le digest Angular se stabilise. Une
+                # lecture ponctuelle de _is_selected(inp) peut donc tomber sur l'état
+                # transitoire "retiré" et laisser le code retomber sur la cascade de repli
+                # générique plus bas, dont le clic direct sur l'input natif (radio_main "4)")
+                # rouvre un second cycle de bascule (value="option.id" jamais interpolée sur ce
+                # DOM -> ng-model resynchronise selected_opt sur la chaîne littérale, ce qui
+                # décoche tous les radios) au lieu de laisser le clic déjà appliqué sur le div
+                # produire son état final. Vérification bornée dédiée : dès que checked est
+                # observé true sur l'input ciblé, retour immédiat, avant toute nouvelle
+                # interaction susceptible de faire rebasculer un état déjà correct.
+                # Re-résolution de l'input à CHAQUE itération (comme cloudresearch_sentry_selection_signal
+                # ci-dessus, _crs_current = _find_best_visible(xp) or el) : figer une seule référence
+                # avant la boucle risquait de retomber sur `el`/l'input déjà obsolète après le clic (le
+                # même digest qui fait clignoter checked peut invalider une référence acquise trop tôt).
+                # Résolution CSS directe ("input[type='radio']"), PAS via _first_input_under() : son
+                # 2e chemin (node.query_selector(".//input[@type='radio' or @type='checkbox']")) passe
+                # une expression XPath relative à query_selector SANS le préfixe "xpath=" attendu par
+                # Playwright, qui n'auto-détecte l'XPath que pour un sélecteur commençant EXACTEMENT
+                # par "//" ou ".." — pas ".//" . Traité comme CSS (syntaxe invalide), l'appel lève une
+                # exception avalée par le try/except de _first_input_under, qui retourne None dès que
+                # le nœud passé n'est pas lui-même l'input (notre cas : `el`/`_ddi_el` est toujours le
+                # div.survey_radioBtn englobant). Confirmé cause racine du "input not checked after
+                # click" sur 3 captures live consécutives malgré un checked="checked" bien présent dans
+                # post_action_dom.html : _is_selected(None) renvoie systématiquement False, indépendamment
+                # de l'état réel du DOM. _first_input_under() elle-même n'est pas modifiée ici (fonction
+                # partagée par d'autres chemins existants, hors scope de ce patch — cf. règle zéro
+                # modification sans validation explicite) ; ce bloc dédié résout l'input par un
+                # sélecteur CSS simple, sans ambiguïté de moteur.
+                if payload.get("datadiggers_icontrol_radio") and resolved_itype == "radio":
+                    _ddi_end = time.time() + 1.0
+                    while time.time() < _ddi_end:
+                        _ddi_el = _find_best_visible(xp) or el
+                        try:
+                            _ddi_inp = _ddi_el.query_selector("input[type='radio']") if _ddi_el else None
+                        except Exception:
+                            _ddi_inp = None
+                        if _is_selected(_ddi_inp):
+                            log_info("[TARGET]", "apply ok=true strategy=datadiggers_icontrol_radio reason=input_checked")
+                            return True
+                        time.sleep(0.05)
+                    if debug_target:
+                        log_debug(
+                            "[TARGET_DEBUG]",
+                            f"datadiggers_icontrol_radio: input not checked after click value='{value}' xpath='{xp}'",
+                        )
+                    return False
+
                 def _ipsos_slider_value_matches(node, expected: str) -> bool:
                     """Validation DOM pour les sliders Likert IPSOS (bootstrap-slider)."""
                     if not payload.get("ipsos_slider"):
@@ -8684,6 +8736,30 @@ def execute_action(
                 if ok:
                     return True
                 log_info("[TARGET]", f"apply ok=false reason=ifop_zip2city_widget_failed target_id={target_id!r}")
+                continue
+
+            # --- Dropdown recherchable SurveyJS Modern (input.sd-dropdown__filter-string-input,
+            # readonly, role="combobox", thème sd-*) ---
+            # Stratégie dédiée additive : voir BOT_EVOLUTION_MEMORY.md "SURVEYJS MODERN —
+            # DROPDOWN RECHERCHABLE (sd-dropdown)". Même convention que les blocs
+            # native_date_input / ifop_zip2city_widget ci-dessus (flag/xpath/frame_chain lus à
+            # la racine du registre DOM_REGISTRY, pas sous "context"). Ce champ est en lecture
+            # seule et recouvert par son parent div.sd-dropdown__value qui intercepte les
+            # événements pointeur -> fill_text_input générique (Survey/input_text.py) plante sur
+            # un timeout Playwright "intercepts pointer events" (élément recouvert). Ne retombe
+            # JAMAIS sur fill_text_input en cas d'échec : une seule stratégie, pas de fallback
+            # empilé.
+            _sd_dd_xpath = None
+            _sd_dd_frame_chain = None
+            if target_payload and target_payload.get("surveyjs_sd_dropdown_widget"):
+                _sd_dd_xpath = target_payload.get("xpath") or None
+                _sd_dd_frame_chain = target_payload.get("frame_chain") or None
+            if _sd_dd_xpath:
+                ok = _try(driver, "surveyjs_sd_dropdown_widget", lambda xp=_sd_dd_xpath, fc=_sd_dd_frame_chain:
+                    Survey.input_handler.fill_surveyjs_sd_dropdown_widget(driver, label, xpath=xp, frame_chain=fc))
+                if ok:
+                    return True
+                log_info("[TARGET]", f"apply ok=false reason=surveyjs_sd_dropdown_widget_failed target_id={target_id!r}")
                 continue
 
             # --- Champ text/number résolu dans un frame_chain du registry ---

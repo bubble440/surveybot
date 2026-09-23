@@ -166,6 +166,23 @@ niveau tant que le niveau précédent n'est pas fiable.
 > supplémentaire ; à clarifier ou nettoyer si retouché. Le chantier principal
 > reste la Phase 3B pour 3B.3/3B.4 ; la Phase 7 pour `stage="action"` reste
 > en attente de 3C.
+> Mise à jour 2026-09-22 : cas 1B collecté hors changement de phase — DataDiggers
+> iControl, radio `attention_questions` (target_id=`group_cead5509389a`). Oracle
+> `_checkbox_radio_false_negative_issue` (extension 1B.1 déjà en place) confirmé
+> correct sur 3 captures live indépendantes (`dispatcher_false_negative`
+> `dom_signal=checkbox_radio_checked`). Cause racine trouvée hors
+> `action_validator.py` : bug dans `Survey/action_dispatcher.py` (stratégie
+> `datadiggers_icontrol_radio`, résolution `_first_input_under()` incompatible
+> avec l'expression XPath relative utilisée sur ce DOM) — corrigé et validé live
+> (`apply ok=true reason=input_checked`, option demandée effectivement cochée à
+> l'écran ; cf. BOT_EVOLUTION_MEMORY.md section DATADIGGERS ICONTROL et section
+> « Cas 1B collecté » de ce document). Point de vigilance NON confirmé ajouté à
+> la collecte 1B : `validate_actions()` ne vérifie jamais le DOM quand
+> `dispatcher_success=true` — aucun cas réel ne le confirme à ce jour (un doute
+> soulevé pendant ce diagnostic provenait d'une capture d'écran envoyée par
+> erreur), ne pas patcher sans snapshot réel. Aucun changement de phase : le
+> chantier principal reste la Phase 3B pour 3B.3/3B.4 ; la Phase 7 pour
+> `stage="action"` reste en attente de 3C.
 
 ## Contexte de travail actuel
 
@@ -686,6 +703,59 @@ Chaque incident doit pouvoir être décrit comme :
 ```
 
 À la fin de 1B, on possède un véritable **oracle automatique partiel**.
+
+## Cas 1B collecté — DataDiggers iControl, radio attention_questions
+
+**Statut : diagnostiqué et corrigé — validé live (`apply ok=true
+strategy=datadiggers_icontrol_radio reason=input_checked`, option demandée
+effectivement cochée à l'écran, capture bot:9009, 2026-09-22).**
+
+Snapshots `action_validation_failure`, target_id=`group_cead5509389a`, itype
+`radio`, provider `datadiggers_icontrol_radio` (cf. BOT_EVOLUTION_MEMORY.md,
+section DATADIGGERS ICONTROL, pour le détail technique du bug et du
+correctif).
+
+Symptôme observé sur 3 captures live consécutives, avant correction :
+
+``` text
+dispatcher: apply ok=false reason=no_strategy
+action_validator: dispatcher_false_negative dom_signal=checkbox_radio_checked
+```
+
+Ce cas confirme en pratique la famille 4 (« action signalée mauvaise alors
+que le DOM final est correct ») sur un pattern DOM distinct d'IFOP
+zip2city (radio générique à input caché sous `div.survey_radioBtn`, pas un
+widget zip/ville) : `_checkbox_radio_false_negative_issue` dans
+`action_validator.py` (extension de l'oracle 1B.1 au-delà du cas IFOP
+spécifique, déjà en place avant ce cas) a correctement reclassé l'incident
+sans faux positif, sur trois runs live indépendants.
+
+Différence avec IFOP zip2city (1B.1) : ici la cause racine n'était pas dans
+`action_validator.py` mais dans la propre vérification de succès du
+dispatcher (`Survey/action_dispatcher.py`, bloc
+`payload.get("datadiggers_icontrol_radio")` — résolution `_first_input_
+under()` incompatible avec l'expression XPath relative utilisée, cf.
+BOT_EVOLUTION_MEMORY.md pour le détail). L'oracle 1B n'a pas corrigé le bug
+lui-même : il a fourni le signal (snapshot + reclassification) qui a permis
+de le diagnostiquer et de le corriger via le pipeline failure_case →
+diagnosis → prompt Codex → patch → validation live.
+
+Point de vigilance ouvert, NON confirmé par un cas réel à ce jour :
+`validate_actions()` (`action_validator.py`) n'exécute
+`_dispatcher_false_negative_issue` que si `dispatcher_success is False`
+(cf. `if requested and dispatcher_success is False:`). Si un dispatcher
+rapporte `ok=true` sur une valeur différente de celle réellement
+sélectionnée dans le DOM, aucune vérification n'a lieu actuellement — ce
+cas resterait invisible à toute l'observabilité 1A/1B. Un doute soulevé
+pendant le diagnostic de ce même cas DataDiggers (capture semblant montrer
+une autre option cochée que celle demandée malgré `apply ok=true`) s'est
+révélé être une capture d'écran envoyée par erreur (mauvais run) — donc PAS
+un cas confirmé, à ne pas traiter comme tel. À garder en tête pour la
+collecte 1B : un cas réel de ce type (faux positif dispatcher,
+`dispatcher_success=true`, valeur affichée ≠ valeur demandée) constituerait
+une 5e famille non couverte par les 4 familles actuelles (toutes bornées à
+`dispatcher_success=False` ou à l'extraction) — ne pas patcher sur cette
+seule hypothèse tant qu'aucun snapshot réel ne la confirme.
 
 ------------------------------------------------------------------------
 

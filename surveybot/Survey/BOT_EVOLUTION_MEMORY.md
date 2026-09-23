@@ -787,6 +787,33 @@ Patterns exclus :
 - Tout payload sans `confirmit_wix_fieldset_radio`
 
 ---
+## PLATEFORME : SURVEYJS MODERN — DROPDOWN RECHERCHABLE (sd-dropdown)
+
+Contexte : widget dropdown recherchable du thème SurveyJS "Modern" (préfixe de classe
+"sd-*", observé en runtime Decipher/FocusVision, ex. id `sq_103i_0`). L'input filtre
+(`sd-dropdown__filter-string-input`) est en lecture seule et intégralement recouvert
+par son parent `div.sd-dropdown__value`, qui intercepte les événements pointeur.
+
+### _is_surveyjs_sd_dropdown_filter_input / surveyjs_sd_dropdown_widget / fill_surveyjs_sd_dropdown_widget
+Fichiers : Survey/dom_analyzer.py (garde-fou `_is_surveyjs_sd_dropdown_filter_input`,
+2 points d'appel registry), Survey/action_dispatcher.py (bloc dédié, juste avant le
+repli générique `text_input`), Survey/input_text.py (`fill_surveyjs_sd_dropdown_widget`).
+Guard DOM strict : `input.sd-dropdown__filter-string-input` readonly + `role="combobox"`,
+parent `div.sd-dropdown__value`, grand-parent `div.sd-input.sd-dropdown[aria-controls]`.
+Additif : ne change pas `itype="text"` posé par `_detect_itype`, pose seulement le flag
+`surveyjs_sd_dropdown_widget` dans le registre pour router le dispatch.
+Bug corrigé : `fill_text_input` générique tentait clic/hover direct sur l'input recouvert
+→ timeout Playwright 30s ("intercepts pointer events"), aucune valeur appliquée.
+Interaction dédiée (3 temps) : clic sur `.sd-dropdown__value` (pas l'input) → poll
+`aria-expanded="true"` sur le grand-parent (~2s) → poll options `[role="option"]`
+scopées au wrapper, match exact `norm_txt` (~3s) → clic option → vérif `value` du champ (~1s).
+Patterns exclus : dropdown Decipher natif `select.input.dropdown`/`div.fir-select`
+(non concerné, déjà couvert ailleurs) ; jamais de repli sur `fill_text_input` en cas
+d'échec (une seule stratégie, pas de fallback empilé).
+Statut : confirmé fonctionnel en conditions réelles (`id=sq_103i_0`, `target='Paris'`,
+`apply ok=true strategy=surveyjs_sd_dropdown_widget`).
+
+---
 
 ## PLATEFORME : IPSOS / mrIWeb — GRID/NUM PAR LIGNE (table.mrGridTable, input[type=number] par ligne)
 Signature DOM : `div.question-container.QType-GRID.QSubType-NUM` (script `customJSONproperties`
@@ -883,6 +910,31 @@ Patterns couverts :
 Patterns exclus :
 - Autres types de questions DataDiggers non observés (questionType != 0)
 Note DOM : `input.checked` non fiable sur ce DOM Angular — la sélection passe par `ng-click` sur `div.survey_radioBtn` qui met à jour `demographic.selected_opt` dans le scope Angular. Le clic doit cibler le `div.survey_radioBtn` (via XPath), pas l'input nu.
+
+### action_dispatcher.py — stratégie datadiggers_icontrol_radio (vérification post-clic)
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `payload.get("datadiggers_icontrol_radio") and resolved_itype == "radio"`, juste après `_click_candidate(el, "target")`.
+Bug corrigé (confirmé sur 3 captures live consécutives : `apply ok=false reason=no_strategy`, cascade
+kantar_rowpicker/ipsos_sharky_grid_progressive/vant_picker_column inutilement épuisée, alors que
+`post_action_dom.html` contenait bien `checked="checked"` sur l'input ciblé) : la vérification initiale
+résolvait l'input via `_first_input_under(el)`, dont le 2e chemin (`node.query_selector(".//input[@type=
+'radio' or @type='checkbox']")`) passe une expression XPath relative SANS le préfixe `"xpath="` attendu
+par Playwright — qui n'auto-détecte l'XPath que pour un sélecteur commençant EXACTEMENT par `//` ou `..`,
+pas `.//`. Traité comme CSS invalide, l'appel lève une exception avalée par le try/except de
+`_first_input_under`, qui retourne `None` dès que le nœud passé n'est pas lui-même l'input (cas constant
+ici : le nœud est toujours le `div.survey_radioBtn` englobant, jamais l'`<input>`). `_is_selected(None)`
+renvoie alors systématiquement `False`, indépendamment de l'état réel du DOM.
+Correction : ce bloc résout désormais l'input par un sélecteur CSS direct (`input[type='radio']`) sous
+`_ddi_el = _find_best_visible(xp) or el`, **re-résolu à chaque itération** de la boucle bornée (1s/50ms) —
+pas une seule fois avant la boucle, pour survivre à une invalidation de référence par le digest Angular
+(même mécanisme que le clignotement documenté de `checked` ci-dessus). `_first_input_under()` elle-même
+n'est PAS modifiée (fonction partagée par d'autres chemins existants, hors scope de ce patch).
+Validé live : `apply ok=true strategy=datadiggers_icontrol_radio reason=input_checked`, option demandée
+effectivement cochée à l'écran (capture bot:9009, 2026-09-22).
+Risque transversal non audité par ce patch : tout autre appelant de `_first_input_under()` sur un nœud
+n'étant pas lui-même l'`<input>` (nœud = ancêtre/wrapper) est exposé au même retour `None` silencieux.
+Aucun autre appelant confirmé impacté à ce jour — ne pas modifier `_first_input_under()` sans un cas
+DOM de référence propre.
 
 ---
 
