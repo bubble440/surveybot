@@ -1245,7 +1245,6 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     # Pas de radios natifs, on clique directement sur les boutons.
     try:
         walr_cs_block = _extract_walr_cardsort_block(driver, frame_chain)
-        log_debug("[WALR_CS]", f"bloc retourné: {walr_cs_block is not None}")
         if walr_cs_block:
             log_debug("[WALR_CS]", f"SUCCESS - returning block with {len(walr_cs_block.get('options', []))} options")
             return [walr_cs_block]

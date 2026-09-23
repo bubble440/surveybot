@@ -246,7 +246,6 @@ def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict 
         container = []
     
     if not container:
-        log_debug("[WALR_CS]", "Pas de #cardSortContainer")
         return None
     
     container = container[0]
@@ -7389,13 +7388,12 @@ def _extract_cloudresearch_sentry_blocks(driver, frame_chain: list[int] | None) 
         # Pattern spécifique
         sentry_marker = driver.query_selector_all("#sentry, .cr-question-card")
         choice_btns = driver.query_selector_all(".choice-option[role='button']")
+        if not sentry_marker or not choice_btns:
+            return []
         log_debug(
             "[CR_SENTRY_DEBUG]",
             f"gate sentry_marker={len(sentry_marker or [])} choice_btns={len(choice_btns or [])}",
         )
-        if not sentry_marker or not choice_btns:
-            log_debug("[CR_SENTRY_DEBUG]", "gate_no_match -> return []")
-            return []
     except Exception as _gate_exc:
         log_debug("[CR_SENTRY_DEBUG]", f"gate_exception {type(_gate_exc).__name__}: {_gate_exc}")
         return []
@@ -7622,7 +7620,6 @@ def _extract_zappi_maxdiff_blocks(driver, frame_chain: list[int] | None) -> list
         rows = []
 
     if not rows or len(rows) < 2:
-        log_debug("[ZAPPI_MAXDIFF_DEBUG]", f"gate_no_match rows={len(rows or [])}")
         return []
 
     log_debug("[ZAPPI_MAXDIFF_DEBUG]", f"gate rows={len(rows)}")
@@ -10895,7 +10892,8 @@ def _extract_qualtrics_sl_text_blocks(driver, frame_chain: list[int] | None) -> 
             }
         )
 
-    log_debug("[DOM_QUALTRICS_SL_TEXT]", f"blocks_extracted={len(blocks)}")
+    if blocks:
+        log_debug("[DOM_QUALTRICS_SL_TEXT]", f"blocks_extracted={len(blocks)}")
     return blocks
 
 
@@ -11021,7 +11019,8 @@ def _extract_qualtrics_form_multi_text_blocks(driver, frame_chain: list[int] | N
             }
         )
 
-    log_debug("[DOM_QUALTRICS_FORM_MULTI_TEXT]", f"blocks_extracted={len(blocks)}")
+    if blocks:
+        log_debug("[DOM_QUALTRICS_FORM_MULTI_TEXT]", f"blocks_extracted={len(blocks)}")
     return blocks
 
 
@@ -11156,7 +11155,8 @@ def _extract_qualtrics_te_matrix_multi_text_blocks(driver, frame_chain: list[int
             }
         )
 
-    log_debug("[DOM_QUALTRICS_TE_MATRIX_MULTI_TEXT]", f"blocks_extracted={len(blocks)}")
+    if blocks:
+        log_debug("[DOM_QUALTRICS_TE_MATRIX_MULTI_TEXT]", f"blocks_extracted={len(blocks)}")
     return blocks
 
 
@@ -14589,7 +14589,8 @@ def _extract_qualtrics_rank_order_dragdrop_blocks(driver, frame_chain: list[int]
                 }
             )
 
-    log_info("[DOM_QUALTRICS_RANK_ORDER_DND]", f"blocks_extracted={len(blocks)}")
+    if blocks:
+        log_info("[DOM_QUALTRICS_RANK_ORDER_DND]", f"blocks_extracted={len(blocks)}")
     return blocks
 
 
@@ -15488,5 +15489,6 @@ def _extract_qualtrics_sum_input_text_blocks(driver, frame_chain: list[int] | No
             except Exception:
                 continue
 
-    log_debug("[DOM_QUALTRICS_SUM_INPUT]", f"blocks_extracted={len(blocks)}")
+    if blocks:
+        log_debug("[DOM_QUALTRICS_SUM_INPUT]", f"blocks_extracted={len(blocks)}")
     return blocks

@@ -5687,3 +5687,32 @@ existants → seuls les 2 snapshots de ce sondage déclenchent l'extracteur (auc
 Point de vigilance : chaque ligne est un bloc `single` indépendant ; la cohérence de la somme repose sur le
 fait que les 5 lignes partagent le même prompt batch (contrainte non revalidée côté code). Si un run
 futur produit une somme ≠ N, étudier une validation post-réponse dédiée plutôt que d'élargir ce bloc.
+
+---
+## PLATEFORME : LIMESURVEY — SÉLECTEUR DE LANGUE DE PAGE (form-change-lang)
+
+Contexte : les pages LimeSurvey (ex. env3.surveysip.com/index.php/<sid>) affichent, hors du
+formulaire de la question, un `<form id="firstpage-changelang">` contenant
+`<div class="form-change-lang">` avec `<select name="lang" id="lang">` (déjà positionné sur la
+bonne langue) et `<button type="submit" name="move" value="changelang">Changer de langue</button>`.
+Le select est visible et n'est pas reconnu par `_looks_like_system_field` (seul `q_lang` Qualtrics
+l'est) : il était extrait comme bloc `dropdown` / `single` ("Langue :"), envoyé à GPT, puis
+`select_native_option_by_target` échouait (valeur non confirmée) et `execute_actions_plan` levait
+`AttributeError: 'ElementHandle' object has no attribute 'tag_name'`.
+
+### _is_limesurvey_page_language_selector (garde-fou de skip)
+Fichier : Survey/dom_analyzer.py — fonction définie juste avant `_is_surveyjs_sd_dropdown_filter_input`,
+appelée dans la boucle des singles, juste après le skip `hidden_or_system` (avant
+`is_bootstrap_selectpicker`), uniquement si `itype == "dropdown"`.
+Guard DOM strict : `select[name="lang"]` dont l'ancêtre `.form-change-lang` contient
+`button[name="move"][value="changelang"]`. Les deux conditions sont obligatoires.
+Effet : `continue` (le select n'est jamais extrait). Log debug : `[SINGLES_SKIP] limesurvey_page_language_selector`.
+Additif : aucun extracteur existant ni `_looks_like_system_field` (dom_utils.py) modifié. Aucun CTA touché
+(CTA_INTERCEPT_ONLY non concerné).
+Patterns exclus : tout `select[name="lang"]` sans bouton `changelang` dans `.form-change-lang` (pas de
+match par nom seul) ; un vrai dropdown de question LimeSurvey (dans le formulaire `#limesurvey`) n'est
+jamais concerné.
+Statut : confirmé en conditions réelles — 1 seul bloc extrait (checkbox `datasecurity_accepted`),
+plus de plantage `tag_name`, `apply ok=true strategy=target_id`.
+Limite connue : le bouton "Changer de langue" (`name="move"`) reste ignoré par le chemin button
+(`not_actionable_visible`), comportement inchangé.
