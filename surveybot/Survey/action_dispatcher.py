@@ -4372,6 +4372,68 @@ def _apply_by_target_id(
                             f"mx vertical carousel next unavailable or click failed: target_id='{target_id}'",
                         )
 
+                def _maybe_advance_qualtrics_carousel_after_answer() -> bool:
+                    """Qualtrics CarouselQuestionBody : clic ciblé sur le chevron « Next option »
+                    propre au widget, après la dernière option de la carte courante.
+
+                    Guard : payload de l'extracteur dédié (`qualtrics_carousel_checkbox`) ; le
+                    chevron est résolu dans le même `.QuestionOuter` que les labels d'options.
+                    Un seul clic (pas de boucle de candidats) ; le CTA de page ignore ce chevron.
+                    La sélection de l'option est vérifiée AVANT d'avancer : les inputs sont partagés
+                    entre cartes, la vérification post-clic générique lirait la carte suivante.
+                    Retourne True uniquement si le chevron a été réellement cliqué.
+                    """
+                    if not allow_mx_vertical_carousel_advance:
+                        return False
+                    if not (payload.get("qualtrics_carousel_checkbox") and resolved_itype == "checkbox"):
+                        return False
+                    opt_map = payload.get("option_xpath_map") or {}
+                    first_opt_xpath = next((v for v in opt_map.values() if isinstance(v, str) and v.strip()), "")
+                    if not first_opt_xpath:
+                        return False
+                    try:
+                        _qc_fid = (el.get_attribute("for") or "").strip()
+                        _qc_ctx = getattr(driver, "_current_frame", driver)
+                        _qc_deadline = time.time() + 0.6
+                        _qc_selected = False
+                        while _qc_fid and time.time() < _qc_deadline:
+                            if _is_selected(_qc_ctx.query_selector(f"[id='{_qc_fid}']")):
+                                _qc_selected = True
+                                break
+                            time.sleep(0.05)
+                    except Exception:
+                        _qc_selected = False
+                    if not _qc_selected:
+                        log_debug("[QUALTRICS_CAROUSEL_NEXT]", "option not selected after click → no advance")
+                        return False
+                    next_xpath = (
+                        f"{first_opt_xpath}/ancestor::*[contains(concat(' ',normalize-space(@class),' '),' QuestionOuter ')][1]"
+                        "//button[contains(concat(' ',normalize-space(@class),' '),' CarouselChevronContainer ')"
+                        " and @aria-label='Next option']"
+                    )
+
+                    intercept_only = is_cta_intercept_only()
+                    next_btn = _find_best_visible(next_xpath)
+                    clickable = False
+                    if next_btn:
+                        try:
+                            clickable = (
+                                (next_btn.get_attribute("aria-disabled") or "").strip().lower() != "true"
+                                and next_btn.get_attribute("disabled") is None
+                            )
+                        except Exception:
+                            clickable = False
+
+                    if not clickable:
+                        log_debug("[QUALTRICS_CAROUSEL_NEXT]", "next chevron not found/disabled (last card?)")
+                        return False
+                    if intercept_only:
+                        log_info("[CTA_INTERCEPT]", "qualtrics_carousel cta_found intercept_ok")
+                        return False
+                    moved = bool(_click_candidate(next_btn, "qualtrics_carousel_next"))
+                    log_info("[QUALTRICS_CAROUSEL_NEXT]", f"chevron clicked={moved}")
+                    return moved
+
                 # Idempotence checkbox: si la cible est déjà dans l'état voulu,
                 # ne pas cliquer (évite les dérives sur widgets FocusVision/Decipher).
                 if resolved_itype == "checkbox":
@@ -4865,6 +4927,15 @@ def _apply_by_target_id(
                 _click_candidate(el, "target")
 
                 _maybe_advance_mx_vertical_carousel_after_answer()
+                if _maybe_advance_qualtrics_carousel_after_answer():
+                    # Retour immédiat : la carte suivante est affichée, la vérification
+                    # générique plus bas lirait ses inputs (partagés) et forcerait une case.
+                    # Signal consommé par _should_skip_post_actions_navigation (survey_executor).
+                    try:
+                        driver._qualtrics_carousel_advanced = True
+                    except Exception:
+                        pass
+                    return True
 
                 # CloudResearch/Sentry : les choix radio sont des divs Vue.js,
                 # sans input natif. Le clic ci-dessus est déjà celui qui applique

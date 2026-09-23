@@ -1855,6 +1855,25 @@ def _should_skip_post_actions_navigation(
     """
     page = driver
 
+    # Qualtrics carousel : le dispatcher vient de cliquer le chevron « Next option » du widget
+    # (signal à usage unique). Le DOM doit être ré-extrait avant toute décision de CTA de page.
+    _qc_advanced = False
+    try:
+        _qc_advanced = bool(getattr(driver, "_qualtrics_carousel_advanced", False))
+        if _qc_advanced:
+            driver._qualtrics_carousel_advanced = False
+    except Exception:
+        _qc_advanced = False
+    if _qc_advanced:
+        for block in question_blocks or []:
+            try:
+                ctx = block.get("context") if isinstance(block, dict) else None
+                if isinstance(ctx, dict) and ctx.get("qualtrics_carousel_checkbox") is True:
+                    log_info("[QUALTRICS_CAROUSEL_NEXT]", "carte suivante affichée → skip CTA, ré-extraction du DOM")
+                    return True
+            except Exception:
+                continue
+
     if before_url is not None:
         try:
             url_changed = page.url != before_url

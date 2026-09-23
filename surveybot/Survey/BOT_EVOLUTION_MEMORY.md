@@ -5765,7 +5765,34 @@ Patterns exclus :
 Log discriminant : `[QUALTRICS_CAROUSEL_CB] name=… card=… options=[…]` (debug).
 Statut : vérifié hors-ligne (Playwright sur le snapshot de référence : 5 options correctes, `max_select=5`) ET en run réel pour l'extraction
 (log bot : `blocks_count=1`, `options_count=5`, prompt GPT correct, plus de `choice_without_options` ni de `DOM_ONLY_ABORT`).
-Clic (`option_xpath_map` → `label[for]`) non encore confirmé en run réel.
+Clic (`option_xpath_map` → `label[for]`) confirmé en run réel (4 options cochées sur la carte courante, cartes suivantes enchaînées).
+
+### Qualtrics carousel checkbox — avance de carte (chevron « Next option »)
+Trois ajouts additifs, aucun extracteur ni logique commune modifiée. Flag de déclenchement commun : `qualtrics_carousel_checkbox=True`
+(payload du target + `context` du bloc).
+1. `_maybe_advance_qualtrics_carousel_after_answer` (closure dans `execute_action`, Survey/action_dispatcher.py, appelée juste après
+   `_maybe_advance_mx_vertical_carousel_after_answer` suite à `_click_candidate(el, "target")`).
+   - Guard : payload `qualtrics_carousel_checkbox` + itype checkbox + `allow_mx_vertical_carousel_advance` (déjà False entre deux options d'un même
+     `target_id` → avance uniquement après la DERNIÈRE option de la carte).
+   - Chevron résolu par XPath : `option_xpath_map` (1re valeur) → `ancestor::*[QuestionOuter][1]//button[CarouselChevronContainer and @aria-label='Next option']`.
+     Ignoré si absent / `aria-disabled=true` / `disabled` (dernière carte → CTA de page normal).
+   - **Ordre impératif** : la sélection de l'option (`label[for]` → input `_is_selected`, attente ≤0,6 s) est vérifiée AVANT le clic du chevron.
+     Raison : les inputs `QR~QIDn~ANSWER~k` sont partagés entre cartes ; après l'avance, la vérification générique (label-for force-check) lirait la
+     carte suivante et cocherait une case sur la mauvaise carte. Si vérifié + chevron cliqué → `execute_action` retourne True immédiatement.
+   - `CTA_INTERCEPT_ONLY` : pas de clic, log `[CTA_INTERCEPT] qualtrics_carousel cta_found intercept_ok`.
+   - Signal à usage unique : `driver._qualtrics_carousel_advanced = True`.
+2. `_is_qualtrics_carousel_chevron` (Survey/cta_handler.py, filtre dans `try_click_navigation_cta`, avant `_is_inline_hidden_cta`) : exclut
+   `button.CarouselChevronContainer` ayant un ancêtre `.CarouselQuestionBody` des candidats CTA de page (motif d'exclusion
+   `qualtrics_carousel_chevron`). Sinon le chevron était scoré 130, cliqué, non reconnu comme progression par `_did_progress`, et la boucle
+   enchaînait des clics réels sur les candidats suivants.
+3. `_should_skip_post_actions_navigation` (Survey/survey_executor.py, tête de fonction) : lit puis remet à False `driver._qualtrics_carousel_advanced` ;
+   si True ET un bloc porte `context.qualtrics_carousel_checkbox` → retourne True (skip CTA, `[QUALTRICS_CAROUSEL_NEXT] carte suivante affichée → skip CTA`)
+   → la boucle relance `analyze_dom` et lit la carte suivante avant toute décision de CTA.
+Patterns exclus : radios carousel ; widgets carousel d'autres plateformes (MX Decipher via `mx_vertical_carousel_next_xpath`, Quantilope
+`data-cy=left/right-arrow`, Savanta JQM) → mécanismes propres inchangés.
+Logs : `[QUALTRICS_CAROUSEL_NEXT] chevron clicked=True` (info), `option not selected after click → no advance` / `next chevron not found/disabled` (debug).
+Statut : confirmé en run réel (chevron cliqué une fois, skip CTA, ré-extraction de la carte suivante, plus de clics CTA parasites ni de case forcée).
+Non confirmé : comportement sur la toute dernière carte (chevron supposé absent/désactivé → CTA de page « Suivant »).
 
 ---
 ## PLATEFORME : LIMESURVEY — SÉLECTEUR DE LANGUE DE PAGE (form-change-lang)

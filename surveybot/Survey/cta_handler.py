@@ -280,6 +280,23 @@ def _is_internal_task_carousel_arrow(driver, el) -> bool:
     return False
 
 
+def _is_qualtrics_carousel_chevron(el) -> bool:
+    """
+    Exclut les chevrons internes d'un widget Qualtrics CarouselQuestionBody
+    (button.CarouselChevronContainer, aria-label "Previous/Next option") du ciblage CTA
+    de navigation page : ils changent de carte au sein d'une même question, l'avance
+    étant gérée par l'action_dispatcher (_maybe_advance_qualtrics_carousel_after_answer).
+    Critères DOM : classe CarouselChevronContainer + ancêtre .CarouselQuestionBody.
+    """
+    try:
+        cls_tokens = (el.get_attribute("class") or "").split()
+        if "CarouselChevronContainer" not in cls_tokens:
+            return False
+        return bool(el.query_selector_all("xpath=ancestor::*[contains(concat(' ',normalize-space(@class),' '),' CarouselQuestionBody ')][1]"))
+    except Exception:
+        return False
+
+
 def _read_arm_error(driver) -> str:
     """Retourne le dernier message d'erreur d'armement JS si présent."""
     try:
@@ -2210,6 +2227,11 @@ def try_click_navigation_cta(driver) -> bool:
             _diag_step = "internal_task_carousel_arrow_check"
             if _is_internal_task_carousel_arrow(driver, el):
                 _diag_mark("internal_task_carousel_arrow")
+                continue
+
+            _diag_step = "qualtrics_carousel_chevron_check"
+            if _is_qualtrics_carousel_chevron(el):
+                _diag_mark("qualtrics_carousel_chevron")
                 continue
 
             _diag_step = "inline_hidden_cta_check"
