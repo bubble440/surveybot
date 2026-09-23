@@ -145,6 +145,12 @@ _EXPECTED_BEHAVIOR: dict[str, dict[str, str]] = {
         "description": "min_select ne doit jamais excéder max_select lorsque les deux sont renseignés.",
         "source": "Survey/question_block_validator.py::validate_question_blocks",
     },
+    "question_text_is_help": {
+        "description": "Le champ question d'un bloc radio/checkbox/dropdown ne doit pas être un texte "
+        "d'aide/validation lorsque le même conteneur DOM porte un intitulé de question distinct "
+        "(candidate_question).",
+        "source": "Survey/question_block_validator.py::validate_question_blocks (_help_text_as_question_signals)",
+    },
     "max_select_exceeds_options": {
         "description": "Pour itype checkbox, max_select ne doit pas dépasser le nombre d'options "
         "réellement disponibles.",

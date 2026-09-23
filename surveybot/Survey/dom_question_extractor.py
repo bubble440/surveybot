@@ -590,6 +590,48 @@ def _extract_question_from_container(container, options: List[str]) -> str:
         return ""
 
 
+def _limesurvey_prepend_title_to_help_question(el, question: str) -> str:
+    """
+    LimeSurvey : `question` retenue = texte d'aide/validation seul (ex. "Cochez la ou les
+    réponses", "Veuillez sélectionner une réponse ci-dessous") alors que l'intitulé réel est
+    dans `.ls-label-question` du même conteneur. Les replis génériques retiennent l'aide car
+    le conteneur le plus proche (li.question-item / div.form-group) ne porte que l'option.
+
+    Garde-fou DOM strict : ancêtre `.question-container[id^="question"]` contenant exactement
+    un `.ls-label-question`, et `question` strictement égale au texte d'un nœud
+    `.ls-questionhelp` / `.ls-question-message` de ce conteneur. Sinon retourne `question`
+    inchangée. Retourne "<intitulé> <aide>" (même forme que les blocs radio du même DOM,
+    l'aide restant disponible pour _compute_max_select).
+    """
+    q = _norm(question)
+    if not q:
+        return question
+    try:
+        title = el.evaluate(
+            """(el, q) => {
+            const norm = t => (t || '').normalize('NFC').replace(/\\s+/g, ' ').trim();
+            const c = el.closest('.question-container[id^="question"]');
+            if (!c) return '';
+            const titles = c.querySelectorAll('.ls-label-question');
+            if (titles.length !== 1) return '';
+            const qn = norm(q);
+            const isHelp = Array.from(c.querySelectorAll('.ls-questionhelp, .ls-question-message'))
+                .some(n => norm(n.textContent) === qn);
+            if (!isHelp) return '';
+            const t = norm(titles[0].textContent);
+            return (t && t !== qn && !qn.includes(t)) ? t : '';
+        }""",
+            q,
+        )
+    except Exception:
+        return question
+    title = _norm(title or "")
+    if not title:
+        return question
+    log_debug("[DOM_CONTEXT]", f"limesurvey_title_prepended question={title[:60]!r}")
+    return f"{title} {q}"
+
+
 def _extract_mriweb_grid_question_text(el) -> str:
     """
     Material/mrIWeb: récupère le texte de question principal d'une grille

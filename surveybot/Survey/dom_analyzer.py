@@ -41,7 +41,7 @@ try:
         _extract_ssi_confirmit_question, _extract_surveywriter_ssi_question,
         _extract_confirmit_cf_numeric_isolated_question,
         _nearest_question_container, _nearest_question_container_structural,
-        _extract_question_from_container,
+        _extract_question_from_container, _limesurvey_prepend_title_to_help_question,
         _find_group_heading_text_near_element, _find_heading_tag_near_choice_group,
         _extract_mriweb_grid_question_text,
         _group_key_for_choice, _compute_max_select, _compute_min_select,
@@ -187,7 +187,7 @@ except ImportError:
         _extract_ssi_confirmit_question, _extract_surveywriter_ssi_question,
         _extract_confirmit_cf_numeric_isolated_question,
         _nearest_question_container, _nearest_question_container_structural,
-        _extract_question_from_container,
+        _extract_question_from_container, _limesurvey_prepend_title_to_help_question,
         _find_group_heading_text_near_element, _find_heading_tag_near_choice_group,
         _extract_mriweb_grid_question_text,
         _group_key_for_choice, _compute_max_select, _compute_min_select,
@@ -2869,6 +2869,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     group_reject_reasons["missing_question"] = group_reject_reasons.get("missing_question", 0) + 1
                     continue
 
+            question = _limesurvey_prepend_title_to_help_question(els[0], question)
+
             # Pattern spécifique
             if not options and len(els) == 1 and question:
                 options = [question]
@@ -4091,6 +4093,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if not question:
                 question = _find_associated_label(driver, el) or ""
             question = _norm(question)
+            if itype == "dropdown":
+                question = _norm(_limesurvey_prepend_title_to_help_question(el, question))
 
             # --- [PATCH SSI/Confirmit] Filtrer les instructions de validation et chercher la vraie question ---
             if _is_validation_instruction(question) or not question:

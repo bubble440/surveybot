@@ -5716,3 +5716,50 @@ Statut : confirmé en conditions réelles — 1 seul bloc extrait (checkbox `dat
 plus de plantage `tag_name`, `apply ok=true strategy=target_id`.
 Limite connue : le bouton "Changer de langue" (`name="move"`) reste ignoré par le chemin button
 (`not_actionable_visible`), comportement inchangé.
+
+---
+## PLATEFORME : LIMESURVEY — QUESTION = TEXTE D'AIDE (checkbox / dropdown)
+
+Contexte : sur les pages LimeSurvey (thème `question-container`), le champ `question` des blocs
+checkbox et dropdown était le texte d'aide/validation (`.ls-questionhelp` / `.ls-question-message` :
+"Cochez la ou les réponses", "You can only select ONE answer.", "Veuillez sélectionner une réponse
+ci-dessous") au lieu de l'intitulé réel (`.ls-label-question`). Cause : `_nearest_question_container`
+retient l'ancêtre le plus proche portant 'question'/'form-group' — `li.question-item` (checkbox) ou
+`div.form-group` (dropdown) — qui ne contient que l'option / le select ; `_extract_question_from_container`
+renvoie donc "" et le repli `_find_question_text_near_element` retient l'aide (filtre `is_meta` limité à
+"veuillez…sélection…" ; placeholder dropdown limité aux correspondances exactes). Les radios ne sont pas
+concernés (conteneur plus large incluant l'intitulé).
+
+### _limesurvey_prepend_title_to_help_question (correction additive)
+Fichier : Survey/dom_question_extractor.py. Appelée dans Survey/dom_analyzer.py à 2 endroits :
+- groupes radio/checkbox : juste avant le bloc `if not options and len(els) == 1 and question` (donc avant
+  `make_target_id`), sur `els[0]` ;
+- singles : juste après `question = _norm(question)`, uniquement si `itype == "dropdown"`.
+Guard DOM strict (tous obligatoires) : ancêtre `.question-container[id^="question"]` contenant EXACTEMENT
+un `.ls-label-question` ; `question` (normalisée NFC/espaces) strictement égale au texte d'un
+`.ls-questionhelp` ou `.ls-question-message` de ce conteneur ; intitulé non vide, ≠ question, non contenu
+dans la question. Effet : `question = "<intitulé> <aide>"` (même forme que les radios ; l'aide reste
+disponible pour `_compute_max_select`). Sinon : question inchangée. Log debug `[DOM_CONTEXT] limesurvey_title_prepended`.
+Additif : aucun corps d'extracteur existant modifié ; aucun CTA touché (CTA_INTERCEPT_ONLY non concerné).
+Patterns exclus : tout bloc dont la question n'est pas exactement un texte d'aide LimeSurvey du conteneur ;
+conteneur avec 0 ou ≥ 2 `.ls-label-question` ; autres itypes (text, matrix…) hors dropdown/groupes.
+Effet de bord : le `target_id` des blocs corrigés change (le hash inclut la question) — cohérent
+extraction/registry.
+Statut : vérifié en rejeu sur snapshot (DOM 20260923_193504) — les 3 blocs (dropdown revenu, checkbox
+montant, checkbox situation professionnelle) portent l'intitulé réel, radios inchangés, plus d'issue
+`question_text_is_help`. Pas encore confirmé en conditions réelles.
+
+---
+## MODULE TRANSVERSAL : VALIDATOR — SIGNAL question_text_is_help (question_block_validator.py)
+
+Fichier : Survey/question_block_validator.py — `_help_text_as_question_signals`, appelé dans
+`validate_question_blocks` sur les blocs non vides (radio/checkbox/dropdown avec xpath ou
+`option_xpath_map` dans le registry). Une évaluation JS par page, lecture seule.
+Signale `failure_type="question_text_is_help"` (champs : block_index, target_id, itype, question,
+candidate_question) si, dans le conteneur (≤ 8 niveaux d'ancêtres, un seul intitulé marqué
+`question-text`/`label-question`/`QuestionText`/legend/titres), la question retenue est exactement le
+texte d'un nœud marqué help/message/-tip/hint/alert, et qu'un intitulé distinct (≥ 8 car., ni option,
+non contenu dans la question) existe. Ne modifie aucun bloc, aucun retry, jamais bloquant.
+Effet : `ok=false` → `record_validation_failure` capture un snapshot. Entrée correspondante ajoutée dans
+`_EXPECTED_BEHAVIOR` (Survey/failure_diagnosis.py).
+Limite : ne compare pas les frames (élément introuvable dans la frame courante → ignoré).

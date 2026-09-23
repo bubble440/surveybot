@@ -256,6 +256,65 @@ def _netsurvey_choice_buttons_signal(driver) -> dict | None:
         return None
 
 
+def _help_text_as_question_signals(driver, items: list[dict]) -> dict:
+    """Détecte les blocs dont `question` est un texte d'aide/validation alors que
+    le même conteneur DOM porte un intitulé de question distinct.
+
+    Ce n'est pas un extracteur : lecture seule, ne modifie aucun bloc. Pour chaque
+    item {target_id, xpath, question}, remonte (8 niveaux max) depuis l'élément
+    ancré jusqu'au premier ancêtre portant un intitulé marqué (`question-text`,
+    `label-question`, `QuestionText`, <legend>, titres) ; s'arrête si l'ancêtre
+    porte plusieurs intitulés (autre question). Signale uniquement si le
+    texte retenu comme question est exactement celui d'un nœud marqué aide/message/
+    tip/hint/alert de ce conteneur et que l'intitulé candidat n'est ni contenu dans
+    la question, ni une option. Retourne {target_id: texte_candidat}.
+    """
+    try:
+        current_frame = getattr(driver, "_current_frame", driver)
+        found = current_frame.evaluate("""(items) => {
+            const norm = t => (t || '').normalize('NFC').replace(/\\s+/g, ' ').trim();
+            const TITLE = '[class*="question-text"],[class*="label-question"],'
+                + '[class*="QuestionText"],legend,h1,h2,h3,h4,[role="heading"]';
+            const HELP = '[class*="help"],[class*="message"],[class*="-tip"],'
+                + '[class*="hint"],[role="alert"]';
+            const out = {};
+            for (const it of items) {
+                let el = null;
+                try {
+                    el = document.evaluate(it.xpath, document, null,
+                        XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                } catch (e) { el = null; }
+                if (!el) continue;
+                const q = norm(it.question);
+                const opts = new Set((it.options || []).map(o => norm(o).toLowerCase()));
+                let node = el.parentElement;
+                for (let depth = 0; node && depth < 8; depth++, node = node.parentElement) {
+                    const all = Array.from(node.querySelectorAll(TITLE)).filter(
+                        n => !n.closest(HELP) && !n.querySelector('input,select'));
+                    const titles = all.filter(n => !all.some(o => o !== n && n.contains(o)));
+                    if (!titles.length) continue;
+                    if (titles.length > 1) break;
+                    const helps = Array.from(node.querySelectorAll(HELP)).map(n => norm(n.textContent));
+                    if (q && helps.includes(q)) {
+                        for (const t of titles) {
+                            const txt = norm(t.textContent);
+                            if (txt.length >= 8 && txt !== q && !q.includes(txt)
+                                && !opts.has(txt.toLowerCase())) {
+                                out[it.target_id] = txt;
+                                break;
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+            return out;
+        }""", items)
+        return found if isinstance(found, dict) else {}
+    except Exception:
+        return {}
+
+
 def validate_question_blocks(question_blocks: list[dict] | None, *, driver=None) -> dict:
     """Retourne un rapport JSON-sérialisable sans effet de bord."""
     blocks = question_blocks or []
@@ -296,6 +355,33 @@ def validate_question_blocks(question_blocks: list[dict] | None, *, driver=None)
                             "dom_signal": "netsurvey_choice_buttons",
                             **signal,
                         })
+
+    # Signal additif : `question` retenue = texte d'aide/validation alors qu'un
+    # intitulé de question distinct existe dans le même conteneur DOM.
+    help_candidates: dict[str, str] = {}
+    if blocks and driver is not None:
+        items = []
+        for b in blocks:
+            if not isinstance(b, dict) or _norm_lc(b.get("itype")) not in {"radio", "checkbox", "dropdown"}:
+                continue
+            tid = _norm(b.get("target_id"))
+            reg = get_target(tid) if tid else None
+            if not reg:
+                continue
+            xp = reg.get("xpath")
+            if not xp:
+                oxm = reg.get("option_xpath_map")
+                if isinstance(oxm, dict):
+                    xp = next((v for v in oxm.values() if isinstance(v, str) and v), None)
+            if isinstance(xp, str) and xp:
+                items.append({
+                    "target_id": tid,
+                    "xpath": xp,
+                    "question": _norm(b.get("question")),
+                    "options": [str(o) for o in (b.get("options") or [])],
+                })
+        if items:
+            help_candidates = _help_text_as_question_signals(driver, items)
 
     for idx, block in enumerate(blocks):
         if not isinstance(block, dict):
@@ -375,6 +461,16 @@ def validate_question_blocks(question_blocks: list[dict] | None, *, driver=None)
                 "target_id": target_id,
                 "max_select": max_select,
                 "options_count": len(normalized_options),
+            })
+
+        if target_id in help_candidates:
+            issues.append({
+                "failure_type": "question_text_is_help",
+                "block_index": idx,
+                "target_id": target_id,
+                "itype": itype,
+                "question": question,
+                "candidate_question": help_candidates[target_id],
             })
 
     return {
