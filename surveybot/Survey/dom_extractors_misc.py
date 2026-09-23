@@ -15492,3 +15492,103 @@ def _extract_qualtrics_sum_input_text_blocks(driver, frame_chain: list[int] | No
     if blocks:
         log_debug("[DOM_QUALTRICS_SUM_INPUT]", f"blocks_extracted={len(blocks)}")
     return blocks
+
+
+def _extract_qualtrics_single_checkbox_block(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Qualtrics : checkbox unique (MAVR/MAHR à 1 seule option, ex. engagement/consentement).
+
+    Gate DOM strict (additif) :
+    - div.QuestionOuter contenant EXACTEMENT 1 `ul.ChoiceStructure li.Selection input[type='checkbox'][name^='QR~']`
+    - pas de `table.ChoiceStructure` (matrices gérées ailleurs)
+    - label d'option `label.MultipleAnswer[for=<id>]` non vide, intitulé de question `div.QuestionText` non vide
+
+    Complète `_extract_qualtrics_choice_structure_checkbox_blocks` (≥2 cases, non modifié).
+    Atteint même si un autre bloc Qualtrics (radio, dropdown...) est déjà extrait sur la page.
+    Log discriminant : [DOM_QUALTRICS_SINGLE_CHECKBOX] blocks_extracted=N
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.query_selector_all("div.QuestionOuter")
+    except Exception:
+        return blocks
+
+    for idx, container in enumerate(containers):
+        try:
+            if container.query_selector("table.ChoiceStructure"):
+                continue
+            checkboxes = container.query_selector_all(
+                "ul.ChoiceStructure li.Selection input[type='checkbox'][name^='QR~']"
+            )
+        except Exception:
+            continue
+        if len(checkboxes) != 1:
+            continue
+
+        try:
+            cb = checkboxes[0]
+            cb_id = (cb.get_attribute("id") or "").strip()
+            cb_name = (cb.get_attribute("name") or "").strip()
+            if not cb_id or not cb_name:
+                continue
+
+            label_text = ""
+            for lsel in (
+                f"label.MultipleAnswer[for='{cb_id}'] span",
+                f"label[for='{cb_id}'].MultipleAnswer",
+            ):
+                lbl = container.query_selector(lsel)
+                label_text = _norm((lbl.inner_text() or "") if lbl else "")
+                if label_text:
+                    break
+            if not label_text:
+                continue
+
+            question = ""
+            for q_sel in ("fieldset legend div.QuestionText", "legend .QuestionText", "div.QuestionText"):
+                qn = container.query_selector(q_sel)
+                question = _norm((qn.inner_text() or "") if qn else "")
+                if question:
+                    break
+            if not question:
+                continue
+
+            group_key = f"qualtrics_choice_structure:checkbox:{cb_name}"
+            target_id = make_target_id("group", group_key, question)
+            option_xpath_map = {_norm_key(label_text): f"//*[@id={_xpath_literal(cb_id)}]"}
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "checkbox",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                    "qualtrics_choice_structure_checkbox": True,
+                    "qualtrics_single_checkbox": True,
+                },
+            )
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "checkbox",
+                    "options": [label_text],
+                    "max_select": _compute_max_select("checkbox", [label_text]),
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                        "qualtrics_choice_structure_checkbox": True,
+                        "qualtrics_single_checkbox": True,
+                        "container_index": idx,
+                    },
+                }
+            )
+        except Exception:
+            continue
+
+    if blocks:
+        log_debug("[DOM_QUALTRICS_SINGLE_CHECKBOX]", f"blocks_extracted={len(blocks)}")
+    return blocks

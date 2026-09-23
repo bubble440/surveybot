@@ -125,6 +125,7 @@ try:
         _extract_qualtrics_bankedsa_single_row_radio_blocks,
         _extract_qualtrics_rank_order_dragdrop_blocks,
         _extract_qualtrics_sum_input_text_blocks,
+        _extract_qualtrics_single_checkbox_block,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
         _extract_savanta_jqm_carousel_block,
@@ -265,6 +266,7 @@ except ImportError:
         _extract_qualtrics_bankedsa_single_row_radio_blocks,
         _extract_qualtrics_rank_order_dragdrop_blocks,
         _extract_qualtrics_sum_input_text_blocks,
+        _extract_qualtrics_single_checkbox_block,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
         _extract_savanta_jqm_carousel_block,
@@ -1803,6 +1805,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         qualtrics_sum_input_blocks = _extract_qualtrics_sum_input_text_blocks(driver, frame_chain)
         if qualtrics_sum_input_blocks:
             question_blocks.extend(qualtrics_sum_input_blocks)
+            _qualtrics_page = True
+    except Exception:
+        pass
+
+    # --- 0h-bis-3j) Qualtrics checkbox unique (ul.ChoiceStructure + 1 seul input checkbox QR~) ---
+    # Couvre le bloc engagement/consentement à 1 case, non couvert par 0h-bis-3b (≥2 cases).
+    # Placé AVANT le retour anticipé : atteint même si un radio/dropdown Qualtrics a déjà été extrait.
+    try:
+        qualtrics_single_checkbox_blocks = _extract_qualtrics_single_checkbox_block(driver, frame_chain)
+        if qualtrics_single_checkbox_blocks:
+            question_blocks.extend(qualtrics_single_checkbox_blocks)
             _qualtrics_page = True
     except Exception:
         pass

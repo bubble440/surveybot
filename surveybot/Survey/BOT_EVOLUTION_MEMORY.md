@@ -5689,6 +5689,46 @@ fait que les 5 lignes partagent le même prompt batch (contrainte non revalidée
 futur produit une somme ≠ N, étudier une validation post-réponse dédiée plutôt que d'élargir ce bloc.
 
 ---
+## PLATEFORME : QUALTRICS NATIF — CHECKBOX UNIQUE (engagement / consentement, MAVR à 1 option)
+
+Signature : Qualtrics natif (ex. `ratpresearch.qualtrics.com`, "Étude écrans d'information voyageurs"),
+`div.QuestionOuter.MC` > `div.Inner.MAVR` > `fieldset > legend > div.QuestionText` puis `ul.ChoiceStructure`
+avec UN SEUL `li.Selection` : `input.checkbox[type=checkbox][name="QR~QID3~1"]` + `label.MultipleAnswer[for=<id>] > span`
+(ex. « Je m'engage à lire les consignes et à répondre à chaque question avec attention. »).
+DOM de référence : snapshot `20260923_205837_after_dom_analyze` (QID2 radio « Votre décision : » + QID3 checkbox unique).
+
+Cause du bug d'origine (2 causes cumulées) :
+1. `_extract_qualtrics_choice_structure_checkbox_blocks` (0h-bis-3b) fait `if len(checkboxes) < 2: continue` → case unique ignorée.
+2. Le radio QID2 pose `_qualtrics_page=True` ; le `if _qualtrics_page and question_blocks: return` de `dom_analyzer.py`
+   coupe la chaîne avant `0h-quater` (`_extract_single_consent_checkbox_block`), qui de toute façon exige un CTA désactivé /
+   conteneur `consent…` absents ici. Résultat : seul le radio remontait dans `question_blocks`, la case (bloquante) jamais.
+Aucun extracteur existant modifié.
+
+### _extract_qualtrics_single_checkbox_block
+Fichier : Survey/dom_extractors_misc.py (fin de fichier, après `_extract_qualtrics_sum_input_text_blocks`).
+Enregistré dans : dom_analyzer.py, `_analyze_dom_current_context`, étape `0h-bis-3j` (après `0h-bis-3i`, AVANT le
+`if _qualtrics_page and question_blocks` de retour anticipé — accumulation additive ; import ajouté dans les deux branches).
+Guard : `div.QuestionOuter` SANS `table.ChoiceStructure` contenant EXACTEMENT 1
+`ul.ChoiceStructure li.Selection input[type='checkbox'][name^='QR~']` (id et name requis), libellé
+`label.MultipleAnswer[for=<id>]` non vide, `div.QuestionText` non vide.
+Patterns couverts :
+- 1 bloc `itype=checkbox`, `options=[libellé]`, `max_select=1`, `group_key=qualtrics_choice_structure:checkbox:<name>`,
+  `option_xpath_map={norm_key(libellé): //*[@id=<id>]}` ; flags `qualtrics_choice_structure_checkbox=True` +
+  `qualtrics_single_checkbox=True` (le remplissage réutilise le chemin existant du multi-checkbox Qualtrics).
+- Fonctionne que la case coexiste ou non avec un autre bloc Qualtrics (radio, dropdown, texte…) sur la page.
+Patterns exclus :
+- ≥2 cases → `_extract_qualtrics_choice_structure_checkbox_blocks` (inchangé, pas de doublon).
+- Matrices (`table.ChoiceStructure`) → extracteurs existants.
+- Consentement Wicket/CTA disabled → `_extract_single_consent_checkbox_block` (0h-quater), inchangé.
+- Aucun fallback Vision. Aucun CTA touché (CTA_INTERCEPT_ONLY non concerné).
+Log discriminant : `[DOM_QUALTRICS_SINGLE_CHECKBOX] blocks_extracted=N` (debug).
+Statut : vérifié hors-ligne (Playwright sur le snapshot de référence : radio 2 options + checkbox unique extraits, extracteur
+≥2 cases vide → pas de doublon). Balayage des 130 snapshots existants → seul le snapshot de référence déclenche
+l'extracteur (aucun faux positif). Pas encore confirmé en run réel.
+Point de vigilance : toute page Qualtrics à case unique seule passe désormais par cet extracteur (et `_qualtrics_page=True`
+→ retour anticipé) au lieu du chemin générique / 0h-quater.
+
+---
 ## PLATEFORME : LIMESURVEY — SÉLECTEUR DE LANGUE DE PAGE (form-change-lang)
 
 Contexte : les pages LimeSurvey (ex. env3.surveysip.com/index.php/<sid>) affichent, hors du
