@@ -183,6 +183,22 @@ niveau tant que le niveau précédent n'est pas fiable.
 > erreur), ne pas patcher sans snapshot réel. Aucun changement de phase : le
 > chantier principal reste la Phase 3B pour 3B.3/3B.4 ; la Phase 7 pour
 > `stage="action"` reste en attente de 3C.
+> Mise à jour 2026-09-24 : 3B.6 clos formellement. `collect_mutation_observer`
+> (`Survey/browser_capsule.py`) expose désormais `observer_present` (booléen)
+> dans son résultat, distinguant un observateur perdu (navigation avant
+> collecte) ou jamais installé d'une absence réelle de mutation — limite
+> constatée à l'implémentation mais jusque-là non disclosée dans l'artefact
+> (cf. suite 8). Câblage vérifié dans `Survey/page_snapshot.py::_install_action_observer` :
+> le dict complet retourné par `collect_mutation_observer` est transmis sans
+> déstructuration partielle à `build_action_trace`, donc `observer_present`
+> atteint bien `action_trace.json` sans être perdu en route. Décision confirmée
+> sur 3B.3/3B.4 : volume de cases `NON_REJOUABLE` actuellement insuffisant pour
+> qu'une mesure soit utile (cf. avertissement de cadrage de la Phase 3B) —
+> restent différées, à réévaluer quand les cases s'accumulent naturellement via
+> l'observabilité courante, pas avant et pas sur une estimation. Aucun
+> changement de phase : le chantier principal reste la Phase 3B pour 3B.3/3B.4
+> (en attente d'un volume de cases suffisant) ; la Phase 7 pour `stage="action"`
+> reste en attente de 3C.
 
 ## Contexte de travail actuel
 
@@ -1166,11 +1182,15 @@ after:   input.value = "75001", city_label = "Paris 01"
 
 **Statut : TERMINÉE — `Survey/browser_capsule.py::install_mutation_observer`/
 `collect_mutation_observer`, bornée à 50 mutations. Limite constatée à
-l'implémentation, non disclosée explicitement dans l'artefact : si l'action
-provoque une navigation avant la collecte, l'observer est perdu avec l'ancien
-contexte et la collecte redescend silencieusement à « aucune mutation »,
-indiscernable d'une absence réelle de mutation — point à surveiller sur les
-premiers cas réels.**
+l'implémentation : si l'action provoque une navigation avant la collecte,
+l'observer est perdu avec l'ancien contexte. Corrigé (2026-09-24) : la
+collecte expose désormais explicitement `observer_present` dans son résultat
+(`false` = observateur perdu ou jamais installé, distinct d'un `mutations=[]`
+qui confirme une absence réelle de mutation) ; câblage vérifié jusqu'à
+`action_trace.json` via `Survey/page_snapshot.py::_install_action_observer`
+(le dict complet retourné par `collect_mutation_observer` est transmis tel
+quel à `build_action_trace`, sans déstructuration partielle qui aurait pu
+perdre le champ en route).**
 
 Observation bornée des mutations DOM autour d'une action (attribut `checked`
 ajouté, `aria-selected` modifié, classe `selected` ajoutée, texte de

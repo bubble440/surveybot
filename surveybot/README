@@ -37,20 +37,6 @@ Mot de passe  |     3o1L6kfCFxuncbY
 Base          |     postgres
 
 
-Commande de lancement d'un bot
-
-nssm stop surveybot_<account_id>
-# ou
-Stop-Service surveybot_<account_id>
-
-Commande d'arret d'un bot
-
-nssm stop surveybot_<account_id>
-# ou
-Stop-Service surveybot_<account_id>
-
-
-
 
 # Supprimer un port/profil
 
@@ -75,3 +61,13 @@ if (Test-Path $profileDir) {
 } else {
     Write-Host "[PORT $Port] Aucun profil trouve a cet emplacement."
 }
+
+
+
+# Commandes pour lancer le replay (phase 3)
+python tools\create_failure_case.py <snapshot_dir>
+python tools\replay_failure.py failure_cases\<id>
+
+Pour voir les logs debug du shim/replay (log_debug, conditionné par LOG_LEVEL) :
+$env:LOG_LEVEL = "DEBUG"
+python tools\replay_failure.py failure_cases\<id>

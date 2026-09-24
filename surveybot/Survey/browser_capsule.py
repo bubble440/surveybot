@@ -236,14 +236,17 @@ _INSTALL_OBSERVER_JS = f"""() => {{
 _COLLECT_OBSERVER_JS = f"""() => {{
     try {{
         const observer = window['{_MUTATION_OBSERVER_KEY}'];
+        // Observateur absent = perdu (navigation/nouveau document) ou jamais
+        // installé : distinct d'une absence réelle de mutation.
+        const observerPresent = !!observer;
         if (observer) observer.disconnect();
         const buf = window['{_MUTATION_BUFFER_KEY}'] || [];
         const truncated = !!window['{_MUTATION_TRUNCATED_KEY}'];
         delete window['{_MUTATION_OBSERVER_KEY}'];
         delete window['{_MUTATION_BUFFER_KEY}'];
         delete window['{_MUTATION_TRUNCATED_KEY}'];
-        return {{ mutations: buf, truncated: truncated }};
-    }} catch (e) {{ return {{ mutations: [], truncated: false }}; }}
+        return {{ mutations: buf, truncated: truncated, observer_present: observerPresent }};
+    }} catch (e) {{ return {{ mutations: [], truncated: false, observer_present: false }}; }}
 }}"""
 
 
