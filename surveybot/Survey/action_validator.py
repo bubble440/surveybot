@@ -304,11 +304,51 @@ def _checkbox_radio_marker_false_negative_issue(action: Any, *, driver) -> dict 
     }
 
 
+def _checkbox_radio_captured_state_false_negative_issue(
+    action: Any, *, captured_facts: Any
+) -> dict | None:
+    """Faux négatif dispatcher checkbox/radio à partir de l'état déjà capturé
+    (runtime_state.json, `facts` par option de la cible, cf. browser_capsule.py),
+    pour un pilote statique (rejeu de failure_case) qui ne peut pas lire la
+    propriété `checked` réelle : l'attribut HTML `checked` n'est jamais sérialisé
+    par outerHTML. Complémentaire aux détecteurs live ci-dessus (non modifiés) :
+    n'agit que si `captured_facts` est fourni (jamais le cas du chemin live).
+    Seul un `checked` strictement True de l'option demandée compte.
+    """
+    if not isinstance(action, dict) or not isinstance(captured_facts, dict):
+        return None
+
+    target_id = _norm(action.get("target_id"))
+    itype = _norm_lc(action.get("itype"))
+    value = _norm(action.get("value"))
+    if itype not in {"checkbox", "radio"} or not target_id or not value:
+        return None
+
+    prefix = f"target:{target_id}:option:"
+    target_value = _norm_lc(value)
+    for key, fact in captured_facts.items():
+        if not isinstance(key, str) or not key.startswith(prefix):
+            continue
+        if _norm_lc(key[len(prefix):]) != target_value:
+            continue
+        if isinstance(fact, dict) and fact.get("checked") is True:
+            return {
+                "failure_type": "dispatcher_false_negative",
+                "target_id": target_id,
+                "itype": itype,
+                "value": value,
+                "dom_signal": "checkbox_radio_checked_captured",
+            }
+        return None
+    return None
+
+
 def _dispatcher_false_negative_issue(
     action: Any,
     *,
     driver,
     question_blocks: Any,
+    captured_option_states: Any = None,
 ) -> dict | None:
     """Point d'appel combiné : essaie d'abord la détection ifop_zip2city de
     référence (non modifiée), puis la détection générique checkbox/radio à input
@@ -325,6 +365,9 @@ def _dispatcher_false_negative_issue(
         )
         or _checkbox_radio_false_negative_issue(action, driver=driver)
         or _checkbox_radio_marker_false_negative_issue(action, driver=driver)
+        or _checkbox_radio_captured_state_false_negative_issue(
+            action, captured_facts=captured_option_states
+        )
     )
 
 
@@ -334,8 +377,14 @@ def validate_actions(
     dispatcher_success: bool | None = None,
     driver=None,
     question_blocks: Any = None,
+    captured_option_states: Any = None,
 ) -> dict:
-    """Retourne un rapport JSON-sérialisable sans modifier les actions."""
+    """Retourne un rapport JSON-sérialisable sans modifier les actions.
+
+    `captured_option_states` (optionnel, rejeu uniquement) : `facts` de
+    runtime_state.json, utilisés en dernier recours quand le pilote ne peut pas
+    lire l'état `checked` réel. Non fourni par le chemin live.
+    """
     requested = actions or []
     issues: list[dict] = []
 
@@ -400,6 +449,7 @@ def validate_actions(
                 action,
                 driver=driver,
                 question_blocks=question_blocks,
+                captured_option_states=captured_option_states,
             )) is not None
         ]
         # Le booléen du dispatcher porte sur le plan entier. On ne le requalifie

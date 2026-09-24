@@ -591,19 +591,19 @@ def click_qarts_widget_by_label(driver, target_text: str) -> bool:
       .replace(/\u00A0/g, ' ')
       .replace(/[»«\u201c\u201d"'›→·•:]/g, '')
       .replace(/\s+/g, ' ').trim();
-    const needle = norm(_el);
-    if (!needle) return {ok: false, reason: 'empty_needle'};
+    const needle = norm(arg);
+    if (!needle) return null;
 
     // Guard 1 : conteneur QARTS avec _rowpicker
     const containers = Array.from(
       document.querySelectorAll('div[id^="sq-QARTS-container-"]')
     ).filter(c => c.querySelector('div._rowpicker'));
-    if (!containers.length) return {ok: false, reason: 'no_qarts_container'};
+    if (!containers.length) return null;
 
     // Guard 2 : grille cachée avec inputs natifs
     if (!document.querySelector(
       'div.hidden.answers input[type="checkbox"], div.hidden.answers input[type="radio"]'
-    )) return {ok: false, reason: 'no_hidden_answers'};
+    )) return null;
 
     for (const container of containers) {
       const grid = container.querySelector('div.__flexgrid_row');
@@ -638,7 +638,7 @@ def click_qarts_widget_by_label(driver, target_text: str) -> bool:
       .replace(/\u00A0/g, ' ')
       .replace(/[»«\u201c\u201d"'›→·•:]/g, '')
       .replace(/\s+/g, ' ').trim();
-    const needle = norm(_el);
+    const needle = norm(arg);
     if (!needle) return false;
 
     for (const container of Array.from(
@@ -665,18 +665,16 @@ def click_qarts_widget_by_label(driver, target_text: str) -> bool:
     return false;
     """
 
+    # evaluate_handle().as_element() : ElementHandle cliquable (evaluate() sérialise le noeud).
+    _ctx = getattr(driver, "_current_frame", driver)
     try:
-        clickable_el = driver.evaluate("(arg) => {" + _JS_FIND + "}", target_text)
-    except Exception:
+        clickable_el = _ctx.evaluate_handle("(arg) => {" + _JS_FIND + "}", target_text).as_element()
+    except Exception as _fe:
+        log_debug("[TARGET_DEBUG]", f"qarts_widget: js_find_exception label={target_text!r} error={type(_fe).__name__}: {_fe}")
         return False
 
     if clickable_el is None:
         log_debug("[TARGET_DEBUG]", f"qarts_widget: element not found label={target_text!r}")
-        return False
-    if isinstance(clickable_el, dict):
-        # _JS_FIND retourne un dict uniquement pour les erreurs de guards
-        reason = clickable_el.get('reason', 'unknown')
-        log_debug("[TARGET_DEBUG]", f"qarts_widget: skip reason={reason!r} label={target_text!r}")
         return False
 
     # Clic natif via ActionChains : produit isTrusted=true, reconnu par React.
@@ -689,7 +687,7 @@ def click_qarts_widget_by_label(driver, target_text: str) -> bool:
     log_debug("[TARGET_DEBUG]", f"qarts_widget: click sent label={target_text!r}")
     try:
         time.sleep(0.15)
-        verified = bool(driver.evaluate("(arg) => {" + _JS_VERIFY + "}", target_text))
+        verified = bool(_ctx.evaluate("(arg) => {" + _JS_VERIFY + "}", target_text))
         log_debug("[TARGET_DEBUG]", f"qarts_widget: svg_verify={'ok' if verified else 'ko'} label={target_text!r}")
     except Exception:
         pass

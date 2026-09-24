@@ -215,6 +215,12 @@ def replay_failure_case(case_dir: "str | Path") -> ReplayResult:
         # tourner de dispatcher réel, cf. docstring de ce module et la consigne
         # "dans la limite de ce que le validator peut évaluer sans dispatcher réel".
         dispatcher_success = original_report.get("dispatcher_success") if isinstance(original_report, dict) else None
+        # runtime_state.json : état réel (checked) capturé au même instant que
+        # post_action_dom.html, que le driver statique ne peut pas relire (outerHTML
+        # ne sérialise jamais la propriété checked). Optionnel : absent/illisible
+        # -> None, comportement de replay inchangé.
+        runtime_state, _rs_err = _load_json(artifacts_dir / "runtime_state.json")
+        captured_facts = runtime_state.get("facts") if isinstance(runtime_state, dict) else None
         try:
             from Survey.action_validator import validate_actions
             replayed_report = validate_actions(
@@ -222,6 +228,7 @@ def replay_failure_case(case_dir: "str | Path") -> ReplayResult:
                 dispatcher_success=dispatcher_success,
                 driver=driver,
                 question_blocks=blocks,
+                captured_option_states=captured_facts if isinstance(captured_facts, dict) else None,
             )
         except Exception as exc:
             return _not_replayable(

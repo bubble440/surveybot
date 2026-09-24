@@ -5890,3 +5890,34 @@ non contenu dans la question) existe. Ne modifie aucun bloc, aucun retry, jamais
 Effet : `ok=false` → `record_validation_failure` capture un snapshot. Entrée correspondante ajoutée dans
 `_EXPECTED_BEHAVIOR` (Survey/failure_diagnosis.py).
 Limite : ne compare pas les frames (élément introuvable dans la frame courante → ignoré).
+
+---
+## PLATEFORME : DECIPHER / LIFEPOINTS — QARTS `_rowpicker` (radio/checkbox, overlay React + grille native cachée)
+
+Contexte : conteneur `div[id^="sq-QARTS-container-"]` contenant `div._rowpicker` (couche visuelle React,
+overlay `div[dir=ltr][tabindex=0][style*="cursor: pointer"][style*="inset: 0"]` par option) + `div.hidden.answers`
+(grille native `td.clickableCell` / `input[qartsqname]`, size=0). Les deux couches sont indépendantes : cocher
+l'input natif (label/JS) ne met pas à jour l'affichage et ne déclenche pas l'autosubmit (`qa:autosubmit`).
+
+### click_qarts_widget_by_label (Survey/input_checkbox.py) — correction de régression
+Extraction : `_extract_qarts_hidden_answers_groups` (dom_extractors_decipher.py, flags `qarts_hidden`,
+`qarts_widget`, `qarts_autosubmit`) — inchangée. Appelée en 1er par `click_radio_by_label`
+(input_radio.py), par le guard `qarts_widget` du dispatcher (radio/checkbox) et par input_checkbox.py.
+Symptôme : boucle de retry, aucune ligne `qarts_widget:` dans les logs ; la cascade retombait sur
+`decipher_grid_radio_strict` (coche le natif seulement) → faux négatif dispatcher, sondage bloqué.
+Cause racine (résidu migration Playwright, commit cdc3f69) :
+- `arguments[0]` remplacé par `_el` dans `_JS_FIND`/`_JS_VERIFY` alors que le wrapper est `(arg) => {...}`
+  → `ReferenceError` avalée par `except: return False` ;
+- `driver.evaluate()` sérialise le noeud retourné → pas de `.click()/.hover()`.
+Correction : `norm(arg)` ; `_ctx = getattr(driver, "_current_frame", driver)` + `evaluate_handle(...).as_element()` ;
+exception de recherche loguée (`js_find_exception`) ; guards JS renvoient `null` (branche dict supprimée) ;
+vérification via `_ctx.evaluate`.
+Clic : overlay `div[tabindex=0]` du wrapper dont le 1er `span` non vide correspond au libellé (isTrusted=true).
+`svg_verify` (opacity du 1er SVG du `margin-left:-25px` ≥ 0.9) est informatif, non bloquant.
+Patterns exclus : conteneur sans `._rowpicker` ; absence de `div.hidden.answers input` ; conteneurs
+`div[id^='container_']` (Kantar rowpicker, autre stratégie) ; pas de stratégie native-input pour ce widget.
+CTA : non touché (autosubmit géré par survey_executor, log `[QARTS_AUTOSUBMIT]` / `[AUTONAV]`).
+Statut : CONFIRMÉ en conditions réelles (2026-09-24, LifePoints S4_FR) — `qarts_widget: click sent` →
+URL changée → page suivante (40 %). Checkbox QARTS : même fonction, non re-testé sur DOM de référence.
+Note : `click_nfield_swatches_by_label` porte le même résidu (`_el`/`_arg1` avec wrapper `([a,b])`) —
+non corrigé, à traiter sur DOM confirmé.
