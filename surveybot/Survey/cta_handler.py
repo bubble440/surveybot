@@ -1530,6 +1530,58 @@ def _dismiss_blocking_overlays(driver) -> int:
     return dismissed
 
 
+# Budget de vérification de la fermeture du menu tagbox (aria-expanded="false").
+_SD_TAGBOX_CLOSE_MAX_POLLS = 10
+_SD_TAGBOX_CLOSE_POLL_DELAY_S = 0.1  # ~1s
+
+
+def _close_surveyjs_sd_tagbox_menu(driver) -> int:
+    """
+    Referme le menu déroulant d'un widget SurveyJS Modern tagbox laissé ouvert après
+    la dernière sélection (cf. click_surveyjs_sd_tagbox_option, input_radio.py), avant
+    le clic CTA : le popup (sv-popup, position absolue) recouvre sinon le CTA et
+    intercepte les clics.
+
+    Guard DOM strict : conteneur .sd-input.sd-tagbox.sd-dropdown[role='combobox'] avec
+    aria-expanded="true". Fermeture par Escape sur l'input filtre du conteneur
+    (focus + touche clavier, aucun clic pointeur : l'input est recouvert par ses
+    wrappers, cf. input_radio.py), puis poll de aria-expanded="false" (budget
+    _SD_TAGBOX_CLOSE_MAX_POLLS). Une seule stratégie, pas de fallback.
+    Retourne le nombre de menus fermés.
+    """
+    try:
+        ctx = _resolve_ctx(driver)
+        containers = ctx.query_selector_all(
+            ".sd-input.sd-tagbox.sd-dropdown[role='combobox'][aria-expanded='true']"
+        )
+    except Exception:
+        return 0
+
+    closed = 0
+    for container in containers[:5]:
+        try:
+            filter_input = container.query_selector("input.sd-tagbox__filter-string-input")
+            if filter_input is None:
+                log_debug("[CTA_TAGBOX]", "input filtre introuvable, menu non fermé")
+                continue
+            filter_input.press("Escape")
+            still_open = True
+            for _ in range(_SD_TAGBOX_CLOSE_MAX_POLLS):
+                if (container.get_attribute("aria-expanded") or "").strip().lower() != "true":
+                    still_open = False
+                    break
+                time.sleep(_SD_TAGBOX_CLOSE_POLL_DELAY_S)
+            if still_open:
+                log_info("[CTA_TAGBOX]", "menu tagbox toujours ouvert après Escape (budget épuisé)")
+            else:
+                closed += 1
+        except Exception as exc:
+            log_debug("[CTA_TAGBOX]", f"fermeture menu échouée: {type(exc).__name__}: {exc}")
+    if closed:
+        log_info("[CTA_TAGBOX]", f"tagbox_menu_closed count={closed}")
+    return closed
+
+
 # =============================================================================
 # CLOSED_SHADOW_CONSENT_ACCEPT (Transcend airgap.js — bandeau #transcend-consent-manager)
 # =============================================================================
@@ -1692,6 +1744,7 @@ def try_click_navigation_cta(driver) -> bool:
         True si CTA navigation cliqué
     """
     _dismiss_blocking_overlays(driver)
+    _close_surveyjs_sd_tagbox_menu(driver)
     _click_closed_shadow_consent_accept(driver)
 
     # Contexte document actif (frame courante lors d'une itération multi-frame

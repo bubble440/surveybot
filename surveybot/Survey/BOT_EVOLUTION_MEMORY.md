@@ -2189,6 +2189,27 @@ cliqué dans le bon contexte de frame, progression confirmée vers la page suiva
 
 Statut : patch validé.
 
+### _close_surveyjs_sd_tagbox_menu (correction additive, avant clic CTA)
+Fichier : Survey/cta_handler.py. Appelée en tête de `try_click_navigation_cta`, juste après
+`_dismiss_blocking_overlays` (jamais modifiée) et avant `_click_closed_shadow_consent_accept`.
+Bug : après la dernière option d'un tagbox SurveyJS Modern (`click_surveyjs_sd_tagbox_option`,
+input_radio.py), le popup reste ouvert (`aria-expanded="true"`). C'est un `sv-popup` en position absolue
+qui recouvre le CTA ; `_dismiss_blocking_overlays` ne le voit pas (limité à position:fixed + mots-clés
+de consentement). Symptôme : `CTA_CLICKED PROGRESSED=false` en boucle (clics interceptés par les
+`li[role=option]`), succès seulement quand un point tombe hors de la zone du popup (ici 6e position).
+Guard DOM strict : `.sd-input.sd-tagbox.sd-dropdown[role='combobox'][aria-expanded='true']` (max 5).
+Action : `press("Escape")` sur `input.sd-tagbox__filter-string-input` du conteneur (focus + clavier, aucun
+clic pointeur : l'input est recouvert par ses wrappers), puis poll `aria-expanded != "true"` (budget
+`_SD_TAGBOX_CLOSE_MAX_POLLS`=10 × 0,1 s). Une stratégie, pas de fallback. Logs : info
+`[CTA_TAGBOX] tagbox_menu_closed count=N` ; info si toujours ouvert après budget ; le reste en debug.
+CTA_INTERCEPT_ONLY : la fonction s'exécute aussi dans ce mode (fermeture UI seule, ni clic CTA ni
+navigation), même précédent que `_dismiss_blocking_overlays`.
+Patterns exclus : aucun tagbox ouvert → 0 résultat, retour immédiat, comportement inchangé pour tout
+autre DOM ; widget dropdown simple (`sd-dropdown` sans `sd-tagbox`) hors périmètre ; aucun changement au
+code de sélection des options ni au scoring CTA.
+Statut : patch validé en conditions réelles (DOM 20260924_095112, rx.samplicio.us / SurveyJS Modern,
+question "âge et sexe de votre/vos enfant(s)", 5 sélections).
+
 ---
 
 ## PLATEFORME : IPSOS-NORM MUI REACT (dialog-question)
