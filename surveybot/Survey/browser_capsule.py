@@ -118,12 +118,22 @@ def _resolve_pertinent_xpaths(actions: Any) -> "dict[str, str]":
 
 # Lecture seule d'un unique nœud résolu par XPath — aucune mutation, aucun
 # side-effect. Champs génériques (pas de logique provider-spécifique).
-_RUNTIME_FACTS_JS = r"""(xpath) => {
+_RUNTIME_FACTS_JS = r"""(arg) => {
     try {
+        const xpath = arg.xpath;
         const el = document.evaluate(
             xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
         ).singleNodeValue;
         if (!el || el.nodeType !== 1) return null;
+
+        // Wrapper (td, label, div...) résolu pour une cible/option radio/checkbox :
+        // l'état réel est porté par l'input natif imbriqué (descente demandée
+        // uniquement pour les cibles/options, jamais pour les ancêtres).
+        let native = null;
+        if (arg.descend && el.tagName && el.tagName.toLowerCase() !== 'input') {
+            native = el.querySelector('input[type="checkbox"], input[type="radio"]');
+        }
+        const src = native || el;
 
         let rect = null;
         let visible = null;
@@ -140,13 +150,14 @@ _RUNTIME_FACTS_JS = r"""(xpath) => {
 
         return {
             tag: el.tagName ? el.tagName.toLowerCase() : null,
-            value: (typeof el.value !== 'undefined') ? String(el.value) : null,
-            checked: (typeof el.checked !== 'undefined') ? !!el.checked : null,
-            selected: (typeof el.selected !== 'undefined') ? !!el.selected : null,
-            selectedIndex: (typeof el.selectedIndex !== 'undefined') ? el.selectedIndex : null,
-            disabled: (typeof el.disabled !== 'undefined') ? !!el.disabled : null,
-            readOnly: (typeof el.readOnly !== 'undefined') ? !!el.readOnly : null,
-            indeterminate: (typeof el.indeterminate !== 'undefined') ? !!el.indeterminate : null,
+            nativeInput: native ? (native.type || 'input') : null,
+            value: (typeof src.value !== 'undefined') ? String(src.value) : null,
+            checked: (typeof src.checked !== 'undefined') ? !!src.checked : null,
+            selected: (typeof src.selected !== 'undefined') ? !!src.selected : null,
+            selectedIndex: (typeof src.selectedIndex !== 'undefined') ? src.selectedIndex : null,
+            disabled: (typeof src.disabled !== 'undefined') ? !!src.disabled : null,
+            readOnly: (typeof src.readOnly !== 'undefined') ? !!src.readOnly : null,
+            indeterminate: (typeof src.indeterminate !== 'undefined') ? !!src.indeterminate : null,
             isContentEditable: !!el.isContentEditable,
             className: el.className ? String(el.className) : '',
             ariaChecked: el.getAttribute ? el.getAttribute('aria-checked') : null,
@@ -168,7 +179,8 @@ def _capture_runtime_facts_in_context(ctx, xpaths: "dict[str, str]") -> "dict[st
     out: "dict[str, Any]" = {}
     for label, xpath in xpaths.items():
         try:
-            out[label] = ctx.evaluate(_RUNTIME_FACTS_JS, xpath)
+            descend = not label.endswith((":parent", ":grandparent"))
+            out[label] = ctx.evaluate(_RUNTIME_FACTS_JS, {"xpath": xpath, "descend": descend})
         except Exception as exc:
             log_debug(_TAG, f"runtime fact indisponible pour {label}: {type(exc).__name__}")
             out[label] = None
