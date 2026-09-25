@@ -2345,6 +2345,21 @@ def _extract_qarts_hidden_answers_groups(driver, frame_chain: List[Any]) -> List
                 except Exception:
                     qarts_autosubmit = False
 
+            # Overlay visuel réellement présent pour CE groupe : même critère que
+            # click_qarts_widget_by_label (div[id^="sq-QARTS-container-"] contenant
+            # div._rowpicker), rapporté au groupe via qartsqname (id du conteneur =
+            # "sq-QARTS-container-" + qname, cf. DQ.questions[q].container).
+            has_qarts_overlay = False
+            try:
+                _ov_qname = (inps[0].get_attribute("qartsqname") or "").strip()
+                if _ov_qname:
+                    _ov_c = page.query_selector(f'div[id="sq-QARTS-container-{_ov_qname}"]')
+                    has_qarts_overlay = _ov_c is not None and bool(_ov_c.query_selector_all("div._rowpicker"))
+            except Exception:
+                has_qarts_overlay = False
+            if not has_qarts_overlay:
+                log_debug("[QARTS_HIDDEN]", f"qarts_widget non posé (overlay _rowpicker absent) name={name}")
+
             group_key = f"{itype}:name:{name}"
             target_id = make_target_id("group", group_key, question or name)
 
@@ -2359,7 +2374,7 @@ def _extract_qarts_hidden_answers_groups(driver, frame_chain: List[Any]) -> List
                 "options": options,
                 "option_xpath_map": option_xpath_map,
                 "qarts_hidden": True,
-                "qarts_widget": True,
+                "qarts_widget": has_qarts_overlay,
                 "qarts_autosubmit": qarts_autosubmit,
             })
 

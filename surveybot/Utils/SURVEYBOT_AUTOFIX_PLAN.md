@@ -421,6 +421,18 @@ niveau tant que le niveau précédent n'est pas fiable.
 > `click_decipher_grid_radio_strict` — régression potentielle non confirmée,
 > correctif proposé (vérifier la présence réelle de l'overlay à l'extraction
 > plutôt que de la supposer) en attente de validation.
+> Mise à jour 2026-09-25 (suite 7) : point ouvert de la suite 6 clos.
+> `_extract_qarts_hidden_answers_groups` calcule désormais `has_qarts_overlay`
+> par groupe (résolu via l'attribut `qartsqname` propre à chaque groupe pour
+> reconstruire l'id exact de son conteneur, `sq-QARTS-container-{qname}`, puis
+> vérifier la présence réelle de `div._rowpicker` à cet endroit précis — même
+> critère que `click_qarts_widget_by_label`, réutilisé tel quel) au lieu du
+> `True` fixe précédent. `qarts_widget` porte cette valeur calculée ; repli
+> sûr à `False` sur toute exception. Diff minimal confirmé : rien d'autre dans
+> la fonction n'a changé. Un groupe qarts_hidden sans overlay `_rowpicker`
+> retombe donc à nouveau sur `click_decipher_grid_radio_strict`, comme avant
+> l'introduction de `qarts_widget` (suite 6) — plus de risque de régression
+> silencieuse pour ce cas, aucun exemple réel de ce cas rencontré à ce jour.
 
 ## Contexte de travail actuel
 
