@@ -199,6 +199,42 @@ niveau tant que le niveau précédent n'est pas fiable.
 > changement de phase : le chantier principal reste la Phase 3B pour 3B.3/3B.4
 > (en attente d'un volume de cases suffisant) ; la Phase 7 pour `stage="action"`
 > reste en attente de 3C.
+> Mise à jour 2026-09-25 : Phase 3C PARTIELLEMENT clôturée — 3C.1 (isolation
+> réseau) et première brique de 3C.2 (chargement du document principal)
+> implémentés et vérifiés, dans un seul module `Survey/replay_browser.py`
+> (`IsolatedReplayBrowser`), hors du chemin de production (jamais importé par
+> `main.py`, `preselection/playwright_launcher.py` non touché). Aucune
+> extraction, validation ni action n'est exécutée par ce module. 3C.1 : Chromium
+> propre (`launch()`, profil éphémère, aucun user-data-dir/cookie partagé avec
+> le bot), refus réseau systématique posé au niveau du BrowserContext
+> (`context.route("**/*")` abandonne toute requête ; `route_web_socket("**/*")`
+> ferme toute WebSocket ; service workers bloqués) — un seul mécanisme, pas de
+> traitement au cas par cas. Chaque requête refusée est journalisée dans
+> `blocked_requests` (bornée à 500, compteur total séparé) : une ressource
+> référencée mais absente reste visible comme absente, jamais récupérée en
+> ligne. `file://` est aussi refusé (vérifié). 3C.2 (première brique) :
+> `load_case_document(case_dir)` charge le seul HTML principal figé du case,
+> choisi par `failure_replay._pick_dom_file` réutilisé tel quel (une seule
+> source de vérité stage -> fichier, aucun repli sur un autre fichier ;
+> `ReplayBrowserError` sinon). Le document est servi depuis la mémoire sous une
+> origine synthétique `.invalid`, seule réponse autorisée par le garde-fou et
+> uniquement pour cette URL exacte ; les sous-ressources restent refusées.
+> Choix de conception à connaître : la réponse porte une CSP `script-src 'none'`
+> — les scripts du provider, déjà exécutés avant la capture, ne se rejouent pas
+> sur un DOM déjà muté ; `page.evaluate()` n'y est pas soumis, la page reste
+> interrogeable. Piège Playwright constaté : les handlers `route_web_socket`
+> tournent directement sur la boucle asyncio (pas dans le greenlet de l'API
+> sync), un `ws.close()` sync s'y bloque indéfiniment — le code retourne donc la
+> coroutine `ws._impl_obj.close(...)` (attribut privé, à revérifier à tout
+> changement de version de Playwright ; installée : 1.60.0). Vérification faite
+> par scripts ponctuels (aucun test versionné) : http/IP/`file://`/`fetch`/
+> `<img>`/WebSocket refusés, contenu local rendu, script du document non
+> exécuté, erreur explicite si artefact absent ; service workers, popups et
+> iframes non testés (mêmes garde-fous contexte, non vérifiés). Restent à faire :
+> 3C.2 (frames, shadow roots ouverts, restauration de l'état runtime depuis
+> `runtime_state.json`), 3C.3 (extraction/frame selection sur la page), 3C.4
+> (actions, avec timeout et déclassement `TRACE_REPLAY`), puis 3D. Le chantier
+> principal reste la Phase 3C.
 
 ## Contexte de travail actuel
 
@@ -228,7 +264,8 @@ incident détecté
 1B  ouverte en tâche de fond
 2   terminée
 3   PARTIELLEMENT TERMINÉE (3A terminée ; 3B.1/3B.2/3B.5/3B.6/3B.8 terminés ;
-    3B.3/3B.4/3C/3D à faire — voir Phase 3)
+    3C.1 et chargement du document principal (3C.2, 1re brique) terminés ;
+    3B.3/3B.4/reste de 3C/3D à faire — voir Phase 3)
 4   terminée
 5   terminée
 6   terminée (point de vigilance data ouvert — voir note ci-dessus)
@@ -875,8 +912,9 @@ jamais risquer d'altérer la structure DOM dont la Phase 3 (replay) dépendra.
 # Phase 3 --- Replay local déterministe et capsule navigateur
 
 **Statut : PARTIELLEMENT TERMINÉE — Phase 3A implémentée et validée ; Phase 3B
-implémentée et validée pour 3B.1/3B.2/3B.5/3B.6/3B.8 ; 3B.3, 3B.4, 3C et 3D
-restent à implémenter avant d'engager la génération automatique de patchs de
+implémentée et validée pour 3B.1/3B.2/3B.5/3B.6/3B.8 ; Phase 3C implémentée
+pour 3C.1 et le chargement du document principal (3C.2, 1re brique) ; 3B.3,
+3B.4, le reste de 3C et 3D restent à implémenter avant d'engager la génération automatique de patchs de
 la Phase 7 en conditions réelles pour les cas hors STATIC_DOM.**
 
 Objectif : transformer chaque incident utile en cas de test durable,
@@ -1233,7 +1271,10 @@ la même sélection explicite des faits nécessaires au diagnostic.
 
 ## Phase 3C --- Replay Chromium local
 
-**Statut : À FAIRE.**
+**Statut : PARTIELLEMENT TERMINÉE — 3C.1 et le chargement du document
+principal (première brique de 3C.2) implémentés et vérifiés dans
+`Survey/replay_browser.py` (`IsolatedReplayBrowser`). Restent : frames, shadow
+roots ouverts, restauration de l'état runtime (3C.2) ; 3C.3 ; 3C.4.**
 
 Objectif : lorsqu'un replay lxml (3A) est insuffisant, reconstruire
 localement une page dans un vrai Chromium Playwright, sans dépendre du
@@ -1244,12 +1285,25 @@ case, reconstruit la capsule, rejoue, diagnostique, valide.
 
 ### 3C.1 --- Isolation réseau
 
+**Statut : TERMINÉE — `Survey/replay_browser.py::IsolatedReplayBrowser`
+(`with IsolatedReplayBrowser() as rb: page = rb.new_page()`). Refus posé au
+niveau du BrowserContext (requêtes + WebSocket + service workers bloqués),
+`blocked_requests` bornée à 500 pour garder les absences visibles. Voir
+l'historique 2026-09-25 (piège du handler WebSocket sync).**
+
 Par défaut : aucune navigation libre, aucun accès au provider original,
 aucune dépendance au survey live. Le replay utilise uniquement les artefacts
 du failure case. Une ressource absente n'est jamais récupérée silencieusement
 depuis Internet pour améliorer artificiellement la fidélité du replay.
 
 ### 3C.2 --- Reconstruction
+
+**Statut : PARTIELLE — seul le document principal est chargé
+(`IsolatedReplayBrowser.load_case_document(case_dir)`) : HTML choisi par
+`failure_replay._pick_dom_file`, servi en mémoire sous une origine `.invalid`
+avec CSP `script-src 'none'` (scripts du provider non rejoués). Non fait :
+styles depuis les artefacts, état runtime (`runtime_state.json`), frames,
+shadow roots ouverts. Ne fait ni extraction ni validation.**
 
 Le worker reconstruit, dans la mesure des artefacts disponibles : document
 principal, styles utiles, état runtime, frames, shadow roots ouverts, état
@@ -2265,7 +2319,9 @@ Je suivrais exactement cet ordre :
 3B  Capture enrichie (browser capsule) — PARTIELLEMENT TERMINÉE
     (3B.1/3B.2/3B.5/3B.6/3B.8 faits ; 3B.3/3B.4 différées, prochain
     sous-chantier après mesure sur cas réels)
-3C  Replay Chromium local
+3C  Replay Chromium local — PARTIELLEMENT TERMINÉE (3C.1 isolation réseau +
+    chargement du document principal faits ; frames/shadow/état runtime,
+    3C.3 et 3C.4 à faire)
 3D  Classification de rejouabilité (STATIC_DOM/BROWSER_CAPSULE/TRACE_REPLAY/
     EXTERNAL_NON_REPLAYABLE)
 4   Diagnostic automatique — TERMINÉE (failure_diagnosis.py + CLI)
