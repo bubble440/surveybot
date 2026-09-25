@@ -37,11 +37,34 @@ dupliqueraient ou le réécriraient) ; `page.evaluate()` de Playwright n'est pas
 soumis à cette CSP, donc la page reste interrogeable par les modules
 d'analyse. Hors périmètre ici : frames, shadow roots, état runtime des
 contrôles, extraction, validation, actions.
+
+── Ressources externes capturées (3C.2, suite) ────────────────────────────────
+Si le case porte `external_scripts.json` et/ou `external_stylesheets.json`
+(manifest.artifacts, format produit par Survey/browser_capsule.py, non
+modifié), les entrées dont le contenu a été capturé sont servies depuis la
+mémoire à leur URL EXACTE, et uniquement pour le type de requête attendu
+(`script` / `stylesheet`) : c'est la seule extension du garde-fou réseau.
+Toute autre requête reste refusée et journalisée. Une entrée sans contenu
+(absente, trop volumineuse, erreur…) n'est jamais servie ; une même URL
+présente avec deux contenus différents (les URLs des artefacts sont
+sanitisées, deux scripts ne différant que par la query string se rejoignent)
+est ambiguë et n'est pas servie non plus — jamais devinée.
+Quand au moins une ressource est servable, le document est servi à son URL
+d'origine (`url` de meta.json, sanitisée) pour que les références relatives
+du HTML se résolvent comme à la capture ; sinon URL synthétique. Les scripts
+(inline et servis) ne sont autorisés à s'exécuter que si au moins un script
+externe est servable ; sinon la CSP `script-src 'none'` reste appliquée et le
+comportement est identique à celui d'avant ce patch. Attention : les scripts
+inline s'exécutent alors sur un DOM déjà muté et peuvent le modifier. Limite :
+`url` de meta.json est celle de la page principale ; si le document capturé
+est celui d'une frame, ses références relatives ne se résolvent pas (refusées
+et journalisées, non devinées).
 """
 
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
+from urllib.parse import urlsplit, urlunsplit
 
 from Survey.failure_replay import _load_json, _pick_dom_file
 from Survey.log_utils import log_debug, log_info
@@ -54,6 +77,19 @@ MAX_BLOCKED_LOG = 500
 
 _DOCUMENT_URL = "http://replay-case.invalid/document.html"
 _DOCUMENT_CSP = "script-src 'none'"
+
+# Artefact -> type de requête Playwright pour lequel ses entrées peuvent être
+# servies, et Content-Type de la réponse.
+_RESOURCE_ARTIFACTS = {
+    "external_scripts.json": "script",
+    "external_stylesheets.json": "stylesheet",
+}
+_RESOURCE_CONTENT_TYPES = {
+    "script": "application/javascript; charset=utf-8",
+    "stylesheet": "text/css; charset=utf-8",
+}
+# Budget max d'entrées lues par artefact (la capture est déjà bornée à 60).
+_MAX_RESOURCES_PER_ARTIFACT = 200
 
 
 class ReplayBrowserError(RuntimeError):
@@ -77,7 +113,10 @@ class IsolatedReplayBrowser:
         self._lock = threading.Lock()
         self.blocked_requests: List[Dict[str, str]] = []
         self.blocked_total = 0
-        self._served_html: Dict[str, str] = {}
+        # url -> (html, scripts_autorisés)
+        self._served_html: Dict[str, Tuple[str, bool]] = {}
+        # (type de requête, url exacte) -> contenu capturé
+        self._served_resources: Dict[Tuple[str, str], str] = {}
 
     # -- cycle de vie ---------------------------------------------------------
     def start(self) -> "IsolatedReplayBrowser":
@@ -124,17 +163,29 @@ class IsolatedReplayBrowser:
             html = (artifacts_dir / name).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
             raise ReplayBrowserError(f"{name} illisible ({exc})") from exc
-        page = self._load_html(html)
-        log_info(_TAG, f"document chargé: {case_dir.name}/{name} ({len(html)} car.)")
+        resources = _load_case_resources(artifacts_dir, flags)
+        # Réinitialisé à chaque chargement : les ressources servies sont celles
+        # du dernier case chargé.
+        self._served_resources = resources
+        doc_url = _DOCUMENT_URL
+        allow_scripts = any(kind == "script" for kind, _ in resources)
+        if resources:
+            doc_url = _original_document_url(artifacts_dir) or _DOCUMENT_URL
+        page = self._load_html(html, doc_url, allow_scripts)
+        log_info(
+            _TAG,
+            f"document chargé: {case_dir.name}/{name} ({len(html)} car., "
+            f"{len(resources)} ressource(s) servie(s), scripts={'on' if allow_scripts else 'off'})",
+        )
         return page
 
-    def _load_html(self, html: str) -> Any:
-        self._served_html[_DOCUMENT_URL] = html
+    def _load_html(self, html: str, url: str = _DOCUMENT_URL, allow_scripts: bool = False) -> Any:
+        self._served_html[url] = (html, allow_scripts)
         page = self.new_page()
         try:
             # domcontentloaded : les sous-ressources sont refusées, on n'attend
             # pas leur « load ».
-            page.goto(_DOCUMENT_URL, wait_until="domcontentloaded", timeout=15000)
+            page.goto(url, wait_until="domcontentloaded", timeout=15000)
         except Exception as exc:
             page.close()
             raise ReplayBrowserError(f"chargement du document échoué ({exc})") from exc
@@ -171,13 +222,25 @@ class IsolatedReplayBrowser:
         log_debug(_TAG, f"refusé {kind} {resource_type} {url[:200]}")
 
     def _block_request(self, route: Any, request: Any) -> None:
-        html = self._served_html.get(request.url)
-        if html is not None and request.resource_type == "document":
+        doc = self._served_html.get(request.url)
+        if doc is not None and request.resource_type == "document":
+            html, allow_scripts = doc
             route.fulfill(
                 status=200,
                 content_type="text/html; charset=utf-8",
-                headers={"Content-Security-Policy": _DOCUMENT_CSP},
+                headers={} if allow_scripts else {"Content-Security-Policy": _DOCUMENT_CSP},
                 body=html,
+            )
+            return
+        content = self._served_resources.get((request.resource_type, request.url))
+        if content is not None:
+            route.fulfill(
+                status=200,
+                content_type=_RESOURCE_CONTENT_TYPES[request.resource_type],
+                # Requis pour les ressources `crossorigin`/modules : l'origine
+                # du document rejoué est celle d'origine, pas celle du CDN.
+                headers={"Access-Control-Allow-Origin": "*"},
+                body=content,
             )
             return
         self._record("request", request.url, request.resource_type)
@@ -190,3 +253,49 @@ class IsolatedReplayBrowser:
         # bloquerait pour toujours. On retourne la coroutine de l'implémentation,
         # que Playwright attend lui-même.
         return ws._impl_obj.close(code=1008, reason="replay_network_blocked")
+
+
+def _original_document_url(artifacts_dir: Path) -> Optional[str]:
+    """URL http(s) d'origine du document (meta.json, déjà sanitisée), normalisée
+    comme Chromium la présente (chemin vide -> "/"). None si absente/invalide."""
+    meta, err = _load_json(artifacts_dir / "meta.json")
+    url = meta.get("url") if isinstance(meta, dict) and not err else None
+    if not isinstance(url, str):
+        return None
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return None
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        return None
+    return urlunsplit((parts.scheme, parts.netloc, parts.path or "/", parts.query, ""))
+
+
+def _load_case_resources(artifacts_dir: Path, flags: dict) -> Dict[Tuple[str, str], str]:
+    """(type de requête, url) -> contenu, pour les seules entrées du case dont le
+    contenu a été capturé et dont l'URL n'est pas ambiguë."""
+    out: Dict[Tuple[str, str], str] = {}
+    ambiguous: set = set()
+    for artifact, kind in _RESOURCE_ARTIFACTS.items():
+        if flags.get(artifact) is not True or not (artifacts_dir / artifact).is_file():
+            continue
+        entries, err = _load_json(artifacts_dir / artifact)
+        if err or not isinstance(entries, list):
+            log_info(_TAG, f"{artifact} illisible/invalide ({err or 'liste attendue'}) — ignoré")
+            continue
+        if len(entries) > _MAX_RESOURCES_PER_ARTIFACT:
+            log_info(_TAG, f"{artifact}: {len(entries)} entrées, tronqué à {_MAX_RESOURCES_PER_ARTIFACT}")
+        for entry in entries[:_MAX_RESOURCES_PER_ARTIFACT]:
+            if not isinstance(entry, dict):
+                continue
+            url, content = entry.get("url"), entry.get("content")
+            if not isinstance(url, str) or not isinstance(content, str):
+                continue
+            key = (kind, url)
+            if key in out and out[key] != content:
+                ambiguous.add(key)
+            out[key] = content
+    for key in ambiguous:
+        out.pop(key, None)
+        log_info(_TAG, f"URL ambiguë (contenus différents), non servie: {key[1][:120]}")
+    return out

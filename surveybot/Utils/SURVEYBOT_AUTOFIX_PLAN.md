@@ -1300,6 +1300,24 @@ que l'HTML seul), jamais l'unique source du replay. Le failure case reste
 exploitable à partir de ses artefacts structurés même si le MHTML est
 absent, illisible, ou qu'une ressource n'est pas restaurable.
 
+### 3B.8 --- Secrets et données sensibles
+
+**Statut : TERMINÉE — `Survey/failure_case_builder.py::_sanitize_capsule_json`
+généralise la sanitisation déjà en place sur `meta.json`/le HTML (retrait
+query string/fragment) aux clés `href`/`src` en plus de `url`, appliquée
+récursivement à `runtime_state.json`/`action_trace.json` avant copie dans le
+failure_case. Aucun cookie/storage/token/header n'est capturé par
+`Survey/browser_capsule.py`.**
+
+La Browser Capsule augmente mécaniquement la quantité d'état capturé. Cette
+extension ne doit jamais entraîner la conservation de cookies,
+`localStorage`/`sessionStorage` complets, tokens d'authentification, headers
+réseau, credentials ou secrets applicatifs. Les URLs suivent les règles de
+sanitisation déjà en place (Phase 2). Les valeurs runtime capturées pour le
+seul replay local sont des données de reproduction — elles ne doivent jamais
+être injectées automatiquement dans un prompt Codex (Phase 6) sans passer par
+la même sélection explicite des faits nécessaires au diagnostic.
+
 ### 3B.9 --- Scripts externes
 
 **Statut : TERMINÉE — `Survey/browser_capsule.py::collect_external_scripts`,
@@ -1319,24 +1337,6 @@ CSP de 3C.2). Cf. historique 2026-09-25 (suite) pour les limites.**
 `Survey/failure_case_builder.py`. Complète les `<style>` déjà reconstruits
 depuis le CSSOM ; `@import` hors périmètre. Ne change rien au rejeu existant.
 Cf. historique 2026-09-25 (suite 2).**
-
-### 3B.8 --- Secrets et données sensibles
-
-**Statut : TERMINÉE — `Survey/failure_case_builder.py::_sanitize_capsule_json`
-généralise la sanitisation déjà en place sur `meta.json`/le HTML (retrait
-query string/fragment) aux clés `href`/`src` en plus de `url`, appliquée
-récursivement à `runtime_state.json`/`action_trace.json` avant copie dans le
-failure_case. Aucun cookie/storage/token/header n'est capturé par
-`Survey/browser_capsule.py`.**
-
-La Browser Capsule augmente mécaniquement la quantité d'état capturé. Cette
-extension ne doit jamais entraîner la conservation de cookies,
-`localStorage`/`sessionStorage` complets, tokens d'authentification, headers
-réseau, credentials ou secrets applicatifs. Les URLs suivent les règles de
-sanitisation déjà en place (Phase 2). Les valeurs runtime capturées pour le
-seul replay local sont des données de reproduction — elles ne doivent jamais
-être injectées automatiquement dans un prompt Codex (Phase 6) sans passer par
-la même sélection explicite des faits nécessaires au diagnostic.
 
 ------------------------------------------------------------------------
 
