@@ -433,6 +433,50 @@ niveau tant que le niveau précédent n'est pas fiable.
 > retombe donc à nouveau sur `click_decipher_grid_radio_strict`, comme avant
 > l'introduction de `qarts_widget` (suite 6) — plus de risque de régression
 > silencieuse pour ce cas, aucun exemple réel de ce cas rencontré à ce jour.
+> Mise à jour 2026-09-25 (suite 8) : Phase 3C.2 close sur son dernier volet
+> volontairement scopé — l'état runtime déjà capturé au même instant que le
+> document (`runtime_state.json`, état "après" pour un case action) est
+> maintenant restauré sur la page réelle une fois chargée : `checked`,
+> `indeterminate`, `disabled`, `readOnly`, `selectedIndex`/`selected`, `value`
+> — propriétés live jamais portées par le HTML sérialisé. Aucun xpath n'étant
+> persisté dans un case, chaque élément est retrouvé par identité capturée
+> (tag + className exact + texte visible + input natif imbriqué et sa valeur)
+> et restauré seulement si cette identité est unique ; introuvable ou ambigu =
+> ignoré et journalisé, jamais deviné. Aucun événement émis (un `change`
+> pourrait déclencher un autosubmit) : seules les propriétés changent —
+> limite assumée, l'affichage d'un widget JS piloté par son propre état n'est
+> donc pas resynchronisé par cette seule restauration. Borné, tolérant par
+> élément, jamais bloquant ; sans artefact, comportement inchangé. Frames et
+> shadow roots ouverts restent hors périmètre — même raison que 3B.3/3B.4 :
+> aucun case réel n'en dépend à ce jour, pas de construction spéculative.
+> Mise à jour 2026-09-25 (suite 9) : Phase 3C.3 démarrée — première brique.
+> Correction de nommage au passage : ce qui avait été annoncé comme "3C.4" au
+> moment de le lancer est en réalité 3C.3 (extraction/registry/question_blocks,
+> pas le dispatcher réel) — 3C.4 reste entièrement à faire. Nouvelle fonction
+> `extract_case_blocks(page, case_dir)` dans `Survey/replay_browser.py` :
+> exécute `dom_analyzer.analyze_dom(page)` tel quel (non modifié) sur la page
+> réelle issue de `load_case_document`, peuple `DOM_REGISTRY` comme en
+> production, et compare les blocs obtenus à `question_blocks.json` du case
+> (mêmes `target_id`, diff champ par champ). Isolation entre cases : `DOM_REGISTRY`
+> ET `_STABLE_TEXT_FIELD_LOCATOR` sont vidés avant chaque extraction — ce dernier
+> survit volontairement aux rescans en production (une même page), mais fuirait
+> d'un case à l'autre dans cet outil (pages différentes) ; extractions
+> sérialisées par un verrou (état global du process). Comparaison non forcée :
+> `comparable=false` si le case ou une cible rejouée dépend d'une frame (seul le
+> document principal est chargé). Aucune modification de `dom_analyzer.py`,
+> `dom_registry.py` ni `dom_frame_selector.py`.
+> Mise à jour 2026-09-25 (suite 10) : Phase 3C.3, suite. `extract_case_blocks`
+> fait maintenant tourner, pour les cases `stage="extraction"` uniquement,
+> `question_block_validator.validate_question_blocks(blocks, driver=page)`
+> (non modifié — même fonction déjà appelée telle quelle par le rejeu statique
+> 3A) sur les blocs fraîchement extraits, avec la vraie page comme pilote.
+> Résultat comparé à `validation_report.json` du case via le même vocabulaire
+> de verdict que 3A (`REPRODUIT`/`DIFFERENT`/`NON_REPRODUIT`, mêmes
+> `VERDICT_*`/`_report_failure_types` importés de `failure_replay.py`/
+> `failure_case_builder.py`, pas réimplémentés) — une seule logique de verdict
+> à travers 3A et 3C, pas deux. Comparaison non forcée sur dépendance à une
+> frame, comme pour les blocs. Aucun test versionné à ce jour sur un case
+> extraction réel — à faire avant de considérer 3C.3 close.
 
 ## Contexte de travail actuel
 
@@ -464,11 +508,12 @@ incident détecté
 3   PARTIELLEMENT TERMINÉE (3A terminée, correctif de fidélité espace insécable
     inclus ; 3B.1/3B.2/3B.5/3B.6/3B.8 terminés, oracle checked-state étendu au
     rejeu ; 3B.9/3B.10/3B.11 (scripts, feuilles de style, requêtes XHR/fetch
-    externes) et 3C.1 + 3C.2 (document principal + les trois types de
-    ressources servis, CSP relâchée) terminés — premier widget JS interactif
-    (React) validé de bout en bout en conditions réelles ;
-    3B.3/3B.4/reste de 3C (état runtime/frames/shadow, 3C.3, 3C.4)/3D à faire —
-    voir Phase 3)
+    externes) et 3C.1 + 3C.2 (document, ressources externes, CSP relâchée, état
+    runtime restauré — frames/shadow hors périmètre, cf. 3B.3/3B.4) terminés —
+    premier widget JS interactif (React) validé de bout en bout en conditions
+    réelles ; 3C.3 démarrée (extraction + validator rejoués sur page réelle,
+    pas encore testé sur un vrai case extraction) ;
+    3B.3/3B.4/reste de 3C.3/3C.4/3D à faire — voir Phase 3)
 4   terminée
 5   terminée
 6   terminée (point de vigilance data ouvert — voir note ci-dessus)
@@ -1534,9 +1579,13 @@ capturées correctement refusées) et un widget radio QARTS "rp"
 Decipher/LifePoints dépendant d'une config XHR au chargement — une fois
 celle-ci servie (3B.11), React prend possession du nœud et un clic réel
 déclenche une vraie navigation : première validation de bout en bout d'un
-widget JS interactif via 3C. Non fait : restauration de l'état runtime
-(`runtime_state.json`) dans la page reconstruite, frames, shadow roots ouverts.
-Ne fait ni extraction ni validation — voir 3C.3.**
+widget JS interactif via 3C. L'état runtime déjà capturé
+(`runtime_state.json`, état "après") est ensuite restauré sur les éléments
+correspondants de la page réelle, retrouvés par identité (tag/classe/texte/
+input natif) plutôt que par xpath (jamais persisté) ; sans événement émis, une
+limite assumée pour les widgets pilotés par leur propre état JS. Hors
+périmètre, comme 3B.3/3B.4 : frames, shadow roots ouverts — aucun case réel
+n'en dépend à ce jour. Ne fait ni extraction ni validation — voir 3C.3.**
 
 Le worker reconstruit, dans la mesure des artefacts disponibles : document
 principal, styles utiles, état runtime, frames, shadow roots ouverts, état
@@ -1551,6 +1600,17 @@ Pour les bugs d'extraction, le replay Chromium doit permettre de retester
 frame selection, visibilité, CSS/layout, DOM dynamique déjà capturé,
 extraction, registry, `question_blocks` et validator. Résultat comparé au
 failure case d'origine avec les mêmes verdicts que 3A.
+
+**Statut : PARTIELLE — `Survey/replay_browser.py::extract_case_blocks` fait
+tourner `dom_analyzer.analyze_dom` (non modifié) sur la page réelle, compare
+les blocs à `question_blocks.json`, et pour `stage="extraction"` fait aussi
+tourner `question_block_validator.validate_question_blocks` (non modifié) et
+compare son verdict à `validation_report.json` (même vocabulaire que 3A).
+Isolation entre cases assurée (`DOM_REGISTRY`/`_STABLE_TEXT_FIELD_LOCATOR`
+vidés, extractions sérialisées). Non fait : frame selection à proprement
+parler (les cases dépendant d'une frame sont détectés et exclus de la
+comparaison, jamais rejoués) ; aucun test versionné sur un vrai case
+extraction à ce jour.**
 
 ### 3C.4 --- Actions
 
@@ -2553,10 +2613,12 @@ Je suivrais exactement cet ordre :
     (3B.1/3B.2/3B.5/3B.6/3B.8/3B.9/3B.10/3B.11 faits — 3B.11 : requêtes
     XHR/fetch externes, cf. historique suite 5 ; 3B.3/3B.4 différées,
     prochain sous-chantier après mesure sur cas réels)
-3C  Replay Chromium local — PARTIELLEMENT TERMINÉE (3C.1 isolation réseau +
-    3C.2 document principal + scripts/styles/XHR-fetch servis, CSP relâchée
-    faits — validé de bout en bout sur un widget React réel ; état runtime/
-    frames/shadow (3C.2), 3C.3 et 3C.4 à faire)
+3C  Replay Chromium local — PARTIELLEMENT TERMINÉE (3C.1 + 3C.2 clos sur le
+    périmètre retenu : document principal, scripts/styles/XHR-fetch servis,
+    CSP relâchée, état runtime restauré — validé de bout en bout sur un widget
+    React réel ; frames/shadow roots hors périmètre (cf. 3B.3/3B.4). 3C.3
+    démarrée : extraction + validator rejoués sur page réelle, pas encore
+    testé sur un case extraction réel. 3C.4 à faire)
 3D  Classification de rejouabilité (STATIC_DOM/BROWSER_CAPSULE/TRACE_REPLAY/
     EXTERNAL_NON_REPLAYABLE)
 4   Diagnostic automatique — TERMINÉE (failure_diagnosis.py + CLI)

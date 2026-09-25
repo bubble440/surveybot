@@ -99,7 +99,15 @@ Si `question_blocks.json` du case existe, les blocs rejoués lui sont comparés
 (mêmes `target_id`, mêmes champs par bloc : options, itype, min/max_select,
 question, context…) ; la comparaison n'est déclarée exploitable que si ni le
 manifest ni la cible rejouée ne dépendent d'une frame (seul le document
-principal est chargé). Aucune action, aucun clic, aucune validation ici.
+principal est chargé). Aucune action, aucun clic ici.
+Pour un case dont le stage est `extraction`, le validator existant du rejeu
+statique (`question_block_validator.validate_question_blocks`, appelé tel quel)
+est ensuite exécuté sur ces mêmes blocs avec la page comme pilote (sous le même
+verrou : il lit le registre global). Son rapport est comparé à
+`validation_report.json` du case selon la règle de `failure_replay` (ensembles de
+failure_types : REPRODUIT / NON_REPRODUIT / DIFFERENT) ; non exploitable —
+donc verdict absent — si le rapport d'origine est illisible ou sans
+failure_types, ou si le case dépend d'une frame. Un autre stage ne change rien.
 """
 
 import json
@@ -109,7 +117,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlsplit, urlunsplit
 
-from Survey.failure_replay import _load_json, _pick_dom_file
+from Survey.failure_case_builder import _failure_types as _report_failure_types
+from Survey.failure_replay import (
+    VERDICT_DIFFERENT,
+    VERDICT_NON_REPRODUIT,
+    VERDICT_REPRODUIT,
+    _load_json,
+    _pick_dom_file,
+)
 from Survey.log_utils import log_debug, log_info
 
 _TAG = "[REPLAY_BROWSER]"
@@ -468,6 +483,20 @@ class CaseExtraction:
     targets: Dict[str, Optional[Dict[str, Any]]] = field(default_factory=dict)
     comparison: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+    # stage == "extraction" uniquement : rapport du validator rejoué, sa comparaison
+    # à validation_report.json du case, ou l'erreur levée par le validator.
+    validation: Optional[Dict[str, Any]] = None
+    validation_comparison: Optional[Dict[str, Any]] = None
+    validation_error: Optional[str] = None
+
+
+def _frame_dependence_reasons(manifest: dict, payloads: Any) -> List[str]:
+    reasons = []
+    if manifest.get("frame_chain"):
+        reasons.append("le case dépend d'une frame (manifest.frame_chain) — seul le document principal est chargé")
+    if any(isinstance(p, dict) and p.get("frame_chain") for p in payloads):
+        reasons.append("l'extraction rejouée cible une frame")
+    return reasons
 
 
 def _compare_extraction(
@@ -476,11 +505,7 @@ def _compare_extraction(
     """Blocs rejoués vs question_blocks.json du case, bloc par bloc (clé target_id)."""
     if not isinstance(original, list):
         return None
-    reasons = []
-    if manifest.get("frame_chain"):
-        reasons.append("le case dépend d'une frame (manifest.frame_chain) — seul le document principal est chargé")
-    if any(isinstance(p, dict) and p.get("frame_chain") for p in targets.values()):
-        reasons.append("l'extraction rejouée cible une frame")
+    reasons = _frame_dependence_reasons(manifest, targets.values())
     if len(original) > _MAX_COMPARED_BLOCKS or len(blocks) > _MAX_COMPARED_BLOCKS:
         log_info(_TAG, f"comparaison bornée à {_MAX_COMPARED_BLOCKS} blocs")
 
@@ -511,6 +536,35 @@ def _compare_extraction(
     }
 
 
+def _compare_validation(
+    original_report: Any, replayed_report: Any, manifest: dict, payloads: List[Any]
+) -> Dict[str, Any]:
+    """Rapport du validator rejoué vs validation_report.json d'origine — même règle
+    que failure_replay.replay_failure_case (ensembles de failure_types)."""
+    reasons = _frame_dependence_reasons(manifest, payloads)
+    original_types = _report_failure_types(original_report)
+    replayed_types = _report_failure_types(replayed_report)
+    if not isinstance(original_report, dict):
+        reasons.append("validation_report.json du case absent ou illisible")
+    elif not original_types:
+        reasons.append("validation_report.json du case n'a pas de failure_types exploitable — rien à comparer")
+    verdict = None
+    if not reasons:
+        if not replayed_types:
+            verdict = VERDICT_NON_REPRODUIT
+        elif set(replayed_types) == set(original_types):
+            verdict = VERDICT_REPRODUIT
+        else:
+            verdict = VERDICT_DIFFERENT
+    return {
+        "comparable": not reasons,
+        "reasons": reasons,
+        "verdict": verdict,
+        "original_failure_types": original_types,
+        "replayed_failure_types": replayed_types,
+    }
+
+
 def extract_case_blocks(page: Any, case_dir: Union[str, Path]) -> CaseExtraction:
     """Exécute l'extraction du bot (dom_analyzer.analyze_dom, non modifié) sur
     `page` — la page retournée par IsolatedReplayBrowser.load_case_document pour
@@ -523,6 +577,8 @@ def extract_case_blocks(page: Any, case_dir: Union[str, Path]) -> CaseExtraction
     artifacts_dir = case_dir / "artifacts"
     original, _ = _load_json(artifacts_dir / "question_blocks.json")
     actions, _ = _load_json(artifacts_dir / "actions_requested.json")
+    is_extraction_stage = manifest.get("stage") == "extraction"
+    original_report = _load_json(artifacts_dir / "validation_report.json")[0] if is_extraction_stage else None
     target_ids: List[str] = []
     for action in (actions if isinstance(actions, list) else [])[:_MAX_ACTION_TARGETS]:
         tid = action.get("target_id") if isinstance(action, dict) else None
@@ -543,6 +599,19 @@ def extract_case_blocks(page: Any, case_dir: Union[str, Path]) -> CaseExtraction
             for tid in target_ids:
                 payload = get_target(tid)
                 result.targets[tid] = dict(payload) if isinstance(payload, dict) else None
+            if is_extraction_stage:
+                # Sous le même verrou : le validator lit le registre global.
+                block_payloads = [
+                    get_target(b["target_id"])
+                    for b in result.blocks[:_MAX_COMPARED_BLOCKS]
+                    if isinstance(b.get("target_id"), str)
+                ]
+                try:
+                    from Survey.question_block_validator import validate_question_blocks
+
+                    result.validation = validate_question_blocks(result.blocks, driver=page)
+                except Exception as vexc:
+                    result.validation_error = f"{type(vexc).__name__}: {vexc}"
         except Exception as exc:
             result.error = f"{type(exc).__name__}: {exc}"
             result.blocks, result.targets = [], {}
@@ -550,12 +619,26 @@ def extract_case_blocks(page: Any, case_dir: Union[str, Path]) -> CaseExtraction
         log_info(_TAG, f"extraction échouée ({result.error[:200]}) — case {case_dir.name}")
         return result
     result.comparison = _compare_extraction(original, result.blocks, manifest, result.targets)
+    if result.validation is not None:
+        result.validation_comparison = _compare_validation(
+            original_report, result.validation, manifest, [*result.targets.values(), *block_payloads]
+        )
     cmp_ = result.comparison
     log_info(
         _TAG,
         f"extraction {case_dir.name}: {len(result.blocks)} bloc(s), cibles résolues "
         f"{sum(1 for p in result.targets.values() if p)}/{len(target_ids)}, comparaison "
-        + ("absente" if cmp_ is None else f"identical={cmp_['identical']} comparable={cmp_['comparable']}"),
+        + ("absente" if cmp_ is None else f"identical={cmp_['identical']} comparable={cmp_['comparable']}")
+        + (
+            ""
+            if not is_extraction_stage
+            else f", validator "
+            + (
+                f"erreur ({result.validation_error[:80]})"
+                if result.validation_error
+                else str((result.validation_comparison or {}).get("verdict") or "non comparable")
+            )
+        ),
     )
     return result
 
