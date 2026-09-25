@@ -475,8 +475,34 @@ niveau tant que le niveau précédent n'est pas fiable.
 > `VERDICT_*`/`_report_failure_types` importés de `failure_replay.py`/
 > `failure_case_builder.py`, pas réimplémentés) — une seule logique de verdict
 > à travers 3A et 3C, pas deux. Comparaison non forcée sur dépendance à une
-> frame, comme pour les blocs. Aucun test versionné à ce jour sur un case
-> extraction réel — à faire avant de considérer 3C.3 close.
+> frame, comme pour les blocs.
+> Mise à jour 2026-09-25 (suite 11) : Phase 3C.3 considérée suffisamment
+> validée, clôturée sur cette base — testée sur deux cases extraction réels,
+> chacun instructif pour une raison différente :
+> - `20260923_211155_extraction_validation_failure` (Qualtrics, carrousel
+> checkbox) : `target_id`/question rejoués différents de l'origine. Cause
+> confirmée par lecture directe du texte rejoué (pas supposée) : ce case,
+> capturé avant 3B.9/3B.10, n'a aucun script à servir — sans JS, le carrousel
+> empile toutes ses lignes au lieu d'en paginer une seule, et l'extracteur de
+> question capture la première ligne du carrousel avec la vraie question.
+> Artefact de l'ancienneté du case, pas un défaut de 3C.3. Reste un doute
+> distinct, hors 3C.3 : l'incident d'origine (`choice_without_options`) est
+> probablement une vraie condition de course en production (DOM scanné avant
+> que le carrousel JS ait fini de peupler ses cases) — aucun rejeu ne peut la
+> reproduire après coup, quel qu'il soit ; candidat pour une classification
+> 3D dédiée plutôt qu'un cas à "corriger".
+> - `20260911_160609_extraction_validation_failure` (Focaldata, cartes MUI
+> radio) : le rejeu retrouve le bloc que l'extraction de production, avec
+> JavaScript complet, n'avait pas trouvé (`missing_block`). Piste d'abord
+> creusée (signal de validator `_focaldata_response_option_cards_signal`,
+> lecture live confirmée du même DOM juste après l'échec de l'extraction
+> principale — cohérent avec une course de rendu MUI), puis close autrement :
+> confirmé par l'utilisateur que ce bug était déjà corrigé dans le bot avant
+> ce jour. Le rejeu exécute le code actuel (déjà corrigé) sur le DOM figé
+> d'avant correctif — succès attendu, confirmation incidente d'un "avant
+> correctif échoue / après correctif réussit" via l'historique git plutôt
+> qu'un test construit exprès. Bon point en faveur de 3C.3, pas un mystère.
+> Décision : chantier principal passe à la Phase 3C.4.
 
 ## Contexte de travail actuel
 
@@ -508,12 +534,12 @@ incident détecté
 3   PARTIELLEMENT TERMINÉE (3A terminée, correctif de fidélité espace insécable
     inclus ; 3B.1/3B.2/3B.5/3B.6/3B.8 terminés, oracle checked-state étendu au
     rejeu ; 3B.9/3B.10/3B.11 (scripts, feuilles de style, requêtes XHR/fetch
-    externes) et 3C.1 + 3C.2 (document, ressources externes, CSP relâchée, état
-    runtime restauré — frames/shadow hors périmètre, cf. 3B.3/3B.4) terminés —
-    premier widget JS interactif (React) validé de bout en bout en conditions
-    réelles ; 3C.3 démarrée (extraction + validator rejoués sur page réelle,
-    pas encore testé sur un vrai case extraction) ;
-    3B.3/3B.4/reste de 3C.3/3C.4/3D à faire — voir Phase 3)
+    externes) et 3C.1 + 3C.2 + 3C.3 (document, ressources externes, CSP
+    relâchée, état runtime restauré, extraction+validator rejoués — frames/
+    shadow/frame selection hors périmètre, cf. 3B.3/3B.4) terminés — premier
+    widget JS interactif (React) validé de bout en bout en conditions
+    réelles, 3C.3 validée sur deux cases extraction réels ;
+    3B.3/3B.4/3C.4/3D à faire — voir Phase 3)
 4   terminée
 5   terminée
 6   terminée (point de vigilance data ouvert — voir note ci-dessus)
@@ -1601,16 +1627,20 @@ frame selection, visibilité, CSS/layout, DOM dynamique déjà capturé,
 extraction, registry, `question_blocks` et validator. Résultat comparé au
 failure case d'origine avec les mêmes verdicts que 3A.
 
-**Statut : PARTIELLE — `Survey/replay_browser.py::extract_case_blocks` fait
-tourner `dom_analyzer.analyze_dom` (non modifié) sur la page réelle, compare
-les blocs à `question_blocks.json`, et pour `stage="extraction"` fait aussi
+**Statut : TERMINÉE (considérée suffisamment validée) —
+`Survey/replay_browser.py::extract_case_blocks` fait tourner
+`dom_analyzer.analyze_dom` (non modifié) sur la page réelle, compare les
+blocs à `question_blocks.json`, et pour `stage="extraction"` fait aussi
 tourner `question_block_validator.validate_question_blocks` (non modifié) et
 compare son verdict à `validation_report.json` (même vocabulaire que 3A).
 Isolation entre cases assurée (`DOM_REGISTRY`/`_STABLE_TEXT_FIELD_LOCATOR`
-vidés, extractions sérialisées). Non fait : frame selection à proprement
-parler (les cases dépendant d'une frame sont détectés et exclus de la
-comparaison, jamais rejoués) ; aucun test versionné sur un vrai case
-extraction à ce jour.**
+vidés, extractions sérialisées). Validé sur deux cases extraction réels (cf.
+historique, suite 11) — un écart de reproduction expliqué sans ambiguïté par
+l'ancienneté du case testé, un succès de reproduction expliqué par un
+correctif déjà appliqué depuis la capture. Non fait, laissé de côté sciemment :
+frame selection à proprement parler (les cases dépendant d'une frame sont
+détectés et exclus de la comparaison, jamais rejoués) — même raison que
+3B.3/3B.4, aucun cas réel ne l'a exigé à ce jour.**
 
 ### 3C.4 --- Actions
 
@@ -2613,12 +2643,12 @@ Je suivrais exactement cet ordre :
     (3B.1/3B.2/3B.5/3B.6/3B.8/3B.9/3B.10/3B.11 faits — 3B.11 : requêtes
     XHR/fetch externes, cf. historique suite 5 ; 3B.3/3B.4 différées,
     prochain sous-chantier après mesure sur cas réels)
-3C  Replay Chromium local — PARTIELLEMENT TERMINÉE (3C.1 + 3C.2 clos sur le
-    périmètre retenu : document principal, scripts/styles/XHR-fetch servis,
-    CSP relâchée, état runtime restauré — validé de bout en bout sur un widget
-    React réel ; frames/shadow roots hors périmètre (cf. 3B.3/3B.4). 3C.3
-    démarrée : extraction + validator rejoués sur page réelle, pas encore
-    testé sur un case extraction réel. 3C.4 à faire)
+3C  Replay Chromium local — PARTIELLEMENT TERMINÉE (3C.1 + 3C.2 + 3C.3 clos
+    sur le périmètre retenu : document principal, scripts/styles/XHR-fetch
+    servis, CSP relâchée, état runtime restauré, extraction+validator rejoués
+    et comparés — validé de bout en bout sur un widget React réel et sur deux
+    cases extraction réels ; frames/shadow roots/frame selection hors
+    périmètre (cf. 3B.3/3B.4). 3C.4 à faire, chantier principal.
 3D  Classification de rejouabilité (STATIC_DOM/BROWSER_CAPSULE/TRACE_REPLAY/
     EXTERNAL_NON_REPLAYABLE)
 4   Diagnostic automatique — TERMINÉE (failure_diagnosis.py + CLI)

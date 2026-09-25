@@ -108,10 +108,38 @@ verrou : il lit le registre global). Son rapport est comparé à
 failure_types : REPRODUIT / NON_REPRODUIT / DIFFERENT) ; non exploitable —
 donc verdict absent — si le rapport d'origine est illisible ou sans
 failure_types, ou si le case dépend d'une frame. Un autre stage ne change rien.
+
+── Dispatcher réel sur la page rejouée (3C.4, première brique) ────────────────
+`execute_case_action(page, case_dir, budget_s)` exécute, pour un case de stage
+`action`, `action_dispatcher.execute_actions_plan(page, actions)` (le point
+d'entrée de production, appelé tel quel) avec les actions de
+`actions_requested.json`, après `extract_case_blocks` sur la même page (le
+dispatcher lit le registre global, qui doit contenir les cibles des actions :
+sinon NOT_EXECUTED, jamais un échec supposé). Statuts distincts, jamais
+confondus : SUCCESS / FAILURE (booléen rapporté par le dispatcher), TIMEOUT
+(budget dépassé : `dispatcher_success` reste None, aucun verdict deviné), ERROR
+(le dispatcher a levé), NOT_EXECUTED (précondition absente), NOT_APPLICABLE
+(stage autre qu'action : rien n'est touché). Budget : un thread watchdog, à
+l'échéance, ferme la page (appel thread-safe sur la boucle de Playwright :
+débloque un evaluate/une attente en cours, l'appel du dispatcher échoue alors
+immédiatement) ; le résultat est TIMEOUT même si le dispatcher rend la main
+ensuite (avec True comme avec False) : jamais un verdict au-delà du budget. Après
+TIMEOUT la page est fermée (le navigateur, lui, reste utilisable). Sans les
+leviers d'abandon sur la page, le dispatcher n'est pas exécuté (jamais sans
+borne). Limites : (1) le budget borne les attentes Playwright (réseau, promesse
+non résolue, callback jamais déclenché), pas une boucle Python pure qui avale les
+exceptions (vérifié sur Playwright 1.60 : la fermeture de page ne l'arrête pas) —
+elle reste bornée par les budgets propres du dispatcher ; (2) injecter une
+exception dans le thread du dispatcher a été essayé et REJETÉ : la boucle asyncio
+de Playwright tourne dans ce même thread, l'exception y est livrée et la boucle
+ne répond plus ; (3) la page exécutée est le document post-action du case avec
+son état « après » restauré, pas l'état pré-action.
 """
 
+import asyncio
 import json
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -639,6 +667,139 @@ def extract_case_blocks(page: Any, case_dir: Union[str, Path]) -> CaseExtraction
                 else str((result.validation_comparison or {}).get("verdict") or "non comparable")
             )
         ),
+    )
+    return result
+
+
+# ── Dispatcher réel (3C.4) ────────────────────────────────────────────────────
+STATUS_SUCCESS = "SUCCESS"
+STATUS_FAILURE = "FAILURE"
+STATUS_TIMEOUT = "TIMEOUT"
+STATUS_ERROR = "ERROR"
+STATUS_NOT_EXECUTED = "NOT_EXECUTED"
+STATUS_NOT_APPLICABLE = "NOT_APPLICABLE"
+
+_DEFAULT_DISPATCH_BUDGET_S = 30.0
+_MAX_DISPATCH_ACTIONS = 60
+
+
+@dataclass
+class ActionExecution:
+    status: str
+    dispatcher_success: Optional[bool] = None  # None sauf SUCCESS/FAILURE
+    duration_s: Optional[float] = None
+    budget_s: Optional[float] = None
+    actions_count: int = 0
+    reason: Optional[str] = None
+    page_closed: bool = False  # True après TIMEOUT : la page n'est plus utilisable
+
+
+def _run_with_deadline(page: Any, budget_s: float, fn: Any) -> Tuple[str, Any, Optional[BaseException]]:
+    """Exécute fn() dans le thread courant (les objets Playwright sync y sont liés)
+    sous un budget. Retourne (outcome, valeur, exception) ; outcome parmi
+    "done" / "error" (fn a levé une Exception) / "timeout" (budget dépassé, quel
+    que soit ce que fn a fini par rendre)."""
+    lock = threading.Lock()
+    finished = threading.Event()
+    state = {"done": False, "fired": False}
+
+    def _watchdog() -> None:
+        if finished.wait(budget_s):
+            return
+        with lock:
+            if state["done"]:
+                return
+            state["fired"] = True
+            log_info(_TAG, f"budget de {budget_s:.1f}s dépassé — abandon du dispatcher (fermeture de la page)")
+            try:  # débloque un appel Playwright en attente (thread-safe : boucle de Playwright)
+                asyncio.run_coroutine_threadsafe(page._impl_obj.close(), page._loop)
+            except Exception as exc:
+                log_debug(_TAG, f"fermeture de page à l'échéance: {type(exc).__name__}: {exc}")
+
+    threading.Thread(target=_watchdog, name="replay-deadline", daemon=True).start()
+    outcome, value, error = "done", None, None
+    try:
+        value = fn()
+    except Exception as exc:
+        outcome, error = "error", exc
+    finally:
+        with lock:
+            state["done"] = True
+        finished.set()
+    if state["fired"]:
+        return "timeout", None, None
+    return outcome, value, error
+
+
+def execute_case_action(
+    page: Any, case_dir: Union[str, Path], budget_s: float = _DEFAULT_DISPATCH_BUDGET_S
+) -> ActionExecution:
+    """Exécute le dispatcher réel sur `page` pour l'action d'un case de stage
+    `action` (voir docstring du module). `page` doit être celle de
+    load_case_document + extract_case_blocks pour ce même `case_dir`."""
+    case_dir = Path(case_dir)
+    manifest, err = _load_json(case_dir / "manifest.json")
+    manifest = manifest if isinstance(manifest, dict) and not err else {}
+    if manifest.get("stage") != "action":
+        return ActionExecution(
+            STATUS_NOT_APPLICABLE,
+            reason=f"stage={manifest.get('stage')!r} : seul le stage action exécute le dispatcher",
+        )
+
+    def _not_executed(reason: str, **kw: Any) -> ActionExecution:
+        log_info(_TAG, f"dispatcher non exécuté ({case_dir.name}): {reason}")
+        return ActionExecution(STATUS_NOT_EXECUTED, budget_s=budget_s, reason=reason, **kw)
+
+    actions, aerr = _load_json(case_dir / "artifacts" / "actions_requested.json")
+    actions = [a for a in actions if isinstance(a, dict)] if isinstance(actions, list) and not aerr else []
+    if not actions:
+        return _not_executed("actions_requested.json absent, illisible ou vide")
+    if len(actions) > _MAX_DISPATCH_ACTIONS:
+        log_info(_TAG, f"{len(actions)} actions, tronqué à {_MAX_DISPATCH_ACTIONS}")
+        actions = actions[:_MAX_DISPATCH_ACTIONS]
+    if not (isinstance(budget_s, (int, float)) and budget_s > 0):
+        return _not_executed(f"budget invalide ({budget_s!r})", actions_count=len(actions))
+    if not (hasattr(page, "_impl_obj") and hasattr(page, "_loop")):
+        return _not_executed(
+            "page sans les leviers d'abandon (_impl_obj/_loop) — jamais d'exécution sans borne",
+            actions_count=len(actions),
+        )
+
+    with _EXTRACTION_LOCK:  # le dispatcher lit/écrit le registre global
+        from Survey.dom_registry import get_target
+
+        missing = [a.get("target_id") for a in actions if a.get("target_id") and get_target(a["target_id"]) is None]
+        if missing:
+            return _not_executed(
+                f"cible(s) absente(s) du registre {missing[:3]} — extract_case_blocks non exécuté "
+                "sur cette page, ou cible non retrouvée",
+                actions_count=len(actions),
+            )
+        import Survey.action_dispatcher as action_dispatcher
+
+        started = time.perf_counter()
+        outcome, value, exc = _run_with_deadline(
+            page,
+            float(budget_s),
+            lambda: action_dispatcher.execute_actions_plan(page, actions, stop_on_navigation=True),
+        )
+        duration = round(time.perf_counter() - started, 3)
+
+    if outcome == "timeout":
+        result = ActionExecution(
+            STATUS_TIMEOUT, None, duration, budget_s, len(actions),
+            f"budget de {budget_s}s dépassé — verdict inconnu", page_closed=True,
+        )
+    elif outcome == "error":
+        result = ActionExecution(STATUS_ERROR, None, duration, budget_s, len(actions), f"{type(exc).__name__}: {exc}")
+    else:
+        result = ActionExecution(
+            STATUS_SUCCESS if value else STATUS_FAILURE, bool(value), duration, budget_s, len(actions)
+        )
+    log_info(
+        _TAG,
+        f"dispatcher {case_dir.name}: {result.status} success={result.dispatcher_success} "
+        f"durée={duration}s (budget {budget_s}s)",
     )
     return result
 
