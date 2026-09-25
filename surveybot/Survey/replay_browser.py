@@ -67,6 +67,21 @@ inline s'exécutent alors sur un DOM déjà muté et peuvent le modifier. Limite
 `url` de meta.json est celle de la page principale ; si le document capturé
 est celui d'une frame, ses références relatives ne se résolvent pas (refusées
 et journalisées, non devinées).
+
+── État runtime restauré (3C.2, suite) ────────────────────────────────────────
+Si le case porte `runtime_state.json` (état capturé au même instant que le
+document chargé — l'état « après » pour un stage action), l'état LIVE de chaque
+élément déjà résolu par la capture (cible, options, ancêtres) est réappliqué
+une fois le document chargé : checked, indeterminate, disabled, readOnly,
+selectedIndex/selected et value (input/textarea hors type=file) — ce que le HTML
+sérialisé ne porte pas. Les xpaths ne sont pas persistés dans un case : un
+élément est retrouvé par son identité capturée (tag + className + texte + input
+natif imbriqué et sa valeur) et restauré seulement s'il est unique ; introuvable
+ou ambigu = ignoré et journalisé, jamais deviné, jamais bloquant. Aucun
+événement n'est émis (un `change` pourrait déclencher un autosubmit) : seules
+les propriétés changent, l'affichage d'un widget JS piloté par son propre état
+n'est donc pas resynchronisé. Limite : document principal uniquement (pas de
+frames). Sans artefact, comportement identique à avant ce patch.
 """
 
 import threading
@@ -103,6 +118,43 @@ _REQUEST_ARTIFACT = "external_requests.json"
 _REQUEST_TYPES = ("xhr", "fetch")
 # Budget max d'entrées lues par artefact (la capture est déjà bornée à 60).
 _MAX_RESOURCES_PER_ARTIFACT = 200
+# Budget max de faits d'état runtime restaurés (la capture est déjà bornée à 40).
+_MAX_RUNTIME_FACTS = 60
+
+# Restauration de l'état live d'éléments déjà résolus par la capture. Un élément
+# est retrouvé par son identité capturée (tag + className + texte + input natif
+# imbriqué et sa valeur) ; restauré seulement s'il est unique. Aucun événement
+# n'est émis : seules les propriétés changent.
+_RESTORE_RUNTIME_JS = r"""(items) => {
+    const out = {};
+    const txt = el => { try { return (el.innerText || el.textContent || '').trim().slice(0, 300); } catch (e) { return ''; } };
+    const nativeOf = el => el.querySelector('input[type="checkbox"], input[type="radio"]');
+    for (const [label, f] of items) {
+        try {
+            const cands = Array.from(document.getElementsByTagName(f.tag)).filter(el => {
+                if ((el.className ? String(el.className) : '') !== f.className) return false;
+                if (txt(el) !== f.text) return false;
+                if (f.nativeInput) {
+                    const n = nativeOf(el);
+                    return !!n && (n.type || 'input') === f.nativeInput && String(n.value) === f.value;
+                }
+                return true;
+            });
+            if (cands.length === 0) { out[label] = 'not_found'; continue; }
+            if (cands.length > 1) { out[label] = 'ambiguous'; continue; }
+            const src = f.nativeInput ? nativeOf(cands[0]) : cands[0];
+            if (f.checked !== null && 'checked' in src) src.checked = f.checked;
+            if (f.indeterminate !== null && 'indeterminate' in src) src.indeterminate = f.indeterminate;
+            if (f.disabled !== null && 'disabled' in src) src.disabled = f.disabled;
+            if (f.readOnly !== null && 'readOnly' in src) src.readOnly = f.readOnly;
+            if (f.selectedIndex !== null && 'selectedIndex' in src) src.selectedIndex = f.selectedIndex;
+            if (f.selected !== null && 'selected' in src) src.selected = f.selected;
+            if (f.value !== null && (src.tagName === 'TEXTAREA' || (src.tagName === 'INPUT' && src.type !== 'file'))) src.value = f.value;
+            out[label] = 'restored';
+        } catch (e) { out[label] = 'error'; }
+    }
+    return out;
+}"""
 
 
 class ReplayBrowserError(RuntimeError):
@@ -130,6 +182,8 @@ class IsolatedReplayBrowser:
         self._served_html: Dict[str, Tuple[str, bool]] = {}
         # (type de requête, url exacte) -> (contenu capturé, Content-Type ou None)
         self._served_resources: Dict[Tuple[str, str], Tuple[str, Optional[str]]] = {}
+        # clé du fait -> restored / not_found / ambiguous / error (dernier case chargé)
+        self.runtime_restore_report: Dict[str, str] = {}
 
     # -- cycle de vie ---------------------------------------------------------
     def start(self) -> "IsolatedReplayBrowser":
@@ -185,6 +239,9 @@ class IsolatedReplayBrowser:
         if resources:
             doc_url = _original_document_url(artifacts_dir) or _DOCUMENT_URL
         page = self._load_html(html, doc_url, allow_scripts)
+        self.runtime_restore_report = {}
+        if flags.get("runtime_state.json") is True:
+            self.runtime_restore_report = _restore_runtime_state(page, artifacts_dir / "runtime_state.json")
         log_info(
             _TAG,
             f"document chargé: {case_dir.name}/{name} ({len(html)} car., "
@@ -283,6 +340,49 @@ def _original_document_url(artifacts_dir: Path) -> Optional[str]:
     if parts.scheme not in ("http", "https") or not parts.netloc:
         return None
     return urlunsplit((parts.scheme, parts.netloc, parts.path or "/", parts.query, ""))
+
+
+def _restore_runtime_state(page: Any, state_path: Path) -> Dict[str, str]:
+    """Réapplique sur `page` l'état live capturé dans runtime_state.json (voir
+    docstring du module). Ne lève jamais : tout échec est journalisé et ignoré."""
+    state, err = _load_json(state_path)
+    facts = state.get("facts") if isinstance(state, dict) and not err else None
+    if not isinstance(facts, dict):
+        log_info(_TAG, f"runtime_state.json illisible/invalide ({err or 'objet facts attendu'}) — ignoré")
+        return {}
+    items = []
+    for label, fact in facts.items():
+        if not isinstance(label, str) or not isinstance(fact, dict):
+            continue  # fait non résolu à la capture (null) : rien à restaurer
+        if not isinstance(fact.get("tag"), str):
+            continue
+        items.append([label, {
+            "tag": fact["tag"],
+            "className": fact.get("className") or "",
+            "text": fact.get("text") or "",
+            "nativeInput": fact.get("nativeInput"),
+            "value": fact.get("value"),
+            "checked": fact.get("checked"),
+            "indeterminate": fact.get("indeterminate"),
+            "disabled": fact.get("disabled"),
+            "readOnly": fact.get("readOnly"),
+            "selectedIndex": fact.get("selectedIndex"),
+            "selected": fact.get("selected"),
+        }])
+    if len(items) > _MAX_RUNTIME_FACTS:
+        log_info(_TAG, f"runtime_state: {len(items)} faits, tronqué à {_MAX_RUNTIME_FACTS}")
+        items = items[:_MAX_RUNTIME_FACTS]
+    try:
+        report = page.evaluate(_RESTORE_RUNTIME_JS, items) or {}
+    except Exception as exc:
+        log_info(_TAG, f"état runtime non restauré ({type(exc).__name__}) — document conservé tel quel")
+        return {}
+    for label, status in report.items():
+        if status != "restored":
+            log_debug(_TAG, f"état runtime non restauré: {label} -> {status}")
+    counts = {s: sum(1 for v in report.values() if v == s) for s in set(report.values())}
+    log_info(_TAG, f"état runtime restauré: {counts.get('restored', 0)}/{len(items)} élément(s) {counts}")
+    return report
 
 
 def _valid_content_type(value: Any) -> bool:
