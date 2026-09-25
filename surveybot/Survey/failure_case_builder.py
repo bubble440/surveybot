@@ -106,6 +106,10 @@ _KNOWN_FILES = (
     # absence n'est jamais un warning, cf. _load_json.
     "runtime_state.json",
     "action_trace.json",
+    # Contenu des <script src> du document capturé (Browser Capsule, additif) :
+    # optionnel, absent si aucun script externe ou collecte impossible.
+    "external_scripts.json",
+    "external_stylesheets.json",
 )
 
 # Noms générés par page_snapshot._dump_frames_best_effort : frame_<chain>.dom_outer.html
@@ -131,6 +135,8 @@ _HTML_FILES_TO_SANITIZE = {
 _CAPSULE_JSON_FILES_TO_SANITIZE = {
     "runtime_state.json",
     "action_trace.json",
+    "external_scripts.json",
+    "external_stylesheets.json",
 }
 
 # <script>/<style> capturés en (tag_ouvrant, contenu, tag_fermant) : seul

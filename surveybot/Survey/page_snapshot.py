@@ -484,6 +484,34 @@ def dump_page_snapshot(
         except Exception as e:
             (folder / "mhtml_error.txt").write_text(repr(e), encoding="utf-8")
 
+    # Contenu des <script src> du document capturé (Browser Capsule, additif) :
+    # matière première d'un futur rejeu navigateur, aucun effet sur le reste.
+    try:
+        from Survey.browser_capsule import collect_external_scripts
+
+        _ext_scripts = collect_external_scripts(page, snapshot_ctx)
+        if _ext_scripts:
+            (folder / "external_scripts.json").write_text(
+                json.dumps(_ext_scripts, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+    except Exception:
+        pass
+
+    # Contenu des <link rel=stylesheet href> du document capturé (même principe,
+    # blocs indépendants : l'échec de l'un n'affecte pas l'autre).
+    try:
+        from Survey.browser_capsule import collect_external_stylesheets
+
+        _ext_styles = collect_external_stylesheets(page, snapshot_ctx)
+        if _ext_styles:
+            (folder / "external_stylesheets.json").write_text(
+                json.dumps(_ext_styles, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+    except Exception:
+        pass
+
     # Dump frames
     try:
         frames = _dump_frames_best_effort(

@@ -235,6 +235,56 @@ niveau tant que le niveau précédent n'est pas fiable.
 > `runtime_state.json`), 3C.3 (extraction/frame selection sur la page), 3C.4
 > (actions, avec timeout et déclassement `TRACE_REPLAY`), puis 3D. Le chantier
 > principal reste la Phase 3C.
+> Mise à jour 2026-09-25 (suite) : Phase 3B — nouvelle capture 3B.9 (scripts
+> externes) implémentée et vérifiée. Cause racine : `dump_page_snapshot` ne
+> conservait que le HTML/CSS/MHTML, jamais le contenu des `<script src>` — un
+> futur rejeu navigateur ne pourrait donc jamais exécuter ces scripts.
+> `Survey/browser_capsule.py::collect_external_scripts` (additif, appelé depuis
+> un bloc try/except unique ajouté dans `Survey/page_snapshot.py::
+> dump_page_snapshot`, profils historique et `action_validation`) écrit
+> `external_scripts.json` ; `Survey/failure_case_builder.py` le reconnaît
+> (`_KNOWN_FILES`) et lui applique la sanitisation d'URL déjà en place
+> (`_CAPSULE_JSON_FILES_TO_SANITIZE`). Stratégie unique : lecture depuis l'arbre
+> de ressources déjà chargé par la page (CDP `Page.getResourceTree` +
+> `Page.getResourceContent`, même mécanisme de session que le MHTML) — aucune
+> requête réseau, navigation ni interaction, et fonctionne pour les scripts
+> cross-origin (un `fetch()` depuis la page serait bloqué par CORS). Bornes :
+> 60 scripts, 512 Ko par script, 4 Mo au total ; tolérant par script
+> (`content` vide + `error` : `trop_volumineux`, `absent_de_l_arbre_de_ressources`,
+> `cdp_erreur`, `budget_total_atteint`, `contenu_binaire`), jamais d'exception
+> propagée. Chromium uniquement. Aucun changement du rejeu statique (3A) ni du
+> Chromium isolé (3C) : matière première seulement. Limites actées : (a) seule
+> l'URL est sanitisée, pas le contenu des scripts — un jeton codé en dur dans
+> un script passerait tel quel dans `failure_cases/` ; (b) le retrait de la
+> query string rend indiscernables deux scripts qui ne diffèrent que par elle,
+> à garder en tête pour le futur rejeu ; (c) un script inséré puis retiré du DOM
+> avant capture n'est pas collecté ; (d) vérifié par script ponctuel sur une
+> vraie page Playwright (cross-origin OK, 600 Ko refusé, 404 isolé, sanitisation
+> OK), aucun test versionné, `create_failure_case.py` non lancé de bout en bout.
+> Le chantier principal reste la Phase 3C.
+> Mise à jour 2026-09-25 (suite 2) : Phase 3B — 3B.10 (feuilles de style
+> externes) implémentée et vérifiée, même situation et même correctif que
+> 3B.9. Cause racine : `page_snapshot.py` ne reconstruit que les `<style>` depuis
+> le CSSOM ; le contenu des `<link rel="stylesheet" href>` n'était sauvegardé
+> nulle part. `Survey/browser_capsule.py::collect_external_stylesheets`
+> (additif ; `collect_external_scripts` non modifiée) écrit
+> `external_stylesheets.json` via un bloc try/except indépendant dans
+> `Survey/page_snapshot.py::dump_page_snapshot` (l'échec de l'un des deux blocs
+> n'affecte pas l'autre) ; `Survey/failure_case_builder.py` le reconnaît
+> (`_KNOWN_FILES`) et lui applique la sanitisation d'URL existante. Même
+> mécanisme (arbre de ressources CDP déjà chargé, aucune requête réseau), mêmes
+> bornes (60 / 512 Ko / 4 Mo) et même format d'entrée `{url, size, content,
+> error}` que 3B.9. Compromis assumé : la logique est dupliquée plutôt que
+> factorisée avec la collecte des scripts, pour ne pas modifier celle déjà
+> validée — à factoriser lors d'un futur nettoyage si un troisième type de
+> ressource s'ajoute. Limites : `@import` et feuilles ajoutées hors `<link>` non
+> collectés ; seules les URL sont sanitisées, pas le contenu CSS (ses `url(...)`
+> internes peuvent porter des paramètres de session) ; vérifié par script
+> ponctuel sur une vraie page Playwright (capture OK, 900 Ko refusé,
+> `?tok=` retiré, `external_scripts.json` toujours produit ; le cas 404 n'est
+> pas concluant car le serveur de test répondait 200 avec du HTML), aucun test
+> versionné. Aucun changement du rejeu statique ni Chromium. Le chantier
+> principal reste la Phase 3C.
 
 ## Contexte de travail actuel
 
@@ -264,7 +314,8 @@ incident détecté
 1B  ouverte en tâche de fond
 2   terminée
 3   PARTIELLEMENT TERMINÉE (3A terminée ; 3B.1/3B.2/3B.5/3B.6/3B.8 terminés ;
-    3C.1 et chargement du document principal (3C.2, 1re brique) terminés ;
+    3B.9 (scripts externes), 3B.10 (feuilles de style externes) et 3C.1 + chargement du document principal
+    (3C.2, 1re brique) terminés ;
     3B.3/3B.4/reste de 3C/3D à faire — voir Phase 3)
 4   terminée
 5   terminée
@@ -1248,6 +1299,26 @@ Artefact secondaire lorsqu'il est disponible (préserve plus de ressources
 que l'HTML seul), jamais l'unique source du replay. Le failure case reste
 exploitable à partir de ses artefacts structurés même si le MHTML est
 absent, illisible, ou qu'une ressource n'est pas restaurable.
+
+### 3B.9 --- Scripts externes
+
+**Statut : TERMINÉE — `Survey/browser_capsule.py::collect_external_scripts`,
+écrit dans `external_scripts.json` (liste d'entrées `{url, size, content,
+error}`), copié et sanitisé (URL uniquement) par
+`Survey/failure_case_builder.py`. Lecture depuis l'arbre de ressources CDP déjà
+chargé, sans requête réseau ; bornée (60 scripts / 512 Ko / 4 Mo) et tolérante
+par script. Ne change rien au rejeu existant : matière première pour un futur
+rejeu navigateur (les scripts du document sont aujourd'hui neutralisés par la
+CSP de 3C.2). Cf. historique 2026-09-25 (suite) pour les limites.**
+
+### 3B.10 --- Feuilles de style externes
+
+**Statut : TERMINÉE — `Survey/browser_capsule.py::collect_external_stylesheets`,
+écrit dans `external_stylesheets.json` (même format et mêmes bornes que
+3B.9), copié et sanitisé (URL uniquement) par
+`Survey/failure_case_builder.py`. Complète les `<style>` déjà reconstruits
+depuis le CSSOM ; `@import` hors périmètre. Ne change rien au rejeu existant.
+Cf. historique 2026-09-25 (suite 2).**
 
 ### 3B.8 --- Secrets et données sensibles
 
@@ -2317,7 +2388,7 @@ Je suivrais exactement cet ordre :
 2   Failure cases normalisés — TERMINÉE (failure_case_builder.py + CLI, 2 correctifs validés)
 3A  Replay DOM statique — TERMINÉE (dom_replay_shim.py + failure_replay.py + CLI)
 3B  Capture enrichie (browser capsule) — PARTIELLEMENT TERMINÉE
-    (3B.1/3B.2/3B.5/3B.6/3B.8 faits ; 3B.3/3B.4 différées, prochain
+    (3B.1/3B.2/3B.5/3B.6/3B.8/3B.9/3B.10 faits ; 3B.3/3B.4 différées, prochain
     sous-chantier après mesure sur cas réels)
 3C  Replay Chromium local — PARTIELLEMENT TERMINÉE (3C.1 isolation réseau +
     chargement du document principal faits ; frames/shadow/état runtime,

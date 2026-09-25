@@ -339,3 +339,193 @@ def build_action_trace(
         "after": after_state,
         "dom_mutations": mutations,
     }
+
+
+# ── Scripts externes (contenu) ────────────────────────────────────────────────
+# Matière première pour un futur rejeu navigateur : le contenu des <script src>
+# du document capturé, jamais sauvegardé jusqu'ici. Stratégie unique : lecture
+# depuis l'arbre de ressources DÉJÀ chargé par la page (CDP Page.getResourceTree
+# + Page.getResourceContent, session CDP native Playwright comme la capture
+# MHTML) — aucune requête réseau, aucune navigation, aucune interaction, et
+# fonctionne aussi pour les scripts cross-origin (là où un fetch() depuis la
+# page serait bloqué par CORS). Chromium uniquement ; toute erreur est absorbée.
+_MAX_SCRIPTS = 60
+_MAX_SCRIPT_CHARS = 512 * 1024
+_MAX_SCRIPTS_TOTAL_CHARS = 4 * 1024 * 1024
+
+_SCRIPT_SRCS_JS = r"""() => Array.from(document.querySelectorAll('script[src]'))
+    .map(s => s.src || '').filter(u => u)"""
+
+
+def _index_resource_tree(node: Any, out: "dict[str, str]") -> None:
+    """url -> frameId des ressources de type Script (premier vu conservé)."""
+    if not isinstance(node, dict):
+        return
+    frame_id = (node.get("frame") or {}).get("id")
+    for res in node.get("resources") or []:
+        if isinstance(res, dict) and res.get("type") == "Script" and res.get("url"):
+            out.setdefault(res["url"], frame_id)
+    for child in node.get("childFrames") or []:
+        _index_resource_tree(child, out)
+
+
+def collect_external_scripts(driver, ctx) -> "Optional[list]":
+    """Contenu des <script src> du document de `ctx`, borné et tolérant par script.
+
+    Retourne None si la collecte est impossible dans son ensemble (pas de
+    session CDP, DOM illisible) — jamais d'exception. Sinon une liste
+    d'entrées {url, size, content, error} : `content` est None et `error` porte
+    la raison quand un script n'a pas pu être conservé (absent de l'arbre de
+    ressources, trop volumineux, budget total atteint, erreur CDP).
+    """
+    try:
+        srcs = ctx.evaluate(_SCRIPT_SRCS_JS) or []
+    except Exception as exc:
+        log_debug(_TAG, f"external_scripts: lecture des src impossible ({exc!r})")
+        return None
+
+    urls: "list[str]" = []
+    for u in srcs:
+        if isinstance(u, str) and u not in urls:
+            urls.append(u)
+    if not urls:
+        return []
+
+    session = None
+    try:
+        session = driver.context.new_cdp_session(driver)
+        session.send("Page.enable")
+        tree = (session.send("Page.getResourceTree") or {}).get("frameTree")
+        frame_of: "dict[str, str]" = {}
+        _index_resource_tree(tree, frame_of)
+
+        entries: "list[dict]" = []
+        total_chars = 0
+        for url in urls[:_MAX_SCRIPTS]:
+            entry: "dict[str, Any]" = {"url": url, "size": None, "content": None, "error": None}
+            entries.append(entry)
+            frame_id = frame_of.get(url)
+            if frame_id is None:
+                entry["error"] = "absent_de_l_arbre_de_ressources"
+                continue
+            if total_chars >= _MAX_SCRIPTS_TOTAL_CHARS:
+                entry["error"] = "budget_total_atteint"
+                continue
+            try:
+                res = session.send("Page.getResourceContent", {"frameId": frame_id, "url": url}) or {}
+                if res.get("base64Encoded"):
+                    entry["error"] = "contenu_binaire"
+                    continue
+                content = res.get("content") or ""
+            except Exception as exc:
+                entry["error"] = f"cdp_erreur: {type(exc).__name__}"
+                log_debug(_TAG, f"external_scripts: {url[:120]} -> {exc!r}")
+                continue
+            entry["size"] = len(content)
+            if len(content) > _MAX_SCRIPT_CHARS:
+                entry["error"] = "trop_volumineux"
+                continue
+            entry["content"] = content
+            total_chars += len(content)
+        if len(urls) > _MAX_SCRIPTS:
+            log_debug(_TAG, f"external_scripts: {len(urls)} scripts, tronqué à {_MAX_SCRIPTS}")
+        return entries
+    except Exception as exc:
+        log_debug(_TAG, f"external_scripts: collecte impossible ({exc!r})")
+        return None
+    finally:
+        if session is not None:
+            try:
+                session.detach()
+            except Exception:
+                pass
+
+
+# ── Feuilles de style externes (contenu) ──────────────────────────────────────
+# Même principe et mêmes bornes que collect_external_scripts (non modifiée) :
+# lecture depuis l'arbre de ressources déjà chargé (CDP), sans requête réseau,
+# pour les <link rel="stylesheet" href> du document capturé. Les @import et les
+# <style> restent hors périmètre (ces derniers sont déjà reconstruits depuis le
+# CSSOM par page_snapshot.py).
+_STYLESHEET_HREFS_JS = r"""() => Array.from(document.querySelectorAll('link[rel~="stylesheet" i][href]'))
+    .map(l => l.href || '').filter(u => u)"""
+
+
+def _index_stylesheet_tree(node: Any, out: "dict[str, str]") -> None:
+    """url -> frameId des ressources de type Stylesheet (premier vu conservé)."""
+    if not isinstance(node, dict):
+        return
+    frame_id = (node.get("frame") or {}).get("id")
+    for res in node.get("resources") or []:
+        if isinstance(res, dict) and res.get("type") == "Stylesheet" and res.get("url"):
+            out.setdefault(res["url"], frame_id)
+    for child in node.get("childFrames") or []:
+        _index_stylesheet_tree(child, out)
+
+
+def collect_external_stylesheets(driver, ctx) -> "Optional[list]":
+    """Contenu des <link rel=stylesheet> du document de `ctx`, borné et tolérant
+    par ressource. Même contrat de retour que collect_external_scripts :
+    None si la collecte est impossible dans son ensemble, sinon une liste
+    d'entrées {url, size, content, error}. Ne lève jamais d'exception."""
+    try:
+        hrefs = ctx.evaluate(_STYLESHEET_HREFS_JS) or []
+    except Exception as exc:
+        log_debug(_TAG, f"external_stylesheets: lecture des href impossible ({exc!r})")
+        return None
+
+    urls: "list[str]" = []
+    for u in hrefs:
+        if isinstance(u, str) and u not in urls:
+            urls.append(u)
+    if not urls:
+        return []
+
+    session = None
+    try:
+        session = driver.context.new_cdp_session(driver)
+        session.send("Page.enable")
+        tree = (session.send("Page.getResourceTree") or {}).get("frameTree")
+        frame_of: "dict[str, str]" = {}
+        _index_stylesheet_tree(tree, frame_of)
+
+        entries: "list[dict]" = []
+        total_chars = 0
+        for url in urls[:_MAX_SCRIPTS]:
+            entry: "dict[str, Any]" = {"url": url, "size": None, "content": None, "error": None}
+            entries.append(entry)
+            frame_id = frame_of.get(url)
+            if frame_id is None:
+                entry["error"] = "absent_de_l_arbre_de_ressources"
+                continue
+            if total_chars >= _MAX_SCRIPTS_TOTAL_CHARS:
+                entry["error"] = "budget_total_atteint"
+                continue
+            try:
+                res = session.send("Page.getResourceContent", {"frameId": frame_id, "url": url}) or {}
+                if res.get("base64Encoded"):
+                    entry["error"] = "contenu_binaire"
+                    continue
+                content = res.get("content") or ""
+            except Exception as exc:
+                entry["error"] = f"cdp_erreur: {type(exc).__name__}"
+                log_debug(_TAG, f"external_stylesheets: {url[:120]} -> {exc!r}")
+                continue
+            entry["size"] = len(content)
+            if len(content) > _MAX_SCRIPT_CHARS:
+                entry["error"] = "trop_volumineux"
+                continue
+            entry["content"] = content
+            total_chars += len(content)
+        if len(urls) > _MAX_SCRIPTS:
+            log_debug(_TAG, f"external_stylesheets: {len(urls)} feuilles, tronqué à {_MAX_SCRIPTS}")
+        return entries
+    except Exception as exc:
+        log_debug(_TAG, f"external_stylesheets: collecte impossible ({exc!r})")
+        return None
+    finally:
+        if session is not None:
+            try:
+                session.detach()
+            except Exception:
+                pass
