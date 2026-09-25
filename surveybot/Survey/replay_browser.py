@@ -49,6 +49,14 @@ Toute autre requête reste refusée et journalisée. Une entrée sans contenu
 présente avec deux contenus différents (les URLs des artefacts sont
 sanitisées, deux scripts ne différant que par la query string se rejoignent)
 est ambiguë et n'est pas servie non plus — jamais devinée.
+Même règle pour `external_requests.json` (réponses XHR/fetch émises par la page
+au chargement, cf. collect_xhr_fetch_resources) : chaque entrée est servie à son
+URL exacte, pour son `request_type` (`xhr`/`fetch`) uniquement, avec le
+`content_type` capturé pour CETTE ressource (il varie d'une entrée à l'autre,
+contrairement aux scripts/feuilles de style) ; sans `content_type` capturé,
+aucun n'est inventé. Une entrée dont le `content_type` est présent mais mal formé
+n'est pas servie. Ces réponses ne s'exécutent que si des scripts le sont (elles
+sont demandées par eux) : elles ne changent pas la décision `allow_scripts`.
 Quand au moins une ressource est servable, le document est servi à son URL
 d'origine (`url` de meta.json, sanitisée) pour que les références relatives
 du HTML se résolvent comme à la capture ; sinon URL synthétique. Les scripts
@@ -88,6 +96,11 @@ _RESOURCE_CONTENT_TYPES = {
     "script": "application/javascript; charset=utf-8",
     "stylesheet": "text/css; charset=utf-8",
 }
+# Artefact dont chaque entrée porte son propre type de requête (`request_type`)
+# et son propre Content-Type (`content_type`), au lieu d'un type fixe par
+# artefact ci-dessus.
+_REQUEST_ARTIFACT = "external_requests.json"
+_REQUEST_TYPES = ("xhr", "fetch")
 # Budget max d'entrées lues par artefact (la capture est déjà bornée à 60).
 _MAX_RESOURCES_PER_ARTIFACT = 200
 
@@ -115,8 +128,8 @@ class IsolatedReplayBrowser:
         self.blocked_total = 0
         # url -> (html, scripts_autorisés)
         self._served_html: Dict[str, Tuple[str, bool]] = {}
-        # (type de requête, url exacte) -> contenu capturé
-        self._served_resources: Dict[Tuple[str, str], str] = {}
+        # (type de requête, url exacte) -> (contenu capturé, Content-Type ou None)
+        self._served_resources: Dict[Tuple[str, str], Tuple[str, Optional[str]]] = {}
 
     # -- cycle de vie ---------------------------------------------------------
     def start(self) -> "IsolatedReplayBrowser":
@@ -232,11 +245,12 @@ class IsolatedReplayBrowser:
                 body=html,
             )
             return
-        content = self._served_resources.get((request.resource_type, request.url))
-        if content is not None:
+        served = self._served_resources.get((request.resource_type, request.url))
+        if served is not None:
+            content, content_type = served
             route.fulfill(
                 status=200,
-                content_type=_RESOURCE_CONTENT_TYPES[request.resource_type],
+                content_type=content_type,
                 # Requis pour les ressources `crossorigin`/modules : l'origine
                 # du document rejoué est celle d'origine, pas celle du CDN.
                 headers={"Access-Control-Allow-Origin": "*"},
@@ -271,12 +285,22 @@ def _original_document_url(artifacts_dir: Path) -> Optional[str]:
     return urlunsplit((parts.scheme, parts.netloc, parts.path or "/", parts.query, ""))
 
 
-def _load_case_resources(artifacts_dir: Path, flags: dict) -> Dict[Tuple[str, str], str]:
-    """(type de requête, url) -> contenu, pour les seules entrées du case dont le
-    contenu a été capturé et dont l'URL n'est pas ambiguë."""
-    out: Dict[Tuple[str, str], str] = {}
+def _valid_content_type(value: Any) -> bool:
+    """Content-Type capturé : absent (None) ou chaîne ASCII imprimable bornée."""
+    return value is None or (
+        isinstance(value, str) and 0 < len(value) <= 200 and value.isascii() and value.isprintable()
+    )
+
+
+def _load_case_resources(
+    artifacts_dir: Path, flags: dict
+) -> Dict[Tuple[str, str], Tuple[str, Optional[str]]]:
+    """(type de requête, url) -> (contenu, Content-Type), pour les seules entrées
+    du case dont le contenu a été capturé et dont l'URL n'est pas ambiguë."""
+    out: Dict[Tuple[str, str], Tuple[str, Optional[str]]] = {}
     ambiguous: set = set()
-    for artifact, kind in _RESOURCE_ARTIFACTS.items():
+    artifacts = [*_RESOURCE_ARTIFACTS.items(), (_REQUEST_ARTIFACT, None)]
+    for artifact, fixed_kind in artifacts:
         if flags.get(artifact) is not True or not (artifacts_dir / artifact).is_file():
             continue
         entries, err = _load_json(artifacts_dir / artifact)
@@ -291,10 +315,17 @@ def _load_case_resources(artifacts_dir: Path, flags: dict) -> Dict[Tuple[str, st
             url, content = entry.get("url"), entry.get("content")
             if not isinstance(url, str) or not isinstance(content, str):
                 continue
+            if fixed_kind is not None:
+                kind, content_type = fixed_kind, _RESOURCE_CONTENT_TYPES[fixed_kind]
+            else:
+                kind, content_type = entry.get("request_type"), entry.get("content_type")
+                if kind not in _REQUEST_TYPES or not _valid_content_type(content_type):
+                    continue
             key = (kind, url)
-            if key in out and out[key] != content:
+            value = (content, content_type)
+            if key in out and out[key] != value:
                 ambiguous.add(key)
-            out[key] = content
+            out[key] = value
     for key in ambiguous:
         out.pop(key, None)
         log_info(_TAG, f"URL ambiguë (contenus différents), non servie: {key[1][:120]}")

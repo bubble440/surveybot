@@ -150,6 +150,11 @@ def _is_visible_static(el: HtmlElement) -> bool:
 
 _TEXT_SKIP_TAGS = {"script", "style", "noscript", "template"}
 
+# Espaces HTML uniquement (ASCII) : str.split()/\s coupent aussi sur \xa0 (&nbsp;),
+# qu'un navigateur préserve dans innerText.
+_HTML_WS_CHARS = " \t\n\r\f"
+_HTML_WS_RE = re.compile(r"[ \t\n\r\f]+")
+
 
 def _inner_text_static(el: HtmlElement) -> str:
     """Approximation statique de innerText : exclut script/style et les sous-arbres
@@ -169,7 +174,7 @@ def _inner_text_static(el: HtmlElement) -> str:
             parts.append(_inner_text_static(child))
         if child.tail:
             parts.append(child.tail)
-    return " ".join(" ".join(parts).split())
+    return _HTML_WS_RE.sub(" ", " ".join(parts)).strip(_HTML_WS_CHARS)
 
 
 def _try_static_js_idiom(js: str, arg: Any) -> "tuple[bool, Any]":

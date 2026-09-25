@@ -110,6 +110,8 @@ _KNOWN_FILES = (
     # optionnel, absent si aucun script externe ou collecte impossible.
     "external_scripts.json",
     "external_stylesheets.json",
+    # Réponses des XHR/fetch du document (cache HTTP, best-effort) : optionnel.
+    "external_requests.json",
 )
 
 # Noms générés par page_snapshot._dump_frames_best_effort : frame_<chain>.dom_outer.html
@@ -137,6 +139,7 @@ _CAPSULE_JSON_FILES_TO_SANITIZE = {
     "action_trace.json",
     "external_scripts.json",
     "external_stylesheets.json",
+    "external_requests.json",
 }
 
 # <script>/<style> capturés en (tag_ouvrant, contenu, tag_fermant) : seul

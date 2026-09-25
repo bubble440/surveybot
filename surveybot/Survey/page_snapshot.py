@@ -512,6 +512,21 @@ def dump_page_snapshot(
     except Exception:
         pass
 
+    # Réponses des XHR/fetch émis par le document (même principe, bloc
+    # indépendant) : config de widgets chargée au load, absente des deux
+    # artefacts ci-dessus. Aucune requête réseau (cache HTTP seul).
+    try:
+        from Survey.browser_capsule import collect_xhr_fetch_resources
+
+        _ext_requests = collect_xhr_fetch_resources(snapshot_ctx)
+        if _ext_requests:
+            (folder / "external_requests.json").write_text(
+                json.dumps(_ext_requests, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+    except Exception:
+        pass
+
     # Dump frames
     try:
         frames = _dump_frames_best_effort(

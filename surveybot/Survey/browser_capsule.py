@@ -48,6 +48,7 @@ Portée strictement additive et passive :
 """
 
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 from Survey.dom_registry import get_target
 from Survey.log_utils import log_debug
@@ -529,3 +530,122 @@ def collect_external_stylesheets(driver, ctx) -> "Optional[list]":
                 session.detach()
             except Exception:
                 pass
+
+
+# ── Requêtes XHR / fetch du document (contenu) ────────────────────────────────
+# Certains widgets (ex. QARTS "rp" Decipher/LifePoints) chargent leur config
+# par XHR/fetch au chargement de la page ; sans ce contenu un rejeu navigateur
+# ne peut pas initialiser le composant. Contrairement aux scripts/feuilles de
+# style, ces requêtes n'apparaissent PAS dans l'arbre de ressources CDP
+# (Page.getResourceTree ne liste aucun XHR/fetch et Page.getResourceContent
+# répond "No resource with given URL found" — vérifié sur un vrai Chromium) et
+# Network.enable a posteriori ne rejoue rien : la stratégie des deux collecteurs
+# ci-dessus est donc inapplicable. Stratégie unique retenue : lister les requêtes
+# déjà émises (Performance Resource Timing : initiatorType fetch/xmlhttprequest)
+# puis relire chaque réponse depuis le cache HTTP du navigateur seulement
+# (fetch avec cache:'only-if-cached' + mode:'same-origin' : aucune requête
+# réseau, jamais — un cache miss échoue au lieu de charger). Limites assumées :
+# ce qui n'est pas en cache HTTP (Cache-Control: no-store, réponse non
+# cacheable) ou est cross-origin n'est pas récupérable et est journalisé comme
+# tel ; l'URL et le type restent néanmoins enregistrés. Tolérant par requête,
+# jamais d'exception propagée.
+_MAX_REQUESTS = 60
+_MAX_REQUEST_CHARS = 512 * 1024
+_MAX_REQUESTS_TOTAL_CHARS = 4 * 1024 * 1024
+
+# Performance Resource Timing initiatorType -> resource_type Playwright (ce que
+# le garde-fou réseau du replay Chromium verra : request.resource_type).
+_REQUEST_TYPE_BY_INITIATOR = {"xmlhttprequest": "xhr", "fetch": "fetch"}
+
+_XHR_FETCH_ENTRIES_JS = r"""() => ({
+    origin: location.origin,
+    items: performance.getEntriesByType('resource')
+        .filter(e => e.initiatorType === 'fetch' || e.initiatorType === 'xmlhttprequest')
+        .map(e => [e.initiatorType, e.name || ''])
+})"""
+
+_CACHED_RESPONSE_JS = r"""async (u) => {
+    const r = await fetch(u, {cache: 'only-if-cached', mode: 'same-origin', credentials: 'same-origin'});
+    if (!r.ok) return {status: r.status};
+    return {status: r.status, contentType: r.headers.get('content-type') || '', text: await r.text()};
+}"""
+
+
+def _origin_of(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else ""
+
+
+def collect_xhr_fetch_resources(ctx) -> "Optional[list]":
+    """Réponses des XHR/fetch émis par le document de `ctx`, bornées et tolérantes
+    par requête. Retourne None si la collecte est impossible dans son ensemble
+    (DOM/Performance illisible), sinon une liste d'entrées {url, request_type,
+    size, content_type, content, error} : `content` est None et `error` porte la
+    raison quand une réponse n'a pas pu être conservée (absent_du_cache_http,
+    cross_origin_non_lisible, statut_http_<n>, trop_volumineux,
+    budget_total_atteint, erreur: <type>). Ne lève jamais d'exception."""
+    try:
+        raw = ctx.evaluate(_XHR_FETCH_ENTRIES_JS) or {}
+        origin = raw.get("origin") or ""
+        items = raw.get("items") or []
+    except Exception as exc:
+        log_debug(_TAG, f"xhr_fetch: lecture des entrées Performance impossible ({exc!r})")
+        return None
+
+    seen: "set[tuple[str, str]]" = set()
+    pending: "list[tuple[str, str]]" = []
+    for item in items:
+        try:
+            initiator, url = item[0], item[1]
+        except Exception:
+            continue
+        request_type = _REQUEST_TYPE_BY_INITIATOR.get(initiator)
+        if not request_type or not isinstance(url, str) or not url.lower().startswith(("http://", "https://")):
+            continue
+        if (request_type, url) in seen:
+            continue
+        seen.add((request_type, url))
+        pending.append((request_type, url))
+    if not pending:
+        return []
+    if len(pending) > _MAX_REQUESTS:
+        log_debug(_TAG, f"xhr_fetch: {len(pending)} requêtes, tronqué à {_MAX_REQUESTS}")
+
+    entries: "list[dict]" = []
+    total_chars = 0
+    for request_type, url in pending[:_MAX_REQUESTS]:
+        entry: "dict[str, Any]" = {
+            "url": url,
+            "request_type": request_type,
+            "size": None,
+            "content_type": None,
+            "content": None,
+            "error": None,
+        }
+        entries.append(entry)
+        if _origin_of(url) != origin:
+            entry["error"] = "cross_origin_non_lisible"
+            continue
+        if total_chars >= _MAX_REQUESTS_TOTAL_CHARS:
+            entry["error"] = "budget_total_atteint"
+            continue
+        try:
+            res = ctx.evaluate(_CACHED_RESPONSE_JS, url) or {}
+        except Exception as exc:
+            entry["error"] = (
+                "absent_du_cache_http" if "Failed to fetch" in str(exc) else f"erreur: {type(exc).__name__}"
+            )
+            log_debug(_TAG, f"xhr_fetch: {url[:120]} -> {entry['error']}")
+            continue
+        if "text" not in res:
+            entry["error"] = f"statut_http_{res.get('status')}"
+            continue
+        content = res.get("text") or ""
+        entry["size"] = len(content)
+        entry["content_type"] = res.get("contentType") or None
+        if len(content) > _MAX_REQUEST_CHARS:
+            entry["error"] = "trop_volumineux"
+            continue
+        entry["content"] = content
+        total_chars += len(content)
+    return entries

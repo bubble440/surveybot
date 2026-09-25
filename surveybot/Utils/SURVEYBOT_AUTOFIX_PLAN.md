@@ -199,6 +199,28 @@ niveau tant que le niveau précédent n'est pas fiable.
 > changement de phase : le chantier principal reste la Phase 3B pour 3B.3/3B.4
 > (en attente d'un volume de cases suffisant) ; la Phase 7 pour `stage="action"`
 > reste en attente de 3C.
+> Mise à jour 2026-09-24 (suite) : oracle checked-state étendu au rejeu statique.
+> Nouvelle fonction additive `Survey/action_validator.py::_checkbox_radio_captured_state_false_negative_issue`, ajoutée à la chaîne de
+> détection combinée existante (`_dispatcher_false_negative_issue`) sans modifier
+> les détecteurs déjà en place. Cause du besoin : sur le driver statique du rejeu
+> (3A), le détecteur checkbox/radio existant décline proprement (retourne un état
+> non concluant plutôt qu'une exception) faute de méthode `is_checked()` sur le
+> shim — donc jamais de faux positif, mais jamais de reclassification non plus pour
+> ce type d'incident au rejeu. Le nouveau détecteur consulte à la place l'état déjà
+> capturé au même instant que le HTML rejoué (`runtime_state.json`, produit par
+> 3B.2), transmis en paramètre optionnel (`captured_option_states`) par
+> `Survey/failure_replay.py` — `validate_actions()` et `_dispatcher_false_negative_issue`
+> gagnent ce paramètre, `None` par défaut, sans changer le comportement du chemin
+> live existant (qui ne le fournit pas). Validé sur un case réel
+> (`20260924_180714_action_validation_failure`, widget radio QARTS_HIDDEN
+> Decipher/LifePoints) : verdict de rejeu passé de `DIFFERENT` à `REPRODUIT`, même
+> `failure_type` que l'origine. Ce détecteur constitue un premier pas, partiel,
+> vers la « fonction oracle unique » déjà réclamée en Phase 3C.4 (le pari
+> `dispatcher_success=false` mais état prouvant le succès, partagé entre validator
+> live et replay) — partiel car il ne couvre que checkbox/radio via l'état déjà
+> capturé, pas une réexécution réelle du dispatcher (3C.4 reste à construire pour
+> ça). Aucun changement du chemin live de production. Le chantier principal passe
+> à la Phase 3C.
 > Mise à jour 2026-09-25 : Phase 3C PARTIELLEMENT clôturée — 3C.1 (isolation
 > réseau) et première brique de 3C.2 (chargement du document principal)
 > implémentés et vérifiés, dans un seul module `Survey/replay_browser.py`
@@ -285,6 +307,120 @@ niveau tant que le niveau précédent n'est pas fiable.
 > pas concluant car le serveur de test répondait 200 avec du HTML), aucun test
 > versionné. Aucun changement du rejeu statique ni Chromium. Le chantier
 > principal reste la Phase 3C.
+> Mise à jour 2026-09-25 (suite 3) : Phase 3C.2 étendue — ressources externes
+> capturées (3B.9/3B.10) servies dans le navigateur isolé, CSP relâchée quand au
+> moins un script est servable. `IsolatedReplayBrowser.load_case_document` lit
+> désormais aussi `external_scripts.json`/`external_stylesheets.json` du case
+> (si présents) et enrichit le garde-fou réseau existant (`_block_request`,
+> non remplacé, une branche ajoutée) pour servir chaque entrée à son URL EXACTE
+> et au type de requête attendu (`script`/`stylesheet`) uniquement — toute autre
+> requête reste refusée et journalisée comme avant. Une entrée sans contenu
+> capturé n'est jamais servie ; une URL présente avec deux contenus différents
+> (conséquence du retrait de la query string à la sanitisation, cf. 3B.9) est
+> détectée comme ambiguë et n'est pas servie non plus, plutôt que de deviner
+> laquelle. Quand au moins une ressource est servable, le document est servi à
+> son URL d'origine (`meta.json`, déjà sanitisée) pour que ses références
+> relatives se résolvent comme à la capture, sinon URL synthétique `.invalid`
+> comme avant ce patch. La CSP `script-src 'none'` n'est levée que si au moins un
+> script externe est servable (sinon comportement inchangé) ; un
+> `Access-Control-Allow-Origin: *` est ajouté aux ressources servies, nécessaire
+> car le document, désormais à sa vraie origine, rend ces requêtes réellement
+> cross-origin du point de vue du navigateur. Limite actée : l'URL d'origine
+> réutilisée vient de `meta.json`, donc sans sa query string (sanitisation
+> Phase 2) — un script inline qui lirait `location.search` à l'exécution ne
+> verrait pas la vraie query string de capture ; tension assumée entre fidélité
+> d'exécution et retrait des données de session, non résolue. Validé sur un case
+> réel (`20260925_091047_action_validation_failure`, Confirmit "Nepa") via script
+> ponctuel : jQuery et le script du provider s'exécutent (`typeof window.jQuery
+> === "function"`), la feuille de style capturée s'applique visuellement
+> (capture d'écran), le script trop volumineux (3B.9) reste refusé comme prévu,
+> une requête XHR non capturée (vérification anti-fraude du provider) est
+> refusée et journalisée. Aucun test versionné. Aucun changement du rejeu
+> statique (3A). Le chantier principal reste la Phase 3C.
+> Mise à jour 2026-09-25 (suite 4) : bug de fidélité corrigé dans le rejeu
+> statique (3A), trouvé en creusant un verdict `DIFFERENT` inattendu
+> (`action_target_missing`) sur un case par ailleurs correctement rejouable.
+> Cause racine : `Survey/dom_replay_shim.py::_inner_text_static` normalisait
+> l'espace insécable (U+00A0, `&nbsp;`) comme une espace normale lors du calcul
+> du texte visible d'un élément, alors qu'un navigateur réel la préserve dans
+> `innerText`. Comme `Survey/dom_registry.py::make_target_id` hache ce texte
+> pour produire le `target_id`, un seul caractère de différence suffisait à
+> produire un identifiant différent de celui enregistré au moment de l'incident
+> — la cible devenait introuvable au rejeu, alors que l'extraction elle-même
+> avait bien retrouvé le bon bloc de question. Bug du rejeu uniquement,
+> confirmé sans rapport avec l'extracteur ni avec `make_target_id` eux-mêmes
+> (aucun des deux modifié). Corrigé en restreignant la normalisation des espaces
+> du shim aux espaces ASCII (` \t\n\r\f`), U+00A0 explicitement exclu du
+> collapse et du strip. Validé sur un case réel
+> (`20260925_115552_action_validation_failure`, question contenant une espace
+> insécable avant `?`, typographie française) : verdict de rejeu passé de
+> `DIFFERENT`/`action_target_missing` à `REPRODUIT`, même `failure_type` que
+> l'origine. Ce même case (widget radio QARTS_HIDDEN Decipher/LifePoints,
+> provider `surveys.lifepointspanel.com`) porte déjà `external_scripts.json`/
+> `external_stylesheets.json` — prêt pour tester en conditions JS réelles,
+> via 3C.2 (suite 3), si le clic sur le widget visuel "rp" se resynchronise
+> réellement, sans nouvelle capture. Le chantier principal reste la Phase 3C ;
+> le bug de dispatch lui-même (widget "rp" Decipher/rowpicker qui ne se
+> resynchronise pas après un clic sur le label natif caché, diagnostiqué —
+> cf. suite 8 du 2026-09-13) reste non corrigé, volontairement reporté après
+> la fiabilisation de la Phase 3.
+> Mise à jour 2026-09-25 (suite 5) : Phase 3C.2 étendue — troisième type de
+> ressource capturé et servi, contenu des requêtes XHR/fetch émises au
+> chargement (`Survey/browser_capsule.py::collect_xhr_fetch_resources`,
+> artefact `external_requests.json`). Cause : certains widgets (confirmé sur
+> le widget radio QARTS "rp" Decipher/LifePoints) chargent leur configuration
+> par XHR/fetch au chargement, pas par <script src>/<link stylesheet> — donc
+> hors de portée des collecteurs 3B.9/3B.10. Vérifié empiriquement que
+> Page.getResourceTree/getResourceContent (CDP, la stratégie de 3B.9/3B.10)
+> ne liste aucun XHR/fetch sur un vrai Chromium — stratégie différente
+> retenue : lister via `performance.getEntriesByType('resource')`
+> (initiatorType fetch/xmlhttprequest), puis relire chaque réponse depuis le
+> cache HTTP uniquement (`fetch(url, {cache:'only-if-cached'})` : un cache
+> miss échoue au lieu de charger, aucune requête réseau nouvelle, jamais).
+> Mêmes bornes que 3B.9/3B.10, tolérant par requête. Limite actée, non
+> résolue : seule l'URL est sanitisée (retrait query string), pas le corps
+> JSON de la réponse — une XHR qui porterait une vraie donnée de réponse
+> plutôt qu'une configuration statique ne serait pas filtrée ; risque
+> identifié, pas encore concrétisé sur un cas réel.
+> `Survey/replay_browser.py` étendu en parallèle pour servir ce nouvel
+> artefact au navigateur isolé (même garde-fou réseau, même principe
+> d'URL/type de requête exacts que 3C.2 pour scripts/styles). Résultat,
+> validé sur le case de référence (`20260925_211543_action_validation_failure`,
+> widget radio QARTS "rp") : une fois la configuration XHR servie, React
+> prend enfin possession du nœud du widget (`__reactFiber`/`__reactProps`
+> présents, absents avant ce patch) et un clic réel dans le navigateur isolé
+> déclenche une vraie navigation — première confirmation de bout en bout,
+> Phase 3C, d'un widget interactif piloté par JS. Aucun changement du rejeu
+> statique (3A). Le chantier principal reste la Phase 3C (état runtime dans
+> la page reconstruite, frames, shadow roots, 3C.3, 3C.4 toujours à faire).
+> Mise à jour 2026-09-25 (suite 6) : correctif de dispatch pour le bug
+> diagnostiqué en suite 8 du 2026-09-13 — widget radio/checkbox QARTS "rp"
+> Decipher/LifePoints (motif conteneur `sq-QARTS-container-`, déjà réservé
+> mais jamais implémenté, cf. "Patterns exclus" des entrées kantar_rowpicker).
+> Nouvelle stratégie nommée `click_qarts_widget_by_label`
+> (Survey/input_checkbox.py), qui clique le div overlay visuel réel du widget
+> (via un clic natif hover+click, pas un clic JS) au lieu du <label> natif
+> caché ; vérifie la sélection via l'opacité du marqueur SVG plutôt que
+> `.checked`. Câblée dans Survey/action_dispatcher.py, gardée par un nouveau
+> flag `qarts_widget` sur le payload du registry. Aucune stratégie existante
+> modifiée (click_kantar_rowpicker_radio, click_decipher_grid_radio_strict
+> intacts) ; click_decipher_grid_radio_strict reste utilisé pour les grilles
+> Decipher sans cet overlay. Validé empiriquement en conditions JS réelles
+> (Phase 3C, cf. suite 5) : contrairement au clic sur le label caché
+> (`.checked` bascule mais aucune mise à jour visuelle), un clic manuel sur
+> l'overlay produit la mise à jour visuelle ET une vraie navigation.
+> Point ouvert, non encore validé : le flag `qarts_widget` est posé
+> inconditionnellement (`True`) par l'extracteur existant
+> `_extract_qarts_hidden_answers_groups` (Survey/dom_extractors_decipher.py),
+> sans vérifier que l'overlay `_rowpicker` existe réellement pour ce groupe
+> précis — une modification du corps de cet extracteur, faite sans la
+> validation explicite que ce chantier exige normalement avant tout
+> changement d'un extracteur existant. Risque : un groupe qarts_hidden sans
+> overlay `_rowpicker` (aucun cas de ce genre observé à ce jour) serait routé
+> vers `click_qarts_widget_by_label`, qui échouerait sans jamais retomber sur
+> `click_decipher_grid_radio_strict` — régression potentielle non confirmée,
+> correctif proposé (vérifier la présence réelle de l'overlay à l'extraction
+> plutôt que de la supposer) en attente de validation.
 
 ## Contexte de travail actuel
 
@@ -313,10 +449,14 @@ incident détecté
 1A  terminée
 1B  ouverte en tâche de fond
 2   terminée
-3   PARTIELLEMENT TERMINÉE (3A terminée ; 3B.1/3B.2/3B.5/3B.6/3B.8 terminés ;
-    3B.9 (scripts externes), 3B.10 (feuilles de style externes) et 3C.1 + chargement du document principal
-    (3C.2, 1re brique) terminés ;
-    3B.3/3B.4/reste de 3C/3D à faire — voir Phase 3)
+3   PARTIELLEMENT TERMINÉE (3A terminée, correctif de fidélité espace insécable
+    inclus ; 3B.1/3B.2/3B.5/3B.6/3B.8 terminés, oracle checked-state étendu au
+    rejeu ; 3B.9/3B.10/3B.11 (scripts, feuilles de style, requêtes XHR/fetch
+    externes) et 3C.1 + 3C.2 (document principal + les trois types de
+    ressources servis, CSP relâchée) terminés — premier widget JS interactif
+    (React) validé de bout en bout en conditions réelles ;
+    3B.3/3B.4/reste de 3C (état runtime/frames/shadow, 3C.3, 3C.4)/3D à faire —
+    voir Phase 3)
 4   terminée
 5   terminée
 6   terminée (point de vigilance data ouvert — voir note ci-dessus)
@@ -1369,12 +1509,22 @@ depuis Internet pour améliorer artificiellement la fidélité du replay.
 
 ### 3C.2 --- Reconstruction
 
-**Statut : PARTIELLE — seul le document principal est chargé
-(`IsolatedReplayBrowser.load_case_document(case_dir)`) : HTML choisi par
-`failure_replay._pick_dom_file`, servi en mémoire sous une origine `.invalid`
-avec CSP `script-src 'none'` (scripts du provider non rejoués). Non fait :
-styles depuis les artefacts, état runtime (`runtime_state.json`), frames,
-shadow roots ouverts. Ne fait ni extraction ni validation.**
+**Statut : PARTIELLE — document principal chargé
+(`IsolatedReplayBrowser.load_case_document(case_dir)`, HTML choisi par
+`failure_replay._pick_dom_file`), et les trois types de ressources externes
+déjà capturées par 3B.9/3B.10/3B.11 (`external_scripts.json`/
+`external_stylesheets.json`/`external_requests.json`, quand présentes) sont
+servis à leur URL exacte avec la CSP `script-src` relâchée dès qu'au moins un
+script est servable — sinon comportement inchangé (`script-src 'none'`,
+origine synthétique `.invalid`). Validé sur deux cases réels : Confirmit
+"Nepa" (scripts/styles s'exécutent et s'appliquent réellement, ressources non
+capturées correctement refusées) et un widget radio QARTS "rp"
+Decipher/LifePoints dépendant d'une config XHR au chargement — une fois
+celle-ci servie (3B.11), React prend possession du nœud et un clic réel
+déclenche une vraie navigation : première validation de bout en bout d'un
+widget JS interactif via 3C. Non fait : restauration de l'état runtime
+(`runtime_state.json`) dans la page reconstruite, frames, shadow roots ouverts.
+Ne fait ni extraction ni validation — voir 3C.3.**
 
 Le worker reconstruit, dans la mesure des artefacts disponibles : document
 principal, styles utiles, état runtime, frames, shadow roots ouverts, état
@@ -2388,11 +2538,13 @@ Je suivrais exactement cet ordre :
 2   Failure cases normalisés — TERMINÉE (failure_case_builder.py + CLI, 2 correctifs validés)
 3A  Replay DOM statique — TERMINÉE (dom_replay_shim.py + failure_replay.py + CLI)
 3B  Capture enrichie (browser capsule) — PARTIELLEMENT TERMINÉE
-    (3B.1/3B.2/3B.5/3B.6/3B.8/3B.9/3B.10 faits ; 3B.3/3B.4 différées, prochain
-    sous-chantier après mesure sur cas réels)
+    (3B.1/3B.2/3B.5/3B.6/3B.8/3B.9/3B.10/3B.11 faits — 3B.11 : requêtes
+    XHR/fetch externes, cf. historique suite 5 ; 3B.3/3B.4 différées,
+    prochain sous-chantier après mesure sur cas réels)
 3C  Replay Chromium local — PARTIELLEMENT TERMINÉE (3C.1 isolation réseau +
-    chargement du document principal faits ; frames/shadow/état runtime,
-    3C.3 et 3C.4 à faire)
+    3C.2 document principal + scripts/styles/XHR-fetch servis, CSP relâchée
+    faits — validé de bout en bout sur un widget React réel ; état runtime/
+    frames/shadow (3C.2), 3C.3 et 3C.4 à faire)
 3D  Classification de rejouabilité (STATIC_DOM/BROWSER_CAPSULE/TRACE_REPLAY/
     EXTERNAL_NON_REPLAYABLE)
 4   Diagnostic automatique — TERMINÉE (failure_diagnosis.py + CLI)
