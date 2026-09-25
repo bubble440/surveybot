@@ -82,9 +82,29 @@ ou ambigu = ignoré et journalisé, jamais deviné, jamais bloquant. Aucun
 les propriétés changent, l'affichage d'un widget JS piloté par son propre état
 n'est donc pas resynchronisé. Limite : document principal uniquement (pas de
 frames). Sans artefact, comportement identique à avant ce patch.
+
+── Extraction du bot rejouée sur la page chargée (3C.3, première brique) ──────
+`extract_case_blocks(page, case_dir)` exécute `dom_analyzer.analyze_dom(page)`
+tel quel (aucune copie ni réimplémentation) sur la page issue de
+`load_case_document` et en retourne les blocs, ainsi que, pour chaque
+`target_id` de `actions_requested.json`, le payload du registre DOM
+(`dom_registry.get_target`) — la cible sur laquelle une action pourra s'exécuter.
+Le registre reste peuplé après l'appel (le dispatcher en dépend) jusqu'à
+l'extraction suivante. Isolation entre cases : avant chaque extraction le
+registre ET le cache de secours `_STABLE_TEXT_FIELD_LOCATOR` (que
+`clear_registry` laisse volontairement survivre aux rescans) sont vidés — les
+deux seuls états globaux mutables des modules d'extraction chargés — et les
+extractions sont sérialisées par un verrou (état global du process).
+Si `question_blocks.json` du case existe, les blocs rejoués lui sont comparés
+(mêmes `target_id`, mêmes champs par bloc : options, itype, min/max_select,
+question, context…) ; la comparaison n'est déclarée exploitable que si ni le
+manifest ni la cible rejouée ne dépendent d'une frame (seul le document
+principal est chargé). Aucune action, aucun clic, aucune validation ici.
 """
 
+import json
 import threading
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlsplit, urlunsplit
@@ -118,6 +138,12 @@ _REQUEST_ARTIFACT = "external_requests.json"
 _REQUEST_TYPES = ("xhr", "fetch")
 # Budget max d'entrées lues par artefact (la capture est déjà bornée à 60).
 _MAX_RESOURCES_PER_ARTIFACT = 200
+# Extraction rejouée : budgets (cibles d'actions lues, blocs comparés) et verrou
+# (le registre DOM et le cache de secours sont des états globaux du process).
+_MAX_ACTION_TARGETS = 40
+_MAX_COMPARED_BLOCKS = 200
+_EXTRACTION_LOCK = threading.Lock()
+
 # Budget max de faits d'état runtime restaurés (la capture est déjà bornée à 40).
 _MAX_RUNTIME_FACTS = 60
 
@@ -430,3 +456,106 @@ def _load_case_resources(
         out.pop(key, None)
         log_info(_TAG, f"URL ambiguë (contenus différents), non servie: {key[1][:120]}")
     return out
+
+
+@dataclass
+class CaseExtraction:
+    """Résultat de extract_case_blocks. `error` non vide = analyze_dom a levé
+    (blocs/cibles vides) ; `comparison` None = pas de question_blocks.json."""
+
+    blocks: List[Dict[str, Any]] = field(default_factory=list)
+    # target_id d'une action du case -> copie du payload du registre (None = introuvable)
+    targets: Dict[str, Optional[Dict[str, Any]]] = field(default_factory=dict)
+    comparison: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+def _compare_extraction(
+    original: Any, blocks: List[Dict[str, Any]], manifest: dict, targets: Dict[str, Optional[dict]]
+) -> Optional[Dict[str, Any]]:
+    """Blocs rejoués vs question_blocks.json du case, bloc par bloc (clé target_id)."""
+    if not isinstance(original, list):
+        return None
+    reasons = []
+    if manifest.get("frame_chain"):
+        reasons.append("le case dépend d'une frame (manifest.frame_chain) — seul le document principal est chargé")
+    if any(isinstance(p, dict) and p.get("frame_chain") for p in targets.values()):
+        reasons.append("l'extraction rejouée cible une frame")
+    if len(original) > _MAX_COMPARED_BLOCKS or len(blocks) > _MAX_COMPARED_BLOCKS:
+        log_info(_TAG, f"comparaison bornée à {_MAX_COMPARED_BLOCKS} blocs")
+
+    def _by_id(items: list, normalize: bool) -> Dict[str, dict]:
+        out: Dict[str, dict] = {}
+        for b in items[:_MAX_COMPARED_BLOCKS]:
+            if isinstance(b, dict) and isinstance(b.get("target_id"), str):
+                # Même passage JSON que l'artefact d'origine (tuples -> listes).
+                out[b["target_id"]] = json.loads(json.dumps(b, default=str)) if normalize else b
+        return out
+
+    orig_by_id, new_by_id = _by_id(original, False), _by_id(blocks, True)
+    missing = sorted(orig_by_id.keys() - new_by_id.keys())
+    extra = sorted(new_by_id.keys() - orig_by_id.keys())
+    differences: Dict[str, Dict[str, Any]] = {}
+    for tid in sorted(orig_by_id.keys() & new_by_id.keys()):
+        o, n = orig_by_id[tid], new_by_id[tid]
+        diff = {k: {"original": o.get(k), "replay": n.get(k)} for k in sorted(set(o) | set(n)) if o.get(k) != n.get(k)}
+        if diff:
+            differences[tid] = diff
+    return {
+        "comparable": not reasons,
+        "reasons": reasons,
+        "identical": not (missing or extra or differences),
+        "missing_target_ids": missing,
+        "extra_target_ids": extra,
+        "differences": differences,
+    }
+
+
+def extract_case_blocks(page: Any, case_dir: Union[str, Path]) -> CaseExtraction:
+    """Exécute l'extraction du bot (dom_analyzer.analyze_dom, non modifié) sur
+    `page` — la page retournée par IsolatedReplayBrowser.load_case_document pour
+    ce même `case_dir` — et retourne blocs, cibles des actions du case et
+    comparaison à question_blocks.json (voir docstring du module). Ne lève pas
+    pour une erreur d'extraction : elle est reportée dans `CaseExtraction.error`."""
+    case_dir = Path(case_dir)
+    manifest, err = _load_json(case_dir / "manifest.json")
+    manifest = manifest if isinstance(manifest, dict) and not err else {}
+    artifacts_dir = case_dir / "artifacts"
+    original, _ = _load_json(artifacts_dir / "question_blocks.json")
+    actions, _ = _load_json(artifacts_dir / "actions_requested.json")
+    target_ids: List[str] = []
+    for action in (actions if isinstance(actions, list) else [])[:_MAX_ACTION_TARGETS]:
+        tid = action.get("target_id") if isinstance(action, dict) else None
+        if isinstance(tid, str) and tid and tid not in target_ids:
+            target_ids.append(tid)
+
+    result = CaseExtraction()
+    with _EXTRACTION_LOCK:
+        try:
+            import Survey.dom_analyzer as dom_analyzer
+            from Survey.dom_registry import _STABLE_TEXT_FIELD_LOCATOR, clear_registry, get_target
+
+            # analyze_dom vide déjà le registre ; le cache de secours, lui, survit
+            # volontairement aux rescans en production : ici il fuirait d'un case à l'autre.
+            clear_registry()
+            _STABLE_TEXT_FIELD_LOCATOR.clear()
+            result.blocks = [b for b in (dom_analyzer.analyze_dom(page) or []) if isinstance(b, dict)]
+            for tid in target_ids:
+                payload = get_target(tid)
+                result.targets[tid] = dict(payload) if isinstance(payload, dict) else None
+        except Exception as exc:
+            result.error = f"{type(exc).__name__}: {exc}"
+            result.blocks, result.targets = [], {}
+    if result.error:
+        log_info(_TAG, f"extraction échouée ({result.error[:200]}) — case {case_dir.name}")
+        return result
+    result.comparison = _compare_extraction(original, result.blocks, manifest, result.targets)
+    cmp_ = result.comparison
+    log_info(
+        _TAG,
+        f"extraction {case_dir.name}: {len(result.blocks)} bloc(s), cibles résolues "
+        f"{sum(1 for p in result.targets.values() if p)}/{len(target_ids)}, comparaison "
+        + ("absente" if cmp_ is None else f"identical={cmp_['identical']} comparable={cmp_['comparable']}"),
+    )
+    return result
+
