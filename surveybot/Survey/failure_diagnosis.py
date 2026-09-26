@@ -39,6 +39,26 @@ y compris un dispatcher qui réussirait maintenant, CORRECTIF_CONFIRME) — mêm
 le verdict de replay passif seul aurait valu "certain" par construction (cf.
 Utils/SURVEYBOT_AUTOFIX_PLAN.md, phase 3C.4).
 
+── Réexécution réelle de l'extraction pour stage="extraction" (real_extraction_replay) ─
+Le verdict de replay ci-dessus reste, pour stage="extraction", celui du replay PASSIF
+(Survey/failure_replay.py : dom_analyzer.analyze_dom() + question_block_validator.
+validate_question_blocks() réellement réexécutés, mais sur un DOM statique sans
+JavaScript/layout/état runtime, cf. Survey/dom_replay_shim.py) — inchangé, conservé
+tel quel, jamais recalculé ici. Quand le case dispose de ce qu'exige Survey/
+replay_browser.py::extract_case_blocks (Phase 3C.3, non modifié : un document
+chargeable par IsolatedReplayBrowser.load_case_document + les garde-fous déjà en
+place de ce worker), ce module fait EN PLUS tourner cette réexécution réelle de
+l'extraction et de son validator dans le Chromium isolé, et conserve son résultat tel
+quel dans real_extraction_replay, à côté de "replay" — jamais à sa place. Exactement
+le même principe que real_dispatch_replay ci-dessus pour stage="action", pas une
+règle différente : un case sans document chargeable, ou dont extract_case_blocks
+lève/décline (erreur d'extraction, comparaison non exploitable), ne change rien à ce
+qui est déjà calculé — cause_level/confidence_global restent dérivés du seul replay
+passif pour ce stage, cette réexécution est aujourd'hui purement informative, aucune
+nouvelle règle de plafond n'y est adossée (contrairement à real_dispatch_replay, dont
+le plafond répond à un besoin propre à stage="action" : la preuve indépendante d'un
+dispatcher réellement réexécuté, absente ici).
+
 ── Cause (niveau + justification) ─────────────────────────────────────────────
 Le niveau de cause est déterminé UNIQUEMENT par le verdict de replay (jamais par une
 lecture "plausible" du symptôme seul) :
@@ -349,6 +369,60 @@ def _real_dispatch_confirms_persistence(real_dispatch_replay: Optional[dict]) ->
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Réexécution réelle de l'extraction (stage="extraction") — Survey/replay_browser.py
+# (Phase 3C.3, non modifié) réutilisé strictement tel quel. Additif : ne remplace
+# jamais le verdict de replay passif calculé ci-dessus. Symétrique de
+# _attempt_real_dispatch_replay ci-dessus pour stage="action", même principe.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _attempt_real_extraction_replay(case_dir: Path, manifest: dict) -> Optional[dict]:
+    """Stage="extraction" uniquement. Tente une réexécution RÉELLE de l'extraction et
+    de son validator (Phase 3C.3, Survey/replay_browser.py::extract_case_blocks, non
+    modifié) sur le document du case chargé dans le Chromium isolé de ce worker —
+    contrairement au replay passif ci-dessus (DOM statique, sans JavaScript/layout/état
+    runtime), ceci fait tourner dom_analyzer.analyze_dom() et question_block_validator.
+    validate_question_blocks() pour de vrai, avec une page réelle comme pilote.
+
+    Retourne None si non tentée : case pas stage="extraction", Survey.replay_browser
+    indisponible, ou pré-requis absents selon le garde-fou déjà existant de
+    IsolatedReplayBrowser.load_case_document (aucun document chargeable pour ce case,
+    cf. _pick_dom_file de Survey/failure_replay.py, réutilisé tel quel) — jamais une
+    exception propagée, jamais un résultat deviné. Le contenu retourné reprend tel
+    quel le résultat de extract_case_blocks (comparaison des blocs à
+    question_blocks.json, rapport du validator rejoué et sa comparaison à
+    validation_report.json d'origine, ou l'erreur d'extraction si analyze_dom a levé)."""
+    if manifest.get("stage") != "extraction":
+        return None
+    try:
+        from Survey.replay_browser import IsolatedReplayBrowser, ReplayBrowserError, extract_case_blocks
+    except Exception as exc:
+        log_debug(_TAG, f"Survey.replay_browser indisponible — réexécution réelle non tentée : {exc}")
+        return None
+
+    try:
+        with IsolatedReplayBrowser() as browser:
+            page = browser.load_case_document(case_dir)
+            extraction = extract_case_blocks(page, case_dir)
+    except ReplayBrowserError as exc:
+        log_debug(_TAG, f"réexécution réelle non tentée (pré-requis absents) : {exc}")
+        return None
+    except Exception as exc:
+        log_debug(_TAG, f"réexécution réelle de l'extraction a échoué : {type(exc).__name__}: {exc}")
+        return None
+
+    if extraction.error:
+        log_debug(_TAG, f"extraction réelle non exploitable : {extraction.error}")
+
+    return {
+        "blocks_count": len(extraction.blocks),
+        "error": extraction.error,
+        "comparison": extraction.comparison,
+        "validation_comparison": extraction.validation_comparison,
+        "validation_error": extraction.validation_error,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Modules probablement concernés — recherche exacte dans BOT_EVOLUTION_MEMORY.md
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -499,6 +573,7 @@ class DiagnosisResult:
     expected_behavior: list = field(default_factory=list)
     replay: dict = field(default_factory=dict)
     real_dispatch_replay: Optional[dict] = None
+    real_extraction_replay: Optional[dict] = None
     cause_level: str = LEVEL_PLAUSIBLE
     cause_justification: str = ""
     modules_likely_involved: list = field(default_factory=list)
@@ -523,6 +598,7 @@ class DiagnosisResult:
             "expected_behavior": self.expected_behavior,
             "replay": self.replay,
             "real_dispatch_replay": self.real_dispatch_replay,
+            "real_extraction_replay": self.real_extraction_replay,
             "cause": {
                 "level": self.cause_level,
                 "justification": self.cause_justification,
@@ -569,9 +645,13 @@ def diagnose_failure_case(case_dir: "str | Path") -> DiagnosisResult:
     modules = _modules_likely_involved(question_blocks, target_id)
 
     real_dispatch_replay: Optional[dict] = None
+    real_extraction_replay: Optional[dict] = None
     if stage == "action":
         log_debug(_TAG, f"réexécution réelle du dispatcher tentée pour diagnostic case={case_id}")
         real_dispatch_replay = _attempt_real_dispatch_replay(case_dir, manifest)
+    elif stage == "extraction":
+        log_debug(_TAG, f"réexécution réelle de l'extraction tentée pour diagnostic case={case_id}")
+        real_extraction_replay = _attempt_real_extraction_replay(case_dir, manifest)
 
     confidence_global = cause_level
     warnings: list[str] = []
@@ -615,6 +695,7 @@ def diagnose_failure_case(case_dir: "str | Path") -> DiagnosisResult:
         expected_behavior=expected,
         replay=replay_result.as_dict(),
         real_dispatch_replay=real_dispatch_replay,
+        real_extraction_replay=real_extraction_replay,
         cause_level=cause_level,
         cause_justification=cause_justification,
         modules_likely_involved=modules,
