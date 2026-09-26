@@ -747,6 +747,58 @@ niveau tant que le niveau précédent n'est pas fiable.
 > Suite logique délibérément non incluse ici (un patch à la fois) :
 > `replayability_classifier.py` ne lit pas encore `real_extraction_replay` —
 > `stage="extraction"` hors `STATIC_DOM` reste `UNDETERMINED` pour l'instant.
+> Mise à jour 2026-09-26 (suite 23) : Phase 7 complétée (traçabilité) + Phase 8
+> clôturée. Gap comblé côté Phase 7 : `prepare_autofix_worktree` ne se
+> contentait que d'un `print()` de son résultat, sans laisser de trace sur
+> disque — cassant le principe de lecture seule/artefact déjà écrit suivi par
+> les phases 2 à 6. Nouveau `write_worktree_manifest`
+> (`Survey/autofix_worktree.py`) persiste désormais `case_id`/`branch`/
+> `base_sha`/`worktree_path`/`source_branch`/`prompt_path` sous
+> `autofix_worktrees/<case_id>/worktree.json`, même convention JSON que les
+> phases précédentes (schema_version, horodatage, avertissements), refus
+> explicite si l'artefact existe déjà sans `--force` — vérifié avant toute
+> mutation Git, pas après. `WorktreeResult` gagne un champ `manifest_path`,
+> strictement additif ; comportement Git (branche/worktree) inchangé.
+> Phase 8 : `Survey/static_validator.py` + `tools/validate_patch_static.py`.
+> Lecture seule sur le seul artefact que produit la Phase 7 (`worktree.json`)
+> — jamais `manifest.json`/`diagnosis.json` rouverts, jamais l'éligibilité
+> Phase 7 recalculée. Sous-ensemble de fichiers vérifiés déterminé par
+> comparaison Git (`git diff --name-only base_sha` ∪ nouveaux fichiers non
+> trackés), jamais l'ensemble du dépôt — conforme au choix tranché à
+> l'ouverture de ce chantier. Quatre vérifications dans l'ordre, chacune avec
+> son propre budget de temps explicite : (1) compilation isolée
+> (`python -m py_compile`, capture aussi un argument dupliqué — déjà un
+> SyntaxError CPython natif) ; (2) import isolé par sous-processus,
+> `sys.executable` réutilisé tel quel (même venv que l'outil, jamais un
+> `python` résolu au hasard sur PATH) ; (3) lint minimal via Ruff, choisi
+> plutôt que pyflakes pour sa capacité à évoluer par simple config plutôt que
+> changement d'outil (décidé à l'ouverture du chantier) — `--isolated`,
+> sélection figée à `F821`/`F822`/`F823` (erreurs réelles uniquement, jamais
+> de règle de style) ; F831 (argument dupliqué), envisagé initialement,
+> n'existe pas comme règle sélectionnable dans la version installée — non
+> grave, ce cas est déjà couvert par (1), documenté plutôt que masqué ; (4)
+> tests unitaires déjà associés à chaque fichier modifié, si une convention
+> fichier-source → fichier-de-test existe déjà. Investigation menée avant
+> écriture, documentée dans le module (même principe que la Source 2 de
+> `context_selector.py`) : ce dépôt ne contient à ce jour aucune suite de
+> tests versionnée, ni `tests/`, ni `conftest.py`, ni dépendance pytest/ruff
+> dans `requirements.txt` ; `test.py`/`test3c3.py`/`test_diag.py` à la racine
+> sont des scripts manuels pilotant un vrai navigateur (`input()` bloquant),
+> pas des tests unitaires, aucune convention établie. Le détecteur reconnaît
+> néanmoins plusieurs conventions Python usuelles et s'activera de lui-même le
+> jour où l'une apparaît réellement, sans nouveau patch sur ce module —
+> `convention_found=false` n'est jamais à lui seul un motif de rejet, seul un
+> test déjà existant qui échoue réellement fait échouer la phase, au même
+> titre qu'un échec de compilation, d'import ou de lint. Verdict tracé sous
+> `autofix_static_validations/<case_id>/validation_static.json`
+> (`ACCEPTED`/`REJECTED`), même convention JSON que les phases précédentes.
+> Aucun test live déclenché, quel que soit le verdict — conforme au principe
+> de la phase. Ne modifie jamais le worktree, la branche autofix, ni aucun
+> artefact d'une phase antérieure. Le chantier principal passe à la Phase 9
+> (replay automatique du bug), avec la même limite déjà actée pour
+> `stage="action"` (voir « Limite actuelle » de la Phase 9 ci-dessous) tant
+> qu'un verdict `TRACE_REPLAY` n'est pas encore distingué d'un `REPRODUIT` par
+> un score de confiance dédié (Phase 12).
 
 ## Contexte de travail actuel
 
@@ -793,7 +845,13 @@ incident détecté
 7   PARTIELLEMENT TERMINÉE (préparation d'espace Git isolé faite pour
     stage="extraction" (REPRODUIT/certain) et stage="action" (REPRODUIT +
     real_dispatch_replay BUG_PERSISTANT, coût Chromium systématique en Phase 4) ;
-    aucune invocation automatique d'agent de coding — voir Phase 7)
+    résultat désormais persisté (worktree.json), traçabilité alignée sur les
+    phases 2 à 6 ; aucune invocation automatique d'agent de coding — voir
+    Phase 7)
+8   TERMINÉE (compile/import/lint Ruff/tests existants sur les seuls fichiers
+    modifiés, jamais l'ensemble du dépôt ; aucune suite de tests versionnée
+    trouvée dans ce dépôt à ce jour, documenté plutôt que masqué — voir
+    Phase 8)
 ```
 
 Décision importante :
@@ -2326,7 +2384,13 @@ dispatcher réel) ne suffit plus, une exigence supplémentaire s'ajoute :
 persiste sur le code non corrigé). Coût assumé : cette réexécution tourne
 systématiquement dans `diagnose_failure_case` pour tout case action, pas à la
 demande — Phase 4 devient plus lente sur ce stage, pas encore chronométré sur
-un vrai run.**
+un vrai run. Complété : le résultat (`case_id`/`branch`/`base_sha`/
+`worktree_path`/`source_branch`/`prompt_path`) est désormais persisté sous
+`autofix_worktrees/<case_id>/worktree.json`, même convention JSON que les
+phases précédentes — sans cela, aucune phase avale n'avait d'artefact à lire
+pour retrouver le worktree d'un case, contrairement au principe suivi partout
+ailleurs dans ce pipeline. C'est cet artefact, et lui seul, que consomme la
+Phase 8.**
 
 **Précision sur le périmètre réellement couvert :** cette phase prépare
 l'espace de travail isolé (branche + worktree Git dédiés) et s'arrête là —
@@ -2369,6 +2433,26 @@ L'agent ne doit travailler que dans une copie/branche dédiée.
 ------------------------------------------------------------------------
 
 # Phase 8 --- Validation statique automatique
+
+**Statut : TERMINÉE — `Survey/static_validator.py` + `tools/validate_patch_static.py`.
+Lecture seule sur le seul artefact produit par la Phase 7 (`worktree.json`) —
+jamais `manifest.json`/`diagnosis.json` rouverts, jamais l'éligibilité Phase 7
+recalculée. Fichiers vérifiés : uniquement le sous-ensemble modifié entre
+`base_sha` et l'état courant du worktree (Git diff ∪ nouveaux fichiers non
+trackés), jamais l'ensemble du dépôt. Quatre vérifications, chacune sous son
+propre budget de temps explicite : compilation isolée (`py_compile`), import
+isolé (même interpréteur/venv que l'outil, jamais un `python` résolu au hasard
+sur PATH), lint minimal via Ruff (`--isolated`, `F821`/`F822`/`F823` uniquement
+— jamais de règle de style), tests unitaires déjà associés aux fichiers
+modifiés si une convention fichier-source → fichier-de-test existe. Aucune
+trouvée à ce jour dans ce dépôt (aucun `tests/`, aucun `conftest.py`, pytest
+non installé) — documenté explicitement plutôt que masqué ; le détecteur
+s'activera de lui-même le jour où une convention apparaît réellement, sans
+nouveau patch. L'absence de test associé n'est jamais à elle seule un motif
+de rejet — seul un test déjà existant qui échoue réellement fait échouer la
+phase. Verdict `ACCEPTED`/`REJECTED` tracé sous
+`autofix_static_validations/<case_id>/validation_static.json`. Aucun test live
+déclenché, quel que soit le verdict.**
 
 Avant même de tester le comportement :
 
@@ -2958,9 +3042,14 @@ Je suivrais exactement cet ordre :
 6   Génération du prompt Codex — TERMINÉE (prompt_generator.py + CLI, vigilance data ouverte)
 7   Patch dans branche isolée — PARTIELLEMENT TERMINÉE (autofix_worktree.py +
     CLI, préparation branche/worktree pour stage="extraction"
-    REPRODUIT/certain ; stage="action" en attente de 3C ; pas d'invocation
-    automatique d'agent de coding à ce stade)
-8   Tests statiques
+    (REPRODUIT/certain) et stage="action" (REPRODUIT +
+    real_dispatch_replay BUG_PERSISTANT, 3C étant close) ; résultat persisté
+    (worktree.json) ; pas d'invocation automatique d'agent de coding à ce
+    stade)
+8   Tests statiques — TERMINÉE (static_validator.py + CLI ; compile/import/
+    lint Ruff (F821/F822/F823)/tests existants, bornés aux fichiers modifiés
+    du worktree ; aucune suite de tests versionnée trouvée dans ce dépôt à ce
+    jour)
 9   Replay post-patch
 10  Validation live attach — devient la voie normale des cas EXTERNAL_NON_REPLAYABLE (post-3D)
 11  Suite de régression
