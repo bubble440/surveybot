@@ -15,55 +15,54 @@ execute_case_action), qui en ont besoin pour leur propre fonctionnement déjà
 existant — jamais une lecture indépendante par la logique propre à ce module
 (case_id/stage viennent de diagnosis.json).
 
-── Écarts constatés avant d'écrire ce module, documentés plutôt que masqués ──
-Deux artefacts que ce module doit consommer, décrits par le plan comme déjà
-produits par des phases antérieures, n'existent en réalité pas dans ce dépôt
-au moment de ce patch (vérifié : aucun fichier, aucun commit, aucune autre
-branche) :
+── Conventions Phase 7/Phase 8 vérifiées avant d'écrire ce module ────────────
+Au moment de commencer ce patch, ni worktree.json (Phase 7) ni
+Survey/static_validator.py (Phase 8) n'existaient encore dans ce dépôt (vérifié :
+aucun fichier, aucun commit, aucune autre branche) — les deux ont été implémentés
+en parallèle par un autre chantier et fusionnés dans cette branche pendant
+l'écriture de ce module. Les schémas/CLI ci-dessous sont donc ceux réellement
+vérifiés dans le code fusionné, jamais devinés :
 
-  - Survey/static_validator.py (Phase 8) n'existe pas. Il n'y a donc aucune
-    convention CLI/JSON/subprocess déjà établie PAR CE FICHIER à reprendre
-    verbatim. Ce module reprend à la place les conventions réellement déjà en
-    usage dans ce pipeline (façade CLI fine dans tools/, logique dans
-    Survey/, JSON tracé schema_version/case_id/created_at comme
-    Survey/failure_diagnosis.py et Survey/replayability_classifier.py,
-    budgets de sous-processus explicites comme Survey/autofix_worktree.py::
-    _run_git et Survey/replay_browser.py::_DEFAULT_DISPATCH_BUDGET_S). Le
-    contrat attendu de validation_static.json (schema_version/case_id/
-    verdict, "ACCEPTED" seule valeur positive) est donc DÉFINI ici du point
-    de vue du consommateur, pas copié d'un fichier qui n'existe pas — une
-    future Phase 8 devra le satisfaire, pas l'inverse.
-  - Survey/autofix_worktree.py (Phase 7) ne persiste aucun worktree.json : sa
-    fonction prepare_autofix_worktree() retourne un WorktreeResult en mémoire
-    (case_id, branch, worktree_path, base_sha, source_branch) que seule sa
-    façade CLI affiche sur stdout, jamais sur disque. Ce module lit donc un
-    contrat worktree.json (mêmes champs) qu'aucune phase existante n'écrit
-    encore automatiquement — à produire aujourd'hui manuellement (ou par un
-    futur outil séparé, hors périmètre de ce patch) à partir de cette sortie
-    stdout, exactement comme prompt.txt (Phase 6) est aujourd'hui transmis
-    manuellement à Codex.
-
-Consequence directe, assumée : tant que ces deux artefacts ne sont pas
-produits pour un case réel, ce module refuse systématiquement — par
-construction, jamais par accident silencieux (cf. check_preconditions).
+  - worktree.json (Survey/autofix_worktree.py::write_worktree_manifest, Phase 7) :
+    out_root/<case_id>/worktree.json — {schema_version, case_id, created_at,
+    branch, worktree_path, base_sha, source_branch, prompt_path, warnings}.
+    Ce module lit case_id/branch/worktree_path/base_sha, exactement les champs
+    déjà présents.
+  - validation_static.json (Survey/static_validator.py::write_static_validation,
+    Phase 8) : out_root/<case_id>/validation_static.json — {schema_version,
+    case_id, created_at, branch, base_sha, changed_files, checks, verdict
+    ("ACCEPTED"|"REJECTED"), reasons, warnings}. Ce module exige verdict=
+    "ACCEPTED", exactement la valeur positive déjà produite.
+  - Convention CLI reprise de Survey/static_validator.py::validate_patch_static
+    (façade tools/validate_patch_static.py) : le CHEMIN COMPLET vers
+    worktree.json est pris tel quel en argument (pas un dossier qui le
+    contiendrait) — Phase 8 lit ainsi l'artefact de Phase 7. Ce module reprend
+    exactement la même convention pour ses propres arguments worktree.json ET
+    validation_static.json (deux artefacts à fichier unique, comme celui que
+    lit déjà Phase 8), tout en gardant diagnosis_dir comme un DOSSIER (comme
+    Survey/autofix_worktree.py::check_eligibility le fait déjà pour ce même
+    artefact Phase 4).
 
 ── Résolution de racine de paquet pour exécuter le code du worktree ──────────
-Point à vérifier explicitement avant le point 2 de la demande : aucune
-stratégie "importer un fichier depuis un worktree donné" n'existe nulle part
-dans ce dépôt (Phase 8 ne l'a jamais posée, faute d'exister ; aucune autre
-phase n'en a besoin, Phase 7 ne fait qu'exécuter git, jamais importer du code
-Python depuis le worktree qu'elle crée). Il n'y a donc rien à reprendre tel
-quel. Ce module réutilise, en la paramétrant sur un chemin explicite plutôt
-que Path(__file__), l'idée déjà réellement en usage dans CHAQUE façade CLI de
-tools/ (sys.path.insert(0, <racine>)) — mais l'applique dans un SOUS-PROCESSUS
-Python dédié, jamais dans ce process-ci. Raison, non une préférence : ce
-process a déjà importé Survey.replay_browser/Survey.failure_replay (pour
-leurs constantes/vocabulaire) depuis le dépôt principal ; sys.modules les
-garde en cache, donc un simple sys.path.insert() ici referait sortir du cache
-les modules du dépôt principal, jamais ceux du worktree patché — un
-sous-processus neuf est la seule façon fiable de garantir que le code
-réellement exécuté est celui du worktree, sans deviner un mécanisme
-d'invalidation de cache fragile.
+Vérifié avant le point 2 de la demande : Survey/static_validator.py::
+_resolve_package_root(repo_root) EXISTE et résout déjà ce même besoin pour la
+Phase 8 (Survey/ et tools/ comme frères directs de repo_root ou d'un de ses
+sous-dossiers directs, jamais une structure supposée nommée en dur) — réutilisée
+ici TELLE QUELLE (import direct, aucune réimplémentation parallèle), appliquée
+à worktree_path (le worktree Git complet, structure identique à celle que Phase
+8 résout déjà sur ce même chemin). Aucune raison de ne pas la reprendre : elle
+ne dépend que du worktree lui-même, jamais de Path(__file__) ni d'un appel Git
+sur le dépôt principal — plus robuste que ce que ce module envisageait avant de
+vérifier que Phase 8 existait déjà.
+
+Racine résolue exécutée dans un SOUS-PROCESSUS Python dédié, jamais dans ce
+process-ci. Raison, non une préférence : ce process a déjà importé
+Survey.replay_browser/Survey.failure_replay/Survey.static_validator (pour leurs
+constantes/fonctions) depuis le dépôt principal ; sys.modules les garde en
+cache, donc un simple sys.path.insert() ici referait sortir du cache les
+modules du dépôt principal, jamais ceux du worktree patché — un sous-processus
+neuf est la seule façon fiable de garantir que le code réellement exécuté est
+celui du worktree, sans deviner un mécanisme d'invalidation de cache fragile.
 
 ── Mécanisme de rejeu réutilisé tel quel, jamais réimplémenté ────────────────
   stage="extraction" : Survey.failure_replay.replay_failure_case(case_dir) —
@@ -115,13 +114,14 @@ from Survey.replay_browser import (
     OUTCOME_INCONCLUSIVE,
     _DEFAULT_DISPATCH_BUDGET_S,
 )
+from Survey.static_validator import StaticValidationError, _resolve_package_root
 
 _TAG = "[PATCH_REPLAY]"
 SCHEMA_VERSION = "1.0"
 
 # Budget explicite du sous-processus de rejeu — stage="extraction" (rejeu
 # statique, sans navigateur : rapide, mais borné quand même, jamais illimité).
-_EXTRACTION_SUBPROCESS_TIMEOUT_S = 60.0
+DEFAULT_EXTRACTION_TIMEOUT_S = 60.0
 # stage="action" : marge au-dessus du budget interne du dispatcher lui-même
 # (démarrage Chromium, extraction, fermeture) — le sous-processus doit pouvoir
 # se terminer proprement même si le dispatcher va jusqu'au bout de son budget.
@@ -219,20 +219,25 @@ def check_preconditions(
     *,
     failure_case_dir: "str | Path",
     diagnosis_dir: "str | Path",
-    worktree_dir: "str | Path",
-    validation_dir: "str | Path",
+    worktree_manifest_path: "str | Path",
+    validation_static_path: "str | Path",
 ) -> PreconditionResult:
     """Vérifie toutes les conditions ensemble ; ne s'arrête jamais à la première
     raison rencontrée — la liste complète est retournée, comme Survey/
     autofix_worktree.py::check_eligibility (Phase 7), jamais un résultat partiel.
-    Lecture seule : ne recalcule ni la Phase 4, ni la Phase 7, ni la Phase 8."""
+    Lecture seule : ne recalcule ni la Phase 4, ni la Phase 7, ni la Phase 8.
+
+    worktree_manifest_path/validation_static_path sont les CHEMINS COMPLETS
+    vers worktree.json/validation_static.json (pas un dossier qui les
+    contiendrait) — même convention que Survey/static_validator.py::
+    validate_patch_static (Phase 8) pour son propre argument worktree.json."""
     failure_case_dir = Path(failure_case_dir)
     diagnosis_dir = Path(diagnosis_dir)
-    worktree_dir = Path(worktree_dir)
-    validation_dir = Path(validation_dir)
+    worktree_manifest_path = Path(worktree_manifest_path)
+    validation_static_path = Path(validation_static_path)
     reasons: List[str] = []
 
-    validation, validation_err = _load_json(validation_dir / "validation_static.json")
+    validation, validation_err = _load_json(validation_static_path)
     if validation_err or not isinstance(validation, dict):
         reasons.append(f"validation_static.json (Phase 8) {validation_err or 'ne contient pas un objet JSON'}")
     elif validation.get("verdict") != "ACCEPTED":
@@ -241,7 +246,7 @@ def check_preconditions(
             "(la Phase 8 doit avoir accepté le patch avant tout replay ; jamais recalculé ici)"
         )
 
-    worktree, worktree_err = _load_json(worktree_dir / "worktree.json")
+    worktree, worktree_err = _load_json(worktree_manifest_path)
     if worktree_err or not isinstance(worktree, dict):
         reasons.append(f"worktree.json (Phase 7) {worktree_err or 'ne contient pas un objet JSON'}")
     else:
@@ -285,15 +290,17 @@ def check_preconditions(
                 )
 
     # case_id cohérent entre toutes les sources. manifest.json n'est jamais ouvert
-    # ici : failure_case_dir n'est vérifié que par son nom de dossier.
+    # ici : failure_case_dir n'est vérifié que par son nom de dossier. worktree.json/
+    # validation_static.json étant des CHEMINS DE FICHIER (out_root/<case_id>/...),
+    # c'est le nom de leur dossier parent qui porte le case_id, pas leur propre nom.
     case_ids = {
         "diagnosis.json": str(diagnosis.get("case_id") or "") if isinstance(diagnosis, dict) else "",
         "worktree.json": str(worktree.get("case_id") or "") if isinstance(worktree, dict) else "",
         "validation_static.json": str(validation.get("case_id") or "") if isinstance(validation, dict) else "",
         "failure_case_dir": failure_case_dir.name,
         "diagnosis_dir": diagnosis_dir.name,
-        "worktree_dir": worktree_dir.name,
-        "validation_dir": validation_dir.name,
+        "worktree_manifest_path.parent": worktree_manifest_path.parent.name,
+        "validation_static_path.parent": validation_static_path.parent.name,
     }
     distinct = set(case_ids.values())
     resolved_case_id: Optional[str] = None
@@ -318,33 +325,17 @@ def check_preconditions(
 
 
 def _resolve_worktree_package_root(worktree_path: Path) -> Tuple[Optional[Path], Optional[str]]:
-    """La racine du paquet Python (contenant Survey/) n'est pas forcément
-    worktree_path lui-même : vérifié empiriquement sur ce dépôt (jamais supposé),
-    le paquet vit dans un sous-dossier sous la racine Git réelle du dépôt
-    principal (Path(__file__).resolve().parent.parent, la même racine que chaque
-    façade CLI de tools/ calcule déjà pour elle-même, n'est pas la racine Git quand
-    les deux diffèrent). `git worktree add` reproduit exactement la même
-    arborescence relative : ce module calcule donc le même décalage ici, entre la
-    racine Git du dépôt principal et cette racine de paquet, et l'applique tel quel
-    à worktree_path plutôt que de supposer une structure. Retourne (chemin, None),
-    ou (None, raison) si le décalage ne peut pas être déterminé — jamais un chemin
-    deviné."""
-    package_root = Path(__file__).resolve().parent.parent
+    """Réutilise TELLE QUELLE Survey.static_validator._resolve_package_root
+    (Phase 8, non modifiée) — même besoin exact (localiser Survey/ et tools/
+    comme frères directs de worktree_path ou d'un sous-dossier direct), déjà
+    résolu par cette phase sur ce même worktree_path. Jamais une seconde
+    implémentation : seule la conversion exception -> (None, raison), pour
+    rester dans la même convention de retour que _run_replay_subprocess
+    ci-dessous, est propre à ce module."""
     try:
-        completed = subprocess.run(
-            ["git", "-C", str(package_root), "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, timeout=10.0, check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return None, f"résolution de la racine Git du dépôt principal impossible ({exc})"
-    if completed.returncode != 0:
-        return None, f"résolution de la racine Git du dépôt principal échouée : {completed.stderr.strip()}"
-    git_toplevel = Path(completed.stdout.strip())
-    try:
-        relative_offset = package_root.relative_to(git_toplevel)
-    except ValueError:
-        return None, f"racine du paquet {package_root} hors de la racine Git {git_toplevel}"
-    return worktree_path / relative_offset, None
+        return _resolve_package_root(worktree_path), None
+    except StaticValidationError as exc:
+        return None, str(exc)
 
 
 def _run_replay_subprocess(
@@ -431,9 +422,10 @@ def replay_patch(
     *,
     failure_case_dir: "str | Path",
     diagnosis_dir: "str | Path",
-    worktree_dir: "str | Path",
-    validation_dir: "str | Path",
+    worktree_manifest_path: "str | Path",
+    validation_static_path: "str | Path",
     dispatch_budget_s: Optional[float] = None,
+    extraction_timeout_s: Optional[float] = None,
 ) -> PatchReplayResult:
     """Rejoue le case ciblé par le worktree autofix (code patché), et compare au
     signal avant-patch déjà connu (Phase 4). Ne valide le patch (patch_validated=
@@ -443,8 +435,8 @@ def replay_patch(
     pre = check_preconditions(
         failure_case_dir=failure_case_dir,
         diagnosis_dir=diagnosis_dir,
-        worktree_dir=worktree_dir,
-        validation_dir=validation_dir,
+        worktree_manifest_path=worktree_manifest_path,
+        validation_static_path=validation_static_path,
     )
     if not pre.satisfied:
         log_debug(_TAG, f"refus contrôlé, aucun effet de bord : {pre.reasons}")
@@ -466,13 +458,14 @@ def replay_patch(
 
     if stage == "extraction":
         before_signal = {"replay_verdict": (diagnosis.get("replay") or {}).get("verdict")}
+        timeout_s = float(extraction_timeout_s) if extraction_timeout_s else DEFAULT_EXTRACTION_TIMEOUT_S
         if resolve_err:
             after, err = None, resolve_err
         else:
             after, err = _run_replay_subprocess(
                 _EXTRACTION_RUNNER_SCRIPT,
                 [str(package_root), case_dir_str],
-                _EXTRACTION_SUBPROCESS_TIMEOUT_S,
+                timeout_s,
             )
     else:  # stage == "action" (seules deux valeurs possibles après check_preconditions)
         before_signal = {
@@ -543,16 +536,18 @@ def write_patch_replay(
     *,
     failure_case_dir: "str | Path",
     diagnosis_dir: "str | Path",
-    worktree_dir: "str | Path",
-    validation_dir: "str | Path",
+    worktree_manifest_path: "str | Path",
+    validation_static_path: "str | Path",
     out_root: "str | Path" = "patch_replays",
     force: bool = False,
     dispatch_budget_s: Optional[float] = None,
+    extraction_timeout_s: Optional[float] = None,
 ) -> Path:
     """Rejoue le patch (replay_patch) et écrit out_root/<case_id>/patch_replay.json.
-    Ne modifie jamais failure_case_dir/diagnosis_dir/worktree_dir/validation_dir.
-    Lève PatchReplayExistsError si la sortie existe déjà et force=False — jamais
-    d'écrasement silencieux (même convention que Survey/replayability_classifier.py)."""
+    Ne modifie jamais failure_case_dir/diagnosis_dir/worktree_manifest_path/
+    validation_static_path. Lève PatchReplayExistsError si la sortie existe déjà
+    et force=False — jamais d'écrasement silencieux (même convention que
+    Survey/replayability_classifier.py)."""
     failure_case_dir = Path(failure_case_dir)
     out_root = Path(out_root)
     out_dir = out_root / failure_case_dir.name
@@ -574,9 +569,10 @@ def write_patch_replay(
     result = replay_patch(
         failure_case_dir=failure_case_dir,
         diagnosis_dir=diagnosis_dir,
-        worktree_dir=worktree_dir,
-        validation_dir=validation_dir,
+        worktree_manifest_path=worktree_manifest_path,
+        validation_static_path=validation_static_path,
         dispatch_budget_s=dispatch_budget_s,
+        extraction_timeout_s=extraction_timeout_s,
     )
 
     out_dir.mkdir(parents=True, exist_ok=False)

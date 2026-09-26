@@ -10,17 +10,14 @@ diagnosis.json (Phase 4, pour le stage et le signal "avant patch" déjà établi
 jamais revérifié ici). Ne rouvre jamais manifest.json directement. Toute la
 logique vit dans Survey/patch_replay.py ; ce script n'est qu'une façade CLI.
 
-Écart important à connaître avant d'utiliser cet outil (documenté en détail
-dans Survey/patch_replay.py) : ni Survey/static_validator.py (Phase 8) ni un
-worktree.json persisté par la Phase 7 n'existent encore dans ce dépôt au moment
-de ce patch — cet outil définit et vérifie leur contrat attendu, il ne les
-produit pas. Tant qu'un case réel ne porte pas ces deux fichiers, cet outil
-refusera systématiquement, par construction.
+Convention reprise de tools/validate_patch_static.py (Phase 8) : worktree_manifest
+et validation_static sont les CHEMINS COMPLETS vers worktree.json/
+validation_static.json (pas un dossier qui les contiendrait).
 
 Usage :
-    python tools\\replay_patch.py failure_cases\\<case_id> diagnoses\\<case_id> worktrees\\<case_id> validations\\<case_id>
-    python tools\\replay_patch.py failure_cases\\<case_id> diagnoses\\<case_id> worktrees\\<case_id> validations\\<case_id> --out-root patch_replays --force
-    python tools\\replay_patch.py failure_cases\\<case_id> diagnoses\\<case_id> worktrees\\<case_id> validations\\<case_id> --dispatch-budget-s 45
+    python tools\\replay_patch.py failure_cases\\<case_id> diagnoses\\<case_id> autofix_worktrees\\<case_id>\\worktree.json autofix_static_validations\\<case_id>\\validation_static.json
+    python tools\\replay_patch.py failure_cases\\<case_id> diagnoses\\<case_id> autofix_worktrees\\<case_id>\\worktree.json autofix_static_validations\\<case_id>\\validation_static.json --out-root patch_replays --force
+    python tools\\replay_patch.py failure_cases\\<case_id> diagnoses\\<case_id> autofix_worktrees\\<case_id>\\worktree.json autofix_static_validations\\<case_id>\\validation_static.json --dispatch-budget-s 45
 """
 
 from __future__ import annotations
@@ -31,7 +28,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.patch_replay import PatchReplayError, write_patch_replay  # noqa: E402
+from Survey.patch_replay import (  # noqa: E402
+    DEFAULT_EXTRACTION_TIMEOUT_S,
+    PatchReplayError,
+    write_patch_replay,
+)
+from Survey.replay_browser import _DEFAULT_DISPATCH_BUDGET_S  # noqa: E402
 
 
 def main(argv: "list[str] | None" = None) -> int:
@@ -44,10 +46,16 @@ def main(argv: "list[str] | None" = None) -> int:
     )
     parser.add_argument("failure_case_dir", help="Dossier du failure case (ex: failure_cases\\<case_id>)")
     parser.add_argument("diagnosis_dir", help="Dossier du diagnostic Phase 4 (ex: diagnoses\\<case_id>)")
-    parser.add_argument("worktree_dir", help="Dossier portant worktree.json (Phase 7, ex: worktrees\\<case_id>)")
     parser.add_argument(
-        "validation_dir",
-        help="Dossier portant validation_static.json (Phase 8, ex: validations\\<case_id>)",
+        "worktree_manifest",
+        help="Chemin de worktree.json produit par la Phase 7 (ex: autofix_worktrees\\<case_id>\\worktree.json)",
+    )
+    parser.add_argument(
+        "validation_static",
+        help=(
+            "Chemin de validation_static.json produit par la Phase 8 "
+            "(ex: autofix_static_validations\\<case_id>\\validation_static.json)"
+        ),
     )
     parser.add_argument(
         "--out-root",
@@ -63,7 +71,13 @@ def main(argv: "list[str] | None" = None) -> int:
         "--dispatch-budget-s",
         type=float,
         default=None,
-        help="Budget de temps (s) du dispatcher réel pour stage=action (défaut : celui de Survey/replay_browser.py)",
+        help=f"Budget de temps (s) du dispatcher réel pour stage=action (défaut : {_DEFAULT_DISPATCH_BUDGET_S})",
+    )
+    parser.add_argument(
+        "--extraction-timeout-s",
+        type=float,
+        default=None,
+        help=f"Budget de temps (s) du rejeu statique pour stage=extraction (défaut : {DEFAULT_EXTRACTION_TIMEOUT_S})",
     )
     args = parser.parse_args(argv)
 
@@ -71,11 +85,12 @@ def main(argv: "list[str] | None" = None) -> int:
         out_file = write_patch_replay(
             failure_case_dir=args.failure_case_dir,
             diagnosis_dir=args.diagnosis_dir,
-            worktree_dir=args.worktree_dir,
-            validation_dir=args.validation_dir,
+            worktree_manifest_path=args.worktree_manifest,
+            validation_static_path=args.validation_static,
             out_root=args.out_root,
             force=args.force,
             dispatch_budget_s=args.dispatch_budget_s,
+            extraction_timeout_s=args.extraction_timeout_s,
         )
     except PatchReplayError as exc:
         print(f"[ERREUR] {exc}", file=sys.stderr)
