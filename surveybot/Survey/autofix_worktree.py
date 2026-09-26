@@ -10,28 +10,45 @@ diagnostic ou prompt — lit uniquement manifest.json (Phase 2), diagnosis.json
 (Phase 4) et prompt.txt (Phase 6), déjà produits par ces outils. N'écrit jamais
 dans failure_cases/, diagnoses/, context_selections/, ni prompts/.
 
-── Portée : stage="extraction" uniquement ─────────────────────────────────────
-Les cases stage="action" restent hors périmètre : leur replay (Phase 3A/3B)
-vérifie l'état DOM après action, mais ne réexécute jamais réellement le
-dispatcher (dispatcher_success d'origine réutilisé tel quel, cf.
-Survey/failure_replay.py) — un verdict REPRODUIT sur un case action ne prouve
-donc rien sur le dispatcher lui-même. Un case extraction REPRODUIT, en
-revanche, revérifie réellement dom_analyzer.analyze_dom() + le validator
-d'extraction sur le DOM figé — c'est une preuve plus forte, seule retenue ici.
+── Portée : stage="extraction" ET stage="action" (preuve distincte par stage) ──
+Un case extraction REPRODUIT revérifie réellement dom_analyzer.analyze_dom() +
+le validator d'extraction sur le DOM figé — preuve forte, seule retenue pour ce
+stage (inchangé).
+
+Le replay passif d'un case action (Phase 3A/3B, Survey/failure_replay.py)
+réutilise dispatcher_success du case d'origine tel quel et ne réexécute jamais
+le dispatcher réel : un verdict REPRODUIT sur ce stage ne prouve donc toujours
+rien sur le dispatcher lui-même. Phase 4 (Survey/failure_diagnosis.py) calcule
+désormais, en plus, un signal réel indépendant pour ce stage quand le case
+dispose de ce qu'exige le Chromium isolé (Phase 3C.4,
+Survey/replay_browser.py::execute_case_action, non modifié) :
+real_dispatch_replay.validation_comparison.outcome="BUG_PERSISTANT" confirme
+ACTIVEMENT que le dispatcher réel échoue encore, de la même façon, sur le code
+actuel non corrigé. C'est ce signal, et seulement lui, qui rend un case action
+éligible ici — jamais le verdict REPRODUIT du replay passif seul, selon
+exactement le même principe que pour l'extraction (une preuve réelle proche du
+mécanisme concerné, jamais un critère plus permissif).
 
 ── Éligibilité : toutes les conditions ensemble, avant tout effet de bord ─────
 manifest.json et diagnosis.json existent et sont valides ; prompt.txt existe
 réellement et MANUAL_REVIEW_REQUIRED.txt n'est pas présent à sa place ; les
 case_id du manifeste, du diagnostic et des trois dossiers fournis correspondent
-tous exactement ; stage="extraction" ; replay.verdict="REPRODUIT" ;
+tous exactement ; stage="extraction" ou stage="action" ; replay.verdict=
+"REPRODUIT" ; pour stage="action" uniquement, EN PLUS :
+real_dispatch_replay.validation_comparison.outcome="BUG_PERSISTANT" ;
 confidence_global="certain" ; case_incomplete=false ; case_id est utilisable
 sans transformation comme composant de chemin ET comme référence Git valide
 (validé via une regex conservatrice, puis via `git check-ref-format`, qui fait
 autorité sur la syntaxe réelle des refs Git plutôt qu'une réimplémentation
 partielle de ses règles). "certain" n'est PAS revérifié indépendamment de
-REPRODUIT ici — Phase 4 ne produit "certain" que lorsque REPRODUIT est déjà
-vrai (cf. Survey/failure_diagnosis.py::_cause_level_from_replay) : c'est un
-garde-fou de cohérence avec un diagnostic déjà calculé, pas une seconde preuve.
+REPRODUIT pour stage="extraction" — Phase 4 ne produit "certain" que lorsque
+REPRODUIT est déjà vrai pour ce stage (cf. Survey/failure_diagnosis.py::
+_cause_level_from_replay) : un garde-fou de cohérence avec un diagnostic déjà
+calculé, pas une seconde preuve. Pour stage="action", "certain" est de la même
+façon déjà conditionné à BUG_PERSISTANT côté Phase 4 ; la vérification de
+BUG_PERSISTANT ci-dessous reste néanmoins indépendante, en plus de
+confidence_global, jamais à sa place — même principe de double vérification
+que celui déjà appliqué à REPRODUIT/confidence_global pour l'extraction.
 
 ── Stratégie Git unique, sans fallback ────────────────────────────────────────
 1. git rev-parse --show-toplevel (dépôt réel, jamais un chemin codé en dur)
@@ -196,12 +213,30 @@ def check_eligibility(
             )
 
     stage = str(manifest.get("stage") or "")
-    if stage != "extraction":
-        reasons.append(f"stage={stage!r} — seul stage=\"extraction\" est dans le périmètre de cette phase")
+    if stage not in ("extraction", "action"):
+        reasons.append(
+            f"stage={stage!r} — seuls stage=\"extraction\" et stage=\"action\" sont dans le "
+            "périmètre de cette phase"
+        )
 
     replay_verdict = str((diagnosis.get("replay") or {}).get("verdict") or "")
     if replay_verdict != "REPRODUIT":
         reasons.append(f"replay.verdict={replay_verdict!r} — \"REPRODUIT\" requis")
+
+    if stage == "action":
+        real_dispatch = diagnosis.get("real_dispatch_replay")
+        outcome = (
+            (real_dispatch.get("validation_comparison") or {}).get("outcome")
+            if isinstance(real_dispatch, dict) else None
+        )
+        if outcome != "BUG_PERSISTANT":
+            reasons.append(
+                f"stage=\"action\" : real_dispatch_replay.validation_comparison.outcome={outcome!r} "
+                "— \"BUG_PERSISTANT\" requis (seule confirmation active, par réexécution réelle du "
+                "dispatcher, que le bug persiste sur le code actuel — cf. Survey/replay_browser.py::"
+                "execute_case_action) ; replay.verdict=\"REPRODUIT\" seul ne prouve rien sur le "
+                "dispatcher pour ce stage (cf. Survey/failure_replay.py)"
+            )
 
     confidence = str(diagnosis.get("confidence_global") or "")
     if confidence != "certain":

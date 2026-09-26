@@ -19,6 +19,26 @@ validators (Survey/action_validator.py, Survey/question_block_validator.py) — 
 description cite la fonction/le check exact d'où elle vient. Ce n'est pas une narration :
 c'est la condition que le validator vérifie, telle qu'elle est écrite dans son code.
 
+── Réexécution réelle du dispatcher pour stage="action" (real_dispatch_replay) ─
+Le verdict de replay ci-dessus reste, pour stage="action", celui du replay PASSIF
+(Survey/failure_replay.py : dispatcher_success du case d'origine réutilisé tel quel,
+aucun dispatcher réel exécuté) — inchangé, conservé tel quel, jamais recalculé ici.
+Quand le case dispose de ce qu'exige Survey/replay_browser.py::execute_case_action
+(Phase 3C.4, non modifié : pre_action_dom.html + les garde-fous déjà en place de ce
+worker), ce module fait EN PLUS tourner cette réexécution réelle du dispatcher (même
+budget de temps que ce worker impose déjà, _DEFAULT_DISPATCH_BUDGET_S) et conserve son
+résultat tel quel dans real_dispatch_replay, à côté de "replay" — jamais à sa place.
+Seul real_dispatch_replay.validation_comparison.outcome="BUG_PERSISTANT" est une
+confirmation ACTIVE que le dispatcher échoue encore, de la même façon, sur le code
+actuel non corrigé (pas une absence de détection). Même règle de cohérence que pour
+manifest.incomplete=true ci-dessous, appliquée à ce nouveau signal plutôt qu'une
+seconde règle indépendante : pour stage="action", confidence_global plafonne à
+"plausible" si cette confirmation n'est pas obtenue (pre_action_dom.html absent,
+réexécution non tentée, TIMEOUT/ERROR/NOT_EXECUTED, ou comparaison non concluante —
+y compris un dispatcher qui réussirait maintenant, CORRECTIF_CONFIRME) — même quand
+le verdict de replay passif seul aurait valu "certain" par construction (cf.
+Utils/SURVEYBOT_AUTOFIX_PLAN.md, phase 3C.4).
+
 ── Cause (niveau + justification) ─────────────────────────────────────────────
 Le niveau de cause est déterminé UNIQUEMENT par le verdict de replay (jamais par une
 lecture "plausible" du symptôme seul) :
@@ -28,7 +48,9 @@ lecture "plausible" du symptôme seul) :
   - NON_REPRODUIT / NON_REJOUABLE / replay non concluant        -> plausible
 Un case dont le manifest porte incomplete=true (Phase 2 a déjà signalé des artefacts
 manquants/invalides) plafonne la confiance globale à "plausible", quel que soit le
-verdict de replay — la donnée source elle-même est déjà reconnue incomplète.
+verdict de replay — la donnée source elle-même est déjà reconnue incomplète. Pour
+stage="action", le plafond décrit ci-dessus (real_dispatch_replay) s'applique en
+plus, indépendamment de celui-ci.
 
 ── Modules probablement concernés (modules_likely_involved) ──────────────────
 Recherche exclusivement dans Survey/BOT_EVOLUTION_MEMORY.md (jamais dans le code source)
@@ -246,6 +268,87 @@ def _cause_justification(original_types: list[str], replay_result) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Réexécution réelle du dispatcher (stage="action") — Survey/replay_browser.py
+# (Phase 3C.4, non modifié) réutilisé strictement tel quel. Additif : ne remplace
+# jamais le verdict de replay passif calculé ci-dessus.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[dict]:
+    """Stage="action" uniquement. Tente une réexécution RÉELLE du dispatcher (Phase
+    3C.4, Survey/replay_browser.py, non modifié) sur le document pré-action du case,
+    dans le Chromium isolé de ce worker et sous le même budget de temps qu'il impose
+    déjà (_DEFAULT_DISPATCH_BUDGET_S) — contrairement au replay passif ci-dessus, ceci
+    fait tourner action_dispatcher.execute_actions_plan() pour de vrai.
+
+    Retourne None si non tentée : case pas stage="action", Survey.replay_browser
+    indisponible, ou pré-requis absents selon le garde-fou déjà existant de
+    IsolatedReplayBrowser.load_case_document(pre_action=True) (pre_action_dom.html
+    requis) — jamais une exception propagée, jamais un résultat deviné. Le contenu
+    retourné reprend tel quel le résultat de execute_case_action (statuts SUCCESS/
+    FAILURE/TIMEOUT/ERROR/NOT_EXECUTED, et sa comparaison outcome CORRECTIF_CONFIRME/
+    BUG_PERSISTANT/NON_CONCLUANT quand exploitable)."""
+    if manifest.get("stage") != "action":
+        return None
+    try:
+        from Survey.replay_browser import (
+            _DEFAULT_DISPATCH_BUDGET_S,
+            IsolatedReplayBrowser,
+            ReplayBrowserError,
+            execute_case_action,
+            extract_case_blocks,
+        )
+    except Exception as exc:
+        log_debug(_TAG, f"Survey.replay_browser indisponible — réexécution réelle non tentée : {exc}")
+        return None
+
+    try:
+        with IsolatedReplayBrowser() as browser:
+            page = browser.load_case_document(case_dir, pre_action=True)
+            extraction = extract_case_blocks(page, case_dir)
+            execution = execute_case_action(
+                page, case_dir, budget_s=_DEFAULT_DISPATCH_BUDGET_S, question_blocks=extraction.blocks,
+            )
+    except ReplayBrowserError as exc:
+        log_debug(_TAG, f"réexécution réelle non tentée (pré-requis absents) : {exc}")
+        return None
+    except Exception as exc:
+        log_debug(_TAG, f"réexécution réelle du dispatcher a échoué : {type(exc).__name__}: {exc}")
+        return None
+
+    return {
+        "status": execution.status,
+        "dispatcher_success": execution.dispatcher_success,
+        "duration_s": execution.duration_s,
+        "budget_s": execution.budget_s,
+        "extraction_error": extraction.error,
+        "validation_comparison": execution.validation_comparison,
+        "validation_error": execution.validation_error,
+        # TIMEOUT uniquement (sinon None) : repli TRACE_REPLAY sur les faits déjà
+        # capturés (Survey/replay_browser.py::_trace_replay_fallback, non modifié) —
+        # n'affecte jamais _real_dispatch_confirms_persistence, qui ne lit que
+        # validation_comparison (toujours None après TIMEOUT).
+        "trace_replay": execution.trace_replay,
+    }
+
+
+def _real_dispatch_confirms_persistence(real_dispatch_replay: Optional[dict]) -> bool:
+    """True seulement si la réexécution réelle ci-dessus confirme ACTIVEMENT que le
+    bug persiste (outcome="BUG_PERSISTANT", cf. Survey.replay_browser._action_outcome)
+    — jamais déduit d'une absence de tentative, d'un TIMEOUT, d'une exécution non
+    tentée (NOT_EXECUTED) ou d'un résultat non comparable."""
+    if not isinstance(real_dispatch_replay, dict):
+        return False
+    comparison = real_dispatch_replay.get("validation_comparison")
+    if not isinstance(comparison, dict):
+        return False
+    try:
+        from Survey.replay_browser import OUTCOME_BUG_PERSISTS
+    except Exception:
+        return False
+    return comparison.get("outcome") == OUTCOME_BUG_PERSISTS
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Modules probablement concernés — recherche exacte dans BOT_EVOLUTION_MEMORY.md
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -395,6 +498,7 @@ class DiagnosisResult:
     symptom_issues: list = field(default_factory=list)
     expected_behavior: list = field(default_factory=list)
     replay: dict = field(default_factory=dict)
+    real_dispatch_replay: Optional[dict] = None
     cause_level: str = LEVEL_PLAUSIBLE
     cause_justification: str = ""
     modules_likely_involved: list = field(default_factory=list)
@@ -418,6 +522,7 @@ class DiagnosisResult:
             },
             "expected_behavior": self.expected_behavior,
             "replay": self.replay,
+            "real_dispatch_replay": self.real_dispatch_replay,
             "cause": {
                 "level": self.cause_level,
                 "justification": self.cause_justification,
@@ -463,12 +568,32 @@ def diagnose_failure_case(case_dir: "str | Path") -> DiagnosisResult:
 
     modules = _modules_likely_involved(question_blocks, target_id)
 
+    real_dispatch_replay: Optional[dict] = None
+    if stage == "action":
+        log_debug(_TAG, f"réexécution réelle du dispatcher tentée pour diagnostic case={case_id}")
+        real_dispatch_replay = _attempt_real_dispatch_replay(case_dir, manifest)
+
     confidence_global = cause_level
     warnings: list[str] = []
     if case_incomplete and confidence_global != LEVEL_PLAUSIBLE:
         warnings.append(
             "manifest.incomplete=true (Phase 2) : confiance globale plafonnée à "
             f"'{LEVEL_PLAUSIBLE}' malgré un niveau de cause '{confidence_global}'."
+        )
+        confidence_global = LEVEL_PLAUSIBLE
+
+    if (
+        stage == "action"
+        and confidence_global == LEVEL_CERTAIN
+        and not _real_dispatch_confirms_persistence(real_dispatch_replay)
+    ):
+        warnings.append(
+            "stage=\"action\" : le replay passif (Survey/failure_replay.py) réutilise "
+            "dispatcher_success du case d'origine tel quel et ne réexécute jamais le dispatcher "
+            "réel — sans confirmation active de la persistance du bug par une réexécution réelle "
+            "(Survey/replay_browser.py::execute_case_action, outcome=\"BUG_PERSISTANT\"), confiance "
+            f"globale plafonnée à '{LEVEL_PLAUSIBLE}' malgré un niveau de cause '{confidence_global}' "
+            "— même règle de cohérence que pour manifest.incomplete=true ci-dessus."
         )
         confidence_global = LEVEL_PLAUSIBLE
 
@@ -489,6 +614,7 @@ def diagnose_failure_case(case_dir: "str | Path") -> DiagnosisResult:
         symptom_issues=symptom_issues,
         expected_behavior=expected,
         replay=replay_result.as_dict(),
+        real_dispatch_replay=real_dispatch_replay,
         cause_level=cause_level,
         cause_justification=cause_justification,
         modules_likely_involved=modules,
