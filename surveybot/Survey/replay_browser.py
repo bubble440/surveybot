@@ -144,7 +144,16 @@ exécuté sur la même page avec ce verdict réel, les blocs de l'extraction
 (`question_blocks`, optionnels) et SANS `captured_option_states` (réservé au rejeu
 statique : ici le validator lit l'état live). Son rapport est comparé à
 `validation_report.json` du case par `_compare_validation` (mêmes verdicts
-REPRODUIT / NON_REPRODUIT / DIFFERENT, mêmes cas non comparables). Sans verdict
+REPRODUIT / NON_REPRODUIT / DIFFERENT, mêmes cas non comparables) puis traduite
+par `_action_outcome` : ce vocabulaire à trois valeurs juge la FIDÉLITÉ d'un
+rejeu passif, et NON_REPRODUIT y est ambigu après un dispatch réel (« le rejeu ne
+voit plus le problème » ou « le dispatcher l'a réellement corrigé »). Le résultat
+côté action n'expose donc plus `verdict` mais `outcome` : CORRECTIF_CONFIRME
+(dispatcher SUCCESS ET validator sans aucune issue), BUG_PERSISTANT (dispatcher
+FAILURE ET mêmes failure_types qu'à l'origine), NON_CONCLUANT (toute autre
+combinaison comparable, jamais confondue avec les deux premières) ; `outcome` est
+None si la comparaison n'est pas exploitable. Le chemin passif (extraction,
+failure_replay) garde son vocabulaire inchangé. Sans verdict de dispatch
 exploitable : ni validator, ni comparaison.
 """
 
@@ -705,6 +714,12 @@ STATUS_ERROR = "ERROR"
 STATUS_NOT_EXECUTED = "NOT_EXECUTED"
 STATUS_NOT_APPLICABLE = "NOT_APPLICABLE"
 
+# Résultat d'une comparaison APRÈS dispatch réel (distinct des verdicts de fidélité
+# REPRODUIT/NON_REPRODUIT/DIFFERENT, dont le sens est ambigu ici).
+OUTCOME_FIX_CONFIRMED = "CORRECTIF_CONFIRME"
+OUTCOME_BUG_PERSISTS = "BUG_PERSISTANT"
+OUTCOME_INCONCLUSIVE = "NON_CONCLUANT"
+
 _DEFAULT_DISPATCH_BUDGET_S = 30.0
 _MAX_DISPATCH_ACTIONS = 60
 
@@ -723,6 +738,25 @@ class ActionExecution:
     validation: Optional[Dict[str, Any]] = None
     validation_comparison: Optional[Dict[str, Any]] = None
     validation_error: Optional[str] = None
+
+
+def _action_outcome(comparison: Dict[str, Any], dispatcher_success: bool) -> Dict[str, Any]:
+    """Traduit la comparaison de fidélité (`_compare_validation`, inchangée) en
+    `outcome` sans ambiguïté, à la lumière du booléen réel du dispatcher. La clé
+    `verdict` (fidélité) est retirée du résultat : elle ne doit pas être lue seule."""
+    result = {k: v for k, v in comparison.items() if k != "verdict"}
+    fidelity = comparison.get("verdict")
+    if fidelity is None:
+        outcome = None  # non exploitable : pas de comparaison forcée
+    elif dispatcher_success is True and fidelity == VERDICT_NON_REPRODUIT:
+        outcome = OUTCOME_FIX_CONFIRMED
+    elif dispatcher_success is False and fidelity == VERDICT_REPRODUIT:
+        outcome = OUTCOME_BUG_PERSISTS
+    else:
+        outcome = OUTCOME_INCONCLUSIVE
+    result["dispatcher_success"] = dispatcher_success
+    result["outcome"] = outcome
+    return result
 
 
 def _run_with_deadline(page: Any, budget_s: float, fn: Any) -> Tuple[str, Any, Optional[BaseException]]:
@@ -832,11 +866,14 @@ def execute_case_action(
                     question_blocks=question_blocks,
                 )
                 original_report, _ = _load_json(case_dir / "artifacts" / "validation_report.json")
-                validation_comparison = _compare_validation(
-                    original_report,
-                    validation,
-                    manifest,
-                    [get_target(a["target_id"]) for a in actions if a.get("target_id")],
+                validation_comparison = _action_outcome(
+                    _compare_validation(
+                        original_report,
+                        validation,
+                        manifest,
+                        [get_target(a["target_id"]) for a in actions if a.get("target_id")],
+                    ),
+                    bool(value),
                 )
             except Exception as vexc:
                 validation, validation_comparison = None, None
@@ -867,7 +904,7 @@ def execute_case_action(
             + (
                 f"erreur ({validation_error[:80]})"
                 if validation_error
-                else str((validation_comparison or {}).get("verdict") or "non comparable")
+                else str((validation_comparison or {}).get("outcome") or "non comparable")
             )
         ),
     )
