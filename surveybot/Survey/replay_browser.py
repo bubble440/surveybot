@@ -155,6 +155,27 @@ combinaison comparable, jamais confondue avec les deux premières) ; `outcome` e
 None si la comparaison n'est pas exploitable. Le chemin passif (extraction,
 failure_replay) garde son vocabulaire inchangé. Sans verdict de dispatch
 exploitable : ni validator, ni comparaison.
+
+── TIMEOUT : repli TRACE_REPLAY sur les faits déjà capturés (Phase 3D) ────────
+Un TIMEOUT ferme la page : plus aucune lecture live n'est possible, et
+`execute_case_action` ne prétend jamais avoir rejoué le dispatcher pour ce cas.
+Ce n'est plus pour autant un point mort : `_trace_replay_fallback` réutilise,
+SANS pilote live (`driver=None`), le paramètre déjà existant
+`captured_option_states` de `action_validator.validate_actions` (non modifié) —
+les mêmes faits (`runtime_state.json`, capturés avant cette tentative de rejeu)
+et le même mécanisme déjà exploités sans navigateur par le rejeu statique passif
+(Survey/failure_replay.py). Résultat exposé dans `ActionExecution.trace_replay`,
+un champ distinct qui n'existe QUE pour un TIMEOUT (toujours `None` pour
+SUCCESS/FAILURE/ERROR/NOT_EXECUTED/NOT_APPLICABLE) : jamais confondu avec
+`validation`/`validation_comparison` (réservés au verdict réel SUCCESS/FAILURE)
+ni avec leur vocabulaire `outcome` CORRECTIF_CONFIRME/BUG_PERSISTANT/
+NON_CONCLUANT. Le statut du résultat reste `TIMEOUT` (jamais réécrit) : ce repli
+enrichit un TIMEOUT, il ne le remplace pas. `{"available": True, "replay_mode":
+"TRACE_REPLAY", "validation": ..., "comparison": ...}` si l'analyse a pu
+s'exécuter (vocabulaire de fidélité REPRODUIT/NON_REPRODUIT/DIFFERENT, comme 3A) ;
+`{"available": False, "reason": ...}` explicite sinon (case sans
+runtime_state.json exploitable, ou exception) — jamais un repli silencieux qui
+laisserait croire à une analyse.
 """
 
 import asyncio
@@ -720,6 +741,11 @@ OUTCOME_FIX_CONFIRMED = "CORRECTIF_CONFIRME"
 OUTCOME_BUG_PERSISTS = "BUG_PERSISTANT"
 OUTCOME_INCONCLUSIVE = "NON_CONCLUANT"
 
+# Étiquette du repli passif après TIMEOUT (Phase 3D) : jamais un statut de dispatch,
+# jamais un outcome de comparaison post-dispatch réel — distincte des deux vocabulaires
+# ci-dessus pour ne jamais être confondue avec eux (cf. ActionExecution.trace_replay).
+REPLAY_MODE_TRACE_REPLAY = "TRACE_REPLAY"
+
 _DEFAULT_DISPATCH_BUDGET_S = 30.0
 _MAX_DISPATCH_ACTIONS = 60
 
@@ -738,6 +764,13 @@ class ActionExecution:
     validation: Optional[Dict[str, Any]] = None
     validation_comparison: Optional[Dict[str, Any]] = None
     validation_error: Optional[str] = None
+    # Renseigné seulement après TIMEOUT (jamais après SUCCESS/FAILURE/ERROR/
+    # NOT_EXECUTED/NOT_APPLICABLE) : analyse de repli à partir des seuls faits déjà
+    # capturés avant cette tentative de rejeu (aucune nouvelle lecture live, la page
+    # étant fermée) — voir _trace_replay_fallback. `None` = statut autre que TIMEOUT ;
+    # {"available": False, "reason": ...} = TIMEOUT sans repli possible, à distinguer
+    # explicitement d'une analyse réellement effectuée.
+    trace_replay: Optional[Dict[str, Any]] = None
 
 
 def _action_outcome(comparison: Dict[str, Any], dispatcher_success: bool) -> Dict[str, Any]:
@@ -794,6 +827,75 @@ def _run_with_deadline(page: Any, budget_s: float, fn: Any) -> Tuple[str, Any, O
     if state["fired"]:
         return "timeout", None, None
     return outcome, value, error
+
+
+def _trace_replay_fallback(
+    case_dir: Path,
+    manifest: dict,
+    actions: List[Dict[str, Any]],
+    question_blocks: Optional[List[Dict[str, Any]]],
+) -> Dict[str, Any]:
+    """Repli après TIMEOUT du dispatcher réel : la page est déjà fermée par le
+    garde-fou de budget (plus aucune lecture live possible), mais le case porte
+    déjà, capturés avant cette tentative de rejeu, les mêmes faits
+    (`runtime_state.json`) que ceux déjà utilisés par le rejeu statique passif
+    (Survey/failure_replay.py) pour confirmer un résultat sans pilote live — via
+    le même paramètre déjà existant `captured_option_states` de
+    `action_validator.validate_actions` (non modifié, appelé ici avec `driver=None`,
+    jamais une nouvelle lecture). Ne rejoue jamais le dispatcher : `dispatcher_success`
+    est celui déjà rapporté par le case d'origine (`validation_report.json`), pas un
+    verdict de cette tentative. Ne lève jamais ; `available=False` avec une raison
+    explicite si aucune analyse de repli n'est possible (case sans faits capturés,
+    ou exception), pour ne jamais laisser croire qu'une analyse a eu lieu."""
+    artifacts_dir = case_dir / "artifacts"
+    runtime_state, rs_err = _load_json(artifacts_dir / "runtime_state.json")
+    captured_facts = (
+        runtime_state.get("facts") if isinstance(runtime_state, dict) and not rs_err else None
+    )
+    if not isinstance(captured_facts, dict) or not captured_facts:
+        reason = rs_err or "runtime_state.json sans facts capturés"
+        return {
+            "available": False,
+            "replay_mode": REPLAY_MODE_TRACE_REPLAY,
+            "reason": f"{reason} — aucune analyse de repli possible",
+        }
+
+    original_report, or_err = _load_json(artifacts_dir / "validation_report.json")
+    dispatcher_success = (
+        original_report.get("dispatcher_success")
+        if isinstance(original_report, dict) and not or_err
+        else None
+    )
+    try:
+        from Survey.action_validator import validate_actions
+        from Survey.dom_registry import get_target
+
+        replayed_report = validate_actions(
+            actions,
+            dispatcher_success=dispatcher_success,
+            driver=None,
+            question_blocks=question_blocks,
+            captured_option_states=captured_facts,
+        )
+        comparison = _compare_validation(
+            original_report,
+            replayed_report,
+            manifest,
+            [get_target(a["target_id"]) for a in actions if a.get("target_id")],
+        )
+    except Exception as exc:
+        return {
+            "available": False,
+            "replay_mode": REPLAY_MODE_TRACE_REPLAY,
+            "reason": f"validate_actions() a levé une exception : {type(exc).__name__}: {exc}",
+        }
+
+    return {
+        "available": True,
+        "replay_mode": REPLAY_MODE_TRACE_REPLAY,
+        "validation": replayed_report,
+        "comparison": comparison,
+    }
 
 
 def execute_case_action(
@@ -855,6 +957,9 @@ def execute_case_action(
         )
         duration = round(time.perf_counter() - started, 3)
         validation = validation_comparison = validation_error = None
+        trace_replay = None
+        if outcome == "timeout":  # page fermée : repli sur les seuls faits déjà capturés
+            trace_replay = _trace_replay_fallback(case_dir, manifest, actions, question_blocks)
         if outcome == "done":  # verdict exploitable : le dispatcher a rendu un booléen
             try:
                 from Survey.action_validator import validate_actions
@@ -883,6 +988,7 @@ def execute_case_action(
         result = ActionExecution(
             STATUS_TIMEOUT, None, duration, budget_s, len(actions),
             f"budget de {budget_s}s dépassé — verdict inconnu", page_closed=True,
+            trace_replay=trace_replay,
         )
     elif outcome == "error":
         result = ActionExecution(STATUS_ERROR, None, duration, budget_s, len(actions), f"{type(exc).__name__}: {exc}")
@@ -905,6 +1011,16 @@ def execute_case_action(
                 f"erreur ({validation_error[:80]})"
                 if validation_error
                 else str((validation_comparison or {}).get("outcome") or "non comparable")
+            )
+        )
+        + (
+            ""
+            if outcome != "timeout"
+            else ", trace_replay "
+            + (
+                str((trace_replay or {}).get("comparison", {}).get("verdict"))
+                if (trace_replay or {}).get("available")
+                else f"indisponible ({(trace_replay or {}).get('reason', '')[:80]})"
             )
         ),
     )
