@@ -622,6 +622,65 @@ niveau tant que le niveau précédent n'est pas fiable.
 > pari, seulement une traduction de vocabulaire sur un résultat déjà tranché
 > par le module unique. **Avec cette entrée, 3C.4 est considérée close sur
 > tout ce qui était prévu.**
+> Mise à jour 2026-09-26 (suite 18) : Phase 7 étendue à `stage="action"`,
+> maintenant que 3C.4 fournit une preuve exploitable pour ce stage. Choix de
+> coût explicitement tranché : la réexécution réelle du dispatcher (Chromium,
+> plusieurs secondes) tourne systématiquement dans `diagnose_failure_case`
+> (Phase 4) pour tout case `stage="action"`, pas à la demande juste avant la
+> Phase 7 — la Phase 4 devient plus lente sur ce stage, assumé.
+> `Survey/failure_diagnosis.py` : nouveau champ `real_dispatch_replay`,
+> strictement additif — `replay` (rejeu passif, `failure_replay.py`) reste
+> calculé tel quel pour tous les stages, jamais remplacé. Pour
+> `stage="action"` uniquement, `_attempt_real_dispatch_replay` appelle
+> `Survey/replay_browser.py::execute_case_action` (non modifié, vérifié :
+> `OUTCOME_FIX_CONFIRMED`/`OUTCOME_BUG_PERSISTS`/`OUTCOME_INCONCLUSIVE`,
+> `ReplayBrowserError`, `_DEFAULT_DISPATCH_BUDGET_S` préexistaient déjà tous
+> depuis la suite 15) sur `pre_action_dom.html`, sous le même budget de temps
+> que ce worker impose déjà — jamais d'exception propagée (pré-requis
+> absents, Playwright indisponible, ou toute autre erreur : `None`, jamais
+> un résultat deviné). Signal exact retenu pour "certain" côté action :
+> `real_dispatch_replay.validation_comparison.outcome="BUG_PERSISTANT"` —
+> confirmation ACTIVE que le bug persiste sur le code non corrigé, jamais
+> `CORRECTIF_CONFIRME` (ce serait le signal inverse, utile après un
+> correctif, pas avant) ni une absence de détection. Sans cette
+> confirmation active, `confidence_global` plafonne à `"plausible"` — même
+> mécanisme de plafond que `manifest.incomplete=true`, appliqué en plus,
+> pas une règle indépendante.
+> `Survey/autofix_worktree.py::check_eligibility` : `stage` accepte
+> maintenant `"extraction"` et `"action"` ; `replay.verdict="REPRODUIT"`
+> reste exigé pour les deux ; pour `stage="action"` seulement, exigence
+> supplémentaire sur `real_dispatch_replay.validation_comparison.outcome`
+> (`"BUG_PERSISTANT"` requis, garde défensif si le champ est absent) —
+> jamais un critère plus permissif que pour l'extraction. Pas encore
+> chronométré sur un vrai run (`tools/diagnose_failure.py` sur un case
+> action va devenir sensiblement plus lent — attendu, à confirmer).
+> Mise à jour 2026-09-26 (suite 19) : point de vigilance data de la Phase 6
+> fermé — champ `value` d'un issue de `validation_report.json`, jusqu'ici
+> jamais sanitisé contrairement à `meta.json`/aux DOM HTML du même snapshot.
+> Portée précisée avant le patch : le risque ne concerne que les champs de
+> saisie libre (la donnée réellement tapée par le répondant, ex. le cas de
+> référence IFOP zip2city cité par le plan) — pas un libellé d'option
+> radio/checkbox/dropdown, déjà prédéfini par le sondage lui-même et pas
+> plus sensible que le texte de la question, déjà reproduit sans filtre.
+> Nouvelle fonction `_sanitize_validation_report` (`Survey/failure_case_builder.py`),
+> appliquée au moment de la copie sanitisée (Phase 2), comme `meta.json` juste
+> au-dessus dans le même fichier — pas en Phase 4/6, pour que tout consommateur
+> futur de `validation_report.json` en bénéficie. Rapprochement par option
+> prédéfinie réelle (`question_blocks.json` du même snapshot, jamais
+> recalculé), pas par `itype` déclaré (pouvant être erroné) : `value`
+> conservée telle quelle seulement si elle correspond, après normalisation
+> casse/espaces stricte, à une option connue pour ce `target_id` ; sinon
+> retirée (remplacée par `null`). Toute ambiguïté (target_id absent de
+> l'issue, bloc introuvable, `question_blocks.json` indisponible/sans
+> options exploitables) traitée comme potentiellement sensible — jamais
+> laissée passer par défaut. Portée strictement limitée à `issues[].value`
+> (pas un parcours générique du document comme `_sanitize_meta`/
+> `_sanitize_capsule_json`, ni l'une ni l'autre modifiées) ; copie profonde
+> indépendante, jamais de mutation en place ; bornée (`_MAX_SANITIZED_ISSUES`),
+> repli côté sûr (retrait) au-delà du budget. Retrait documenté dans les
+> avertissements du manifeste, même convention que `meta.json`, jamais
+> silencieux. **Avec cette entrée, le dernier point ouvert de la liste
+> dressée en fin de chantier 3C est fermé.**
 
 ## Contexte de travail actuel
 
@@ -664,9 +723,10 @@ incident détecté
     3B.3/3B.4/3D à faire — voir Phase 3)
 4   terminée
 5   terminée
-6   terminée (point de vigilance data ouvert — voir note ci-dessus)
+6   terminée
 7   PARTIELLEMENT TERMINÉE (préparation d'espace Git isolé faite pour
-    stage="extraction" REPRODUIT/certain ; stage="action" en attente de 3C ;
+    stage="extraction" (REPRODUIT/certain) et stage="action" (REPRODUIT +
+    real_dispatch_replay BUG_PERSISTANT, coût Chromium systématique en Phase 4) ;
     aucune invocation automatique d'agent de coding — voir Phase 7)
 ```
 
@@ -2115,8 +2175,8 @@ Trop de contexte dégrade souvent le diagnostic.
 À partir du dossier `failure_case`, on génère ton prompt standard.
 
 **Statut : TERMINÉE — `Survey/prompt_generator.py` + `tools/generate_prompt.py`
-implémentés et validés. Un point de vigilance data reste ouvert (voir ci-dessous)
-avant tout usage en volume.**
+implémentés et validés. Le point de vigilance data ci-dessous est fermé (voir
+Phase 2, `_sanitize_validation_report`).**
 
 ### Fidélité au gabarit réel, pas à l'esquisse conceptuelle
 
@@ -2157,17 +2217,19 @@ les identifiants de registry internes (`target_id`, `action_index`,
 `block_index`) — cette section doit se lire comme un bug rapporté normalement,
 jamais comme un export de données de pipeline.
 
-### Point de vigilance ouvert : `value` d'un issue, non sanitisé
+### Point de vigilance fermé : `value` d'un issue, désormais sanitisé en Phase 2
 
 Le champ `value` d'un issue de `validation_report.json` (repris dans le
-symptôme via `_SAFE_ISSUE_FIELDS`) n'a jamais transité par la sanitisation mise
-en place en Phase 2 — celle-ci ne couvre que `meta.json` et les DOM HTML, pas
-`validation_report.json`. Si ce champ contient parfois une donnée réellement
-saisie pour le répondant (ex. un code postal, cf. le cas de référence IFOP
-zip2city), elle se retrouve recopiée sans filtre dans un texte destiné à une
-conversation Codex externe. **À vérifier sur des cases réels avant d'utiliser
-cet outil en volume ou avant la Phase 7** ; si confirmé, sanitiser à la source
-(Phase 2, sur `validation_report.json`) ou exclure ce champ ici.
+symptôme via `_SAFE_ISSUE_FIELDS`) n'a longtemps transité par aucune
+sanitisation, contrairement à `meta.json` et aux DOM HTML — risque documenté
+pour un champ de saisie libre (ex. un code postal, cf. le cas de référence
+IFOP zip2city). Fermé en Phase 2 (`Survey/failure_case_builder.py::
+_sanitize_validation_report`, cf. historique 2026-09-26 suite 19) : `value`
+n'est conservée que si elle correspond à une option prédéfinie réelle du bloc
+(`question_blocks.json` du même snapshot), jamais devinée depuis `itype` ;
+toute ambiguïté est traitée comme potentiellement sensible et retirée. Cette
+section continue de lire un `validation_report.json` déjà sanitisé à la
+source — rien à faire ici.
 
 Mais **Codex ne sera pas encore exécuté automatiquement** — c'est l'objet de
 la Phase 7.
@@ -2177,13 +2239,18 @@ la Phase 7.
 # Phase 7 --- Génération automatique d'un patch dans une branche isolée
 
 **Statut : PARTIELLEMENT TERMINÉE — `Survey/autofix_worktree.py` +
-`tools/prepare_autofix_worktree.py` implémentés et validés, pour le seul
-sous-ensemble `stage="extraction"` avec `replay.verdict="REPRODUIT"` et
-`confidence_global="certain"` (le sous-ensemble `STATIC_DOM` le plus solide,
-sans attendre la Phase 3D). `stage="action"` reste hors périmètre : un
-verdict `REPRODUIT` y est attendu par construction (le replay ne réexécute
-jamais le dispatcher réel), donc pas une preuve suffisante pour déclencher
-une préparation automatique — en attente de la Phase 3C.**
+`tools/prepare_autofix_worktree.py` implémentés et validés. `stage="extraction"` :
+`replay.verdict="REPRODUIT"` et `confidence_global="certain"` (le sous-ensemble
+`STATIC_DOM` le plus solide, sans attendre la Phase 3D). `stage="action"` :
+maintenant dans le périmètre — 3C.4 étant close, `replay.verdict="REPRODUIT"`
+seul (attendu par construction, le replay passif ne réexécute jamais le
+dispatcher réel) ne suffit plus, une exigence supplémentaire s'ajoute :
+`real_dispatch_replay.validation_comparison.outcome="BUG_PERSISTANT"`
+(Phase 4, confirmation active par réexécution réelle du dispatcher que le bug
+persiste sur le code non corrigé). Coût assumé : cette réexécution tourne
+systématiquement dans `diagnose_failure_case` pour tout case action, pas à la
+demande — Phase 4 devient plus lente sur ce stage, pas encore chronométré sur
+un vrai run.**
 
 **Précision sur le périmètre réellement couvert :** cette phase prépare
 l'espace de travail isolé (branche + worktree Git dédiés) et s'arrête là —
