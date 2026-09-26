@@ -503,6 +503,51 @@ niveau tant que le niveau précédent n'est pas fiable.
 > correctif échoue / après correctif réussit" via l'historique git plutôt
 > qu'un test construit exprès. Bon point en faveur de 3C.3, pas un mystère.
 > Décision : chantier principal passe à la Phase 3C.4.
+> Mise à jour 2026-09-25 (suite 12) : Phase 3C.4 démarrée — première brique.
+> Nouvelle fonction `execute_case_action(page, case_dir, budget_s)` dans
+> `Survey/replay_browser.py` : exécute, pour un case `stage="action"`,
+> `action_dispatcher.execute_actions_plan(page, actions, stop_on_navigation=True)`
+> tel quel (non modifié, même point d'entrée que `survey_executor`) avec les
+> actions de `actions_requested.json`, après `extract_case_blocks` sur la même
+> page (même verrou, le dispatcher lit le registre global). Garde-fou de
+> timeout obligatoire : un thread watchdog ferme la page à l'échéance (appel
+> thread-safe sur la boucle asyncio de Playwright — débloque un `evaluate`/une
+> attente en cours) ; un résultat tardif, succès ou échec, n'écrase jamais un
+> verdict déjà déclaré `TIMEOUT` — vérifié explicitement (scénario : succès
+> simulé après le budget → reste `TIMEOUT`). Statuts jamais confondus :
+> `SUCCESS`/`FAILURE` (booléen du dispatcher), `TIMEOUT` (budget dépassé),
+> `ERROR` (le dispatcher a levé), `NOT_EXECUTED` (précondition absente : cible
+> hors registre, budget invalide, page sans les leviers d'abandon nécessaires),
+> `NOT_APPLICABLE` (stage autre qu'action). Une tentative d'injection
+> d'exception dans le thread du dispatcher (pour interrompre une boucle
+> Python) a été essayée puis rejetée : elle atteint la boucle asyncio interne
+> de Playwright et la bloque — la fermeture de page seule suffit pour les
+> blocages Playwright, mais une boucle Python pure sans borne propre n'est pas
+> interrompue (limite disclosée, pas masquée). `action_dispatcher.py` non
+> modifié. Limite notée à ce stade : le dispatcher tournait sur le document
+> post-action avec l'état "après" restauré, pas sur l'état pré-action — point
+> repris et résolu en suite 13.
+> Mise à jour 2026-09-25 (suite 13) : Phase 3C.4, suite — chargement
+> pré-action ajouté (`load_case_document(case_dir, pre_action=True)`, cases
+> `stage="action"` uniquement, `pre_action_dom.html` requis dans les artefacts,
+> jamais de repli sur le post-action si absent). Mêmes ressources externes
+> servies et même CSP relâchée que le chargement existant (code partagé, non
+> dupliqué) ; restauration de l'état runtime explicitement non appliquée ici
+> (cet état correspond à un autre instant, après l'action). **Validation
+> décisive sur le case de référence Decipher/rowpicker
+> (`20260925_211543_action_validation_failure`) : extraction sur le document
+> pré-action retrouve `group_70d2fbdc16e2` identique à l'original
+> (`comparaison identical=true`), puis `execute_case_action` rapporte `SUCCESS`
+> en 1,019 s — et le clic est visuellement confirmé dans l'onglet ouvert, pas
+> seulement rapporté.** C'est la première fois que la chaîne complète
+> (extraction réelle → dispatcher réel corrigé → succès réel) est vérifiée de
+> bout en bout sur le bug qui a motivé tout ce chantier (diagnostiqué en
+> suite 8 du 2026-09-13, corrigé en suite 6/7 du 2026-09-25). Reste à faire
+> pour clore 3C.4 : comparaison structurée avant/après (état post-action local
+> + validator, pas seulement une lecture manuelle), et la fusion en fonction
+> oracle unique déjà réclamée par le plan (le pari `dispatcher_success=false`
+> mais DOM prouvant le contraire, aujourd'hui dans `action_validator.py` d'un
+> côté et nulle part de l'autre pour le dispatcher réellement rejoué).
 
 ## Contexte de travail actuel
 
@@ -536,10 +581,13 @@ incident détecté
     rejeu ; 3B.9/3B.10/3B.11 (scripts, feuilles de style, requêtes XHR/fetch
     externes) et 3C.1 + 3C.2 + 3C.3 (document, ressources externes, CSP
     relâchée, état runtime restauré, extraction+validator rejoués — frames/
-    shadow/frame selection hors périmètre, cf. 3B.3/3B.4) terminés — premier
-    widget JS interactif (React) validé de bout en bout en conditions
-    réelles, 3C.3 validée sur deux cases extraction réels ;
-    3B.3/3B.4/3C.4/3D à faire — voir Phase 3)
+    shadow/frame selection hors périmètre, cf. 3B.3/3B.4) terminés ; 3C.4
+    démarrée (dispatcher réel + timeout + chargement pré-action) — chaîne
+    complète extraction réelle → dispatcher réel corrigé → succès réel
+    validée de bout en bout sur le bug Decipher/rowpicker qui a motivé ce
+    chantier, clic visuellement confirmé ;
+    3B.3/3B.4/reste de 3C.4 (comparaison structurée, oracle unique,
+    TRACE_REPLAY)/3D à faire — voir Phase 3)
 4   terminée
 5   terminée
 6   terminée (point de vigilance data ouvert — voir note ci-dessus)
@@ -1685,6 +1733,23 @@ logique doit vivre dans **une fonction oracle unique**, appelée à la fois par
 `action_validator.py` (Phase 1B) et par le replay (Phase 3C/3D) — pas dans
 deux endroits différents.
 
+**Statut : PARTIELLE — `Survey/replay_browser.py::execute_case_action`
+exécute `action_dispatcher.execute_actions_plan` (non modifié) sur la page
+rejouée, avec garde-fou de timeout (watchdog, jamais de verdict tardif après
+budget dépassé) et statuts `SUCCESS`/`FAILURE`/`TIMEOUT`/`ERROR`/
+`NOT_EXECUTED`/`NOT_APPLICABLE`. Chargement du document pré-action ajouté
+(`load_case_document(..., pre_action=True)`), sans restauration d'état
+(autre instant). Validé de bout en bout sur le case de référence
+Decipher/rowpicker : extraction identique à l'origine sur le document
+pré-action, dispatcher réel corrigé → `SUCCESS`, clic visuellement confirmé.
+Non fait : comparaison structurée avant/après avec le validator (état
+post-action local + verdict, pas seulement une lecture manuelle) ; la
+fonction oracle unique réclamée ci-dessus (le pari `dispatcher_success=false`
+mais DOM prouvant le contraire) n'existe qu'côté `action_validator.py`, pas
+encore côté dispatcher réellement rejoué ; `TRACE_REPLAY` (déclassement
+automatique après timeout) pas implémenté — un `TIMEOUT` est aujourd'hui
+rapporté tel quel, pas encore reclassé.**
+
 ------------------------------------------------------------------------
 
 ## Phase 3D --- Classification automatique de rejouabilité
@@ -2646,9 +2711,13 @@ Je suivrais exactement cet ordre :
 3C  Replay Chromium local — PARTIELLEMENT TERMINÉE (3C.1 + 3C.2 + 3C.3 clos
     sur le périmètre retenu : document principal, scripts/styles/XHR-fetch
     servis, CSP relâchée, état runtime restauré, extraction+validator rejoués
-    et comparés — validé de bout en bout sur un widget React réel et sur deux
-    cases extraction réels ; frames/shadow roots/frame selection hors
-    périmètre (cf. 3B.3/3B.4). 3C.4 à faire, chantier principal.
+    et comparés ; frames/shadow roots/frame selection hors périmètre (cf.
+    3B.3/3B.4). 3C.4 démarrée : dispatcher réel avec garde-fou de timeout,
+    chargement pré-action — validé de bout en bout (extraction identique +
+    dispatcher SUCCESS + clic visuellement confirmé) sur le bug Decipher/
+    rowpicker qui a motivé ce chantier. Reste : comparaison structurée
+    avant/après, fonction oracle unique partagée avec action_validator.py,
+    TRACE_REPLAY. Chantier principal.
 3D  Classification de rejouabilité (STATIC_DOM/BROWSER_CAPSULE/TRACE_REPLAY/
     EXTERNAL_NON_REPLAYABLE)
 4   Diagnostic automatique — TERMINÉE (failure_diagnosis.py + CLI)

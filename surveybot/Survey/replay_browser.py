@@ -81,7 +81,10 @@ ou ambigu = ignoré et journalisé, jamais deviné, jamais bloquant. Aucun
 événement n'est émis (un `change` pourrait déclencher un autosubmit) : seules
 les propriétés changent, l'affichage d'un widget JS piloté par son propre état
 n'est donc pas resynchronisé. Limite : document principal uniquement (pas de
-frames). Sans artefact, comportement identique à avant ce patch.
+frames). Sans artefact, comportement identique à avant ce patch. Jamais
+appliquée au document pré-action (`load_case_document(pre_action=True)`, stage
+action) : cet état est celui d'après l'action, et le restaurer sans événement
+donnerait au dispatcher un point de départ hybride que la production ne connaît pas.
 
 ── Extraction du bot rejouée sur la page chargée (3C.3, première brique) ──────
 `extract_case_blocks(page, case_dir)` exécute `dom_analyzer.analyze_dom(page)`
@@ -134,6 +137,15 @@ exception dans le thread du dispatcher a été essayé et REJETÉ : la boucle as
 de Playwright tourne dans ce même thread, l'exception y est livrée et la boucle
 ne répond plus ; (3) la page exécutée est le document post-action du case avec
 son état « après » restauré, pas l'état pré-action.
+Validator d'action : quand le dispatcher a rendu un verdict exploitable (SUCCESS
+ou FAILURE — jamais après TIMEOUT/ERROR/NOT_EXECUTED/NOT_APPLICABLE),
+`action_validator.validate_actions` (appelé tel quel, sous le même verrou) est
+exécuté sur la même page avec ce verdict réel, les blocs de l'extraction
+(`question_blocks`, optionnels) et SANS `captured_option_states` (réservé au rejeu
+statique : ici le validator lit l'état live). Son rapport est comparé à
+`validation_report.json` du case par `_compare_validation` (mêmes verdicts
+REPRODUIT / NON_REPRODUIT / DIFFERENT, mêmes cas non comparables). Sans verdict
+exploitable : ni validator, ni comparaison.
 """
 
 import asyncio
@@ -282,19 +294,33 @@ class IsolatedReplayBrowser:
             raise ReplayBrowserError("non démarré")
         return self._context.new_page()
 
-    def load_case_document(self, case_dir: Union[str, Path]) -> Any:
+    def load_case_document(self, case_dir: Union[str, Path], *, pre_action: bool = False) -> Any:
         """Charge le HTML principal figé d'un failure case dans une nouvelle page
         et la retourne. Lève ReplayBrowserError si le document n'est pas
-        chargeable (jamais de repli sur un autre fichier)."""
+        chargeable (jamais de repli sur un autre fichier).
+
+        `pre_action=True` (stage action uniquement) charge `pre_action_dom.html`
+        au lieu du document post-action, avec les mêmes ressources externes servies
+        et la même CSP, mais SANS restaurer runtime_state.json (état d'un autre
+        instant : après l'action). Absent = erreur, jamais de repli sur le
+        document post-action."""
         case_dir = Path(case_dir)
         manifest, err = _load_json(case_dir / "manifest.json")
         if err or not isinstance(manifest, dict):
             raise ReplayBrowserError(f"manifest.json {err or 'invalide (objet JSON attendu)'}")
         flags = manifest.get("artifacts") if isinstance(manifest.get("artifacts"), dict) else {}
         artifacts_dir = case_dir / "artifacts"
-        name, err = _pick_dom_file(str(manifest.get("stage") or "unknown"), artifacts_dir, flags)
-        if err or not name:
-            raise ReplayBrowserError(err or "aucun document sélectionné")
+        if pre_action:
+            name = "pre_action_dom.html"
+            if manifest.get("stage") != "action" or flags.get(name) is not True or not (artifacts_dir / name).is_file():
+                raise ReplayBrowserError(
+                    f"{name} absent des artifacts de ce case, ou stage != action — "
+                    "jamais de repli sur le document post-action"
+                )
+        else:
+            name, err = _pick_dom_file(str(manifest.get("stage") or "unknown"), artifacts_dir, flags)
+            if err or not name:
+                raise ReplayBrowserError(err or "aucun document sélectionné")
         try:
             html = (artifacts_dir / name).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
@@ -309,7 +335,7 @@ class IsolatedReplayBrowser:
             doc_url = _original_document_url(artifacts_dir) or _DOCUMENT_URL
         page = self._load_html(html, doc_url, allow_scripts)
         self.runtime_restore_report = {}
-        if flags.get("runtime_state.json") is True:
+        if not pre_action and flags.get("runtime_state.json") is True:
             self.runtime_restore_report = _restore_runtime_state(page, artifacts_dir / "runtime_state.json")
         log_info(
             _TAG,
@@ -692,6 +718,11 @@ class ActionExecution:
     actions_count: int = 0
     reason: Optional[str] = None
     page_closed: bool = False  # True après TIMEOUT : la page n'est plus utilisable
+    # Renseignés seulement après SUCCESS/FAILURE : rapport de validate_actions sur la
+    # page après dispatch, sa comparaison à validation_report.json, ou l'erreur levée.
+    validation: Optional[Dict[str, Any]] = None
+    validation_comparison: Optional[Dict[str, Any]] = None
+    validation_error: Optional[str] = None
 
 
 def _run_with_deadline(page: Any, budget_s: float, fn: Any) -> Tuple[str, Any, Optional[BaseException]]:
@@ -732,11 +763,16 @@ def _run_with_deadline(page: Any, budget_s: float, fn: Any) -> Tuple[str, Any, O
 
 
 def execute_case_action(
-    page: Any, case_dir: Union[str, Path], budget_s: float = _DEFAULT_DISPATCH_BUDGET_S
+    page: Any,
+    case_dir: Union[str, Path],
+    budget_s: float = _DEFAULT_DISPATCH_BUDGET_S,
+    question_blocks: Optional[List[Dict[str, Any]]] = None,
 ) -> ActionExecution:
     """Exécute le dispatcher réel sur `page` pour l'action d'un case de stage
     `action` (voir docstring du module). `page` doit être celle de
-    load_case_document + extract_case_blocks pour ce même `case_dir`."""
+    load_case_document + extract_case_blocks pour ce même `case_dir` ;
+    `question_blocks` = `CaseExtraction.blocks` de cette extraction (transmis au
+    validator, comme le fait le rejeu statique)."""
     case_dir = Path(case_dir)
     manifest, err = _load_json(case_dir / "manifest.json")
     manifest = manifest if isinstance(manifest, dict) and not err else {}
@@ -784,6 +820,27 @@ def execute_case_action(
             lambda: action_dispatcher.execute_actions_plan(page, actions, stop_on_navigation=True),
         )
         duration = round(time.perf_counter() - started, 3)
+        validation = validation_comparison = validation_error = None
+        if outcome == "done":  # verdict exploitable : le dispatcher a rendu un booléen
+            try:
+                from Survey.action_validator import validate_actions
+
+                validation = validate_actions(
+                    actions,
+                    dispatcher_success=bool(value),
+                    driver=page,
+                    question_blocks=question_blocks,
+                )
+                original_report, _ = _load_json(case_dir / "artifacts" / "validation_report.json")
+                validation_comparison = _compare_validation(
+                    original_report,
+                    validation,
+                    manifest,
+                    [get_target(a["target_id"]) for a in actions if a.get("target_id")],
+                )
+            except Exception as vexc:
+                validation, validation_comparison = None, None
+                validation_error = f"{type(vexc).__name__}: {vexc}"
 
     if outcome == "timeout":
         result = ActionExecution(
@@ -796,10 +853,23 @@ def execute_case_action(
         result = ActionExecution(
             STATUS_SUCCESS if value else STATUS_FAILURE, bool(value), duration, budget_s, len(actions)
         )
+    result.validation, result.validation_comparison, result.validation_error = (
+        validation, validation_comparison, validation_error
+    )
     log_info(
         _TAG,
         f"dispatcher {case_dir.name}: {result.status} success={result.dispatcher_success} "
-        f"durée={duration}s (budget {budget_s}s)",
+        f"durée={duration}s (budget {budget_s}s)"
+        + (
+            ""
+            if outcome != "done"
+            else ", validator "
+            + (
+                f"erreur ({validation_error[:80]})"
+                if validation_error
+                else str((validation_comparison or {}).get("verdict") or "non comparable")
+            )
+        ),
     )
     return result
 
