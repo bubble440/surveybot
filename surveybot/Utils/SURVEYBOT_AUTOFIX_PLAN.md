@@ -709,7 +709,44 @@ niveau tant que le niveau précédent n'est pas fiable.
 > la Phase 4 aurait besoin d'éviter un calcul à cause d'un verdict 3D. Sortie
 > `classification.json` distincte, jamais écrite dans `diagnoses/` — jamais
 > d'exception levée (diagnostic incomplet/inattendu → `UNDETERMINED` avec la
-> raison exacte). Pas encore lancé sur un case réel.
+> raison exacte).
+> Mise à jour 2026-09-26 (suite 21) : lancé sur trois cases réels
+> (`20260911_160609`/Focaldata MUI extraction, `20260923_211155`/Qualtrics
+> carrousel extraction, `20260925_211543`/Decipher rowpicker action) — voir
+> suite 22 pour l'extension qui a suivi côté extraction, motivée directement
+> par ce qu'un de ces trois runs a révélé.
+> Mise à jour 2026-09-26 (suite 22) : `Survey/failure_diagnosis.py` étendu —
+> `real_extraction_replay`, symétrique de `real_dispatch_replay` pour
+> `stage="extraction"`. Motivé par un doute concret sur le case Focaldata MUI
+> (suite 21) : son rejeu passif était `NON_REPRODUIT`, mais l'utilisateur
+> doutait que le bug soit vraiment corrigé plutôt que simplement absent du
+> DOM figé — exactement l'ambiguïté que `cause.justification` reconnaît déjà
+> elle-même sans trancher ("soit... soit..."). Nouvelle fonction
+> `_attempt_real_extraction_replay` : fait tourner
+> `replay_browser.py::extract_case_blocks` (non modifié) sur le document du
+> case dans le Chromium isolé — `dom_analyzer.analyze_dom()` et
+> `question_block_validator.validate_question_blocks()` réellement réexécutés
+> avec layout/CSS réels, contrairement au rejeu passif (DOM statique sans
+> JS/layout). Résultat conservé dans `real_extraction_replay`, à côté de
+> `replay` — jamais à sa place. Volontairement purement informatif : aucune
+> nouvelle règle de plafond adossée (contrairement à `real_dispatch_replay`
+> côté action) — `cause_level`/`confidence_global` restent dérivés du seul
+> replay passif pour ce stage, vérifié inchangé sur les deux cases relancés.
+> Résultat sur le case Focaldata : le bloc à 7 options est bien retrouvé sur
+> layout réel, mais `target_id` diffère toujours de l'original et le
+> validator dit encore `NON_REPRODUIT` — cohérent avec le rejeu passif, mais
+> **ne tranche pas** le doute d'origine : un DOM déjà figé, même rejoué dans
+> un vrai navigateur, ne peut par construction jamais rejouer une vraie
+> condition de course de production (la fenêtre de course n'existe plus une
+> fois le DOM capturé) — limite déjà actée pour le rejeu statique (suite 8 du
+> 2026-09-11), qui s'applique donc également ici, pas propre au shim lxml.
+> Résultat sur le case Qualtrics (carrousel, capturé avant 3B.9/10/11,
+> scripts=off confirmé) : confirme, cette fois via le chemin officiel plutôt
+> qu'un script ad hoc, exactement l'explication déjà trouvée manuellement —
+> sans JS, le carrousel empile ses lignes, la question rejouée les absorbe.
+> Suite logique délibérément non incluse ici (un patch à la fois) :
+> `replayability_classifier.py` ne lit pas encore `real_extraction_replay` —
+> `stage="extraction"` hors `STATIC_DOM` reste `UNDETERMINED` pour l'instant.
 
 ## Contexte de travail actuel
 
@@ -1937,10 +1974,11 @@ budget en conditions réelles.**
 recalculé. `STATIC_DOM`/`BROWSER_CAPSULE`/`TRACE_REPLAY` correctement produits
 à partir des signaux déjà existants ; `EXTERNAL_NON_REPLAYABLE` structurellement
 défini mais jamais produit (aucun signal de ce type dans le pipeline à ce
-jour) ; `UNDETERMINED` en repli honnête partout ailleurs, y compris pour
-`stage="extraction"` hors `STATIC_DOM` (asymétrie réelle : aucune vérification
-par navigateur réel encore exposée dans `diagnosis.json` pour ce stage). Pas
-encore lancé sur un case réel.**
+jour). Validé sur trois cases réels (suite 21). `real_extraction_replay`
+(Phase 4, suite 22) existe désormais pour `stage="extraction"`, mais reste
+purement informatif — le classificateur ne le lit pas encore : `UNDETERMINED`
+persiste pour `stage="extraction"` hors `STATIC_DOM`, asymétrie encore réelle
+avec `stage="action"`, câblage restant à faire.**
 
 Chaque failure case reçoit un mode de replay explicite :
 
