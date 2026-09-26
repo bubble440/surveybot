@@ -681,6 +681,35 @@ niveau tant que le niveau précédent n'est pas fiable.
 > avertissements du manifeste, même convention que `meta.json`, jamais
 > silencieux. **Avec cette entrée, le dernier point ouvert de la liste
 > dressée en fin de chantier 3C est fermé.**
+> Mise à jour 2026-09-26 (suite 20) : Phase 3D démarrée —
+> `Survey/replayability_classifier.py` + `tools/classify_replayability.py`.
+> Classification en lecture seule à partir des seuls signaux déjà présents
+> dans `diagnosis.json` (Phase 4) — aucun replay/dispatcher/navigateur
+> recalculé ici. `stage="extraction"` : `STATIC_DOM` seulement si
+> `replay.verdict="REPRODUIT"` ET `evaluate_declined` nul (un `REPRODUIT`
+> obtenu malgré des signaux déclinés ne prouve pas que la structure DOM
+> seule suffisait), sinon `UNDETERMINED`. `stage="action"` :
+> `real_dispatch_replay.status` en `SUCCESS`/`FAILURE` → `BROWSER_CAPSULE`
+> (dispatcher réel réexécuté jusqu'à un verdict exploitable) ;
+> `status="TIMEOUT"` avec `trace_replay.available=true` → `TRACE_REPLAY` ;
+> tout le reste → `UNDETERMINED`. `EXTERNAL_NON_REPLAYABLE` structurellement
+> défini (vocabulaire du plan) mais jamais produit — aucun signal de ce
+> type n'existe encore dans le pipeline (donnée de session, captcha, shadow
+> DOM fermé), l'inventer aurait été deviner. Asymétrie découverte et
+> correctement traitée, non anticipée dans le prompt : `stage="extraction"`
+> n'a aujourd'hui aucun signal de vérification par navigateur réel exposé
+> dans `diagnosis.json` (`replay_browser.py::extract_case_blocks` existe,
+> mais `failure_diagnosis.py` ne l'invoque que pour `stage="action"`) — un
+> case extraction hors `STATIC_DOM` retombe donc sur `UNDETERMINED`, jamais
+> deviné en `BROWSER_CAPSULE` par symétrie avec le stage action. Ordre
+> d'exécution révisé par rapport à l'intention initiale du plan ("la Phase 4
+> devra lire ce champ") : 3D tourne après 4 (lit `diagnosis.json` déjà
+> produit), pas avant — sans conséquence réelle aujourd'hui puisque
+> `EXTERNAL_NON_REPLAYABLE` n'est encore jamais produit, donc aucun cas où
+> la Phase 4 aurait besoin d'éviter un calcul à cause d'un verdict 3D. Sortie
+> `classification.json` distincte, jamais écrite dans `diagnoses/` — jamais
+> d'exception levée (diagnostic incomplet/inattendu → `UNDETERMINED` avec la
+> raison exacte). Pas encore lancé sur un case réel.
 
 ## Contexte de travail actuel
 
@@ -720,7 +749,7 @@ incident détecté
     extraction réelle → dispatcher réel corrigé → succès réel →
     CORRECTIF_CONFIRME validée de bout en bout sur le bug Decipher/rowpicker
     qui a motivé ce chantier, clic visuellement confirmé ;
-    3B.3/3B.4/3D à faire — voir Phase 3)
+    3B.3/3B.4/reste de 3D à faire — voir Phase 3)
 4   terminée
 5   terminée
 6   terminée
@@ -1902,7 +1931,16 @@ budget en conditions réelles.**
 
 ## Phase 3D --- Classification automatique de rejouabilité
 
-**Statut : À FAIRE.**
+**Statut : PARTIELLE — `Survey/replayability_classifier.py` +
+`tools/classify_replayability.py` implémentés, en lecture seule sur
+`diagnosis.json` (Phase 4) déjà produit, aucun replay/dispatcher/navigateur
+recalculé. `STATIC_DOM`/`BROWSER_CAPSULE`/`TRACE_REPLAY` correctement produits
+à partir des signaux déjà existants ; `EXTERNAL_NON_REPLAYABLE` structurellement
+défini mais jamais produit (aucun signal de ce type dans le pipeline à ce
+jour) ; `UNDETERMINED` en repli honnête partout ailleurs, y compris pour
+`stage="extraction"` hors `STATIC_DOM` (asymétrie réelle : aucune vérification
+par navigateur réel encore exposée dans `diagnosis.json` pour ce stage). Pas
+encore lancé sur un case réel.**
 
 Chaque failure case reçoit un mode de replay explicite :
 
