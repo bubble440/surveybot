@@ -578,14 +578,50 @@ niveau tant que le niveau précédent n'est pas fiable.
 > `CORRECTIF_CONFIRME` sans ambiguïté au lieu du `NON_REPRODUIT` de suite 14.
 > **Avec cette entrée, la chaîne complète est vérifiée de bout en bout, sans
 > zone grise de vocabulaire, sur le bug Decipher/rowpicker qui a motivé tout
-> ce chantier depuis suite 8 du 2026-09-13.** Reste à faire pour clore
-> formellement 3C.4 : `TRACE_REPLAY` (déclassement automatique après
-> `TIMEOUT`, aujourd'hui rapporté tel quel sans reclassification) ; la fusion
-> plus profonde en fonction oracle vraiment unique reste partielle —
-> `_action_outcome` traduit après coup un pari déjà posé séparément dans
-> `action_validator.py` (Phase 1B, `dispatcher_false_negative`/`dom_signal`),
-> les deux ne partagent pas encore une seule et même implémentation du pari
-> lui-même.
+> ce chantier depuis suite 8 du 2026-09-13.**
+> Mise à jour 2026-09-25 (suite 16) : Phase 3C.4, suite — `TRACE_REPLAY`
+> implémenté. Après un `TIMEOUT` (page déjà fermée par le garde-fou de
+> budget, plus aucune lecture live possible), nouvelle fonction
+> `_trace_replay_fallback` (`Survey/replay_browser.py`) : rejoue
+> `action_validator.validate_actions` (non modifié) avec `driver=None` et le
+> paramètre déjà existant `captured_option_states` (`runtime_state.json`,
+> capturé avant cette tentative — même mécanisme déjà exploité par le rejeu
+> statique passif, jamais réimplémenté séparément). `dispatcher_success`
+> repris du case d'origine (`validation_report.json`), jamais un verdict de
+> cette tentative qui n'en a pas produit. Résultat exposé dans un champ
+> distinct `ActionExecution.trace_replay` (`None` pour tout statut autre que
+> `TIMEOUT`), avec son propre vocabulaire de fidélité
+> `REPRODUIT`/`NON_REPRODUIT`/`DIFFERENT` (comme 3A — volontairement PAS
+> `CORRECTIF_CONFIRME`/`BUG_PERSISTANT`/`NON_CONCLUANT`, puisqu'aucun
+> dispatcher n'a réellement tourné cette fois). Statut du résultat jamais
+> réécrit : reste `TIMEOUT`, ce repli l'enrichit sans le remplacer.
+> `available=False` avec raison explicite si aucun `runtime_state.json`
+> exploitable ou si `validate_actions()` lève — jamais un repli silencieux.
+> Relu et vérifié ligne par ligne (portée respectée : seul `TIMEOUT`, pas
+> `ERROR`/`NOT_EXECUTED` — choix conscient, pas une évidence si un jour on
+> veut étendre). Pas encore observé sur un vrai dépassement de budget en
+> conditions réelles (revue de code uniquement à ce stade).
+> Mise à jour 2026-09-25 (suite 17) : vérification demandée de la fusion en
+> fonction oracle unique (point resté ouvert en suite 15) — délégation déjà
+> complète sur les trois chemins, aucune fusion à faire. `action_validator.py`
+> porte seul la logique du pari (`_dispatcher_false_negative_issue`,
+> `validate_actions`) ; chemin 1 (`failure_replay.py`, rejeu statique passif)
+> et chemin 2 (`execute_case_action`, dispatch réel) délèguent tous deux
+> intégralement, déjà confirmé en suite 15. Chemin 3 (repli après `TIMEOUT`,
+> `_trace_replay_fallback` posée en suite 16) délègue tout autant — vérifié
+> directement dans le code (appel à `validate_actions()` bien présent et bien
+> invoqué). Une première vérification automatisée avait conclu à tort que ce
+> troisième chemin n'appelait jamais le validator — confusion entre les
+> champs `validation`/`validation_comparison` (qui restent `None` après
+> `TIMEOUT`, à raison) et le fait que `validate_actions()` y est bien appelée,
+> juste exposée sous un autre champ (`trace_replay`). Erreur corrigée après
+> relecture directe du fichier plutôt que confiance aveugle dans le rapport —
+> aucun changement de code nécessaire, la conclusion pratique (rien à
+> fusionner) reste la même que celle envisagée avant cette vérification.
+> Point clos : `_action_outcome` n'est pas une seconde implémentation du
+> pari, seulement une traduction de vocabulaire sur un résultat déjà tranché
+> par le module unique. **Avec cette entrée, 3C.4 est considérée close sur
+> tout ce qui était prévu.**
 
 ## Contexte de travail actuel
 
@@ -617,16 +653,15 @@ incident détecté
 3   PARTIELLEMENT TERMINÉE (3A terminée, correctif de fidélité espace insécable
     inclus ; 3B.1/3B.2/3B.5/3B.6/3B.8 terminés, oracle checked-state étendu au
     rejeu ; 3B.9/3B.10/3B.11 (scripts, feuilles de style, requêtes XHR/fetch
-    externes) et 3C.1 + 3C.2 + 3C.3 (document, ressources externes, CSP
-    relâchée, état runtime restauré, extraction+validator rejoués — frames/
-    shadow/frame selection hors périmètre, cf. 3B.3/3B.4) terminés ; 3C.4
-    démarrée (dispatcher réel + timeout + chargement pré-action +
-    comparaison structurée avec vocabulaire dédié sans ambiguïté) — chaîne
-    complète extraction réelle → dispatcher réel corrigé → succès réel →
+    externes) et 3C.1 + 3C.2 + 3C.3 + 3C.4 (document, ressources externes,
+    CSP relâchée, état runtime restauré, extraction+validator rejoués,
+    dispatcher réel + timeout + TRACE_REPLAY + comparaison structurée avec
+    vocabulaire dédié sans ambiguïté, oracle unique confirmé — frames/shadow/
+    frame selection hors périmètre, cf. 3B.3/3B.4) terminés — chaîne complète
+    extraction réelle → dispatcher réel corrigé → succès réel →
     CORRECTIF_CONFIRME validée de bout en bout sur le bug Decipher/rowpicker
     qui a motivé ce chantier, clic visuellement confirmé ;
-    3B.3/3B.4/reste de 3C.4 (TRACE_REPLAY, oracle vraiment unique),
-    TRACE_REPLAY)/3D à faire — voir Phase 3)
+    3B.3/3B.4/3D à faire — voir Phase 3)
 4   terminée
 5   terminée
 6   terminée (point de vigilance data ouvert — voir note ci-dessus)
@@ -1772,7 +1807,7 @@ logique doit vivre dans **une fonction oracle unique**, appelée à la fois par
 `action_validator.py` (Phase 1B) et par le replay (Phase 3C/3D) — pas dans
 deux endroits différents.
 
-**Statut : PARTIELLE — `Survey/replay_browser.py::execute_case_action`
+**Statut : TERMINÉE — `Survey/replay_browser.py::execute_case_action`
 exécute `action_dispatcher.execute_actions_plan` (non modifié) sur la page
 rejouée, avec garde-fou de timeout (watchdog, jamais de verdict tardif après
 budget dépassé) et statuts `SUCCESS`/`FAILURE`/`TIMEOUT`/`ERROR`/
@@ -1785,16 +1820,23 @@ via `_compare_validation` (réutilisée, inchangée) puis traduit par
 `_action_outcome` en vocabulaire distinct et sans ambiguïté
 (`CORRECTIF_CONFIRME`/`BUG_PERSISTANT`/`NON_CONCLUANT`), pour ne pas
 réutiliser tel quel `REPRODUIT`/`NON_REPRODUIT`/`DIFFERENT` (vocabulaire de
-fidélité de rejeu passif, ambigu après une exécution réelle). Validé de bout
-en bout sur le case de référence Decipher/rowpicker : extraction identique à
-l'origine sur le document pré-action, dispatcher réel corrigé → `SUCCESS`,
-clic visuellement confirmé, validator → `CORRECTIF_CONFIRME` sans ambiguïté.
-Non fait : `TRACE_REPLAY` (déclassement automatique après `TIMEOUT`, pas
-implémenté — un `TIMEOUT` est aujourd'hui rapporté tel quel, pas encore
-reclassé) ; fusion plus profonde en fonction oracle vraiment unique (le pari
-`dispatcher_success=false` mais DOM prouvant le contraire vit encore
-séparément dans `action_validator.py` et dans `_action_outcome`, pas une
-seule implémentation partagée).**
+fidélité de rejeu passif, ambigu après une exécution réelle). Après un
+`TIMEOUT`, `_trace_replay_fallback` rejoue `action_validator.validate_actions`
+(non modifié) sans pilote live, via `captured_option_states`
+(`runtime_state.json`) — même mécanisme que le rejeu statique passif, jamais
+réimplémenté ; exposé dans un champ distinct (`trace_replay`), avec le
+vocabulaire de fidélité (pas celui du dispatch réel), sans jamais réécrire le
+statut `TIMEOUT`. Fonction oracle unique confirmée : les trois chemins (rejeu
+statique passif, dispatch réel, repli après timeout) délèguent tous
+intégralement à `action_validator.py`, aucune réimplémentation du pari nulle
+part — vérifié directement dans le code après qu'une première vérification
+automatisée s'était trompée sur ce point précis (confusion entre "champ resté
+`None`" et "fonction jamais appelée"). Validé de bout en bout sur le case de
+référence Decipher/rowpicker : extraction identique à l'origine sur le
+document pré-action, dispatcher réel corrigé → `SUCCESS`, clic visuellement
+confirmé, validator → `CORRECTIF_CONFIRME` sans ambiguïté. `TRACE_REPLAY`
+revu par relecture de code, pas encore observé sur un vrai dépassement de
+budget en conditions réelles.**
 
 ------------------------------------------------------------------------
 
@@ -2754,18 +2796,18 @@ Je suivrais exactement cet ordre :
     (3B.1/3B.2/3B.5/3B.6/3B.8/3B.9/3B.10/3B.11 faits — 3B.11 : requêtes
     XHR/fetch externes, cf. historique suite 5 ; 3B.3/3B.4 différées,
     prochain sous-chantier après mesure sur cas réels)
-3C  Replay Chromium local — PARTIELLEMENT TERMINÉE (3C.1 + 3C.2 + 3C.3 clos
-    sur le périmètre retenu : document principal, scripts/styles/XHR-fetch
-    servis, CSP relâchée, état runtime restauré, extraction+validator rejoués
-    et comparés ; frames/shadow roots/frame selection hors périmètre (cf.
-    3B.3/3B.4). 3C.4 démarrée : dispatcher réel avec garde-fou de timeout,
-    chargement pré-action, comparaison structurée avec le validator traduite
-    en vocabulaire dédié sans ambiguïté (CORRECTIF_CONFIRME/BUG_PERSISTANT/
-    NON_CONCLUANT) — validé de bout en bout (extraction identique +
-    dispatcher SUCCESS + validator CORRECTIF_CONFIRME + clic visuellement
-    confirmé) sur le bug Decipher/rowpicker qui a motivé ce chantier. Reste :
-    TRACE_REPLAY, fusion en fonction oracle vraiment unique avec
-    action_validator.py. Chantier principal.
+3C  Replay Chromium local — TERMINÉE sur le périmètre retenu (3C.1 + 3C.2 +
+    3C.3 + 3C.4) : document principal, scripts/styles/XHR-fetch servis, CSP
+    relâchée, état runtime restauré, extraction+validator rejoués et
+    comparés, dispatcher réel avec garde-fou de timeout, chargement
+    pré-action, TRACE_REPLAY après timeout, comparaison structurée avec
+    vocabulaire dédié sans ambiguïté (CORRECTIF_CONFIRME/BUG_PERSISTANT/
+    NON_CONCLUANT), oracle unique confirmé (aucune réimplémentation du pari,
+    les trois chemins délèguent à action_validator.py) — validé de bout en
+    bout (extraction identique + dispatcher SUCCESS + validator
+    CORRECTIF_CONFIRME + clic visuellement confirmé) sur le bug
+    Decipher/rowpicker qui a motivé ce chantier. Frames/shadow roots/frame
+    selection hors périmètre (cf. 3B.3/3B.4). Chantier clos.
 3D  Classification de rejouabilité (STATIC_DOM/BROWSER_CAPSULE/TRACE_REPLAY/
     EXTERNAL_NON_REPLAYABLE)
 4   Diagnostic automatique — TERMINÉE (failure_diagnosis.py + CLI)
