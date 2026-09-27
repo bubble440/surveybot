@@ -1,0 +1,537 @@
+from __future__ import annotations
+
+"""Phase 13 — validation humaine simplifiée via Telegram (Partie 1 : notifier,
+Partie 2 : capturer la décision). Nouveau module, en lecture seule sur les
+artefacts des phases précédentes — ne modifie jamais failure_cases/,
+diagnoses/, context_selections/, prompts/, ni confidence_scores/. Ne déclenche
+jamais lui-même un merge, un commit, ou une modification d'un worktree autofix
+(cf. Phases 15/16, hors périmètre).
+
+── Précondition (Partie 1) ─────────────────────────────────────────────────
+confidence_score.json (Phase 12) doit exister pour ce case et porter
+confidence="HIGH" exactement. La Phase 12 n'est pas encore implémentée dans ce
+dépôt (statut "à faire" dans SURVEYBOT_AUTOFIX_PLAN.md) : le contrat minimal
+attendu ici, par cohérence avec le reste du pipeline (manifest.json,
+diagnosis.json), est un objet JSON portant au moins "case_id" et "confidence"
+("HIGH"/"MEDIUM"/"REJECT") ; une liste optionnelle "checks" ([{"name",
+"result"}, ...]) est reprise si présente pour synthétiser les tests déjà
+produits, sans jamais être inventée si absente.
+
+MEDIUM/REJECT ne déclenchent jamais de notification ici — l'opérateur les voit
+déjà via les sorties CLI existantes des phases précédentes.
+
+── Réutilisation Telegram existante ────────────────────────────────────────
+Les variables d'environnement telegram_bot_token/telegram_chat_id sont déjà
+utilisées partout ailleurs dans ce dépôt (Management/notifier.py, launch.py,
+Survey/survey_executor.py, Cash/*.py, platforms/*.py) — réutilisées ici telles
+quelles, aucune nouvelle variable introduite. Management/notifier.py n'est pas
+réutilisé tel quel : son send_telegram() ne supporte ni reply_markup ni la
+récupération du message_id nécessaires à cette phase ; un client HTTP minimal
+dédié (stdlib urllib uniquement, une seule stratégie de transport, jamais un
+repli conditionnel requests/urllib) est donc défini ici.
+
+── Encodage case_id <-> callback_data (une seule stratégie, sans repli) ────
+callback_data est limité par l'API Telegram à 1-64 octets UTF-8 (vérifié :
+doc officielle Bots API, InlineKeyboardButton.callback_data). Un case_id de ce
+pipeline peut légitimement atteindre 121 caractères (cf. _CASE_ID_RE de
+Survey/autofix_worktree.py) — le transmettre tel quel ne tiendrait pas
+toujours dans cette limite. La stratégie retenue, appliquée systématiquement
+(jamais "brut si court, haché sinon") : un hachage déterministe de taille fixe
+(16 caractères hex = 16 octets) du case_id, préfixé par un code d'action court
+("hrA:"/"hrR:"). Le "décodage" ne recalcule pas case_id à partir du hachage
+(impossible, sens unique) : il recherche, parmi les dossiers déjà connus sous
+human_reviews/, celui dont le même hachage correspond — symétrique par
+construction, une seule fonction (_encode_case_ref) utilisée des deux côtés.
+"""
+
+import hashlib
+import json
+import os
+import shutil
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Optional
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+from Survey.log_utils import log_debug, log_info
+
+_TAG = "[HUMAN_REVIEW]"
+
+_TELEGRAM_API_TIMEOUT_S = 10.0
+
+_CB_APPROVE_PREFIX = "hrA:"
+_CB_REJECT_PREFIX = "hrR:"
+_CB_TOKEN_HEX_LEN = 16  # 16 octets, très en-dessous de la limite de 64 octets
+
+_DECISION_BY_PREFIX = {
+    _CB_APPROVE_PREFIX: "APPROVED",
+    _CB_REJECT_PREFIX: "REJECTED",
+}
+
+# Composant de chemin unique, allowlist conservatrice — même garde-fou que
+# Survey/autofix_worktree.py::_CASE_ID_RE, dupliqué volontairement (modules
+# indépendants, cf. convention déjà en place pour d'autres petits utilitaires
+# de ce pipeline).
+import re  # noqa: E402
+
+_CASE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
+_WINDOWS_RESERVED_NAMES = {
+    "con", "prn", "aux", "nul",
+    *(f"com{i}" for i in range(1, 10)),
+    *(f"lpt{i}" for i in range(1, 10)),
+}
+
+
+class HumanReviewError(Exception):
+    """Refus contrôlé — inéligibilité, configuration Telegram absente, ou appel API échoué."""
+
+
+class HumanReviewExistsError(HumanReviewError):
+    """pending.json ou decision.json existe déjà pour ce case (sans --force)."""
+
+
+def _load_json(path: Path) -> "tuple[Any, Optional[str]]":
+    if not path.is_file():
+        return None, f"{path} absent"
+    try:
+        return json.loads(path.read_text(encoding="utf-8")), None
+    except OSError as exc:
+        return None, f"{path} illisible ({exc})"
+    except ValueError as exc:  # json.JSONDecodeError est une sous-classe de ValueError
+        return None, f"{path} JSON invalide ({exc})"
+
+
+def _is_safe_case_id(case_id: str) -> bool:
+    if not case_id or not _CASE_ID_RE.match(case_id):
+        return False
+    if ".." in case_id:
+        return False
+    if case_id.lower() in _WINDOWS_RESERVED_NAMES:
+        return False
+    return True
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Encodage / décodage case_id <-> callback_data
+# ─────────────────────────────────────────────────────────────────────────
+
+def _encode_case_ref(case_id: str) -> str:
+    return hashlib.sha256(case_id.encode("utf-8")).hexdigest()[:_CB_TOKEN_HEX_LEN]
+
+
+def _parse_callback_data(data: str) -> "Optional[tuple[str, str]]":
+    """Retourne (decision, token) ou None si le préfixe n'est pas reconnu."""
+    for prefix, decision in _DECISION_BY_PREFIX.items():
+        if data.startswith(prefix):
+            return decision, data[len(prefix):]
+    return None
+
+
+def _find_case_id_by_token(token: str, *, out_root: Path) -> Optional[str]:
+    """Décodage symétrique : recalcule _encode_case_ref() pour chaque dossier de
+    case déjà connu sous out_root et retourne celui qui correspond. None si
+    aucun ne correspond (case inconnu ou message obsolète)."""
+    if not out_root.is_dir():
+        return None
+    for entry in sorted(out_root.iterdir()):
+        if not entry.is_dir():
+            continue
+        if _encode_case_ref(entry.name) == token:
+            return entry.name
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Client Telegram minimal (stdlib urllib uniquement, budget de temps explicite)
+# ─────────────────────────────────────────────────────────────────────────
+
+def _telegram_api_call(method: str, token: str, payload: dict) -> Any:
+    url = f"https://api.telegram.org/bot{token}/{method}"
+    data = json.dumps(payload).encode("utf-8")
+    req = Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
+    log_debug(_TAG, f"Telegram {method} (budget={_TELEGRAM_API_TIMEOUT_S}s)")
+    try:
+        with urlopen(req, timeout=_TELEGRAM_API_TIMEOUT_S) as resp:
+            body = resp.read().decode("utf-8")
+    except HTTPError as exc:
+        try:
+            parsed_err = json.loads(exc.read().decode("utf-8"))
+            desc = parsed_err.get("description", str(exc))
+        except Exception:
+            desc = str(exc)
+        raise HumanReviewError(f"Telegram {method} HTTP {exc.code} : {desc}") from exc
+    except (URLError, OSError) as exc:
+        raise HumanReviewError(f"Telegram {method} injoignable/expiré : {exc}") from exc
+
+    try:
+        parsed = json.loads(body)
+    except ValueError as exc:
+        raise HumanReviewError(f"Telegram {method} : réponse illisible ({exc})") from exc
+
+    if not parsed.get("ok"):
+        raise HumanReviewError(f"Telegram {method} a répondu ok=false : {parsed.get('description')}")
+    return parsed.get("result")
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Partie 1 — notifier
+# ─────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class ReviewEligibility:
+    eligible: bool
+    case_id: Optional[str]
+    reasons: "list[str]" = field(default_factory=list)
+
+
+def check_review_eligibility(
+    *,
+    confidence_score_dir: "str | Path",
+    diagnosis_dir: "str | Path",
+) -> ReviewEligibility:
+    """Vérifie toutes les conditions ensemble ; ne s'arrête jamais à la première
+    raison de refus rencontrée."""
+    confidence_score_dir = Path(confidence_score_dir)
+    diagnosis_dir = Path(diagnosis_dir)
+    reasons: "list[str]" = []
+
+    confidence_score, cs_err = _load_json(confidence_score_dir / "confidence_score.json")
+    if cs_err or not isinstance(confidence_score, dict):
+        reasons.append(f"confidence_score.json {cs_err or 'ne contient pas un objet JSON'}")
+
+    diagnosis, diag_err = _load_json(diagnosis_dir / "diagnosis.json")
+    if diag_err or not isinstance(diagnosis, dict):
+        reasons.append(f"diagnosis.json {diag_err or 'ne contient pas un objet JSON'}")
+
+    if cs_err or diag_err or not isinstance(confidence_score, dict) or not isinstance(diagnosis, dict):
+        return ReviewEligibility(eligible=False, case_id=None, reasons=reasons)
+
+    case_ids = {
+        "confidence_score.json": str(confidence_score.get("case_id") or ""),
+        "diagnosis.json": str(diagnosis.get("case_id") or ""),
+        "confidence_score_dir": confidence_score_dir.name,
+        "diagnosis_dir": diagnosis_dir.name,
+    }
+    distinct = set(case_ids.values())
+    resolved_case_id: Optional[str]
+    if len(distinct) != 1 or "" in distinct:
+        reasons.append(f"case_id incohérent entre les sources : {case_ids}")
+        resolved_case_id = None
+    else:
+        resolved_case_id = next(iter(distinct))
+        if not _is_safe_case_id(resolved_case_id):
+            reasons.append(
+                f"case_id {resolved_case_id!r} n'est pas utilisable sans transformation comme "
+                "composant de chemin"
+            )
+
+    confidence = str(confidence_score.get("confidence") or "")
+    if confidence != "HIGH":
+        reasons.append(
+            f"confidence={confidence!r} — seule confidence=\"HIGH\" déclenche une notification "
+            "(MEDIUM/REJECT sont déjà visibles via les sorties CLI existantes)"
+        )
+
+    return ReviewEligibility(eligible=not reasons, case_id=resolved_case_id, reasons=reasons)
+
+
+def _compose_message(*, case_id: str, diagnosis: dict, confidence_score: dict) -> str:
+    """Symptôme, cause probable, tests, confiance — jamais le diff du patch, jamais
+    une donnée brute d'un vrai répondant. Utilise volontairement
+    symptom.failure_types (liste de noms) plutôt que symptom.issues : ce dernier
+    recopie les issues de validation_report.json "telles quelles" (Phase 4), qui
+    peuvent porter une donnée réellement saisie par un répondant (cf. point de
+    vigilance Phase 6, jamais corrigé à la source)."""
+    symptom = diagnosis.get("symptom") if isinstance(diagnosis.get("symptom"), dict) else {}
+    failure_types = symptom.get("failure_types") or []
+    symptom_line = ", ".join(str(x) for x in failure_types) if failure_types else "non documenté"
+
+    cause = diagnosis.get("cause") if isinstance(diagnosis.get("cause"), dict) else {}
+    cause_line = str(cause.get("justification") or "non documentée")
+
+    checks = confidence_score.get("checks")
+    if isinstance(checks, list) and checks:
+        lines = []
+        for item in checks:
+            if isinstance(item, dict):
+                lines.append(f"- {item.get('name', '?')} : {item.get('result', '?')}")
+            else:
+                lines.append(f"- {item}")
+        tests_block = "\n".join(lines)
+    else:
+        tests_block = "détail non disponible"
+
+    confidence = str(confidence_score.get("confidence") or "?")
+
+    return (
+        f"🔎 Revue humaine requise — case {case_id}\n\n"
+        f"Symptôme : {symptom_line}\n"
+        f"Cause probable : {cause_line}\n\n"
+        f"Tests :\n{tests_block}\n\n"
+        f"Confiance : {confidence}"
+    )
+
+
+@dataclass
+class ReviewRequestResult:
+    case_id: str
+    chat_id: Any
+    message_id: int
+    pending_path: Path
+
+
+def send_review_request(
+    *,
+    confidence_score_dir: "str | Path",
+    diagnosis_dir: "str | Path",
+    out_root: "str | Path" = "human_reviews",
+    force: bool = False,
+) -> ReviewRequestResult:
+    confidence_score_dir = Path(confidence_score_dir)
+    diagnosis_dir = Path(diagnosis_dir)
+    out_root = Path(out_root)
+
+    eligibility = check_review_eligibility(
+        confidence_score_dir=confidence_score_dir,
+        diagnosis_dir=diagnosis_dir,
+    )
+    if not eligibility.eligible:
+        raise HumanReviewError(
+            "case non éligible à la notification (Phase 13) : " + " ; ".join(eligibility.reasons)
+        )
+    case_id = eligibility.case_id
+    assert case_id is not None  # garanti par eligible=True
+
+    tg_token = os.getenv("telegram_bot_token", "").strip()
+    tg_chat = os.getenv("telegram_chat_id", "").strip()
+    if not tg_token or not tg_chat:
+        raise HumanReviewError(
+            "Telegram non configuré (telegram_bot_token/telegram_chat_id absents) — "
+            "notification impossible"
+        )
+
+    out_dir = out_root / case_id
+    pending_file = out_dir / "pending.json"
+    decision_file = out_dir / "decision.json"
+    if pending_file.is_file() or decision_file.is_file():
+        if not force:
+            existing = "decision.json" if decision_file.is_file() else "pending.json"
+            raise HumanReviewExistsError(
+                f"{existing} déjà présent dans {out_dir} (utiliser --force pour renotifier — "
+                "jamais un envoi silencieux en double)"
+            )
+        log_info(_TAG, f"--force : suppression de {out_dir} avant renvoi")
+        shutil.rmtree(out_dir)
+
+    confidence_score, _ = _load_json(confidence_score_dir / "confidence_score.json")
+    diagnosis, _ = _load_json(diagnosis_dir / "diagnosis.json")
+    text = _compose_message(case_id=case_id, diagnosis=diagnosis, confidence_score=confidence_score)
+
+    token = _encode_case_ref(case_id)
+    reply_markup = {
+        "inline_keyboard": [[
+            {"text": "✅ Approuver", "callback_data": f"{_CB_APPROVE_PREFIX}{token}"},
+            {"text": "❌ Rejeter", "callback_data": f"{_CB_REJECT_PREFIX}{token}"},
+        ]]
+    }
+
+    result = _telegram_api_call("sendMessage", tg_token, {
+        "chat_id": tg_chat,
+        "text": text,
+        "reply_markup": reply_markup,
+    })
+    if not isinstance(result, dict) or "message_id" not in result:
+        raise HumanReviewError(f"réponse Telegram sendMessage inattendue : {result!r}")
+    message_id = result["message_id"]
+    chat_id = (result.get("chat") or {}).get("id", tg_chat)
+
+    out_dir.mkdir(parents=True, exist_ok=False)
+    pending_file.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "case_id": case_id,
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    log_info(_TAG, f"notification envoyée case={case_id} chat_id={chat_id} message_id={message_id}")
+
+    return ReviewRequestResult(case_id=case_id, chat_id=chat_id, message_id=message_id, pending_path=pending_file)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Partie 2 — capturer les décisions en attente
+# ─────────────────────────────────────────────────────────────────────────
+
+def _best_effort_finalize_message(tg_token: str, *, callback: dict, decision_label: str) -> None:
+    """Retire les boutons et affiche la décision prise sur le message d'origine.
+    Best-effort explicite : n'importe quel échec (message trop ancien, réseau,
+    droits) est journalisé en debug et n'affecte jamais l'écriture déjà faite de
+    decision.json."""
+    message = callback.get("message") if isinstance(callback.get("message"), dict) else {}
+    chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
+    chat_id = chat.get("id")
+    message_id = message.get("message_id")
+    if chat_id is None or message_id is None:
+        return
+    label = "✅ APPROUVÉ" if decision_label == "APPROVED" else "❌ REJETÉ"
+    original_text = message.get("text")
+    new_text = f"{original_text}\n\n— Décision : {label}" if original_text else f"Décision : {label}"
+    try:
+        _telegram_api_call("editMessageText", tg_token, {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": new_text,
+            "reply_markup": {"inline_keyboard": []},
+        })
+    except HumanReviewError as exc:
+        log_debug(_TAG, f"édition du message Telegram échouée, ignorée (décision déjà enregistrée) : {exc}")
+
+
+def _best_effort_answer_callback(tg_token: str, callback_id: Any) -> None:
+    try:
+        _telegram_api_call("answerCallbackQuery", tg_token, {"callback_query_id": callback_id})
+    except HumanReviewError as exc:
+        log_debug(_TAG, f"answerCallbackQuery échoué, ignoré : {exc}")
+
+
+@dataclass
+class ProcessedCallback:
+    case_id: Optional[str]
+    decision: str
+    outcome: str  # "written" | "ignored_duplicate" | "unknown_case"
+
+
+@dataclass
+class CheckResult:
+    updates_fetched: int
+    callback_queries_seen: int
+    processed: "list[ProcessedCallback]"
+    next_offset: int
+
+
+def _load_offset(offset_file: Path) -> int:
+    data, _ = _load_json(offset_file)
+    if isinstance(data, dict):
+        try:
+            return int(data.get("next_offset") or 0)
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
+def check_pending_reviews(
+    *,
+    out_root: "str | Path" = "human_reviews",
+    offset_file: "Optional[str | Path]" = None,
+) -> CheckResult:
+    """Interroge getUpdates UNE SEULE FOIS, traite chaque callback_query du lot,
+    puis avance l'offset persisté seulement après que toutes les décisions du
+    lot ont été durablement écrites ou explicitement ignorées — jamais avant."""
+    out_root = Path(out_root)
+    offset_path = Path(offset_file) if offset_file else out_root / "_telegram_offset.json"
+
+    tg_token = os.getenv("telegram_bot_token", "").strip()
+    if not tg_token:
+        raise HumanReviewError("Telegram non configuré (telegram_bot_token absent)")
+
+    current_offset = _load_offset(offset_path)
+
+    payload: dict = {"timeout": 0, "allowed_updates": ["callback_query"]}
+    if current_offset:
+        payload["offset"] = current_offset
+
+    updates = _telegram_api_call("getUpdates", tg_token, payload)
+    if not isinstance(updates, list):
+        raise HumanReviewError(f"réponse Telegram getUpdates inattendue : {updates!r}")
+
+    processed: "list[ProcessedCallback]" = []
+    max_update_id = current_offset - 1 if current_offset else -1
+    callback_count = 0
+
+    for update in updates:
+        if not isinstance(update, dict):
+            continue
+        update_id = update.get("update_id")
+        if isinstance(update_id, int) and update_id > max_update_id:
+            max_update_id = update_id
+
+        callback = update.get("callback_query")
+        if not isinstance(callback, dict):
+            continue
+        callback_count += 1
+
+        data = str(callback.get("data") or "")
+        parsed = _parse_callback_data(data)
+        if parsed is None:
+            log_info(_TAG, f"avertissement : callback_data non reconnu, ignoré ({data!r})")
+            continue
+        decision_label, token = parsed
+
+        case_id = _find_case_id_by_token(token, out_root=out_root)
+        if case_id is None:
+            log_info(_TAG, f"avertissement : callback reçu pour un case inconnu (token={token}) — ignoré")
+            processed.append(ProcessedCallback(case_id=None, decision=decision_label, outcome="unknown_case"))
+            callback_id = callback.get("id")
+            if callback_id:
+                _best_effort_answer_callback(tg_token, callback_id)
+            continue
+
+        case_dir = out_root / case_id
+        decision_file = case_dir / "decision.json"
+        if decision_file.is_file():
+            log_info(
+                _TAG,
+                f"avertissement : décision déjà enregistrée pour case={case_id} — "
+                "callback ignoré (première décision fait foi)",
+            )
+            processed.append(ProcessedCallback(case_id=case_id, decision=decision_label, outcome="ignored_duplicate"))
+            callback_id = callback.get("id")
+            if callback_id:
+                _best_effort_answer_callback(tg_token, callback_id)
+            continue
+
+        from_user = callback.get("from") if isinstance(callback.get("from"), dict) else {}
+        case_dir.mkdir(parents=True, exist_ok=True)
+        decision_file.write_text(
+            json.dumps({
+                "schema_version": 1,
+                "case_id": case_id,
+                "decision": decision_label,
+                "decided_at": datetime.now(timezone.utc).isoformat(),
+                "telegram_user_id": from_user.get("id"),
+                "telegram_username": from_user.get("username"),
+            }, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        log_info(_TAG, f"décision enregistrée case={case_id} decision={decision_label}")
+        processed.append(ProcessedCallback(case_id=case_id, decision=decision_label, outcome="written"))
+
+        _best_effort_finalize_message(tg_token, callback=callback, decision_label=decision_label)
+        callback_id = callback.get("id")
+        if callback_id:
+            _best_effort_answer_callback(tg_token, callback_id)
+
+    next_offset = max_update_id + 1 if max_update_id >= 0 else current_offset
+
+    offset_path.parent.mkdir(parents=True, exist_ok=True)
+    offset_path.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "next_offset": next_offset,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    return CheckResult(
+        updates_fetched=len(updates),
+        callback_queries_seen=callback_count,
+        processed=processed,
+        next_offset=next_offset,
+    )
