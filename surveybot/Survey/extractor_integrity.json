@@ -155,9 +155,6 @@
   "input_radio.py::click_kantar_rowpicker_radio": {
     "hash": "e4285672648c330e594b7bf7b721d9c3d6290f3eca6e03beb5932f552a7d0102"
   },
-  "input_slider.py::set_sliderpoints": {
-    "hash": "69b17e60cf9fb5ee50d339813b54171c567f566e3d4a63dc0add789d3e72ccf5"
-  },
   "input_text.py::fill_text_input": {
     "hash": "d0379b47da07db49d7e1ab39fd1265d73499a9900cec962250fe396a7a80fd70"
   },
