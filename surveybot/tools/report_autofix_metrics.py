@@ -144,6 +144,11 @@ def main(argv: "list[str] | None" = None) -> int:
     print()
     print(f"régressions : {data['regressions']['note']}")
 
+    p20 = data["phase20_fleet_transport"]
+    print()
+    print(f"Phase 20 transport fleet (origine fleet/locale) : {p20['fleet_origin_cases']}/{p20['local_origin_cases']}")
+    print(f"         NON_CONCLUANT (Phase 9) fleet, Phase 10 non applicable : {p20['phase9_non_concluant_fleet_not_applicable']}")
+
     if data["warnings"]:
         print()
         print(f"avertissements ({len(data['warnings'])}) :")

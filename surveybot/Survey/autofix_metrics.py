@@ -26,6 +26,14 @@ l'artefact de chaque phase suivante est lu s'il existe, jamais supposé
 présent — son absence est comptée comme "phase non atteinte pour ce case",
 jamais une erreur.
 
+Extension additive (transport fleet, cf. Survey/fleet_case_upload.py /
+Survey/fleet_case_import.py) : failure_cases/<case_id>/fleet_origin.json,
+quand il existe (écrit par l'importeur, jamais par la Phase 2), distingue un
+case d'origine fleet (transporté depuis une machine de production) d'un case
+d'origine locale. Lu tel quel, jamais recalculé ni deviné pour un case qui
+n'en porte pas — son absence signifie simplement "case d'origine locale",
+jamais une erreur.
+
 Vocabulaire d'artefact repris tel quel, jamais deviné ni réinventé (vérifié
 dans le code de chaque phase avant d'écrire ce module) :
   - validation_static.json (Phase 8) / extractor_integrity_check.json
@@ -42,6 +50,8 @@ dans le code de chaque phase avant d'écrire ce module) :
   - diagnosis.json (Phase 4) : stage, symptom.failure_types,
     modules_likely_involved (liste de {module, matched_signals,
     memory_entries}).
+  - fleet_origin.json (transport fleet, additif) : machine_id, uploaded_at,
+    imported_at, live_validation_possible=false (Survey.fleet_case_import).
 
 Deux limites disclosées explicitement plutôt que masquées ou devinées :
   - "régressions" n'est PAS mesurable avec les artefacts actuels — aucune
@@ -97,9 +107,22 @@ FIRST_TRY_DEFINITION = (
 )
 
 PHASE10_DEFINITION = (
-    "Parmi les cases dont patch_replay.json (Phase 9) porte "
-    f"outcome={OUTCOME_INCONCLUSIVE!r}, nombre dont live_validation.json (Phase 10) "
-    f"porte ensuite refused=false ET outcome={OUTCOME_FIX_CONFIRMED!r}."
+    "Parmi les cases D'ORIGINE LOCALE (fleet_origin.json absent) dont patch_replay.json "
+    f"(Phase 9) porte outcome={OUTCOME_INCONCLUSIVE!r}, nombre dont live_validation.json "
+    f"(Phase 10) porte ensuite refused=false ET outcome={OUTCOME_FIX_CONFIRMED!r}. Les cases "
+    f"D'ORIGINE FLEET à outcome={OUTCOME_INCONCLUSIVE!r} sont exclues de ce compte et rapportées "
+    "séparément (phase20_fleet_transport.phase9_non_concluant_fleet_not_applicable) : la Phase 10 "
+    "ne leur est jamais applicable, faute d'accès physique/réseau à leur machine d'origine pour y "
+    "attacher un --cdp-endpoint réel."
+)
+
+FLEET_TRANSPORT_NOTE = (
+    "fleet_origin.json (transport fleet, Survey.fleet_case_import) distingue les cases "
+    "transportés depuis une machine de production (fleet) des cases produits localement. Pour un "
+    f"case fleet dont patch_replay.json (Phase 9) porte outcome={OUTCOME_INCONCLUSIVE!r}, la Phase "
+    "10 n'est jamais applicable (pas d'accès physique/réseau à la machine d'origine) : ce case est "
+    "explicitement signalé ici plutôt que compté comme un cas ambigu en attente de validation live "
+    "dans phase10_live_validation."
 )
 
 MODULE_BREAKDOWN_NOTE = (
@@ -207,6 +230,7 @@ def list_case_ids(failure_cases_root: Path, *, warnings: list) -> "list[str]":
 class CaseArtifacts:
     case_id: str
     manifest: "Optional[dict]" = None
+    fleet_origin: "Optional[dict]" = None
     diagnosis: "Optional[dict]" = None
     has_prompt: bool = False
     has_manual_review_required: bool = False
@@ -226,6 +250,9 @@ def _collect_case_artifacts(case_id: str, roots: "dict[str, Path]", *, warnings:
     ca = CaseArtifacts(case_id=case_id)
 
     ca.manifest = _load_json_object(roots["failure_cases"] / case_id / "manifest.json", warnings=warnings)
+    ca.fleet_origin = _load_json_object(
+        roots["failure_cases"] / case_id / "fleet_origin.json", warnings=warnings
+    )
     ca.diagnosis = _load_json_object(roots["diagnoses"] / case_id / "diagnosis.json", warnings=warnings)
 
     prompt_dir = roots["prompts"] / case_id
@@ -300,6 +327,10 @@ def compute_autofix_metrics(
     stage_counts: dict = {}
     module_counts: dict = {}
 
+    fleet_origin_cases = 0
+    local_origin_cases = 0
+    phase9_inconclusive_fleet_not_applicable = 0
+
     diagnosed = 0
     with_prompt = 0
     with_manual_review_required = 0
@@ -342,6 +373,12 @@ def compute_autofix_metrics(
             stage = str(ca.manifest.get("stage") or "unknown")
         _bump(stage_counts, stage)
 
+        is_fleet_origin = isinstance(ca.fleet_origin, dict)
+        if is_fleet_origin:
+            fleet_origin_cases += 1
+        else:
+            local_origin_cases += 1
+
         if isinstance(ca.diagnosis, dict):
             diagnosed += 1
             modules = ca.diagnosis.get("modules_likely_involved")
@@ -376,7 +413,13 @@ def compute_autofix_metrics(
             if patch_replay_outcome == OUTCOME_FIX_CONFIRMED and ca.live_validation is None:
                 first_try_confirmed += 1
             if patch_replay_outcome == OUTCOME_INCONCLUSIVE:
-                phase9_inconclusive += 1
+                if is_fleet_origin:
+                    # Phase 10 n'est jamais applicable à un case fleet (pas d'accès
+                    # physique/réseau à sa machine d'origine) — signalé séparément,
+                    # jamais compté comme un cas ambigu en attente de validation live.
+                    phase9_inconclusive_fleet_not_applicable += 1
+                else:
+                    phase9_inconclusive += 1
 
         live_outcome = None
         if isinstance(ca.live_validation, dict):
@@ -479,6 +522,12 @@ def compute_autofix_metrics(
         },
         "regressions": {
             "note": REGRESSIONS_NOTE,
+        },
+        "phase20_fleet_transport": {
+            "note": FLEET_TRANSPORT_NOTE,
+            "fleet_origin_cases": fleet_origin_cases,
+            "local_origin_cases": local_origin_cases,
+            "phase9_non_concluant_fleet_not_applicable": phase9_inconclusive_fleet_not_applicable,
         },
     }
 
