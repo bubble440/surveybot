@@ -23,9 +23,16 @@ elle permet seulement à l'opérateur de remarquer immédiatement si son dépôt
 était resté sur une mauvaise branche avant de perdre du temps dans le worktree
 créé.
 
+Persiste également le résultat (case_id, branch, worktree_path, base_sha,
+source_branch, prompt_path) sous --out-root/<case_id>/worktree.json — même
+convention de traçabilité JSON que les phases précédentes (schema_version,
+horodatage, avertissements). Refus explicite si cet artefact existe déjà sans
+--force, avant toute mutation Git.
+
 Usage :
     python tools\\prepare_autofix_worktree.py failure_cases\\<case_id> diagnoses\\<case_id> prompts\\<case_id>
     python tools\\prepare_autofix_worktree.py failure_cases\\<case_id> diagnoses\\<case_id> prompts\\<case_id> --worktrees-root D:\\autofix-worktrees
+    python tools\\prepare_autofix_worktree.py failure_cases\\<case_id> diagnoses\\<case_id> prompts\\<case_id> --out-root autofix_worktrees --force
 """
 
 from __future__ import annotations
@@ -57,6 +64,16 @@ def main(argv: "list[str] | None" = None) -> int:
         default=None,
         help="Racine explicite des worktrees (défaut : <parent du dépôt>/<nom du dépôt>-worktrees, calculé)",
     )
+    parser.add_argument(
+        "--out-root",
+        default="autofix_worktrees",
+        help="Dossier racine de l'artefact de traçabilité généré (défaut : autofix_worktrees)",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Régénère un artefact de traçabilité déjà existant (le supprime avant reconstruction)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -65,6 +82,8 @@ def main(argv: "list[str] | None" = None) -> int:
             diagnosis_dir=args.diagnosis_dir,
             prompt_dir=args.prompt_dir,
             worktrees_root=args.worktrees_root,
+            out_root=args.out_root,
+            force=args.force,
         )
     except AutofixWorktreeError as exc:
         print(f"[ERREUR] {exc}", file=sys.stderr)
@@ -76,6 +95,7 @@ def main(argv: "list[str] | None" = None) -> int:
     print(f"base_sha     : {result.base_sha}")
     print(f"worktree     : {result.worktree_path}")
     print(f"prompt à transmettre manuellement à Codex : {result.prompt_path}")
+    print(f"artefact de traçabilité (à consommer par la Phase 8) : {result.manifest_path}")
 
     return 0
 

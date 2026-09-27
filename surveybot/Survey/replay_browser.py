@@ -123,11 +123,19 @@ confondus : SUCCESS / FAILURE (booléen rapporté par le dispatcher), TIMEOUT
 (budget dépassé : `dispatcher_success` reste None, aucun verdict deviné), ERROR
 (le dispatcher a levé), NOT_EXECUTED (précondition absente), NOT_APPLICABLE
 (stage autre qu'action : rien n'est touché). Budget : un thread watchdog, à
-l'échéance, ferme la page (appel thread-safe sur la boucle de Playwright :
-débloque un evaluate/une attente en cours, l'appel du dispatcher échoue alors
-immédiatement) ; le résultat est TIMEOUT même si le dispatcher rend la main
-ensuite (avec True comme avec False) : jamais un verdict au-delà du budget. Après
-TIMEOUT la page est fermée (le navigateur, lui, reste utilisable). Sans les
+l'échéance, ferme la page par défaut (appel thread-safe sur la boucle de
+Playwright : débloque un evaluate/une attente en cours, l'appel du dispatcher
+échoue alors immédiatement) ; le résultat est TIMEOUT même si le dispatcher rend
+la main ensuite (avec True comme avec False) : jamais un verdict au-delà du
+budget. Après TIMEOUT la page est fermée par défaut (le navigateur, lui, reste
+utilisable). Ce seul geste de fermeture — rien d'autre dans le calcul ou la
+détection du dépassement de budget — est conditionné par le paramètre optionnel
+`close_page_on_timeout` (défaut `True`, comportement inchangé pour tout appelant
+qui ne le fournit pas). À `False` (Phase 10, page CDP live potentiellement tenue
+par un opérateur/répondant : la fermer serait réel, pas sans conséquence comme
+sur le Chromium isolé jetable de ce module), la page n'est PAS fermée à
+l'échéance ; le dispatcher bloqué ne se débloque alors plus que par ses propres
+budgets internes (limite (1) ci-dessous), jamais par ce watchdog. Sans les
 leviers d'abandon sur la page, le dispatcher n'est pas exécuté (jamais sans
 borne). Limites : (1) le budget borne les attentes Playwright (réseau, promesse
 non résolue, callback jamais déclenché), pas une boucle Python pure qui avale les
@@ -155,6 +163,28 @@ combinaison comparable, jamais confondue avec les deux premières) ; `outcome` e
 None si la comparaison n'est pas exploitable. Le chemin passif (extraction,
 failure_replay) garde son vocabulaire inchangé. Sans verdict de dispatch
 exploitable : ni validator, ni comparaison.
+
+── TIMEOUT : repli TRACE_REPLAY sur les faits déjà capturés (Phase 3D) ────────
+Un TIMEOUT ferme la page par défaut (sauf `close_page_on_timeout=False`, Phase
+10) ; dans un cas comme dans l'autre, aucune lecture live n'est tentée ici, et
+`execute_case_action` ne prétend jamais avoir rejoué le dispatcher pour ce cas.
+Ce n'est plus pour autant un point mort : `_trace_replay_fallback` réutilise,
+SANS pilote live (`driver=None`), le paramètre déjà existant
+`captured_option_states` de `action_validator.validate_actions` (non modifié) —
+les mêmes faits (`runtime_state.json`, capturés avant cette tentative de rejeu)
+et le même mécanisme déjà exploités sans navigateur par le rejeu statique passif
+(Survey/failure_replay.py). Résultat exposé dans `ActionExecution.trace_replay`,
+un champ distinct qui n'existe QUE pour un TIMEOUT (toujours `None` pour
+SUCCESS/FAILURE/ERROR/NOT_EXECUTED/NOT_APPLICABLE) : jamais confondu avec
+`validation`/`validation_comparison` (réservés au verdict réel SUCCESS/FAILURE)
+ni avec leur vocabulaire `outcome` CORRECTIF_CONFIRME/BUG_PERSISTANT/
+NON_CONCLUANT. Le statut du résultat reste `TIMEOUT` (jamais réécrit) : ce repli
+enrichit un TIMEOUT, il ne le remplace pas. `{"available": True, "replay_mode":
+"TRACE_REPLAY", "validation": ..., "comparison": ...}` si l'analyse a pu
+s'exécuter (vocabulaire de fidélité REPRODUIT/NON_REPRODUIT/DIFFERENT, comme 3A) ;
+`{"available": False, "reason": ...}` explicite sinon (case sans
+runtime_state.json exploitable, ou exception) — jamais un repli silencieux qui
+laisserait croire à une analyse.
 """
 
 import asyncio
@@ -720,6 +750,11 @@ OUTCOME_FIX_CONFIRMED = "CORRECTIF_CONFIRME"
 OUTCOME_BUG_PERSISTS = "BUG_PERSISTANT"
 OUTCOME_INCONCLUSIVE = "NON_CONCLUANT"
 
+# Étiquette du repli passif après TIMEOUT (Phase 3D) : jamais un statut de dispatch,
+# jamais un outcome de comparaison post-dispatch réel — distincte des deux vocabulaires
+# ci-dessus pour ne jamais être confondue avec eux (cf. ActionExecution.trace_replay).
+REPLAY_MODE_TRACE_REPLAY = "TRACE_REPLAY"
+
 _DEFAULT_DISPATCH_BUDGET_S = 30.0
 _MAX_DISPATCH_ACTIONS = 60
 
@@ -732,12 +767,22 @@ class ActionExecution:
     budget_s: Optional[float] = None
     actions_count: int = 0
     reason: Optional[str] = None
-    page_closed: bool = False  # True après TIMEOUT : la page n'est plus utilisable
+    # True après TIMEOUT si la page a réellement été fermée (close_page_on_timeout,
+    # défaut True) : elle n'est alors plus utilisable. False après TIMEOUT si
+    # close_page_on_timeout=False a été demandé — la page reste ouverte.
+    page_closed: bool = False
     # Renseignés seulement après SUCCESS/FAILURE : rapport de validate_actions sur la
     # page après dispatch, sa comparaison à validation_report.json, ou l'erreur levée.
     validation: Optional[Dict[str, Any]] = None
     validation_comparison: Optional[Dict[str, Any]] = None
     validation_error: Optional[str] = None
+    # Renseigné seulement après TIMEOUT (jamais après SUCCESS/FAILURE/ERROR/
+    # NOT_EXECUTED/NOT_APPLICABLE) : analyse de repli à partir des seuls faits déjà
+    # capturés avant cette tentative de rejeu (aucune nouvelle lecture live, la page
+    # étant fermée) — voir _trace_replay_fallback. `None` = statut autre que TIMEOUT ;
+    # {"available": False, "reason": ...} = TIMEOUT sans repli possible, à distinguer
+    # explicitement d'une analyse réellement effectuée.
+    trace_replay: Optional[Dict[str, Any]] = None
 
 
 def _action_outcome(comparison: Dict[str, Any], dispatcher_success: bool) -> Dict[str, Any]:
@@ -759,11 +804,16 @@ def _action_outcome(comparison: Dict[str, Any], dispatcher_success: bool) -> Dic
     return result
 
 
-def _run_with_deadline(page: Any, budget_s: float, fn: Any) -> Tuple[str, Any, Optional[BaseException]]:
+def _run_with_deadline(
+    page: Any, budget_s: float, fn: Any, *, close_page_on_timeout: bool = True
+) -> Tuple[str, Any, Optional[BaseException]]:
     """Exécute fn() dans le thread courant (les objets Playwright sync y sont liés)
     sous un budget. Retourne (outcome, valeur, exception) ; outcome parmi
     "done" / "error" (fn a levé une Exception) / "timeout" (budget dépassé, quel
-    que soit ce que fn a fini par rendre)."""
+    que soit ce que fn a fini par rendre). Le calcul et la détection du
+    dépassement de budget ne changent jamais ; seul le geste de fermeture de la
+    page à l'échéance est conditionné par `close_page_on_timeout` (défaut True,
+    comportement inchangé pour tout appelant qui ne le fournit pas)."""
     lock = threading.Lock()
     finished = threading.Event()
     state = {"done": False, "fired": False}
@@ -775,6 +825,13 @@ def _run_with_deadline(page: Any, budget_s: float, fn: Any) -> Tuple[str, Any, O
             if state["done"]:
                 return
             state["fired"] = True
+            if not close_page_on_timeout:
+                log_info(
+                    _TAG,
+                    f"budget de {budget_s:.1f}s dépassé — abandon du dispatcher "
+                    "(page laissée ouverte, close_page_on_timeout=False)",
+                )
+                return
             log_info(_TAG, f"budget de {budget_s:.1f}s dépassé — abandon du dispatcher (fermeture de la page)")
             try:  # débloque un appel Playwright en attente (thread-safe : boucle de Playwright)
                 asyncio.run_coroutine_threadsafe(page._impl_obj.close(), page._loop)
@@ -796,17 +853,95 @@ def _run_with_deadline(page: Any, budget_s: float, fn: Any) -> Tuple[str, Any, O
     return outcome, value, error
 
 
+def _trace_replay_fallback(
+    case_dir: Path,
+    manifest: dict,
+    actions: List[Dict[str, Any]],
+    question_blocks: Optional[List[Dict[str, Any]]],
+) -> Dict[str, Any]:
+    """Repli après TIMEOUT du dispatcher réel : la page est fermée par le
+    garde-fou de budget par défaut (sauf `close_page_on_timeout=False`, Phase 10)
+    — ce repli n'utilise de toute façon jamais de lecture live, qu'elle soit
+    fermée ou non —, mais le case porte déjà, capturés avant cette tentative de
+    rejeu, les mêmes faits
+    (`runtime_state.json`) que ceux déjà utilisés par le rejeu statique passif
+    (Survey/failure_replay.py) pour confirmer un résultat sans pilote live — via
+    le même paramètre déjà existant `captured_option_states` de
+    `action_validator.validate_actions` (non modifié, appelé ici avec `driver=None`,
+    jamais une nouvelle lecture). Ne rejoue jamais le dispatcher : `dispatcher_success`
+    est celui déjà rapporté par le case d'origine (`validation_report.json`), pas un
+    verdict de cette tentative. Ne lève jamais ; `available=False` avec une raison
+    explicite si aucune analyse de repli n'est possible (case sans faits capturés,
+    ou exception), pour ne jamais laisser croire qu'une analyse a eu lieu."""
+    artifacts_dir = case_dir / "artifacts"
+    runtime_state, rs_err = _load_json(artifacts_dir / "runtime_state.json")
+    captured_facts = (
+        runtime_state.get("facts") if isinstance(runtime_state, dict) and not rs_err else None
+    )
+    if not isinstance(captured_facts, dict) or not captured_facts:
+        reason = rs_err or "runtime_state.json sans facts capturés"
+        return {
+            "available": False,
+            "replay_mode": REPLAY_MODE_TRACE_REPLAY,
+            "reason": f"{reason} — aucune analyse de repli possible",
+        }
+
+    original_report, or_err = _load_json(artifacts_dir / "validation_report.json")
+    dispatcher_success = (
+        original_report.get("dispatcher_success")
+        if isinstance(original_report, dict) and not or_err
+        else None
+    )
+    try:
+        from Survey.action_validator import validate_actions
+        from Survey.dom_registry import get_target
+
+        replayed_report = validate_actions(
+            actions,
+            dispatcher_success=dispatcher_success,
+            driver=None,
+            question_blocks=question_blocks,
+            captured_option_states=captured_facts,
+        )
+        comparison = _compare_validation(
+            original_report,
+            replayed_report,
+            manifest,
+            [get_target(a["target_id"]) for a in actions if a.get("target_id")],
+        )
+    except Exception as exc:
+        return {
+            "available": False,
+            "replay_mode": REPLAY_MODE_TRACE_REPLAY,
+            "reason": f"validate_actions() a levé une exception : {type(exc).__name__}: {exc}",
+        }
+
+    return {
+        "available": True,
+        "replay_mode": REPLAY_MODE_TRACE_REPLAY,
+        "validation": replayed_report,
+        "comparison": comparison,
+    }
+
+
 def execute_case_action(
     page: Any,
     case_dir: Union[str, Path],
     budget_s: float = _DEFAULT_DISPATCH_BUDGET_S,
     question_blocks: Optional[List[Dict[str, Any]]] = None,
+    *,
+    close_page_on_timeout: bool = True,
 ) -> ActionExecution:
     """Exécute le dispatcher réel sur `page` pour l'action d'un case de stage
     `action` (voir docstring du module). `page` doit être celle de
     load_case_document + extract_case_blocks pour ce même `case_dir` ;
     `question_blocks` = `CaseExtraction.blocks` de cette extraction (transmis au
-    validator, comme le fait le rejeu statique)."""
+    validator, comme le fait le rejeu statique). `close_page_on_timeout` (défaut
+    True) contrôle uniquement si un dépassement de `budget_s` ferme `page` :
+    inchangé pour tout appelant qui ne le fournit pas (Chromium isolé jetable,
+    Phases 3C.4/9) ; à False, la page n'est pas fermée (Phase 10, page CDP live
+    potentiellement tenue par un opérateur/répondant) — le statut TIMEOUT
+    retourné et le reste du comportement sont identiques dans les deux cas."""
     case_dir = Path(case_dir)
     manifest, err = _load_json(case_dir / "manifest.json")
     manifest = manifest if isinstance(manifest, dict) and not err else {}
@@ -852,9 +987,13 @@ def execute_case_action(
             page,
             float(budget_s),
             lambda: action_dispatcher.execute_actions_plan(page, actions, stop_on_navigation=True),
+            close_page_on_timeout=close_page_on_timeout,
         )
         duration = round(time.perf_counter() - started, 3)
         validation = validation_comparison = validation_error = None
+        trace_replay = None
+        if outcome == "timeout":  # page fermée : repli sur les seuls faits déjà capturés
+            trace_replay = _trace_replay_fallback(case_dir, manifest, actions, question_blocks)
         if outcome == "done":  # verdict exploitable : le dispatcher a rendu un booléen
             try:
                 from Survey.action_validator import validate_actions
@@ -882,7 +1021,8 @@ def execute_case_action(
     if outcome == "timeout":
         result = ActionExecution(
             STATUS_TIMEOUT, None, duration, budget_s, len(actions),
-            f"budget de {budget_s}s dépassé — verdict inconnu", page_closed=True,
+            f"budget de {budget_s}s dépassé — verdict inconnu", page_closed=close_page_on_timeout,
+            trace_replay=trace_replay,
         )
     elif outcome == "error":
         result = ActionExecution(STATUS_ERROR, None, duration, budget_s, len(actions), f"{type(exc).__name__}: {exc}")
@@ -905,6 +1045,16 @@ def execute_case_action(
                 f"erreur ({validation_error[:80]})"
                 if validation_error
                 else str((validation_comparison or {}).get("outcome") or "non comparable")
+            )
+        )
+        + (
+            ""
+            if outcome != "timeout"
+            else ", trace_replay "
+            + (
+                str((trace_replay or {}).get("comparison", {}).get("verdict"))
+                if (trace_replay or {}).get("available")
+                else f"indisponible ({(trace_replay or {}).get('reason', '')[:80]})"
             )
         ),
     )

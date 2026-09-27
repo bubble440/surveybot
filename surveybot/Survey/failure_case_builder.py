@@ -64,6 +64,21 @@ parse+reserialize ne garantit pas l'absence de reformatage). page.mhtml,
 body_text.txt et mhtml_error.txt sont copiés tels quels : ce ne sont pas du HTML
 attribut-adressable (mhtml est un format d'archive multipart, un nettoyage naïf
 par substitution de texte pourrait y corrompre l'encodage base64/quoted-printable).
+
+validation_report.json porte, pour certains failure_types (ex. dispatcher_false_negative,
+action_value_not_in_registry_options), un champ "value" par issue qui est la valeur
+demandée à l'action — pour un champ de saisie libre (itype "text"), cela peut être la
+donnée réellement tapée par le répondant (ex. un code postal), jamais filtrée jusqu'ici
+contrairement à meta.json/aux DOM HTML ci-dessus. Sa copie ne conserve donc "value" tel
+quel que s'il correspond (après normalisation casse/espaces) à l'une des options
+prédéfinies déjà listées pour ce target_id dans question_blocks.json du même snapshot —
+jamais deviné depuis itype, qui est déclaré par l'action/le validator et peut être
+erroné. Sans rapprochement possible (target_id absent de l'issue, bloc introuvable, ou
+question_blocks.json indisponible/sans options exploitables pour ce bloc), la valeur est
+traitée comme potentiellement sensible et retirée (remplacée par null), jamais laissée
+passer par défaut. Portée strictement limitée à issues[].value (seul endroit où une
+donnée saisie par le répondant peut apparaître dans ce fichier) — jamais un parcours
+générique de tout le document comme _sanitize_meta/_sanitize_capsule_json.
 """
 
 import json
@@ -255,6 +270,87 @@ def _sanitize_capsule_json(data: Any) -> tuple[Any, bool]:
         return node
 
     return _walk(out), stripped
+
+
+# Budget défensif (RÈGLES STRICTES : toute boucle a un budget max N) — une
+# validation_report.json légitime de ce pipeline n'en approche jamais l'ordre de
+# grandeur (borné en amont par le nombre d'actions d'un seul plan de dispatch).
+_MAX_SANITIZED_ISSUES = 500
+
+
+def _normalize_for_match(value: Any) -> str:
+    """Normalisation minimale (casse, espaces) pour comparer une valeur d'action à
+    une option prédéfinie connue. Volontairement strict au-delà de ça (pas de
+    rapprochement flou/partiel) : un faux négatif ici ne fait que retirer une
+    valeur légitime (perte d'information sans risque), un faux positif laisserait
+    passer une donnée réellement saisie par le répondant."""
+    return " ".join(_clean_str(value).split()).lower()
+
+
+def _known_options_by_target(question_blocks: Any) -> dict[str, set[str]]:
+    """target_id -> options prédéfinies normalisées, depuis question_blocks.json du
+    même snapshot (déjà produit par l'extraction — jamais recalculé ici). Un
+    target_id absent de ce dict signifie qu'aucun rapprochement n'est possible pour
+    ce bloc (introuvable, ou sans liste d'options exploitable) : à traiter comme
+    potentiellement sensible par l'appelant, jamais laissé passer par défaut."""
+    out: dict[str, set[str]] = {}
+    if not isinstance(question_blocks, list):
+        return out
+    for block in question_blocks:
+        if not isinstance(block, dict):
+            continue
+        target_id = _clean_str(block.get("target_id"))
+        options = block.get("options")
+        if not target_id or not isinstance(options, list):
+            continue
+        normalized = {_normalize_for_match(o) for o in options if _clean_str(o)}
+        if normalized:
+            out[target_id] = normalized
+    return out
+
+
+def _sanitize_validation_report(report: dict, question_blocks: Any) -> tuple[dict, int]:
+    """Retire (remplace par null) le champ "value" de chaque issue qui ne correspond
+    à aucune option prédéfinie déjà connue (question_blocks.json) pour son
+    target_id — jamais deviné depuis itype (déclaré par l'action/le validator, donc
+    pouvant être erroné). Un target_id sans rapprochement possible (bloc
+    introuvable, ou question_blocks.json indisponible/sans options exploitables
+    pour ce bloc) est traité comme potentiellement sensible : sa valeur est
+    retirée, jamais laissée passer par défaut. Retourne (copie indépendante,
+    nombre de valeurs retirées) ; ne modifie jamais `report` en place."""
+    out = json.loads(json.dumps(report))  # copie profonde indépendante de l'original
+    issues = out.get("issues")
+    if not isinstance(issues, list):
+        return out, 0
+
+    known_options = _known_options_by_target(question_blocks)
+    removed = 0
+    for idx, issue in enumerate(issues):
+        if not isinstance(issue, dict) or "value" not in issue:
+            continue
+        value = issue.get("value")
+        if value in (None, ""):
+            continue
+        # Au-delà du budget défensif : abandon contrôlé côté sûr (retrait), jamais
+        # un passage en clair non vérifié.
+        if idx >= _MAX_SANITIZED_ISSUES:
+            issue["value"] = None
+            removed += 1
+            continue
+        target_id = _clean_str(issue.get("target_id"))
+        options = known_options.get(target_id) if target_id else None
+        if options is not None and _normalize_for_match(value) in options:
+            continue  # valeur réellement prédéfinie pour ce bloc : conservée telle quelle
+        issue["value"] = None
+        removed += 1
+
+    if len(issues) > _MAX_SANITIZED_ISSUES:
+        log_debug(
+            "[FAILURE_CASE]",
+            f"validation_report.json: {len(issues)} issues, rapprochement borné à "
+            f"{_MAX_SANITIZED_ISSUES} (au-delà : value retirée par défaut)",
+        )
+    return out, removed
 
 
 def _strip_html_attrs_segment(segment: str) -> tuple[str, bool]:
@@ -489,6 +585,9 @@ def _copy_known_files(
     *,
     meta: Any,
     meta_ok: bool,
+    report: Any,
+    report_ok: bool,
+    question_blocks: Any,
     warnings: list[str],
 ) -> dict[str, bool]:
     artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -517,6 +616,30 @@ def _copy_known_files(
                 warnings.append(
                     "meta.json: présent mais illisible/JSON invalide — non copié "
                     "(contenu non vérifiable, risque de token non filtré)"
+                )
+                presence[name] = False
+            continue
+
+        if name == "validation_report.json":
+            if report_ok and isinstance(report, dict):
+                sanitized, removed_count = _sanitize_validation_report(report, question_blocks)
+                (artifacts_dir / name).write_text(
+                    json.dumps(sanitized, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                if removed_count:
+                    warnings.append(
+                        f"validation_report.json: champ 'value' retiré de {removed_count} "
+                        "issue(s) avant copie — ne correspond à aucune option prédéfinie "
+                        "connue du bloc de question concerné (donnée potentiellement saisie "
+                        "par le répondant, ex. champ de saisie libre)"
+                    )
+                presence[name] = True
+            else:
+                warnings.append(
+                    "validation_report.json: présent mais illisible/JSON invalide — non "
+                    "copié (contenu non vérifiable, risque de donnée saisie par le "
+                    "répondant non filtrée)"
                 )
                 presence[name] = False
             continue
@@ -650,6 +773,9 @@ def build_failure_case(
             case_dir / "artifacts",
             meta=meta if meta_ok else None,
             meta_ok=meta_ok,
+            report=report if report_ok else None,
+            report_ok=report_ok,
+            question_blocks=question_blocks if qb_ok else None,
             warnings=warnings,
         )
 

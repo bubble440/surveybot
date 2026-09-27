@@ -10,28 +10,45 @@ diagnostic ou prompt — lit uniquement manifest.json (Phase 2), diagnosis.json
 (Phase 4) et prompt.txt (Phase 6), déjà produits par ces outils. N'écrit jamais
 dans failure_cases/, diagnoses/, context_selections/, ni prompts/.
 
-── Portée : stage="extraction" uniquement ─────────────────────────────────────
-Les cases stage="action" restent hors périmètre : leur replay (Phase 3A/3B)
-vérifie l'état DOM après action, mais ne réexécute jamais réellement le
-dispatcher (dispatcher_success d'origine réutilisé tel quel, cf.
-Survey/failure_replay.py) — un verdict REPRODUIT sur un case action ne prouve
-donc rien sur le dispatcher lui-même. Un case extraction REPRODUIT, en
-revanche, revérifie réellement dom_analyzer.analyze_dom() + le validator
-d'extraction sur le DOM figé — c'est une preuve plus forte, seule retenue ici.
+── Portée : stage="extraction" ET stage="action" (preuve distincte par stage) ──
+Un case extraction REPRODUIT revérifie réellement dom_analyzer.analyze_dom() +
+le validator d'extraction sur le DOM figé — preuve forte, seule retenue pour ce
+stage (inchangé).
+
+Le replay passif d'un case action (Phase 3A/3B, Survey/failure_replay.py)
+réutilise dispatcher_success du case d'origine tel quel et ne réexécute jamais
+le dispatcher réel : un verdict REPRODUIT sur ce stage ne prouve donc toujours
+rien sur le dispatcher lui-même. Phase 4 (Survey/failure_diagnosis.py) calcule
+désormais, en plus, un signal réel indépendant pour ce stage quand le case
+dispose de ce qu'exige le Chromium isolé (Phase 3C.4,
+Survey/replay_browser.py::execute_case_action, non modifié) :
+real_dispatch_replay.validation_comparison.outcome="BUG_PERSISTANT" confirme
+ACTIVEMENT que le dispatcher réel échoue encore, de la même façon, sur le code
+actuel non corrigé. C'est ce signal, et seulement lui, qui rend un case action
+éligible ici — jamais le verdict REPRODUIT du replay passif seul, selon
+exactement le même principe que pour l'extraction (une preuve réelle proche du
+mécanisme concerné, jamais un critère plus permissif).
 
 ── Éligibilité : toutes les conditions ensemble, avant tout effet de bord ─────
 manifest.json et diagnosis.json existent et sont valides ; prompt.txt existe
 réellement et MANUAL_REVIEW_REQUIRED.txt n'est pas présent à sa place ; les
 case_id du manifeste, du diagnostic et des trois dossiers fournis correspondent
-tous exactement ; stage="extraction" ; replay.verdict="REPRODUIT" ;
+tous exactement ; stage="extraction" ou stage="action" ; replay.verdict=
+"REPRODUIT" ; pour stage="action" uniquement, EN PLUS :
+real_dispatch_replay.validation_comparison.outcome="BUG_PERSISTANT" ;
 confidence_global="certain" ; case_incomplete=false ; case_id est utilisable
 sans transformation comme composant de chemin ET comme référence Git valide
 (validé via une regex conservatrice, puis via `git check-ref-format`, qui fait
 autorité sur la syntaxe réelle des refs Git plutôt qu'une réimplémentation
 partielle de ses règles). "certain" n'est PAS revérifié indépendamment de
-REPRODUIT ici — Phase 4 ne produit "certain" que lorsque REPRODUIT est déjà
-vrai (cf. Survey/failure_diagnosis.py::_cause_level_from_replay) : c'est un
-garde-fou de cohérence avec un diagnostic déjà calculé, pas une seconde preuve.
+REPRODUIT pour stage="extraction" — Phase 4 ne produit "certain" que lorsque
+REPRODUIT est déjà vrai pour ce stage (cf. Survey/failure_diagnosis.py::
+_cause_level_from_replay) : un garde-fou de cohérence avec un diagnostic déjà
+calculé, pas une seconde preuve. Pour stage="action", "certain" est de la même
+façon déjà conditionné à BUG_PERSISTANT côté Phase 4 ; la vérification de
+BUG_PERSISTANT ci-dessous reste néanmoins indépendante, en plus de
+confidence_global, jamais à sa place — même principe de double vérification
+que celui déjà appliqué à REPRODUIT/confidence_global pour l'extraction.
 
 ── Stratégie Git unique, sans fallback ────────────────────────────────────────
 1. git rev-parse --show-toplevel (dépôt réel, jamais un chemin codé en dur)
@@ -53,17 +70,34 @@ Emplacement du worktree, déterministe par défaut : <parent du dépôt>/
 <nom du dépôt>-worktrees/<case_id> — un vrai frère du checkout principal,
 jamais imbriqué dans son arbre suivi par Git (donc aucune entrée .gitignore à
 ajouter). Peut être fourni explicitement (worktrees_root).
+
+── Extension : artefact de traçabilité (même convention que les Phases 2-6) ───
+En plus de son comportement inchangé ci-dessus, cette phase persiste désormais
+le résultat (case_id, branch, worktree_path, base_sha, source_branch,
+prompt_path) sous out_root/<case_id>/worktree.json — schema_version,
+horodatage, avertissements explicites, même convention JSON déjà en usage
+(Survey/context_selector.py, Survey/failure_diagnosis.py,
+Survey/prompt_generator.py). Refus explicite (jamais un écrasement silencieux)
+si cet artefact existe déjà sans force=True, vérifié AVANT toute mutation Git
+(branche/worktree) pour ne pas créer d'état Git si l'écriture va de toute
+façon être refusée. Reste un artefact technique interne (case_id, chemins) :
+ces champs ne doivent fuiter nulle part ailleurs dans le pipeline (prompt,
+sortie destinée à un humain non technique) — seule la sortie CLI déjà
+existante, déjà destinée à l'opérateur technique, les affiche également.
 """
 
+import json
 import re
 import subprocess
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from Survey.log_utils import log_debug, log_info
 
 _TAG = "[AUTOFIX_WORKTREE]"
+SCHEMA_VERSION = "1.0"
 
 PROTECTED_BRANCHES = {"playwright-migration", "main", "prod"}
 
@@ -196,12 +230,30 @@ def check_eligibility(
             )
 
     stage = str(manifest.get("stage") or "")
-    if stage != "extraction":
-        reasons.append(f"stage={stage!r} — seul stage=\"extraction\" est dans le périmètre de cette phase")
+    if stage not in ("extraction", "action"):
+        reasons.append(
+            f"stage={stage!r} — seuls stage=\"extraction\" et stage=\"action\" sont dans le "
+            "périmètre de cette phase"
+        )
 
     replay_verdict = str((diagnosis.get("replay") or {}).get("verdict") or "")
     if replay_verdict != "REPRODUIT":
         reasons.append(f"replay.verdict={replay_verdict!r} — \"REPRODUIT\" requis")
+
+    if stage == "action":
+        real_dispatch = diagnosis.get("real_dispatch_replay")
+        outcome = (
+            (real_dispatch.get("validation_comparison") or {}).get("outcome")
+            if isinstance(real_dispatch, dict) else None
+        )
+        if outcome != "BUG_PERSISTANT":
+            reasons.append(
+                f"stage=\"action\" : real_dispatch_replay.validation_comparison.outcome={outcome!r} "
+                "— \"BUG_PERSISTANT\" requis (seule confirmation active, par réexécution réelle du "
+                "dispatcher, que le bug persiste sur le code actuel — cf. Survey/replay_browser.py::"
+                "execute_case_action) ; replay.verdict=\"REPRODUIT\" seul ne prouve rien sur le "
+                "dispatcher pour ce stage (cf. Survey/failure_replay.py)"
+            )
 
     confidence = str(diagnosis.get("confidence_global") or "")
     if confidence != "certain":
@@ -221,6 +273,63 @@ class WorktreeResult:
     base_sha: str
     source_branch: str
     prompt_path: Path
+    manifest_path: Optional[Path] = None
+
+    def as_dict(self) -> dict:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "case_id": self.case_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "branch": self.branch,
+            "worktree_path": str(self.worktree_path),
+            "base_sha": self.base_sha,
+            "source_branch": self.source_branch,
+            "prompt_path": str(self.prompt_path),
+            "warnings": [],
+        }
+
+
+def _worktree_manifest_paths(out_root: Path, case_id: str) -> "tuple[Path, Path]":
+    out_dir = out_root / case_id
+    return out_dir, out_dir / "worktree.json"
+
+
+def write_worktree_manifest(
+    result: WorktreeResult,
+    *,
+    out_root: "str | Path" = "autofix_worktrees",
+    force: bool = False,
+) -> Path:
+    """Persiste result sous out_root/<case_id>/worktree.json — même convention
+    de traçabilité que les phases précédentes. Refuse si la sortie existe déjà
+    et force=False ; jamais d'écrasement silencieux. Ne modifie rien d'autre
+    (n'écrit jamais dans failure_cases/, diagnoses/, context_selections/,
+    prompts/, ni dans le worktree Git lui-même).
+    """
+    out_root = Path(out_root)
+    out_dir, out_file = _worktree_manifest_paths(out_root, result.case_id)
+
+    if out_dir.exists():
+        if not force:
+            raise AutofixWorktreeExistsError(
+                f"artefact de traçabilité Phase 7 déjà existant : {out_dir} "
+                "(utiliser --force pour régénérer)"
+            )
+        if not out_file.is_file():
+            raise AutofixWorktreeError(
+                f"{out_dir} existe mais ne ressemble pas à une sortie générée par cet outil "
+                "(pas de worktree.json) — suppression refusée, vérifier manuellement"
+            )
+        import shutil
+        log_debug(_TAG, f"régénération forcée de l'artefact Phase 7 : suppression de {out_dir}")
+        shutil.rmtree(out_dir)
+
+    out_dir.mkdir(parents=True, exist_ok=False)
+    out_file.write_text(
+        json.dumps(result.as_dict(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return out_file
 
 
 def _default_worktrees_root(repo_root: Path) -> Path:
@@ -252,17 +361,22 @@ def prepare_autofix_worktree(
     diagnosis_dir: "str | Path",
     prompt_dir: "str | Path",
     worktrees_root: "Optional[str | Path]" = None,
+    out_root: "str | Path" = "autofix_worktrees",
+    force: bool = False,
 ) -> WorktreeResult:
-    """Prépare atomiquement une branche autofix/<case_id> et son worktree dédié.
+    """Prépare atomiquement une branche autofix/<case_id> et son worktree dédié,
+    puis persiste le résultat sous out_root/<case_id>/worktree.json.
 
     Refuse avant tout effet de bord si une condition d'éligibilité manque, si la
-    branche ou le chemin cible existe déjà, ou si case_id n'est pas sûr. En cas
-    d'échec Git après création de la branche, la retire avant de relancer
-    l'erreur — jamais de ressource partielle laissée derrière.
+    branche ou le chemin cible existe déjà, si case_id n'est pas sûr, ou si
+    l'artefact de traçabilité existe déjà sans force=True. En cas d'échec Git
+    après création de la branche, la retire avant de relancer l'erreur —
+    jamais de ressource partielle laissée derrière.
     """
     failure_case_dir = Path(failure_case_dir)
     diagnosis_dir = Path(diagnosis_dir)
     prompt_dir = Path(prompt_dir)
+    manifest_out_root = Path(out_root)
 
     eligibility = check_eligibility(
         failure_case_dir=failure_case_dir,
@@ -278,6 +392,15 @@ def prepare_autofix_worktree(
     branch = f"autofix/{case_id}"
     if branch in PROTECTED_BRANCHES:  # ne peut arriver qu'avec un case_id absurde
         raise AutofixWorktreeError(f"nom de branche calculé {branch!r} coïncide avec une branche protégée")
+
+    # Vérifié avant toute mutation Git : inutile de créer branche/worktree si
+    # l'écriture de l'artefact de traçabilité va de toute façon être refusée.
+    manifest_out_dir, _manifest_out_file = _worktree_manifest_paths(manifest_out_root, case_id)
+    if manifest_out_dir.exists() and not force:
+        raise AutofixWorktreeExistsError(
+            f"artefact de traçabilité Phase 7 déjà existant : {manifest_out_dir} "
+            "(utiliser --force pour régénérer)"
+        )
 
     # 1) Dépôt réel, résolu depuis l'environnement (répertoire courant du
     # process) — jamais un chemin codé en dur.
@@ -325,13 +448,7 @@ def prepare_autofix_worktree(
         _run_git(["branch", "-D", branch], cwd=repo_root)
         raise AutofixWorktreeError(f"création du worktree échouée : {worktree_add.stderr.strip()}")
 
-    log_info(
-        _TAG,
-        f"worktree créé case={case_id} branch={branch} base_sha={base_sha[:12]} "
-        f"source_branch={source_branch} -> {target}",
-    )
-
-    return WorktreeResult(
+    result = WorktreeResult(
         case_id=case_id,
         branch=branch,
         worktree_path=target,
@@ -339,3 +456,13 @@ def prepare_autofix_worktree(
         source_branch=source_branch,
         prompt_path=prompt_dir / "prompt.txt",
     )
+    manifest_file = write_worktree_manifest(result, out_root=manifest_out_root, force=force)
+    result.manifest_path = manifest_file
+
+    log_info(
+        _TAG,
+        f"worktree créé case={case_id} branch={branch} base_sha={base_sha[:12]} "
+        f"source_branch={source_branch} -> {target} (artefact : {manifest_file})",
+    )
+
+    return result

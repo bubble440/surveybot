@@ -578,14 +578,485 @@ niveau tant que le niveau précédent n'est pas fiable.
 > `CORRECTIF_CONFIRME` sans ambiguïté au lieu du `NON_REPRODUIT` de suite 14.
 > **Avec cette entrée, la chaîne complète est vérifiée de bout en bout, sans
 > zone grise de vocabulaire, sur le bug Decipher/rowpicker qui a motivé tout
-> ce chantier depuis suite 8 du 2026-09-13.** Reste à faire pour clore
-> formellement 3C.4 : `TRACE_REPLAY` (déclassement automatique après
-> `TIMEOUT`, aujourd'hui rapporté tel quel sans reclassification) ; la fusion
-> plus profonde en fonction oracle vraiment unique reste partielle —
-> `_action_outcome` traduit après coup un pari déjà posé séparément dans
-> `action_validator.py` (Phase 1B, `dispatcher_false_negative`/`dom_signal`),
-> les deux ne partagent pas encore une seule et même implémentation du pari
-> lui-même.
+> ce chantier depuis suite 8 du 2026-09-13.**
+> Mise à jour 2026-09-25 (suite 16) : Phase 3C.4, suite — `TRACE_REPLAY`
+> implémenté. Après un `TIMEOUT` (page déjà fermée par le garde-fou de
+> budget, plus aucune lecture live possible), nouvelle fonction
+> `_trace_replay_fallback` (`Survey/replay_browser.py`) : rejoue
+> `action_validator.validate_actions` (non modifié) avec `driver=None` et le
+> paramètre déjà existant `captured_option_states` (`runtime_state.json`,
+> capturé avant cette tentative — même mécanisme déjà exploité par le rejeu
+> statique passif, jamais réimplémenté séparément). `dispatcher_success`
+> repris du case d'origine (`validation_report.json`), jamais un verdict de
+> cette tentative qui n'en a pas produit. Résultat exposé dans un champ
+> distinct `ActionExecution.trace_replay` (`None` pour tout statut autre que
+> `TIMEOUT`), avec son propre vocabulaire de fidélité
+> `REPRODUIT`/`NON_REPRODUIT`/`DIFFERENT` (comme 3A — volontairement PAS
+> `CORRECTIF_CONFIRME`/`BUG_PERSISTANT`/`NON_CONCLUANT`, puisqu'aucun
+> dispatcher n'a réellement tourné cette fois). Statut du résultat jamais
+> réécrit : reste `TIMEOUT`, ce repli l'enrichit sans le remplacer.
+> `available=False` avec raison explicite si aucun `runtime_state.json`
+> exploitable ou si `validate_actions()` lève — jamais un repli silencieux.
+> Relu et vérifié ligne par ligne (portée respectée : seul `TIMEOUT`, pas
+> `ERROR`/`NOT_EXECUTED` — choix conscient, pas une évidence si un jour on
+> veut étendre). Pas encore observé sur un vrai dépassement de budget en
+> conditions réelles (revue de code uniquement à ce stade).
+> Mise à jour 2026-09-25 (suite 17) : vérification demandée de la fusion en
+> fonction oracle unique (point resté ouvert en suite 15) — délégation déjà
+> complète sur les trois chemins, aucune fusion à faire. `action_validator.py`
+> porte seul la logique du pari (`_dispatcher_false_negative_issue`,
+> `validate_actions`) ; chemin 1 (`failure_replay.py`, rejeu statique passif)
+> et chemin 2 (`execute_case_action`, dispatch réel) délèguent tous deux
+> intégralement, déjà confirmé en suite 15. Chemin 3 (repli après `TIMEOUT`,
+> `_trace_replay_fallback` posée en suite 16) délègue tout autant — vérifié
+> directement dans le code (appel à `validate_actions()` bien présent et bien
+> invoqué). Une première vérification automatisée avait conclu à tort que ce
+> troisième chemin n'appelait jamais le validator — confusion entre les
+> champs `validation`/`validation_comparison` (qui restent `None` après
+> `TIMEOUT`, à raison) et le fait que `validate_actions()` y est bien appelée,
+> juste exposée sous un autre champ (`trace_replay`). Erreur corrigée après
+> relecture directe du fichier plutôt que confiance aveugle dans le rapport —
+> aucun changement de code nécessaire, la conclusion pratique (rien à
+> fusionner) reste la même que celle envisagée avant cette vérification.
+> Point clos : `_action_outcome` n'est pas une seconde implémentation du
+> pari, seulement une traduction de vocabulaire sur un résultat déjà tranché
+> par le module unique. **Avec cette entrée, 3C.4 est considérée close sur
+> tout ce qui était prévu.**
+> Mise à jour 2026-09-26 (suite 18) : Phase 7 étendue à `stage="action"`,
+> maintenant que 3C.4 fournit une preuve exploitable pour ce stage. Choix de
+> coût explicitement tranché : la réexécution réelle du dispatcher (Chromium,
+> plusieurs secondes) tourne systématiquement dans `diagnose_failure_case`
+> (Phase 4) pour tout case `stage="action"`, pas à la demande juste avant la
+> Phase 7 — la Phase 4 devient plus lente sur ce stage, assumé.
+> `Survey/failure_diagnosis.py` : nouveau champ `real_dispatch_replay`,
+> strictement additif — `replay` (rejeu passif, `failure_replay.py`) reste
+> calculé tel quel pour tous les stages, jamais remplacé. Pour
+> `stage="action"` uniquement, `_attempt_real_dispatch_replay` appelle
+> `Survey/replay_browser.py::execute_case_action` (non modifié, vérifié :
+> `OUTCOME_FIX_CONFIRMED`/`OUTCOME_BUG_PERSISTS`/`OUTCOME_INCONCLUSIVE`,
+> `ReplayBrowserError`, `_DEFAULT_DISPATCH_BUDGET_S` préexistaient déjà tous
+> depuis la suite 15) sur `pre_action_dom.html`, sous le même budget de temps
+> que ce worker impose déjà — jamais d'exception propagée (pré-requis
+> absents, Playwright indisponible, ou toute autre erreur : `None`, jamais
+> un résultat deviné). Signal exact retenu pour "certain" côté action :
+> `real_dispatch_replay.validation_comparison.outcome="BUG_PERSISTANT"` —
+> confirmation ACTIVE que le bug persiste sur le code non corrigé, jamais
+> `CORRECTIF_CONFIRME` (ce serait le signal inverse, utile après un
+> correctif, pas avant) ni une absence de détection. Sans cette
+> confirmation active, `confidence_global` plafonne à `"plausible"` — même
+> mécanisme de plafond que `manifest.incomplete=true`, appliqué en plus,
+> pas une règle indépendante.
+> `Survey/autofix_worktree.py::check_eligibility` : `stage` accepte
+> maintenant `"extraction"` et `"action"` ; `replay.verdict="REPRODUIT"`
+> reste exigé pour les deux ; pour `stage="action"` seulement, exigence
+> supplémentaire sur `real_dispatch_replay.validation_comparison.outcome`
+> (`"BUG_PERSISTANT"` requis, garde défensif si le champ est absent) —
+> jamais un critère plus permissif que pour l'extraction. Pas encore
+> chronométré sur un vrai run (`tools/diagnose_failure.py` sur un case
+> action va devenir sensiblement plus lent — attendu, à confirmer).
+> Mise à jour 2026-09-26 (suite 19) : point de vigilance data de la Phase 6
+> fermé — champ `value` d'un issue de `validation_report.json`, jusqu'ici
+> jamais sanitisé contrairement à `meta.json`/aux DOM HTML du même snapshot.
+> Portée précisée avant le patch : le risque ne concerne que les champs de
+> saisie libre (la donnée réellement tapée par le répondant, ex. le cas de
+> référence IFOP zip2city cité par le plan) — pas un libellé d'option
+> radio/checkbox/dropdown, déjà prédéfini par le sondage lui-même et pas
+> plus sensible que le texte de la question, déjà reproduit sans filtre.
+> Nouvelle fonction `_sanitize_validation_report` (`Survey/failure_case_builder.py`),
+> appliquée au moment de la copie sanitisée (Phase 2), comme `meta.json` juste
+> au-dessus dans le même fichier — pas en Phase 4/6, pour que tout consommateur
+> futur de `validation_report.json` en bénéficie. Rapprochement par option
+> prédéfinie réelle (`question_blocks.json` du même snapshot, jamais
+> recalculé), pas par `itype` déclaré (pouvant être erroné) : `value`
+> conservée telle quelle seulement si elle correspond, après normalisation
+> casse/espaces stricte, à une option connue pour ce `target_id` ; sinon
+> retirée (remplacée par `null`). Toute ambiguïté (target_id absent de
+> l'issue, bloc introuvable, `question_blocks.json` indisponible/sans
+> options exploitables) traitée comme potentiellement sensible — jamais
+> laissée passer par défaut. Portée strictement limitée à `issues[].value`
+> (pas un parcours générique du document comme `_sanitize_meta`/
+> `_sanitize_capsule_json`, ni l'une ni l'autre modifiées) ; copie profonde
+> indépendante, jamais de mutation en place ; bornée (`_MAX_SANITIZED_ISSUES`),
+> repli côté sûr (retrait) au-delà du budget. Retrait documenté dans les
+> avertissements du manifeste, même convention que `meta.json`, jamais
+> silencieux. **Avec cette entrée, le dernier point ouvert de la liste
+> dressée en fin de chantier 3C est fermé.**
+> Mise à jour 2026-09-26 (suite 20) : Phase 3D démarrée —
+> `Survey/replayability_classifier.py` + `tools/classify_replayability.py`.
+> Classification en lecture seule à partir des seuls signaux déjà présents
+> dans `diagnosis.json` (Phase 4) — aucun replay/dispatcher/navigateur
+> recalculé ici. `stage="extraction"` : `STATIC_DOM` seulement si
+> `replay.verdict="REPRODUIT"` ET `evaluate_declined` nul (un `REPRODUIT`
+> obtenu malgré des signaux déclinés ne prouve pas que la structure DOM
+> seule suffisait), sinon `UNDETERMINED`. `stage="action"` :
+> `real_dispatch_replay.status` en `SUCCESS`/`FAILURE` → `BROWSER_CAPSULE`
+> (dispatcher réel réexécuté jusqu'à un verdict exploitable) ;
+> `status="TIMEOUT"` avec `trace_replay.available=true` → `TRACE_REPLAY` ;
+> tout le reste → `UNDETERMINED`. `EXTERNAL_NON_REPLAYABLE` structurellement
+> défini (vocabulaire du plan) mais jamais produit — aucun signal de ce
+> type n'existe encore dans le pipeline (donnée de session, captcha, shadow
+> DOM fermé), l'inventer aurait été deviner. Asymétrie découverte et
+> correctement traitée, non anticipée dans le prompt : `stage="extraction"`
+> n'a aujourd'hui aucun signal de vérification par navigateur réel exposé
+> dans `diagnosis.json` (`replay_browser.py::extract_case_blocks` existe,
+> mais `failure_diagnosis.py` ne l'invoque que pour `stage="action"`) — un
+> case extraction hors `STATIC_DOM` retombe donc sur `UNDETERMINED`, jamais
+> deviné en `BROWSER_CAPSULE` par symétrie avec le stage action. Ordre
+> d'exécution révisé par rapport à l'intention initiale du plan ("la Phase 4
+> devra lire ce champ") : 3D tourne après 4 (lit `diagnosis.json` déjà
+> produit), pas avant — sans conséquence réelle aujourd'hui puisque
+> `EXTERNAL_NON_REPLAYABLE` n'est encore jamais produit, donc aucun cas où
+> la Phase 4 aurait besoin d'éviter un calcul à cause d'un verdict 3D. Sortie
+> `classification.json` distincte, jamais écrite dans `diagnoses/` — jamais
+> d'exception levée (diagnostic incomplet/inattendu → `UNDETERMINED` avec la
+> raison exacte).
+> Mise à jour 2026-09-26 (suite 21) : lancé sur trois cases réels
+> (`20260911_160609`/Focaldata MUI extraction, `20260923_211155`/Qualtrics
+> carrousel extraction, `20260925_211543`/Decipher rowpicker action) — voir
+> suite 22 pour l'extension qui a suivi côté extraction, motivée directement
+> par ce qu'un de ces trois runs a révélé.
+> Mise à jour 2026-09-26 (suite 22) : `Survey/failure_diagnosis.py` étendu —
+> `real_extraction_replay`, symétrique de `real_dispatch_replay` pour
+> `stage="extraction"`. Motivé par un doute concret sur le case Focaldata MUI
+> (suite 21) : son rejeu passif était `NON_REPRODUIT`, mais l'utilisateur
+> doutait que le bug soit vraiment corrigé plutôt que simplement absent du
+> DOM figé — exactement l'ambiguïté que `cause.justification` reconnaît déjà
+> elle-même sans trancher ("soit... soit..."). Nouvelle fonction
+> `_attempt_real_extraction_replay` : fait tourner
+> `replay_browser.py::extract_case_blocks` (non modifié) sur le document du
+> case dans le Chromium isolé — `dom_analyzer.analyze_dom()` et
+> `question_block_validator.validate_question_blocks()` réellement réexécutés
+> avec layout/CSS réels, contrairement au rejeu passif (DOM statique sans
+> JS/layout). Résultat conservé dans `real_extraction_replay`, à côté de
+> `replay` — jamais à sa place. Volontairement purement informatif : aucune
+> nouvelle règle de plafond adossée (contrairement à `real_dispatch_replay`
+> côté action) — `cause_level`/`confidence_global` restent dérivés du seul
+> replay passif pour ce stage, vérifié inchangé sur les deux cases relancés.
+> Résultat sur le case Focaldata : le bloc à 7 options est bien retrouvé sur
+> layout réel, mais `target_id` diffère toujours de l'original et le
+> validator dit encore `NON_REPRODUIT` — cohérent avec le rejeu passif, mais
+> **ne tranche pas** le doute d'origine : un DOM déjà figé, même rejoué dans
+> un vrai navigateur, ne peut par construction jamais rejouer une vraie
+> condition de course de production (la fenêtre de course n'existe plus une
+> fois le DOM capturé) — limite déjà actée pour le rejeu statique (suite 8 du
+> 2026-09-11), qui s'applique donc également ici, pas propre au shim lxml.
+> Résultat sur le case Qualtrics (carrousel, capturé avant 3B.9/10/11,
+> scripts=off confirmé) : confirme, cette fois via le chemin officiel plutôt
+> qu'un script ad hoc, exactement l'explication déjà trouvée manuellement —
+> sans JS, le carrousel empile ses lignes, la question rejouée les absorbe.
+> Suite logique délibérément non incluse ici (un patch à la fois) :
+> `replayability_classifier.py` ne lit pas encore `real_extraction_replay` —
+> `stage="extraction"` hors `STATIC_DOM` reste `UNDETERMINED` pour l'instant.
+> Mise à jour 2026-09-26 (suite 23) : Phase 7 complétée (traçabilité) + Phase 8
+> clôturée. Gap comblé côté Phase 7 : `prepare_autofix_worktree` ne se
+> contentait que d'un `print()` de son résultat, sans laisser de trace sur
+> disque — cassant le principe de lecture seule/artefact déjà écrit suivi par
+> les phases 2 à 6. Nouveau `write_worktree_manifest`
+> (`Survey/autofix_worktree.py`) persiste désormais `case_id`/`branch`/
+> `base_sha`/`worktree_path`/`source_branch`/`prompt_path` sous
+> `autofix_worktrees/<case_id>/worktree.json`, même convention JSON que les
+> phases précédentes (schema_version, horodatage, avertissements), refus
+> explicite si l'artefact existe déjà sans `--force` — vérifié avant toute
+> mutation Git, pas après. `WorktreeResult` gagne un champ `manifest_path`,
+> strictement additif ; comportement Git (branche/worktree) inchangé.
+> Phase 8 : `Survey/static_validator.py` + `tools/validate_patch_static.py`.
+> Lecture seule sur le seul artefact que produit la Phase 7 (`worktree.json`)
+> — jamais `manifest.json`/`diagnosis.json` rouverts, jamais l'éligibilité
+> Phase 7 recalculée. Sous-ensemble de fichiers vérifiés déterminé par
+> comparaison Git (`git diff --name-only base_sha` ∪ nouveaux fichiers non
+> trackés), jamais l'ensemble du dépôt — conforme au choix tranché à
+> l'ouverture de ce chantier. Quatre vérifications dans l'ordre, chacune avec
+> son propre budget de temps explicite : (1) compilation isolée
+> (`python -m py_compile`, capture aussi un argument dupliqué — déjà un
+> SyntaxError CPython natif) ; (2) import isolé par sous-processus,
+> `sys.executable` réutilisé tel quel (même venv que l'outil, jamais un
+> `python` résolu au hasard sur PATH) ; (3) lint minimal via Ruff, choisi
+> plutôt que pyflakes pour sa capacité à évoluer par simple config plutôt que
+> changement d'outil (décidé à l'ouverture du chantier) — `--isolated`,
+> sélection figée à `F821`/`F822`/`F823` (erreurs réelles uniquement, jamais
+> de règle de style) ; F831 (argument dupliqué), envisagé initialement,
+> n'existe pas comme règle sélectionnable dans la version installée — non
+> grave, ce cas est déjà couvert par (1), documenté plutôt que masqué ; (4)
+> tests unitaires déjà associés à chaque fichier modifié, si une convention
+> fichier-source → fichier-de-test existe déjà. Investigation menée avant
+> écriture, documentée dans le module (même principe que la Source 2 de
+> `context_selector.py`) : ce dépôt ne contient à ce jour aucune suite de
+> tests versionnée, ni `tests/`, ni `conftest.py`, ni dépendance pytest/ruff
+> dans `requirements.txt` ; `test.py`/`test3c3.py`/`test_diag.py` à la racine
+> sont des scripts manuels pilotant un vrai navigateur (`input()` bloquant),
+> pas des tests unitaires, aucune convention établie. Le détecteur reconnaît
+> néanmoins plusieurs conventions Python usuelles et s'activera de lui-même le
+> jour où l'une apparaît réellement, sans nouveau patch sur ce module —
+> `convention_found=false` n'est jamais à lui seul un motif de rejet, seul un
+> test déjà existant qui échoue réellement fait échouer la phase, au même
+> titre qu'un échec de compilation, d'import ou de lint. Verdict tracé sous
+> `autofix_static_validations/<case_id>/validation_static.json`
+> (`ACCEPTED`/`REJECTED`), même convention JSON que les phases précédentes.
+> Aucun test live déclenché, quel que soit le verdict — conforme au principe
+> de la phase. Ne modifie jamais le worktree, la branche autofix, ni aucun
+> artefact d'une phase antérieure. Le chantier principal passe à la Phase 9
+> (replay automatique du bug), avec la même limite déjà actée pour
+> `stage="action"` (voir « Limite actuelle » de la Phase 9 ci-dessous) tant
+> qu'un verdict `TRACE_REPLAY` n'est pas encore distingué d'un `REPRODUIT` par
+> un score de confiance dédié (Phase 12).
+> Mise à jour 2026-09-26 (suite 24) : Phase 9 clôturée.
+> `Survey/patch_replay.py` + `tools/replay_patch.py`. Lecture seule sur les
+> Phases 4/7/8 : lit uniquement diagnosis.json, worktree.json et
+> validation_static.json déjà produits — n'en recalcule aucun, ne rouvre
+> jamais manifest.json directement (seul un mécanisme de rejeu déjà existant,
+> réutilisé tel quel, le lit indirectement). Préconditions vérifiées toutes
+> ensemble, jamais la première seule : validation_static.verdict="ACCEPTED"
+> requis (jamais recalculé) ; worktree.json complet et worktree_path pointant
+> réellement vers un dépôt Git (.git présent) ; diagnosis.stage dans
+> {extraction, action} avec le signal avant-patch déjà établi par la Phase 4
+> (replay.verdict="REPRODUIT" en extraction,
+> real_dispatch_replay.validation_comparison.outcome="BUG_PERSISTANT" en
+> action) — jamais revérifié, seulement relu ; case_id cohérent entre les
+> quatre sources (diagnosis.json, worktree.json, validation_static.json,
+> noms de dossiers fournis) et sûr comme composant de chemin. Convention CLI
+> alignée sur la Phase 8 : worktree.json et validation_static.json pris en
+> argument comme CHEMINS DE FICHIER complets, jamais un dossier qui les
+> contiendrait — diagnosis_dir reste un dossier, comme le fait déjà
+> Survey/autofix_worktree.py::check_eligibility pour ce même artefact.
+> Résolution de la racine de paquet du worktree : `_resolve_package_root`
+> (Survey/static_validator.py, Phase 8) réimportée telle quelle plutôt que
+> réimplémentée — vérifiée applicable sans changement, ne dépendant que du
+> worktree lui-même. Exécution du rejeu dans un SOUS-PROCESSUS Python neuf,
+> jamais dans le process appelant : ce dernier a déjà importé
+> Survey.replay_browser/Survey.failure_replay depuis le dépôt principal, donc
+> sys.modules les garderait en cache et ferait tourner le code non corrigé
+> plutôt que celui du worktree — script généré passé en fichier temporaire,
+> chemins en argv jamais interpolés dans le texte du script, sys.executable
+> réutilisé (jamais un "python" résolu au hasard sur PATH), un seul budget de
+> temps explicite par stage (60s rejeu statique extraction ; budget dispatcher
+> + marge de 60s côté action), timeout traité comme échec contrôlé jamais un
+> processus laissé pendre. Mécanisme de rejeu réutilisé tel quel par stage,
+> jamais réimplémenté : `Survey.failure_replay.replay_failure_case` pour
+> l'extraction (même vocabulaire REPRODUIT/NON_REPRODUIT/DIFFERENT/
+> NON_REJOUABLE que le signal avant-patch) ; exactement la même séquence que
+> `Survey/failure_diagnosis.py::_attempt_real_dispatch_replay`
+> (IsolatedReplayBrowser -> load_case_document(pre_action=True) ->
+> extract_case_blocks -> execute_case_action) pour l'action, fonctions
+> publiques non modifiées de Survey/replay_browser.py. Vocabulaire de verdict
+> après patch repris tel quel (Survey.replay_browser.OUTCOME_*, déjà calculé
+> par execute_case_action côté action), jamais une seconde échelle de
+> confiance ; côté extraction, seule traduction manquante ajoutée, symétrique
+> de _action_outcome, sans réimplémenter le pari dispatcher_success/DOM qui ne
+> s'applique pas à ce stage. Seul CORRECTIF_CONFIRME valide le patch
+> (patch_validated=true) — un TIMEOUT reste NON_CONCLUANT même si
+> trace_replay porte un signal favorable, jamais une confirmation active (cf.
+> Phase 3D) ; DIFFERENT/NON_REJOUABLE/erreur de sous-processus/sortie non
+> JSON traités uniformément comme NON_CONCLUANT, jamais une réussite
+> partielle. Point ouvert, découvert en écrivant ce module et non anticipé
+> par le prompt d'origine : au moment de commencer ce patch, ni worktree.json
+> ni Survey/static_validator.py n'existaient encore dans ce dépôt — les deux
+> ont été fusionnés dans cette branche pendant l'écriture de ce module ;
+> schémas/CLI vérifiés sur le code réellement fusionné, jamais devinés.
+> Portée explicitement exclue, documentée plutôt que masquée : le rejeu de
+> cas historiques voisins (suite de non-régression DOM) reste un
+> sous-chantier différé — cette phase ne rejoue que le case ciblé par le
+> worktree. Verdict tracé sous patch_replays/<case_id>/patch_replay.json,
+> même convention JSON que les phases précédentes. Le chantier principal
+> passe à la Phase 10 (test live attach contrôlé) pour les cas hors portée du
+> replay local, et à la Phase 11 (validation anti-régression) pour la suite
+> de cas historiques volontairement différée ici.
+> Mise à jour 2026-09-26 (suite 25) : Phase 10 clôturée.
+> `Survey/live_validator.py` + `tools/validate_patch_live.py`. Garde-fou de
+> sécurité vérifié à DEUX endroits indépendants (défense en profondeur) :
+> `AUTOFIX_LIVE_VALIDATE` doit valoir EXACTEMENT `"1"` (égalité stricte,
+> volontairement plus rigide que le parsing tolérant déjà utilisé par
+> `SURVEY_OBSERVABILITY` en Phase 1A — un garde-fou de sécurité ne doit
+> jamais s'activer par accident) ; vérifié dans `tools/validate_patch_live.py`
+> avant même l'import d'`argparse`, puis revérifié indépendamment dans
+> `check_preconditions()` si le module est appelé hors de cette façade.
+> Éligibilité : `patch_replay.json` (Phase 9) avec `refused=False` et
+> `outcome="NON_CONCLUANT"` EXACTEMENT — ni `CORRECTIF_CONFIRME` (déjà
+> validé) ni `BUG_PERSISTANT` (patch déjà connu mauvais) ; `worktree.json`
+> (Phase 7) revérifié comme un vrai worktree Git ; `diagnosis.json`
+> (Phase 4) avec un `stage` cohérent avec celui déjà porté par
+> `patch_replay.json` ; `--cdp-endpoint` fourni par l'opérateur, jamais
+> lancé/configuré par l'outil. `validation_static.json` (Phase 8) n'est pas
+> relu ici : son acceptation est déjà garantie par l'existence même de
+> `patch_replay.json`, revérifier serait redondant.
+> Racine de paquet du worktree reprise telle quelle de la Phase 8/9 ;
+> exécution en sous-processus Python neuf (même raison qu'en Phase 9 :
+> `sys.modules` garderait sinon en cache le code non corrigé du dépôt
+> principal). Connexion `connect_over_cdp` uniquement (jamais `launch()`),
+> page déjà ouverte retrouvée par énumération (jamais `new_page()`, jamais
+> de navigation) ; plusieurs pages candidates → désambiguïsation par l'URL
+> d'origine du case, sinon refus explicite listant les URLs plutôt qu'une
+> page devinée.
+> Signatures de `Survey/replay_browser.py` vérifiées avant écriture (pas
+> supposées) : `extract_case_blocks`/`execute_case_action` n'exigent qu'une
+> API Playwright standard sur `page`, déjà satisfaite par une page obtenue
+> via CDP — aucune des deux fonctions n'a eu besoin d'être modifiée. Pour
+> `stage="extraction"`, divergence documentée avec la Phase 9 : le replay
+> statique (`Survey.failure_replay`, driver lxml sur DOM figé) est
+> incompatible avec une page live — remplacé ici par `extract_case_blocks`
+> seul, exactement le mécanisme déjà utilisé par
+> `_attempt_real_extraction_replay` (Phase 4, suite 22).
+> **Point de vigilance sérieux, découvert en écrivant ce module et non
+> anticipé par le prompt d'origine, disclosé plutôt que masqué : pour
+> `stage="action"`, `execute_case_action` (Phase 3C.4, non modifiée) ferme
+> elle-même la PAGE si son propre budget interne est dépassé — comportement
+> déjà existant, sans conséquence sur un Chromium isolé jetable, mais réel
+> sur une page CDP live : un TIMEOUT du dispatcher ferme réellement l'onglet
+> de l'opérateur/du répondant. Ce module ne le neutralise pas (aurait exigé
+> de modifier Survey/replay_browser.py, interdit par ce chantier) ; seule
+> atténuation : un budget conservateur et cette disclosure explicite, pour
+> que l'opérateur lance ce test en connaissance de cause. Aucun risque
+> équivalent côté extraction (lecture DOM + validation, aucune mutation).
+> À traiter avant tout usage réel de la Phase 10 sur un case stage="action" :
+> soit accepter le risque documenté ci-dessus au cas par cas, soit rouvrir ce
+> chantier pour neutraliser la fermeture de page côté Survey/replay_browser.py
+> (hors périmètre de ce patch-ci).**
+> Jamais de `browser.close()`/`context.close()`/`page.close()` sur la
+> session CDP par ce module lui-même (seul `sync_playwright().stop()` en fin
+> de script, qui ferme la connexion locale, jamais le navigateur distant).
+> Une seule tentative par invocation, jamais de boucle interne — un
+> deuxième essai après nouvelle correction reste une invocation manuelle
+> complète du cycle. Vocabulaire de sortie repris tel quel
+> (`OUTCOME_FIX_CONFIRMED`/`OUTCOME_BUG_PERSISTS`/`OUTCOME_INCONCLUSIVE`),
+> seul `CORRECTIF_CONFIRME` valide le patch. Verdict tracé sous
+> `live_validations/<case_id>/live_validation.json`, même convention JSON
+> que les phases précédentes. Avec cette clôture, **1A → 10 sont désormais
+> tous au moins partiellement implémentés** ; le chantier principal passe à
+> la Phase 11 (validation anti-régression) et à la fermeture de la 3D/3B.3/
+> 3B.4 encore ouvertes, sans compter le point de vigilance ci-dessus.
+> Mise à jour 2026-09-26 (suite 26) : Phase 11, partie A clôturée (hash
+> d'intégrité des fonctions gelées). `Survey/extractor_integrity_gate.py` +
+> `tools/check_extractor_integrity.py`, complément déterministe à
+> `Survey/extractor_integrity.py`/`.json` (script de hash SHA256 par
+> fonction protégée, fourni tel quel, ajouté à `Survey/` — jamais
+> réimplémenté, jamais modifié). Registre fourni corrigé avant intégration :
+> une clé dupliquée (`Survey/input_slider.py::set_sliderpoints`, même hash
+> que `input_slider.py::set_sliderpoints`) retirée — avec la racine
+> `worktree_path/Survey` déjà identifiée comme seule cohérente avec la
+> quasi-totalité des clés du registre (`../preselection/...` remontant vers
+> le dossier frère de `Survey/`), cette clé en double aurait cherché
+> `Survey/Survey/input_slider.py`, introuvable, et rejeté systématiquement
+> tout patch par ailleurs propre dès le premier run.
+> Portée explicitement limitée à cette partie A : le rejeu de DOM
+> historiques/génériques représentatifs (`regression_cases/`, décrit plus
+> loin dans ce document pour la Phase 11) reste un sous-chantier différé,
+> faute de bibliothèque de cas déjà curée — même principe que les
+> sous-chantiers différés en Phase 9/10.
+> Précondition orthogonale à la Phase 9/10 (ne dépend que de la Phase 8) :
+> `worktree.json` (Phase 7, worktree Git réel) + `validation_static.json`
+> (Phase 8) `verdict="ACCEPTED"` — inutile de vérifier l'intégrité d'un
+> patch qui ne compile même pas. `Survey/extractor_integrity.py` ET
+> `Survey/extractor_integrity.json` doivent exister réellement dans le
+> worktree à la racine de paquet résolue (`_resolve_package_root`, Phase 8,
+> réutilisée telle quelle) — sinon refus explicite plutôt qu'une racine
+> devinée.
+> Chargement du code gelé DU WORKTREE, jamais du dépôt principal : le
+> registre est relu depuis `Survey/extractor_integrity.json` du worktree
+> (le patch a pu légitimement y ajouter des entrées) ; `extractor_integrity.py`
+> est chargé dynamiquement (`importlib.util.spec_from_file_location`) sous
+> un nom de module dédié — jamais `"Survey.extractor_integrity"` — pour ne
+> jamais lire un module déjà en cache dans `sys.modules` provenant du dépôt
+> principal. Contrairement à la Phase 9/10, résolu SANS sous-processus :
+> `extractor_integrity.py` n'a aucune dépendance hors stdlib, un chargement
+> direct suffit et est exigé (jamais un sous-processus avec parsing de
+> texte). `_load_registry`/`_hash_function` appelées telles quelles ensuite,
+> jamais réimplémentées ; leur seule présence sur le module chargé est
+> elle-même vérifiée avant usage (refus explicite sinon, jamais de repli).
+> Budget de temps explicite sur le parcours du registre
+> (`DEFAULT_TIME_BUDGET_S=30s`) : au-delà, les entrées restantes comptent
+> comme des erreurs explicites (`budget_exceeded`), jamais un passe-droit
+> silencieux sur ce qui n'a pas pu être vérifié. Verdict strict : un hash
+> différent (fonction protégée modifiée) ET une fonction/fichier
+> introuvable (fonction protégée supprimée/renommée) sont tous deux des
+> motifs de rejet — jamais un passe-droit. Verdict tracé sous
+> `extractor_integrity_checks/<case_id>/extractor_integrity_check.json`,
+> même convention JSON que les phases précédentes. Le chantier principal
+> passe à la Phase 11, partie B (rejeu de `regression_cases/`, différée
+> jusqu'à curation d'une bibliothèque de DOM représentatifs) ou à la
+> Phase 12 (score de confiance du patch), désormais alimentable par les
+> verdicts déjà produits par les Phases 8/9/10/11-A.
+> Mise à jour 2026-09-26 (suite 27) : Phase 12 clôturée. `Survey/confidence_score.py`
+> + `tools/score_patch_confidence.py`. Différence assumée et documentée par
+> rapport aux Phases 7 à 11 : celles-ci refusent avant tout effet de bord
+> dès qu'une précondition manque (elles s'apprêtent à faire quelque chose de
+> risqué — Git, un vrai navigateur, une vraie page CDP) ; cette phase-ci n'a
+> AUCUN effet de bord, seulement une lecture et un calcul — sa valeur vient
+> de toujours produire un verdict, même dégradé (MEDIUM/REJECT), plutôt que
+> de refuser dès qu'une pièce manque. Seule une véritable erreur d'usage
+> reste bloquante (`ConfidenceScoreError`, jamais un résultat dégradé) :
+> case_id ou branch incohérents entre les artefacts/chemins fournis, ou
+> aucun case_id exploitable du tout — toute autre absence/incohérence de
+> contenu dégrade le critère concerné à MISSING/NOT_RUN, jamais un crash.
+> Quatre critères indépendants, jamais un booléen simple
+> (PASS/FAIL/INCONCLUSIVE/MISSING, et NOT_RUN spécifiquement pour la
+> validation live — une absence normale et attendue, jamais confondue avec
+> un échec) : validation statique (Phase 8) et intégrité des fonctions
+> gelées (Phase 11-A) via le même vocabulaire ACCEPTED/REJECTED, vérifié
+> identique dans les deux modules avant d'écrire la traduction ; correctif
+> confirmé sur le case ciblé dérivé par défaut de patch_replay.json
+> (Phase 9), sauf si son outcome est resté NON_CONCLUANT ET que
+> live_validation.json (Phase 10) existe et porte refused=false, auquel cas
+> c'est SON outcome qui prévaut pour ce seul critère — un verdict Phase 9
+> déjà tranché (CORRECTIF_CONFIRME/BUG_PERSISTANT) n'est jamais réexaminé
+> par la Phase 10 ; validation live rapportée indépendamment, pour
+> transparence complète, mais n'entrant dans la décision que via ce même
+> mécanisme de préséance (jamais une cinquième branche testée seule).
+> Décision par règles ORDONNÉES, jamais une formule pondérée (conforme à la
+> demande d'origine) : statique != PASS -> REJECT ; intégrité = FAIL ->
+> REJECT (toujours dominant, même correctif confirmé par ailleurs) ;
+> correctif = FAIL -> REJECT ; correctif = PASS (statique/intégrité déjà
+> acquis à ce stade) -> HIGH ; sinon MEDIUM avec le détail exact du critère
+> bloquant dans `reason`. Nuance explicitée dans le module, non anticipée
+> mot pour mot par le prompt d'origine mais conforme à son intention :
+> l'intégrité fonctionne en VETO (seul un FAIL réel bloque), jamais en
+> confirmation positive requise comme la validation statique et le
+> correctif confirmé — une intégrité MISSING (Phase 11-A jamais lancée) ne
+> bloque donc pas à elle seule un HIGH, mais reste toujours visible telle
+> quelle dans `criteria`, jamais masquée par le verdict global.
+> Avertissement systématique, non conditionnel, présent dans `warnings`
+> quel que soit le verdict : le critère d'intégrité ne couvre à ce jour que
+> le hash des fonctions gelées (Phase 11, partie A) — la Partie B (rejeu de
+> DOM représentatifs) n'existe pas encore, donc un HIGH ne garantit pas
+> l'absence de régression comportementale, seulement l'absence de
+> modification détectée du code gelé. Verdict tracé sous
+> `confidence_scores/<case_id>/confidence_score.json`, même convention
+> JSON que les phases précédentes. Avec cette clôture, **1A → 12 — le cœur
+> du système tel que défini par le plan lui-même — sont désormais tous au
+> moins partiellement implémentés** ; le chantier principal passe aux
+> étapes 13 à 20 (automatisation opérationnelle), à la Phase 11 partie B
+> dès curation d'une bibliothèque regression_cases/, ou à la fermeture des
+> sous-chantiers encore ouverts (3D/3B.3/3B.4, point de vigilance Phase 10).
+> Mise à jour 2026-09-26 (suite 28) : point de vigilance de la Phase 10
+> fermé (fermeture réelle de la page live sur timeout, stage="action").
+> Exception délibérée et documentée à la règle de lecture seule habituelle :
+> `Survey/replay_browser.py::execute_case_action` (et son helper interne
+> `_run_with_deadline`) sont modifiés — autorisé explicitement parce que cette
+> fonction n'est PAS une fonction protégée du bot (absente d'`extractor_integrity
+> .json`) : c'est l'infrastructure de test d'autofix construite par ce chantier
+> lui-même (Phases 3C.4/9/10), pas un extracteur ni le dispatcher de
+> production. Modification strictement ADDITIVE : nouveau paramètre
+> `close_page_on_timeout: bool = True`, défaut préservant EXACTEMENT le
+> comportement actuel pour tout appelant qui ne le fournit pas (Phases
+> 3C.4/9, Chromium isolé jetable, aucune régression possible par
+> construction du défaut) ; seul le geste de fermeture de page à
+> l'échéance du watchdog est conditionné, jamais le calcul ni la détection
+> du dépassement de budget. `Survey/live_validator.py` (Phase 10) appelle
+> désormais explicitement `close_page_on_timeout=False` : un TIMEOUT du
+> dispatcher pendant un test live ne ferme plus la page CDP distante.
+> Conséquence réelle, non anticipée mot pour mot par le prompt d'origine
+> mais documentée plutôt que masquée : sans ce watchdog, le dispatcher
+> bloqué ne se débloque alors plus que par ses propres budgets internes —
+> c'est désormais le budget global du sous-processus (déjà existant côté
+> Phase 10, `_SUBPROCESS_MARGIN_S`) qui borne effectivement l'opération
+> dans ce cas, pas ce watchdog. Docstrings et avertissement JSON de la
+> Phase 10 corrigés en conséquence (l'ancienne affirmation "la page live a
+> déjà été fermée par execute_case_action" aurait été fausse une fois ce
+> patch appliqué — retirée, remplacée par la description du nouveau
+> comportement). Phase 9 (`Survey/patch_replay.py`) non touchée, continue
+> sur son comportement par défaut inchangé (Chromium isolé jetable, fermer
+> sa page reste sans conséquence). Limite de vérification disclosée plutôt
+> que masquée, cohérente avec celle déjà actée en Phase 10 : aucun
+> Chromium/point CDP réel disponible dans cet environnement pour un test de
+> bout en bout du nouveau paramètre.
 
 ## Contexte de travail actuel
 
@@ -617,22 +1088,47 @@ incident détecté
 3   PARTIELLEMENT TERMINÉE (3A terminée, correctif de fidélité espace insécable
     inclus ; 3B.1/3B.2/3B.5/3B.6/3B.8 terminés, oracle checked-state étendu au
     rejeu ; 3B.9/3B.10/3B.11 (scripts, feuilles de style, requêtes XHR/fetch
-    externes) et 3C.1 + 3C.2 + 3C.3 (document, ressources externes, CSP
-    relâchée, état runtime restauré, extraction+validator rejoués — frames/
-    shadow/frame selection hors périmètre, cf. 3B.3/3B.4) terminés ; 3C.4
-    démarrée (dispatcher réel + timeout + chargement pré-action +
-    comparaison structurée avec vocabulaire dédié sans ambiguïté) — chaîne
-    complète extraction réelle → dispatcher réel corrigé → succès réel →
+    externes) et 3C.1 + 3C.2 + 3C.3 + 3C.4 (document, ressources externes,
+    CSP relâchée, état runtime restauré, extraction+validator rejoués,
+    dispatcher réel + timeout + TRACE_REPLAY + comparaison structurée avec
+    vocabulaire dédié sans ambiguïté, oracle unique confirmé — frames/shadow/
+    frame selection hors périmètre, cf. 3B.3/3B.4) terminés — chaîne complète
+    extraction réelle → dispatcher réel corrigé → succès réel →
     CORRECTIF_CONFIRME validée de bout en bout sur le bug Decipher/rowpicker
     qui a motivé ce chantier, clic visuellement confirmé ;
-    3B.3/3B.4/reste de 3C.4 (TRACE_REPLAY, oracle vraiment unique),
-    TRACE_REPLAY)/3D à faire — voir Phase 3)
+    3B.3/3B.4/reste de 3D à faire — voir Phase 3)
 4   terminée
 5   terminée
-6   terminée (point de vigilance data ouvert — voir note ci-dessus)
+6   terminée
 7   PARTIELLEMENT TERMINÉE (préparation d'espace Git isolé faite pour
-    stage="extraction" REPRODUIT/certain ; stage="action" en attente de 3C ;
-    aucune invocation automatique d'agent de coding — voir Phase 7)
+    stage="extraction" (REPRODUIT/certain) et stage="action" (REPRODUIT +
+    real_dispatch_replay BUG_PERSISTANT, coût Chromium systématique en Phase 4) ;
+    résultat désormais persisté (worktree.json), traçabilité alignée sur les
+    phases 2 à 6 ; aucune invocation automatique d'agent de coding — voir
+    Phase 7)
+8   TERMINÉE (compile/import/lint Ruff/tests existants sur les seuls fichiers
+    modifiés, jamais l'ensemble du dépôt ; aucune suite de tests versionnée
+    trouvée dans ce dépôt à ce jour, documenté plutôt que masqué — voir
+    Phase 8)
+9   TERMINÉE (rejeu du code patché dans le worktree, en sous-processus neuf
+    pour éviter le cache sys.modules du dépôt principal ; ne valide le patch
+    que sur CORRECTIF_CONFIRME, jamais un entre-deux ; suite de cas
+    historiques voisins volontairement différée — voir Phase 9)
+10  TERMINÉE (garde-fou AUTOFIX_LIVE_VALIDATE="1" vérifié à deux endroits ;
+    connexion connect_over_cdp à une page déjà ouverte par l'opérateur,
+    jamais de navigation/close() sur la session distante ; point de
+    vigilance de la fermeture réelle de page sur timeout (stage="action")
+    résolu — close_page_on_timeout=False, voir Phase 10)
+11  PARTIELLEMENT TERMINÉE (partie A — hash d'intégrité des fonctions gelées,
+    extractor_integrity_gate.py + CLI, code gelé chargé depuis le worktree
+    sous un nom de module dédié, jamais du dépôt principal ; toute anomalie
+    est un rejet ; partie B — rejeu de regression_cases/ — différée faute de
+    bibliothèque de cas curée — voir Phase 11)
+12  TERMINÉE (confidence_score.py + CLI ; aucun effet de bord, produit
+    toujours un verdict même dégradé ; règles ordonnées HIGH/MEDIUM/REJECT,
+    intégrité en veto plutôt qu'en confirmation requise ; avertissement
+    systématique : "régressions" ne couvre encore que le hash, pas un rejeu
+    DOM — voir Phase 12)
 ```
 
 Décision importante :
@@ -1772,7 +2268,7 @@ logique doit vivre dans **une fonction oracle unique**, appelée à la fois par
 `action_validator.py` (Phase 1B) et par le replay (Phase 3C/3D) — pas dans
 deux endroits différents.
 
-**Statut : PARTIELLE — `Survey/replay_browser.py::execute_case_action`
+**Statut : TERMINÉE — `Survey/replay_browser.py::execute_case_action`
 exécute `action_dispatcher.execute_actions_plan` (non modifié) sur la page
 rejouée, avec garde-fou de timeout (watchdog, jamais de verdict tardif après
 budget dépassé) et statuts `SUCCESS`/`FAILURE`/`TIMEOUT`/`ERROR`/
@@ -1785,22 +2281,39 @@ via `_compare_validation` (réutilisée, inchangée) puis traduit par
 `_action_outcome` en vocabulaire distinct et sans ambiguïté
 (`CORRECTIF_CONFIRME`/`BUG_PERSISTANT`/`NON_CONCLUANT`), pour ne pas
 réutiliser tel quel `REPRODUIT`/`NON_REPRODUIT`/`DIFFERENT` (vocabulaire de
-fidélité de rejeu passif, ambigu après une exécution réelle). Validé de bout
-en bout sur le case de référence Decipher/rowpicker : extraction identique à
-l'origine sur le document pré-action, dispatcher réel corrigé → `SUCCESS`,
-clic visuellement confirmé, validator → `CORRECTIF_CONFIRME` sans ambiguïté.
-Non fait : `TRACE_REPLAY` (déclassement automatique après `TIMEOUT`, pas
-implémenté — un `TIMEOUT` est aujourd'hui rapporté tel quel, pas encore
-reclassé) ; fusion plus profonde en fonction oracle vraiment unique (le pari
-`dispatcher_success=false` mais DOM prouvant le contraire vit encore
-séparément dans `action_validator.py` et dans `_action_outcome`, pas une
-seule implémentation partagée).**
+fidélité de rejeu passif, ambigu après une exécution réelle). Après un
+`TIMEOUT`, `_trace_replay_fallback` rejoue `action_validator.validate_actions`
+(non modifié) sans pilote live, via `captured_option_states`
+(`runtime_state.json`) — même mécanisme que le rejeu statique passif, jamais
+réimplémenté ; exposé dans un champ distinct (`trace_replay`), avec le
+vocabulaire de fidélité (pas celui du dispatch réel), sans jamais réécrire le
+statut `TIMEOUT`. Fonction oracle unique confirmée : les trois chemins (rejeu
+statique passif, dispatch réel, repli après timeout) délèguent tous
+intégralement à `action_validator.py`, aucune réimplémentation du pari nulle
+part — vérifié directement dans le code après qu'une première vérification
+automatisée s'était trompée sur ce point précis (confusion entre "champ resté
+`None`" et "fonction jamais appelée"). Validé de bout en bout sur le case de
+référence Decipher/rowpicker : extraction identique à l'origine sur le
+document pré-action, dispatcher réel corrigé → `SUCCESS`, clic visuellement
+confirmé, validator → `CORRECTIF_CONFIRME` sans ambiguïté. `TRACE_REPLAY`
+revu par relecture de code, pas encore observé sur un vrai dépassement de
+budget en conditions réelles.**
 
 ------------------------------------------------------------------------
 
 ## Phase 3D --- Classification automatique de rejouabilité
 
-**Statut : À FAIRE.**
+**Statut : PARTIELLE — `Survey/replayability_classifier.py` +
+`tools/classify_replayability.py` implémentés, en lecture seule sur
+`diagnosis.json` (Phase 4) déjà produit, aucun replay/dispatcher/navigateur
+recalculé. `STATIC_DOM`/`BROWSER_CAPSULE`/`TRACE_REPLAY` correctement produits
+à partir des signaux déjà existants ; `EXTERNAL_NON_REPLAYABLE` structurellement
+défini mais jamais produit (aucun signal de ce type dans le pipeline à ce
+jour). Validé sur trois cases réels (suite 21). `real_extraction_replay`
+(Phase 4, suite 22) existe désormais pour `stage="extraction"`, mais reste
+purement informatif — le classificateur ne le lit pas encore : `UNDETERMINED`
+persiste pour `stage="extraction"` hors `STATIC_DOM`, asymétrie encore réelle
+avec `stage="action"`, câblage restant à faire.**
 
 Chaque failure case reçoit un mode de replay explicite :
 
@@ -2073,8 +2586,8 @@ Trop de contexte dégrade souvent le diagnostic.
 À partir du dossier `failure_case`, on génère ton prompt standard.
 
 **Statut : TERMINÉE — `Survey/prompt_generator.py` + `tools/generate_prompt.py`
-implémentés et validés. Un point de vigilance data reste ouvert (voir ci-dessous)
-avant tout usage en volume.**
+implémentés et validés. Le point de vigilance data ci-dessous est fermé (voir
+Phase 2, `_sanitize_validation_report`).**
 
 ### Fidélité au gabarit réel, pas à l'esquisse conceptuelle
 
@@ -2115,17 +2628,19 @@ les identifiants de registry internes (`target_id`, `action_index`,
 `block_index`) — cette section doit se lire comme un bug rapporté normalement,
 jamais comme un export de données de pipeline.
 
-### Point de vigilance ouvert : `value` d'un issue, non sanitisé
+### Point de vigilance fermé : `value` d'un issue, désormais sanitisé en Phase 2
 
 Le champ `value` d'un issue de `validation_report.json` (repris dans le
-symptôme via `_SAFE_ISSUE_FIELDS`) n'a jamais transité par la sanitisation mise
-en place en Phase 2 — celle-ci ne couvre que `meta.json` et les DOM HTML, pas
-`validation_report.json`. Si ce champ contient parfois une donnée réellement
-saisie pour le répondant (ex. un code postal, cf. le cas de référence IFOP
-zip2city), elle se retrouve recopiée sans filtre dans un texte destiné à une
-conversation Codex externe. **À vérifier sur des cases réels avant d'utiliser
-cet outil en volume ou avant la Phase 7** ; si confirmé, sanitiser à la source
-(Phase 2, sur `validation_report.json`) ou exclure ce champ ici.
+symptôme via `_SAFE_ISSUE_FIELDS`) n'a longtemps transité par aucune
+sanitisation, contrairement à `meta.json` et aux DOM HTML — risque documenté
+pour un champ de saisie libre (ex. un code postal, cf. le cas de référence
+IFOP zip2city). Fermé en Phase 2 (`Survey/failure_case_builder.py::
+_sanitize_validation_report`, cf. historique 2026-09-26 suite 19) : `value`
+n'est conservée que si elle correspond à une option prédéfinie réelle du bloc
+(`question_blocks.json` du même snapshot), jamais devinée depuis `itype` ;
+toute ambiguïté est traitée comme potentiellement sensible et retirée. Cette
+section continue de lire un `validation_report.json` déjà sanitisé à la
+source — rien à faire ici.
 
 Mais **Codex ne sera pas encore exécuté automatiquement** — c'est l'objet de
 la Phase 7.
@@ -2135,13 +2650,24 @@ la Phase 7.
 # Phase 7 --- Génération automatique d'un patch dans une branche isolée
 
 **Statut : PARTIELLEMENT TERMINÉE — `Survey/autofix_worktree.py` +
-`tools/prepare_autofix_worktree.py` implémentés et validés, pour le seul
-sous-ensemble `stage="extraction"` avec `replay.verdict="REPRODUIT"` et
-`confidence_global="certain"` (le sous-ensemble `STATIC_DOM` le plus solide,
-sans attendre la Phase 3D). `stage="action"` reste hors périmètre : un
-verdict `REPRODUIT` y est attendu par construction (le replay ne réexécute
-jamais le dispatcher réel), donc pas une preuve suffisante pour déclencher
-une préparation automatique — en attente de la Phase 3C.**
+`tools/prepare_autofix_worktree.py` implémentés et validés. `stage="extraction"` :
+`replay.verdict="REPRODUIT"` et `confidence_global="certain"` (le sous-ensemble
+`STATIC_DOM` le plus solide, sans attendre la Phase 3D). `stage="action"` :
+maintenant dans le périmètre — 3C.4 étant close, `replay.verdict="REPRODUIT"`
+seul (attendu par construction, le replay passif ne réexécute jamais le
+dispatcher réel) ne suffit plus, une exigence supplémentaire s'ajoute :
+`real_dispatch_replay.validation_comparison.outcome="BUG_PERSISTANT"`
+(Phase 4, confirmation active par réexécution réelle du dispatcher que le bug
+persiste sur le code non corrigé). Coût assumé : cette réexécution tourne
+systématiquement dans `diagnose_failure_case` pour tout case action, pas à la
+demande — Phase 4 devient plus lente sur ce stage, pas encore chronométré sur
+un vrai run. Complété : le résultat (`case_id`/`branch`/`base_sha`/
+`worktree_path`/`source_branch`/`prompt_path`) est désormais persisté sous
+`autofix_worktrees/<case_id>/worktree.json`, même convention JSON que les
+phases précédentes — sans cela, aucune phase avale n'avait d'artefact à lire
+pour retrouver le worktree d'un case, contrairement au principe suivi partout
+ailleurs dans ce pipeline. C'est cet artefact, et lui seul, que consomme la
+Phase 8.**
 
 **Précision sur le périmètre réellement couvert :** cette phase prépare
 l'espace de travail isolé (branche + worktree Git dédiés) et s'arrête là —
@@ -2185,6 +2711,26 @@ L'agent ne doit travailler que dans une copie/branche dédiée.
 
 # Phase 8 --- Validation statique automatique
 
+**Statut : TERMINÉE — `Survey/static_validator.py` + `tools/validate_patch_static.py`.
+Lecture seule sur le seul artefact produit par la Phase 7 (`worktree.json`) —
+jamais `manifest.json`/`diagnosis.json` rouverts, jamais l'éligibilité Phase 7
+recalculée. Fichiers vérifiés : uniquement le sous-ensemble modifié entre
+`base_sha` et l'état courant du worktree (Git diff ∪ nouveaux fichiers non
+trackés), jamais l'ensemble du dépôt. Quatre vérifications, chacune sous son
+propre budget de temps explicite : compilation isolée (`py_compile`), import
+isolé (même interpréteur/venv que l'outil, jamais un `python` résolu au hasard
+sur PATH), lint minimal via Ruff (`--isolated`, `F821`/`F822`/`F823` uniquement
+— jamais de règle de style), tests unitaires déjà associés aux fichiers
+modifiés si une convention fichier-source → fichier-de-test existe. Aucune
+trouvée à ce jour dans ce dépôt (aucun `tests/`, aucun `conftest.py`, pytest
+non installé) — documenté explicitement plutôt que masqué ; le détecteur
+s'activera de lui-même le jour où une convention apparaît réellement, sans
+nouveau patch. L'absence de test associé n'est jamais à elle seule un motif
+de rejet — seul un test déjà existant qui échoue réellement fait échouer la
+phase. Verdict `ACCEPTED`/`REJECTED` tracé sous
+`autofix_static_validations/<case_id>/validation_static.json`. Aucun test live
+déclenché, quel que soit le verdict.**
+
 Avant même de tester le comportement :
 
 ``` text
@@ -2215,6 +2761,30 @@ Aucun test live.
 ------------------------------------------------------------------------
 
 # Phase 9 --- Replay automatique du bug
+
+**Statut : TERMINÉE — `Survey/patch_replay.py` + `tools/replay_patch.py`.
+Lecture seule sur les Phases 4/7/8 (diagnosis.json, worktree.json,
+validation_static.json) — aucune n'est recalculée, aucune n'est rouverte
+directement (manifest.json n'est lu qu'indirectement, par les mécanismes de
+rejeu déjà existants). Le patch n'est rejoué que si la Phase 8 a déjà accepté
+(`verdict="ACCEPTED"`), sinon refus contrôlé avant tout effet de bord. Le
+signal "avant patch" (`REPRODUIT` en extraction,
+`real_dispatch_replay.validation_comparison.outcome="BUG_PERSISTANT"` en
+action) vient tel quel de la Phase 4, jamais recalculé — seul le code après
+patch est rejoué, dans un sous-processus Python neuf pointant vers le
+worktree (jamais le process appelant, dont `sys.modules` garderait sinon en
+cache le code non corrigé du dépôt principal). Mécanisme de rejeu réutilisé
+tel quel par stage (`Survey.failure_replay.replay_failure_case` pour
+l'extraction, la même séquence que
+`Survey/failure_diagnosis.py::_attempt_real_dispatch_replay` pour l'action),
+jamais réimplémenté ; résolution de la racine de paquet du worktree reprise
+telle quelle de la Phase 8 (`Survey.static_validator._resolve_package_root`).
+Verdict strict : seul `CORRECTIF_CONFIRME` valide le patch — un timeout, un
+verdict `NON_CONCLUANT`, `DIFFERENT` ou `NON_REJOUABLE` sont tous traités
+comme un rejet, jamais un entre-deux, même quand un signal partiel (trace
+replay) semble favorable. Le rejeu de cas historiques voisins (suite de
+non-régression DOM) reste un sous-chantier explicitement différé — cette
+phase ne rejoue que le case ciblé.**
 
 Si le cas est rejouable :
 
@@ -2254,6 +2824,28 @@ validation réelle.
 ------------------------------------------------------------------------
 
 # Phase 10 --- Test live attach contrôlé
+
+**Statut : TERMINÉE — `Survey/live_validator.py` + `tools/validate_patch_live.py`.
+Garde-fou `AUTOFIX_LIVE_VALIDATE="1"` (égalité stricte) vérifié à deux endroits
+indépendants (CLI avant tout import d'argparse, puis `check_preconditions()`
+en défense en profondeur). Éligible seulement quand la Phase 9 est restée
+`NON_CONCLUANT` (`refused=False`) — jamais quand elle a déjà confirmé le
+correctif, ni quand elle a confirmé que le bug persiste. Ne lance ni ne
+configure Chrome : se connecte via `connect_over_cdp` à une page déjà ouverte
+par l'opérateur (jamais `new_page()`, jamais de navigation, jamais de
+`close()` sur la session distante). Une seule tentative par invocation,
+jamais de boucle interne.**
+
+**Point de vigilance découvert en écrivant ce module — RÉSOLU (suite 28) :
+pour `stage="action"`, `execute_case_action` fermait réellement la page si
+son propre budget interne était dépassé — sans conséquence sur un Chromium
+isolé jetable, mais réel sur une page CDP live. `Survey/replay_browser.py::
+execute_case_action` accepte désormais un paramètre additif
+`close_page_on_timeout` (défaut `True`, comportement inchangé pour les
+Phases 3C.4/9) ; ce module l'appelle avec `close_page_on_timeout=False` — un
+timeout du dispatcher ne ferme plus la page distante. Conséquence assumée :
+le dispatcher bloqué ne se débloque alors plus que par le budget global du
+sous-processus de cette phase, pas par ce watchdog.**
 
 Certains bugs ne peuvent être validés qu'avec une vraie page.
 
@@ -2309,6 +2901,34 @@ pas ; seul son déclenchement devient systématique pour cette catégorie.
 
 # Phase 11 --- Validation anti-régression
 
+**Statut : PARTIELLEMENT TERMINÉE.**
+
+**Partie A (hash d'intégrité des fonctions gelées) : TERMINÉE —
+`Survey/extractor_integrity_gate.py` + `tools/check_extractor_integrity.py`.
+Complément déterministe, jamais un remplacement, au rejeu DOM décrit
+ci-dessous : un hash SHA256 par fonction protégée
+(`Survey/extractor_integrity.py`/`.json`, fournis tels quels, jamais
+réimplémentés ni modifiés) détecte toute modification du corps d'une
+fonction gelée, même une modification qui ne casserait aucun cas de test
+rejoué. Éligibilité : `worktree.json` (Phase 7, worktree Git réel) +
+`validation_static.json` (Phase 8) `ACCEPTED` — orthogonal aux Phases 9/10.
+Code gelé et registre relus DEPUIS LE WORKTREE patché, jamais du dépôt
+principal ; `extractor_integrity.py` chargé dynamiquement sous un nom de
+module dédié pour ne jamais entrer en collision avec un import déjà en
+cache. Budget de temps explicite sur le parcours du registre, dépassement
+traité en erreurs explicites. Toute anomalie (hash différent ou fonction/
+fichier introuvable) est un motif de rejet, jamais un passe-droit. Registre
+fourni corrigé avant intégration : une clé dupliquée
+(`Survey/input_slider.py::set_sliderpoints`) aurait, avec la racine
+`worktree_path/Survey` (seule cohérente avec le reste du registre), rejeté
+systématiquement tout patch dès le premier run — retirée avant que ce module
+ne soit écrit.**
+
+**Partie B (rejeu de `regression_cases/` décrit ci-dessous) : DIFFÉRÉE —
+aucune bibliothèque de DOM représentatifs n'est encore curée pour
+l'alimenter, même principe que les sous-chantiers déjà différés en
+Phase 9/10.**
+
 C'est là que `BOT_EVOLUTION_MEMORY.md` devient particulièrement utile.
 
 Avant d'accepter un patch :
@@ -2343,6 +2963,25 @@ Une sélection de **DOM représentatifs** suffit.
 ------------------------------------------------------------------------
 
 # Phase 12 --- Score de confiance du patch
+
+**Statut : TERMINÉE — `Survey/confidence_score.py` + `tools/score_patch_confidence.py`.
+Différence assumée par rapport aux Phases 7 à 11 : celles-ci refusent avant
+tout effet de bord ; cette phase n'en a aucun (lecture + calcul seulement) et
+produit toujours un verdict, même dégradé — seule une véritable incohérence
+d'usage (case_id/branch incohérents entre artefacts fournis) reste bloquante.
+Quatre critères indépendants (PASS/FAIL/INCONCLUSIVE/MISSING, NOT_RUN pour la
+validation live) dérivés du vocabulaire déjà en usage dans les Phases 8/9/10/
+11-A, jamais redéfini en dur. Décision par règles ordonnées, jamais une
+formule pondérée : statique≠PASS ou intégrité=FAIL ou correctif=FAIL →
+REJECT (intégrité toujours dominante) ; correctif=PASS (le reste déjà acquis)
+→ HIGH ; sinon MEDIUM avec la raison exacte. Nuance notable : l'intégrité
+fonctionne en veto (seul un FAIL bloque), jamais en confirmation positive
+requise — une intégrité MISSING ne bloque pas HIGH à elle seule, mais reste
+visible telle quelle dans `criteria`. Avertissement systématique, présent
+quel que soit le verdict : "régressions" ne couvre à ce jour que le hash des
+fonctions gelées (Phase 11-A), pas un rejeu DOM comportemental (Phase 11-B,
+non construite) — un HIGH ne garantit donc pas l'absence de régression
+comportementale.**
 
 On évite le choix binaire trop simpliste :
 
@@ -2754,18 +3393,18 @@ Je suivrais exactement cet ordre :
     (3B.1/3B.2/3B.5/3B.6/3B.8/3B.9/3B.10/3B.11 faits — 3B.11 : requêtes
     XHR/fetch externes, cf. historique suite 5 ; 3B.3/3B.4 différées,
     prochain sous-chantier après mesure sur cas réels)
-3C  Replay Chromium local — PARTIELLEMENT TERMINÉE (3C.1 + 3C.2 + 3C.3 clos
-    sur le périmètre retenu : document principal, scripts/styles/XHR-fetch
-    servis, CSP relâchée, état runtime restauré, extraction+validator rejoués
-    et comparés ; frames/shadow roots/frame selection hors périmètre (cf.
-    3B.3/3B.4). 3C.4 démarrée : dispatcher réel avec garde-fou de timeout,
-    chargement pré-action, comparaison structurée avec le validator traduite
-    en vocabulaire dédié sans ambiguïté (CORRECTIF_CONFIRME/BUG_PERSISTANT/
-    NON_CONCLUANT) — validé de bout en bout (extraction identique +
-    dispatcher SUCCESS + validator CORRECTIF_CONFIRME + clic visuellement
-    confirmé) sur le bug Decipher/rowpicker qui a motivé ce chantier. Reste :
-    TRACE_REPLAY, fusion en fonction oracle vraiment unique avec
-    action_validator.py. Chantier principal.
+3C  Replay Chromium local — TERMINÉE sur le périmètre retenu (3C.1 + 3C.2 +
+    3C.3 + 3C.4) : document principal, scripts/styles/XHR-fetch servis, CSP
+    relâchée, état runtime restauré, extraction+validator rejoués et
+    comparés, dispatcher réel avec garde-fou de timeout, chargement
+    pré-action, TRACE_REPLAY après timeout, comparaison structurée avec
+    vocabulaire dédié sans ambiguïté (CORRECTIF_CONFIRME/BUG_PERSISTANT/
+    NON_CONCLUANT), oracle unique confirmé (aucune réimplémentation du pari,
+    les trois chemins délèguent à action_validator.py) — validé de bout en
+    bout (extraction identique + dispatcher SUCCESS + validator
+    CORRECTIF_CONFIRME + clic visuellement confirmé) sur le bug
+    Decipher/rowpicker qui a motivé ce chantier. Frames/shadow roots/frame
+    selection hors périmètre (cf. 3B.3/3B.4). Chantier clos.
 3D  Classification de rejouabilité (STATIC_DOM/BROWSER_CAPSULE/TRACE_REPLAY/
     EXTERNAL_NON_REPLAYABLE)
 4   Diagnostic automatique — TERMINÉE (failure_diagnosis.py + CLI)
@@ -2773,13 +3412,32 @@ Je suivrais exactement cet ordre :
 6   Génération du prompt Codex — TERMINÉE (prompt_generator.py + CLI, vigilance data ouverte)
 7   Patch dans branche isolée — PARTIELLEMENT TERMINÉE (autofix_worktree.py +
     CLI, préparation branche/worktree pour stage="extraction"
-    REPRODUIT/certain ; stage="action" en attente de 3C ; pas d'invocation
-    automatique d'agent de coding à ce stade)
-8   Tests statiques
-9   Replay post-patch
-10  Validation live attach — devient la voie normale des cas EXTERNAL_NON_REPLAYABLE (post-3D)
-11  Suite de régression
-12  Score de confiance
+    (REPRODUIT/certain) et stage="action" (REPRODUIT +
+    real_dispatch_replay BUG_PERSISTANT, 3C étant close) ; résultat persisté
+    (worktree.json) ; pas d'invocation automatique d'agent de coding à ce
+    stade)
+8   Tests statiques — TERMINÉE (static_validator.py + CLI ; compile/import/
+    lint Ruff (F821/F822/F823)/tests existants, bornés aux fichiers modifiés
+    du worktree ; aucune suite de tests versionnée trouvée dans ce dépôt à ce
+    jour)
+9   Replay post-patch — TERMINÉE (patch_replay.py + CLI ; rejeu du code
+    patché en sous-processus neuf, contre le seul signal avant-patch déjà
+    connu de la Phase 4 ; ne valide que sur CORRECTIF_CONFIRME ; suite de cas
+    historiques voisins différée)
+10  Validation live attach — TERMINÉE (live_validator.py + CLI ; éligible
+    seulement sur patch_replay.json NON_CONCLUANT ; garde-fou
+    AUTOFIX_LIVE_VALIDATE double-vérifié ; point de vigilance de la fermeture
+    réelle de page sur timeout (stage="action") résolu par
+    close_page_on_timeout=False dans replay_browser.py) ;
+    devient la voie normale des cas EXTERNAL_NON_REPLAYABLE (post-3D)
+11  Suite de régression — PARTIELLEMENT TERMINÉE (partie A : hash
+    d'intégrité des fonctions gelées, extractor_integrity_gate.py + CLI,
+    verdict sur le worktree patché uniquement ; partie B : rejeu de
+    regression_cases/ différé, aucune bibliothèque de cas curée)
+12  Score de confiance — TERMINÉE (confidence_score.py + CLI ; aucun
+    effet de bord, verdict toujours produit ; HIGH/MEDIUM/REJECT par
+    règles ordonnées ; avertissement systématique sur la portée limitée
+    du critère "régressions" tant que la Phase 11-B n'existe pas)
 13  UI/review humaine simplifiée
 14  Proposition BEM
 15  Commit automatique
