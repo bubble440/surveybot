@@ -799,6 +799,138 @@ niveau tant que le niveau précédent n'est pas fiable.
 > `stage="action"` (voir « Limite actuelle » de la Phase 9 ci-dessous) tant
 > qu'un verdict `TRACE_REPLAY` n'est pas encore distingué d'un `REPRODUIT` par
 > un score de confiance dédié (Phase 12).
+> Mise à jour 2026-09-27 (suite 24) : Phase 9 clôturée (déjà fusionnée dans
+> cette branche par un autre chantier avant ce patch, jamais documentée
+> jusqu'ici dans ce fichier — corrigé ci-dessous) et Phase 10 implémentée.
+>
+> Phase 9 : `Survey/patch_replay.py` + `tools/replay_patch.py`. Rejoue le bug
+> dans le worktree autofix (Phase 7) déjà accepté statiquement (Phase 8,
+> `validation_static.json.verdict="ACCEPTED"` exigé, jamais recalculé), avec
+> le code réellement présent dans ce worktree — sous-processus Python neuf
+> (`sys.executable`), racine de paquet résolue via
+> `Survey.static_validator._resolve_package_root` (Phase 8, non modifiée,
+> réutilisée telle quelle), jamais ce process-ci (déjà chargé
+> `Survey.replay_browser`/`failure_replay`/`static_validator` depuis le dépôt
+> principal — `sys.modules` les garderait en cache sinon). Mécanisme de rejeu
+> repris tel quel selon le stage : `stage="extraction"` réutilise le replay
+> STATIQUE (`Survey.failure_replay.replay_failure_case`, driver lxml, 3A) ;
+> `stage="action"` réutilise la même séquence que
+> `Survey/failure_diagnosis.py::_attempt_real_dispatch_replay`
+> (`IsolatedReplayBrowser` + `extract_case_blocks` + `execute_case_action`,
+> Phase 3C.4). Verdict après patch traduit dans le vocabulaire déjà introduit
+> par la Phase 3C.4 (`OUTCOME_FIX_CONFIRMED`/`OUTCOME_BUG_PERSISTS`/
+> `OUTCOME_INCONCLUSIVE` = `CORRECTIF_CONFIRME`/`BUG_PERSISTANT`/
+> `NON_CONCLUANT`, `Survey.replay_browser`, non modifié) — jamais une seconde
+> échelle de confiance ; pour `stage="extraction"`, qui n'avait pas encore
+> cette traduction côté dispatch réel, une table symétrique est ajoutée par ce
+> module (NON_REPRODUIT -> CORRECTIF_CONFIRME, REPRODUIT -> BUG_PERSISTANT,
+> tout le reste -> NON_CONCLUANT). Seul `CORRECTIF_CONFIRME` valide le patch
+> (`patch_validated=true`) — jamais une absence de reproduction ambiguë ni un
+> budget dépassé (`TIMEOUT` reste `NON_CONCLUANT` même si `trace_replay` porte
+> un signal favorable). Précondition vérifiée en bloc, jamais la première
+> raison seule : `validation_static.json.verdict="ACCEPTED"`, `worktree.json`
+> complet et pointant un vrai worktree Git, `diagnosis.json.stage` dans le
+> périmètre, `case_id` cohérent entre toutes les sources et sûr comme
+> composant de chemin. Verdict tracé sous
+> `patch_replays/<case_id>/patch_replay.json`, même convention JSON
+> (schema_version, horodatage), refus explicite si la sortie existe déjà sans
+> `--force`.
+>
+> Phase 10 : nouveau module `Survey/live_validator.py` + façade CLI
+> `tools/validate_patch_live.py` — test live attach contrôlé d'un patch
+> `NON_CONCLUANT` (Phase 9) sur une VRAIE page déjà ouverte par un opérateur
+> (Playwright `connect_over_cdp`), potentiellement une vraie session de
+> répondant. Garde-fou de sécurité non négociable :
+> `$env:AUTOFIX_LIVE_VALIDATE` doit valoir EXACTEMENT `"1"` (égalité stricte,
+> contrairement au parsing tolérant de `SURVEY_OBSERVABILITY` en Phase 1A —
+> un garde-fou de sécurité mérite moins d'ambiguïté qu'un simple flag
+> d'observabilité), vérifié à deux endroits : en tout premier dans
+> `tools/validate_patch_live.py::main()` (avant même d'importer `argparse`,
+> avant toute tentative de connexion CDP — aucun argument CLI ne peut
+> l'atteindre) et revérifié indépendamment dans `check_preconditions()`
+> (défense en profondeur si ce module est appelé directement). Précondition
+> vérifiée en bloc, même principe que la Phase 9 :
+> `patch_replay.json.refused=false` ET `outcome="NON_CONCLUANT"` EXACTEMENT
+> (ni `CORRECTIF_CONFIRME` : déjà validé, ni `BUG_PERSISTANT` : patch déjà
+> connu mauvais — aucun des deux ne justifie de consommer une session live) ;
+> `worktree.json` (mêmes champs que la Phase 9, worktree_path revérifié comme
+> vrai worktree Git) ; `diagnosis.json.stage` cohérent avec
+> `patch_replay.json.stage` ; `--cdp-endpoint` explicite fourni par
+> l'opérateur (http(s)/ws(s), jamais lancé/configuré par cet outil) ;
+> `case_id` cohérent entre toutes les sources et sûr comme composant de
+> chemin (vérification inline, même précédent que `Survey/patch_replay.py`
+> face à `Survey/autofix_worktree.py::_is_safe_case_id` : chaque phase porte
+> sa propre vérification minimale plutôt que d'importer un symbole privé
+> d'un module de phase frère).
+>
+> Vérifié avant écriture, pas supposé : `Survey.replay_browser.extract_case_blocks`/
+> `execute_case_action` (Phase 3C.4, non modifiés) n'exigent de `page` qu'une
+> API Playwright standard (`page.evaluate`, `page._impl_obj`/`page._loop` pour
+> le budget d'`execute_case_action`), présente aussi bien sur une page issue
+> de `launch()` que sur une page déjà ouverte rejointe par `connect_over_cdp`
+> — aucun changement de signature nécessaire, seule l'origine de `page`
+> change. Divergence documentée avec le `stage="extraction"` de la Phase 9 :
+> son mécanisme (replay statique lxml) est structurellement incompatible avec
+> une page CDP live (pas de snapshot figé à charger, la page EST déjà l'état
+> à observer) ; ce module utilise à la place, pour les DEUX stages,
+> `extract_case_blocks` seul (stage extraction, qui exécute déjà en interne
+> `validate_question_blocks` pour ce stage) ou `extract_case_blocks` +
+> `execute_case_action` (stage action) — exactement le mécanisme déjà employé
+> par `Survey/failure_diagnosis.py::_attempt_real_extraction_replay`/
+> `_attempt_real_dispatch_replay`, substituant uniquement l'origine de `page`.
+>
+> Connexion : `connect_over_cdp` uniquement (jamais `launch()`/
+> `launch_persistent_context`, aucun navigateur lancé/configuré par cet
+> outil), jamais de nouvelle page ni de navigation — toutes les pages de tous
+> les contextes du navigateur distant sont énumérées ; une seule -> utilisée ;
+> plusieurs -> désambiguïsation par correspondance avec l'URL d'origine du
+> case (`meta.json`, sans query string) si elle isole une page unique, sinon
+> refus explicite listant les URLs candidates, jamais devinée ; aucune ->
+> refus explicite. Jamais `browser.close()`/`context.close()`/`page.close()`
+> sur la session CDP : seul le driver Playwright local est arrêté en fin de
+> script (déconnexion, pas fermeture du navigateur distant) — sémantique
+> documentée de `connect_over_cdp`, non vérifiable empiriquement dans
+> l'environnement de ce patch (aucun Chromium/point CDP réel disponible),
+> disclosée explicitement plutôt que masquée. Limite résiduelle non
+> neutralisée, disclosée plutôt que masquée : pour `stage="action"`,
+> `execute_case_action` (non modifié) ferme elle-même la PAGE (jamais le
+> navigateur) si son propre budget interne est dépassé — comportement déjà
+> existant et sûr sur le Chromium isolé jetable de la Phase 9, mais réel sur
+> une page live (un `TIMEOUT` du dispatcher ferme réellement l'onglet de
+> l'opérateur/du répondant) ; ce module ne peut pas neutraliser ce
+> comportement sans modifier `Survey/replay_browser.py` (interdit par ce
+> chantier) — seule atténuation possible : un budget conservateur et cette
+> disclosure explicite. Aucun risque équivalent pour `stage="extraction"`
+> (`extract_case_blocks` ne mute jamais la page ; une interruption brutale du
+> sous-processus ne touche jamais la page distante, seule notre connexion
+> locale meurt avec lui).
+>
+> Un seul budget de temps explicite exposé (`--budget-s`, connexion + rejeu
+> confondus — jamais deux budgets qui pourraient s'emboîter de façon fragile,
+> défaut dérivé de `_DEFAULT_DISPATCH_BUDGET_S` + marge) ; un seul
+> sous-processus, un seul essai
+> (`subprocess.run(timeout=budget_s + marge)`, stratégie reprise à
+> l'identique de `Survey/patch_replay.py::_run_replay_subprocess`, jamais
+> réimplémentée en parallèle), jamais de boucle interne, jamais un deuxième
+> essai automatique. Résultat tracé sous
+> `live_validations/<case_id>/live_validation.json`, même convention JSON.
+>
+> Vérifié dans cet environnement (aucun Chromium/point CDP réel disponible) :
+> compilation, lint (Ruff `F821`/`F822`/`F823`, aucune violation), import
+> isolé, non-régression du lint des Phases 4/7/8/9 existantes (mêmes 5
+> erreurs préexistantes et sans rapport, dans des fichiers non touchés par ce
+> patch), et bout en bout jusqu'à la connexion CDP elle-même via des points
+> CDP factices : refus contrôlés (garde-fou de sécurité, précondition,
+> endpoint invalide), sortie déjà existante/`--force`, désambiguïsation de
+> page (0/1/plusieurs pages, testée directement sur `_connect_and_get_page`
+> avec des objets Playwright simulés), et dépassement de budget (`TIMEOUT`
+> propre après exactement `budget_s + marge`, sans processus laissé pendre).
+> Non vérifié, faute de navigateur réel disponible dans cet environnement : la
+> connexion CDP à un vrai Chromium, la fermeture effective (ou non) du
+> navigateur distant par `connect_over_cdp`, et le comportement réel
+> d'`execute_case_action` sur une page live. Le chantier principal reste la
+> Phase 3D (3B.3/3B.4 mesurés avant construction) et la Phase 11 (suite de
+> non-régression).
 
 ## Contexte de travail actuel
 
@@ -852,6 +984,16 @@ incident détecté
     modifiés, jamais l'ensemble du dépôt ; aucune suite de tests versionnée
     trouvée dans ce dépôt à ce jour, documenté plutôt que masqué — voir
     Phase 8)
+9   TERMINÉE (patch_replay.py + CLI ; rejeu du code patché du worktree Phase 7
+    une fois la Phase 8 ACCEPTED, vocabulaire CORRECTIF_CONFIRME/
+    BUG_PERSISTANT/NON_CONCLUANT ; déjà fusionnée dans cette branche par un
+    autre chantier, non documentée ici jusqu'à cette mise à jour — voir
+    Phase 9)
+10  IMPLÉMENTÉE (live_validator.py + CLI ; test live attach CDP contrôlé pour
+    les cas NON_CONCLUANT de la Phase 9, garde-fou AUTOFIX_LIVE_VALIDATE="1"
+    non contournable par un argument CLI ; vérifié jusqu'à la connexion CDP
+    via des points factices, connexion à un vrai navigateur non testée faute
+    d'environnement — voir Phase 10)
 ```
 
 Décision importante :
@@ -2485,6 +2627,24 @@ Aucun test live.
 
 # Phase 9 --- Replay automatique du bug
 
+**Statut : TERMINÉE — `Survey/patch_replay.py` + `tools/replay_patch.py`
+(déjà fusionnée dans cette branche par un autre chantier avant la Phase 10,
+non documentée ici jusqu'à la mise à jour du 2026-09-27). Rejoue le bug dans
+le worktree autofix (Phase 7) déjà accepté statiquement (Phase 8,
+`validation_static.json.verdict="ACCEPTED"` exigé, jamais recalculé), avec le
+code réellement présent dans ce worktree, dans un sous-processus Python neuf
+(racine de paquet résolue via `Survey/static_validator.py::_resolve_package_root`,
+non modifiée, réutilisée telle quelle). Mécanisme de rejeu repris tel quel
+selon le stage : replay statique (3A) pour `stage="extraction"` ;
+`IsolatedReplayBrowser` + `execute_case_action` (Phase 3C.4, même séquence que
+`Survey/failure_diagnosis.py::_attempt_real_dispatch_replay`) pour
+`stage="action"`. Verdict traduit dans le vocabulaire `CORRECTIF_CONFIRME`/
+`BUG_PERSISTANT`/`NON_CONCLUANT` (`Survey.replay_browser`, non modifié) —
+seul `CORRECTIF_CONFIRME` valide le patch. Tracé sous
+`patch_replays/<case_id>/patch_replay.json`, même convention JSON que les
+phases précédentes. Voir la Mise à jour 2026-09-27 (suite 24) en tête de ce
+document pour le détail complet.**
+
 Si le cas est rejouable :
 
 ``` text
@@ -2523,6 +2683,32 @@ validation réelle.
 ------------------------------------------------------------------------
 
 # Phase 10 --- Test live attach contrôlé
+
+**Statut : IMPLÉMENTÉE — `Survey/live_validator.py` + `tools/validate_patch_live.py`,
+pour les cas `NON_CONCLUANT` de la Phase 9 (refused=false exigé). Garde-fou de
+sécurité `$env:AUTOFIX_LIVE_VALIDATE` devant valoir EXACTEMENT `"1"` (égalité
+stricte), vérifié à deux endroits — en tout premier dans
+`tools/validate_patch_live.py::main()` (avant tout parsing d'argument, avant
+toute tentative de connexion CDP) et indépendamment dans
+`check_preconditions()` — aucun argument CLI ne peut le contourner. Connecte
+uniquement via Playwright `connect_over_cdp` à la page déjà ouverte par
+l'opérateur (jamais de nouvelle page, jamais de navigation ; désambiguïsation
+par l'URL d'origine du case si plusieurs pages, sinon refus explicite) ; ne
+ferme jamais browser/context/page distants (seul le driver Playwright local
+est arrêté). Réutilise tel quel `extract_case_blocks`/`execute_case_action`
+(Phase 3C.4, non modifiés) pour les deux stages — mécanisme différent de
+celui utilisé par la Phase 9 côté extraction (replay statique, incompatible
+avec une page live). Un seul budget de temps explicite sur connexion + rejeu,
+un seul sous-processus, un seul essai. Vocabulaire de sortie repris de la
+Phase 9. Verdict tracé sous `live_validations/<case_id>/live_validation.json`.
+Vérifié dans l'environnement de ce patch jusqu'à la connexion CDP elle-même
+(points CDP factices : refus contrôlés, budget/TIMEOUT, désambiguïsation de
+page) ; la connexion à un vrai Chromium n'a pas pu être testée faute
+d'environnement disponible. Voir la Mise à jour 2026-09-27 (suite 24) en tête
+de ce document pour le détail complet, y compris la limite résiduelle
+disclosée sur `stage="action"` (un `TIMEOUT` du dispatcher réel ferme la page
+live, comportement existant d'`execute_case_action` non neutralisable sans
+modifier `Survey/replay_browser.py`).**
 
 Certains bugs ne peuvent être validés qu'avec une vraie page.
 
@@ -3050,8 +3236,13 @@ Je suivrais exactement cet ordre :
     lint Ruff (F821/F822/F823)/tests existants, bornés aux fichiers modifiés
     du worktree ; aucune suite de tests versionnée trouvée dans ce dépôt à ce
     jour)
-9   Replay post-patch
-10  Validation live attach — devient la voie normale des cas EXTERNAL_NON_REPLAYABLE (post-3D)
+9   Replay post-patch — TERMINÉE (patch_replay.py + CLI ; déjà fusionnée dans
+    cette branche par un autre chantier, non documentée ici jusqu'à cette
+    mise à jour — voir Phase 9)
+10  Validation live attach — IMPLÉMENTÉE (live_validator.py + CLI, voie de
+    validation pour les cas NON_CONCLUANT de la Phase 9 ; devient la voie
+    normale des cas EXTERNAL_NON_REPLAYABLE post-3D ; connexion à un vrai
+    navigateur non testée faute d'environnement — voir Phase 10)
 11  Suite de régression
 12  Score de confiance
 13  UI/review humaine simplifiée
