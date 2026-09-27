@@ -1206,6 +1206,45 @@ niveau tant que le niveau précédent n'est pas fiable.
 > secondaire par rapport au cœur selon le plan lui-même), à la Phase 11
 > partie B dès curation d'une bibliothèque regression_cases/, ou à la
 > fermeture des sous-chantiers encore ouverts (3D/3B.3/3B.4).
+> Mise à jour 2026-09-26 (suite 32) : Phase 17 — décision explicite de NE
+> PAS construire le mécanisme de merge automatique tel que décrit par le
+> plan ("quand les statistiques deviennent bonnes") : aucune statistique
+> réelle n'existe encore, la Phase 16 venant d'être close dans cette même
+> session — construire l'automatisation avant les "plusieurs semaines
+> d'observation" que la Phase 16 réclame elle-même aurait été la sauter.
+> Construit à la place le seul prérequis légitime : un outil de
+> statistiques, purement en lecture seule, jamais un déclencheur.
+> `Survey/autofix_metrics.py` + `tools/report_autofix_metrics.py`.
+> `failure_cases/` retenu comme seule liste exhaustive de case_id (tout
+> case y a un dossier dès la Phase 2) — jamais dérivée d'un autre dossier
+> de phase, potentiellement partiel. Pour chaque case, l'artefact de
+> chaque phase suivante (4, 6, 7, 8, 9, 10, 11-A, 12, 13, 14, 15, 16) est lu
+> s'il existe, jamais supposé présent ; son absence compte comme "phase non
+> atteinte", jamais une erreur — seule une racine failure_cases/ absente
+> reste une vraie erreur d'usage. Vocabulaire d'artefact (verdict/outcome/
+> confidence/decision) relu dans le code de chaque phase avant d'être
+> agrégé, jamais deviné.
+> "Validés du premier coup" défini précisément et exposé tel quel dans le
+> rapport (pas seulement dans le code) : outcome=CORRECTIF_CONFIRME (Phase
+> 9) SANS qu'un live_validation.json (Phase 10) n'existe pour ce case —
+> une définition parmi d'autres défendables, mais explicite et vérifiable.
+> Décisions humaines (Phases 13/16) rapportées telles quelles
+> (APPROVED/REJECTED), jamais reformulées en "vrai positif"/"faux positif"
+> — l'outil ne peut garantir cette équivalence. Répartition par module
+> (modules_likely_involved, Phase 4) explicitement présentée comme un
+> proxy grossier, jamais une catégorisation sémantique du bug (aucun
+> libellé de catégorie inventé). "Régressions" explicitement marquée NON
+> MESURABLE avec les artefacts actuels (nécessiterait une boucle de
+> rétroaction production → patch mergé, qui n'existe pas) — jamais un
+> chiffre deviné ni un zéro silencieux.
+> Sortie en instantané horodaté sous autofix_metrics/<horodatage>/
+> metrics_report.json, jamais un fichier unique écrasé — cet outil est
+> fait pour tourner à répétition sur plusieurs semaines et préserver
+> l'historique des tendances (suffixe numérique si deux runs tombent dans
+> la même seconde). Ne construit aucun mécanisme de merge automatique,
+> aucune liste de catégories de confiance, aucune logique de décision — le
+> déclencheur réel de la Phase 17 reste en attente de plusieurs semaines de
+> données réelles produites par cet outil.
 
 ## Contexte de travail actuel
 
@@ -1295,6 +1334,10 @@ incident détecté
     human_review.py/check_human_review.py — un seul poller Telegram partagé,
     jamais deux flux concurrents sur le même bot, Phase 13 vérifiée
     inchangée ; ne merge jamais elle-même — voir Phase 16)
+17  PARTIELLEMENT TERMINÉE (outil de statistiques seulement — autofix_metrics.py
+    + CLI, purement en lecture seule, instantané horodaté ; le mécanisme de
+    merge automatique par catégorie reste explicitement différé, en attente
+    de plusieurs semaines de données réelles — voir Phase 17)
 ```
 
 Décision importante :
@@ -3387,6 +3430,24 @@ régressions
 
 # Phase 17 --- Auto-fix supervisé
 
+**Statut : PARTIELLEMENT TERMINÉE — décision délibérée de ne construire, pour
+l'instant, que le prérequis de mesure, jamais le mécanisme de merge
+automatique lui-même. `Survey/autofix_metrics.py` + `tools/
+report_autofix_metrics.py`, purement en lecture seule sur les artefacts des
+Phases 2 à 16 (`failure_cases/` comme seule liste exhaustive de case_id).
+Compte et rapporte ce qui s'est réellement passé (diagnostics, prompts,
+worktrees, validations statiques, rejeux, intégrité, confiance, décisions
+humaines, commits, décisions de merge, répartition par stage/module) sans
+jamais inventer une mesure que la donnée actuelle ne permet pas : "vrais/faux
+positifs" restent des comptages bruts APPROVED/REJECTED, jamais reformulés ;
+"régressions" est explicitement marquée non mesurable (pas de boucle de
+rétroaction production → patch mergé) ; la répartition par module est
+présentée comme un proxy grossier, jamais une catégorie sémantique. Sortie
+en instantané horodaté, jamais un fichier écrasé — fait pour tourner à
+répétition sur plusieurs semaines. Le mécanisme de merge automatique par
+catégorie de confiance reste explicitement différé, en attente de ces
+semaines de données réelles.**
+
 Quand les statistiques deviennent bonnes :
 
 ``` text
@@ -3674,7 +3735,10 @@ Je suivrais exactement cet ordre :
 16  Merge semi-automatique — TERMINÉE (merge_review.py + CLI propose_merge,
     généralisation additive de human_review.py ; un seul poller Telegram
     partagé ; ne merge jamais elle-même)
-17  Auto-fix supervisé
+17  Auto-fix supervisé — PARTIELLEMENT TERMINÉE (autofix_metrics.py + CLI,
+    outil de statistiques en lecture seule uniquement ; mécanisme de merge
+    automatique par catégorie explicitement différé, en attente de
+    plusieurs semaines de données réelles)
 18  Boucle autonome attach
 19  Fleet learning / métriques
 20  Pipeline de correction séparé de Prod
