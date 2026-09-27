@@ -11,6 +11,14 @@ ce contrôle pour un patch qui n'a légitimement pas vocation à générer d'ent
 BEM (ex. correctif d'infrastructure de test d'autofix) — jamais un simple
 booléen silencieux, une raison est obligatoire.
 
+Si --diagnosis-dir ET --context-selection-dir sont fournis, un filet de
+sécurité automatique se déclenche avant de bloquer sur "BEM non modifié" :
+tente de produire un brouillon mécanique (Survey/bem_proposal.py, Phase 14,
+non modifiée) et, si possible, l'ajoute lui-même en fin de
+Survey/BOT_EVOLUTION_MEMORY.md dans le worktree, précédé d'un marqueur
+explicite ("entrée auto-générée"), avant le commit. Sans ces deux options,
+comportement strictement inchangé.
+
 Refuse explicitement si un commit portant déjà la référence de ce case_id
 existe dans le log Git de la branche (jamais un commit en double). N'effectue
 jamais de push ni de merge ; ne touche jamais à une branche protégée
@@ -66,11 +74,32 @@ def main(argv: "list[str] | None" = None) -> int:
         help="Formulation du sujet de commit fournie par l'opérateur, à la place du sujet mécanique par défaut.",
     )
     parser.add_argument(
+        "--diagnosis-dir",
+        default=None,
+        help=(
+            "Dossier du diagnostic Phase 4 (ex: diagnoses\\<case_id>) — avec --context-selection-dir, "
+            "active le filet de sécurité automatique de génération BEM si Codex ne l'a pas fait."
+        ),
+    )
+    parser.add_argument(
+        "--context-selection-dir",
+        default=None,
+        help=(
+            "Dossier de la sélection de contexte Phase 5 (ex: context_selections\\<case_id>) — avec "
+            "--diagnosis-dir, active le filet de sécurité automatique de génération BEM."
+        ),
+    )
+    parser.add_argument(
+        "--bem-proposals-root",
+        default="bem_proposals",
+        help="Dossier racine des propositions BEM (Phase 14) utilisé par le filet de sécurité (défaut : bem_proposals)",
+    )
+    parser.add_argument(
         "--skip-bem-check-reason",
         default=None,
         help=(
-            "Contourne explicitement le contrôle \"BOT_EVOLUTION_MEMORY.md modifié\" — exige une raison "
-            "non vide, jamais un simple booléen silencieux."
+            "Contourne explicitement le contrôle \"BOT_EVOLUTION_MEMORY.md modifié\" (et le filet de "
+            "sécurité automatique) — exige une raison non vide, jamais un simple booléen silencieux."
         ),
     )
     parser.add_argument(
@@ -93,6 +122,9 @@ def main(argv: "list[str] | None" = None) -> int:
             human_review_dir=args.human_review_dir,
             worktree_dir=args.worktree_dir,
             bem_proposal_dir=args.bem_proposal_dir,
+            diagnosis_dir=args.diagnosis_dir,
+            context_selection_dir=args.context_selection_dir,
+            bem_proposals_root=args.bem_proposals_root,
             message=args.message,
             skip_bem_check_reason=args.skip_bem_check_reason,
             git_timeout_s=args.git_timeout,
@@ -109,6 +141,10 @@ def main(argv: "list[str] | None" = None) -> int:
     print(f"commit_sha        : {result.commit_sha}")
     print(f"commit_subject    : {result.commit_subject}")
     print(f"fichiers inclus   : {len(result.files_included)}")
+    if result.bem_auto_generated:
+        print("BEM               : entrée auto-générée par le filet de sécurité (Phase 14)")
+    elif result.bem_auto_generation_error:
+        print(f"BEM               : filet de sécurité tenté mais échoué ({result.bem_auto_generation_error})")
     for warning in result.warnings:
         print(f"  [avertissement] {warning}")
 

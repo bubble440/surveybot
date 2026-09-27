@@ -44,6 +44,16 @@ prompt (MANUAL_REVIEW_REQUIRED.txt vs prompt.txt), pour qu'il ne puisse jamais
 Tout le reste du gabarit (CONTEXTE, Règles de lecture, Variabilité intra-source,
 RÈGLE DURE zéro modification, Logs/LOG_LEVEL, CTA/clics, RÈGLES STRICTES, ACTION
 REQUISE) est reproduit verbatim, caractère pour caractère — aucune reformulation.
+
+── Extension additive de ACTION REQUISE (Codex écrit lui-même l'entrée BEM) ──
+Nouvelle ligne fixe et permanente, appliquée à TOUS les prompts générés
+désormais (jamais conditionnelle à un case particulier) : demande explicite,
+après implémentation et vérification du patch, d'ajouter une entrée dans
+Survey/BOT_EVOLUTION_MEMORY.md suivant EXACTEMENT le format déjà documenté en
+tête de ce fichier (### nom, Fichier, Bug corrigé, Correction, Patterns
+couverts, Patterns exclus, Statut) — jamais un format inventé. Reste un filet
+de sécurité mécanique côté Survey/patch_commit.py (Phase 15) si Codex ne le
+fait pas : cf. ce module.
 """
 
 import json
@@ -123,6 +133,7 @@ Appliquer un patch minimal et robuste.
 Vérifier la non-régression sur les DOMs de référence pertinents.
 Si le patch touche un CTA, appliquer la règle CTA_INTERCEPT_ONLY.
 Donne un nom à mettre comme titre du commit git.
+Après avoir implémenté et vérifié le patch, ajoute une entrée dans Survey/BOT_EVOLUTION_MEMORY.md suivant exactement le format déjà documenté en tête de ce fichier (### nom, Fichier, Bug corrigé, Correction, Patterns couverts, Patterns exclus, Statut) — jamais un format inventé.
 """
 
 # Champs d'un issue considérés lisibles/utiles pour un lecteur humain ou un

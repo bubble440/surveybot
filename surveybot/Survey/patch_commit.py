@@ -30,6 +30,30 @@ ce contrôle précis, jamais un simple booléen silencieux — certains patches
 légitimes (ex. correctif d'infrastructure de test d'autofix) n'ont pas
 vocation à générer d'entrée BEM.
 
+── Filet de sécurité automatique (additif, avant de bloquer) ─────────────────
+Le gabarit Phase 6 (Survey/prompt_generator.py) demande désormais à Codex
+d'écrire lui-même l'entrée BEM en fin de patch. Si malgré cela le fait Git
+ci-dessus reste négatif (BEM non modifié) ET que diagnosis_dir/
+context_selection_dir sont fournis à cet appel (nouveaux paramètres optionnels
+— absents, comportement strictement inchangé, cf. non-régression) :
+Survey/bem_proposal.py::write_bem_proposal (Phase 14, non modifiée, ni
+importée ni appelée autrement qu'elle ne l'est déjà par sa propre façade) est
+tentée pour ce case. Si elle produit un brouillon, celui-ci est ajouté tel
+quel en fin de Survey/BOT_EVOLUTION_MEMORY.md DANS LE WORKTREE, AVANT le
+commit — précédé d'un marqueur explicite non ambigu
+(AUTO_GENERATED_BEM_MARKER) inséré comme première ligne du CORPS de l'entrée
+(juste après sa ligne d'en-tête "### ...", jamais avant : Survey/
+failure_diagnosis.py découpe ce fichier sur les lignes "### ..." pour sa
+recherche de signaux, Phase 4 — un marqueur placé avant la ligne d'en-tête
+serait rattaché par erreur à l'entrée précédente). Le fait Git est alors
+revérifié (le fichier vient d'être physiquement modifié) avant de retenter le
+blocage. Si write_bem_proposal échoue (case non éligible à la Phase 14,
+artefact manquant, etc.) ou si diagnosis_dir/context_selection_dir ne sont pas
+fournis, le comportement est inchangé : blocage explicite, avec le détail de
+l'échec du filet de sécurité ajouté au message d'erreur. --skip-bem-check-reason
+reste le seul contournement pour un patch qui n'a légitimement pas vocation à
+une entrée BEM.
+
 Refus explicite si un commit portant déjà la référence de ce case_id
 ("case_id=<...>" en ligne exacte du corps du message) existe dans le log Git
 de la branche autofix — recherche dans l'historique réel, jamais seulement
@@ -66,6 +90,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from Survey.autofix_worktree import PROTECTED_BRANCHES
+from Survey.bem_proposal import BemProposalError, write_bem_proposal
 from Survey.log_utils import log_debug, log_info
 from Survey.static_validator import (
     StaticValidationError,
@@ -81,6 +106,16 @@ DEFAULT_GIT_TIMEOUT_S = 15.0
 BEM_PACKAGE_RELATIVE_PATH = "Survey/BOT_EVOLUTION_MEMORY.md"
 
 _MAX_SUBJECT_NAMES = 6
+
+# Marqueur explicite, jamais ambigu : distingue une entrée écrite par Codex
+# (Phase 6, gabarit) d'une entrée de secours produite mécaniquement par le
+# filet de sécurité ci-dessous (patterns couverts/exclus jamais validés par
+# un jugement humain ou par Codex lui-même dans ce cas). Inséré comme première
+# ligne du CORPS de l'entrée (cf. docstring du module) pour rester associé à
+# la bonne entrée lors du découpage par Survey/failure_diagnosis.py.
+AUTO_GENERATED_BEM_MARKER = (
+    "[Entrée auto-générée — Codex n'a pas rédigé cette entrée, patterns couverts/exclus non validés]"
+)
 
 # Composant de chemin unique, allowlist conservatrice — même garde-fou dupliqué
 # volontairement dans plusieurs modules indépendants de ce pipeline (cf.
@@ -279,6 +314,44 @@ def _check_bem_updated(worktree_path: Path, base_sha: str, *, timeout: float) ->
     return (bem_full_rel in set(changed_rel)), changed_rel
 
 
+def _append_auto_generated_bem_entry(worktree_path: Path, draft_markdown: str) -> Path:
+    """Ajoute draft_markdown (brouillon Phase 14) en fin de
+    Survey/BOT_EVOLUTION_MEMORY.md DU WORKTREE, précédé du même séparateur
+    '---' déjà utilisé entre les entrées existantes de ce fichier, avec
+    AUTO_GENERATED_BEM_MARKER inséré comme première ligne du corps (juste
+    après la ligne d'en-tête '### ...' du brouillon — jamais avant, cf.
+    docstring du module). Réutilise Survey/static_validator.py::
+    _resolve_package_root (Phase 8, non modifiée) pour localiser le fichier
+    réel dans CE worktree, jamais dans le dépôt principal."""
+    try:
+        package_root = _resolve_package_root(worktree_path)
+    except StaticValidationError as exc:
+        raise PatchCommitError(
+            "résolution de la racine de paquet (Survey/static_validator.py::_resolve_package_root, "
+            f"réutilisée telle quelle) échouée : {exc}"
+        ) from exc
+
+    bem_file = package_root / BEM_PACKAGE_RELATIVE_PATH
+    if not bem_file.is_file():
+        raise PatchCommitError(
+            f"{BEM_PACKAGE_RELATIVE_PATH} introuvable dans le worktree ({bem_file}) — insertion du "
+            "filet de sécurité impossible"
+        )
+
+    lines = draft_markdown.splitlines()
+    if not lines or not lines[0].startswith("### "):
+        raise PatchCommitError(
+            "brouillon BEM (Survey/bem_proposal.py, Phase 14) inattendu : ne commence pas par une "
+            "ligne d'en-tête '### ...' — insertion refusée plutôt que devinée"
+        )
+    spliced = "\n".join([lines[0], AUTO_GENERATED_BEM_MARKER, *lines[1:]])
+
+    existing = bem_file.read_text(encoding="utf-8")
+    separator = "" if existing.endswith("\n") else "\n"
+    bem_file.write_text(f"{existing}{separator}\n---\n{spliced}\n", encoding="utf-8")
+    return bem_file
+
+
 def _find_existing_case_commit(worktree_path: Path, branch: str, case_id: str, *, timeout: float) -> Optional[str]:
     """Recherche une correspondance EXACTE de la ligne "case_id=<case_id>" dans
     le corps d'un commit du log Git de la branche — jamais une simple
@@ -348,6 +421,8 @@ class CommitResult:
     confidence: str
     bem_check_skipped: bool
     bem_check_skip_reason: Optional[str]
+    bem_auto_generated: bool = False
+    bem_auto_generation_error: Optional[str] = None
     warnings: "list[str]" = field(default_factory=list)
 
     def as_dict(self) -> dict:
@@ -364,6 +439,8 @@ class CommitResult:
             "confidence": self.confidence,
             "bem_check_skipped": self.bem_check_skipped,
             "bem_check_skip_reason": self.bem_check_skip_reason,
+            "bem_auto_generated": self.bem_auto_generated,
+            "bem_auto_generation_error": self.bem_auto_generation_error,
             "warnings": self.warnings,
         }
 
@@ -379,12 +456,21 @@ def commit_patch(
     human_review_dir: "str | Path",
     worktree_dir: "str | Path",
     bem_proposal_dir: "Optional[str | Path]" = None,
+    diagnosis_dir: "Optional[str | Path]" = None,
+    context_selection_dir: "Optional[str | Path]" = None,
+    bem_proposals_root: "str | Path" = "bem_proposals",
     message: Optional[str] = None,
     skip_bem_check_reason: Optional[str] = None,
     git_timeout_s: float = DEFAULT_GIT_TIMEOUT_S,
     out_root: "str | Path" = "commit_results",
     force: bool = False,
 ) -> CommitResult:
+    """diagnosis_dir/context_selection_dir sont NOUVEAUX, optionnels : absents
+    (défaut), le comportement du contrôle BEM est strictement inchangé (refus
+    immédiat si BOT_EVOLUTION_MEMORY.md n'est pas parmi les fichiers modifiés).
+    Fournis tous les deux, ils activent le filet de sécurité automatique
+    (Survey/bem_proposal.py::write_bem_proposal, Phase 14, non modifiée) —
+    cf. docstring du module."""
     confidence_score_dir = Path(confidence_score_dir)
     human_review_dir = Path(human_review_dir)
     worktree_dir = Path(worktree_dir)
@@ -427,6 +513,8 @@ def commit_patch(
     warnings: "list[str]" = []
 
     bem_skipped = skip_bem_check_reason is not None
+    bem_auto_generated = False
+    bem_auto_generation_error: Optional[str] = None
     if bem_skipped:
         log_info(
             _TAG,
@@ -434,12 +522,45 @@ def commit_patch(
         )
     else:
         bem_updated, _changed = _check_bem_updated(worktree_path, base_sha, timeout=git_timeout_s)
+
+        if not bem_updated and diagnosis_dir is not None and context_selection_dir is not None:
+            # Filet de sécurité automatique (additif) : Codex n'a pas rédigé l'entrée
+            # lui-même (Partie A du gabarit, Phase 6) — tenter un brouillon mécanique
+            # (Phase 14, non modifiée) avant de bloquer. cf. docstring du module.
+            try:
+                draft_path = write_bem_proposal(
+                    human_review_dir=human_review_dir,
+                    worktree_dir=worktree_dir,
+                    diagnosis_dir=diagnosis_dir,
+                    context_selection_dir=context_selection_dir,
+                    confidence_score_dir=confidence_score_dir,
+                    out_root=bem_proposals_root,
+                    git_timeout_s=git_timeout_s,
+                )
+            except BemProposalError as exc:
+                bem_auto_generation_error = str(exc)
+                log_debug(_TAG, f"case={case_id} : filet de sécurité BEM (Phase 14) indisponible : {exc}")
+            else:
+                draft_markdown = draft_path.read_text(encoding="utf-8")
+                _append_auto_generated_bem_entry(worktree_path, draft_markdown)
+                bem_auto_generated = True
+                bem_updated, _changed = _check_bem_updated(worktree_path, base_sha, timeout=git_timeout_s)
+                log_info(
+                    _TAG,
+                    f"case={case_id} : entrée BEM auto-générée et ajoutée (filet de sécurité, Phase 14)",
+                )
+
         if not bem_updated:
+            auto_detail = (
+                f" ; filet de sécurité automatique (Phase 14) tenté mais échoué : {bem_auto_generation_error}"
+                if bem_auto_generation_error else ""
+            )
             raise PatchCommitError(
                 f"{BEM_PACKAGE_RELATIVE_PATH} ne figure pas parmi les fichiers modifiés du worktree "
-                "depuis base_sha — ce case ne semble pas avoir mis à jour BOT_EVOLUTION_MEMORY.md ; "
-                "utiliser --skip-bem-check-reason \"<raison>\" si ce patch n'a légitimement pas vocation "
-                "à générer d'entrée BEM (ex. correctif d'infrastructure de test d'autofix)"
+                "depuis base_sha — ce case ne semble pas avoir mis à jour BOT_EVOLUTION_MEMORY.md"
+                f"{auto_detail} ; utiliser --skip-bem-check-reason \"<raison>\" si ce patch n'a "
+                "légitimement pas vocation à générer d'entrée BEM (ex. correctif d'infrastructure de "
+                "test d'autofix)"
             )
 
     ok_status, status_out, status_err, timed_out_status = _run_git(
@@ -562,6 +683,8 @@ def commit_patch(
         confidence=confidence,
         bem_check_skipped=bem_skipped,
         bem_check_skip_reason=skip_bem_check_reason,
+        bem_auto_generated=bem_auto_generated,
+        bem_auto_generation_error=bem_auto_generation_error,
         warnings=warnings,
     )
     write_commit_result(result, out_root=out_root, force=force)
