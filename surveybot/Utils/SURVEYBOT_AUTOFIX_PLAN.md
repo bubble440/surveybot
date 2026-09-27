@@ -1154,6 +1154,58 @@ niveau tant que le niveau précédent n'est pas fiable.
 > decision.json et bem_entry_proposal.md), à la Phase 11 partie B dès
 > curation d'une bibliothèque regression_cases/, ou à la fermeture des
 > sous-chantiers encore ouverts (3D/3B.3/3B.4).
+> Mise à jour 2026-09-26 (suite 31) : Phases 15 et 16 clôturées (commit
+> automatique, merge semi-automatique — jamais le merge lui-même).
+> Phase 15 : `Survey/patch_commit.py` + `tools/commit_patch.py`. Précondition :
+> confidence_score.json (12) confidence="HIGH" (réutilisé tel quel comme
+> seule source de vérité pour patch/régression/live PASS, jamais redérivé) ;
+> decision.json (13) decision="APPROVED" ; worktree.json (7) désignant un
+> worktree Git réel ET la branche effectivement checked-out (garde contre une
+> manipulation manuelle entre Phase 7 et cette phase) ; branch hors
+> PROTECTED_BRANCHES (Survey/autofix_worktree.py, réutilisée telle quelle).
+> "BEM mise à jour" vérifiée par un FAIT Git observable (Survey/
+> BOT_EVOLUTION_MEMORY.md parmi les fichiers modifiés depuis base_sha,
+> réutilisant _git_changed_paths/_resolve_package_root de la Phase 8), jamais
+> une déclaration — --skip-bem-check-reason exige une raison explicite non
+> vide pour les patchs n'ayant légitimement pas vocation à une entrée BEM.
+> Refus si un commit portant déjà "case_id=<...>" en ligne exacte existe dans
+> le log Git de la branche (correspondance exacte, jamais une sous-chaîne).
+> Sujet de commit mécanique par défaut (noms de fonctions réellement
+> ajoutées/modifiées, depuis bem_proposal.json de la Phase 14 si fourni et
+> cohérent, sinon depuis les fichiers committés) — jamais une formulation
+> inventée ; --message permet à l'opérateur de la remplacer. git add -A puis
+> git commit -F - (message transmis sur stdin, jamais interpolé en argument) ;
+> worktree déjà propre → traité comme déjà committé (sha courant rapporté),
+> jamais un commit vide artificiel. Jamais de push, jamais de merge.
+> Phase 16 : `Survey/merge_review.py` + `tools/propose_merge.py`, et
+> généralisation ADDITIVE de `Survey/human_review.py` + `tools/
+> check_human_review.py` (comportement de la Phase 13 vérifié inchangé :
+> send_review_request garde exactement sa signature/son comportement).
+> Raison impérative de cette généralisation, pas une préférence de style :
+> Telegram ne fournit qu'un seul flux getUpdates par bot — deux pollers
+> indépendants avec deux offsets indépendants se voleraient mutuellement les
+> mises à jour dès qu'ils tournent tous les deux. Un seul poller
+> (check_human_review.py), un seul offset partagé, chaque callback routé par
+> son préfixe (kind) vers human_reviews/ (Phase 13, inchangé) ou
+> merge_reviews/ (Phase 16, nouveau) — jamais deux flux concurrents sur le
+> même bot. Plomberie Telegram partagée extraite dans une fonction interne
+> réutilisable (_send_two_button_review) plutôt que dupliquée.
+> Précondition Phase 16 : commit_result.json (15) avec commit_sha non vide
+> (commit réussi ou déjà committé) ; worktree.json (7) pour la branche cible
+> du merge, reprise telle quelle (source_branch), jamais supposée/codée en
+> dur. Message Telegram : branche autofix, branche cible, sha/sujet du
+> commit — jamais le diff complet. Décision capturée dans
+> merge_reviews/<case_id>/decision.json via le même mécanisme que la
+> Phase 13. Portée confirmée : cette phase ne déclenche JAMAIS elle-même un
+> git merge, un push, ni une modification de la branche cible — la
+> confirmation reste un signal à vérifier manuellement par l'opérateur avant
+> d'exécuter le merge lui-même. Avec cette clôture, le cœur du pipeline
+> autofix (1A à 16) est entièrement construit, de la détection à la
+> proposition de merge ; seul le geste de merge réel reste manuel. Le
+> chantier principal passe aux Phases 17-20 (automatisation opérationnelle,
+> secondaire par rapport au cœur selon le plan lui-même), à la Phase 11
+> partie B dès curation d'une bibliothèque regression_cases/, ou à la
+> fermeture des sous-chantiers encore ouverts (3D/3B.3/3B.4).
 
 ## Contexte de travail actuel
 
@@ -1235,6 +1287,14 @@ incident détecté
     AST/hash (technique d'extractor_integrity.py généralisée, jamais ce
     fichier modifié) ; brouillon jamais collé automatiquement dans BEM,
     jugements humains explicitement marqués "à compléter" — voir Phase 14)
+15  TERMINÉE (patch_commit.py + CLI ; confidence=HIGH + decision=APPROVED +
+    BEM mise à jour vérifiée par un fait Git observable, jamais une
+    déclaration ; sujet de commit mécanique, jamais inventé ; worktree propre
+    → traité comme déjà committé ; jamais de push/merge — voir Phase 15)
+16  TERMINÉE (merge_review.py + CLI propose_merge, généralisation additive de
+    human_review.py/check_human_review.py — un seul poller Telegram partagé,
+    jamais deux flux concurrents sur le même bot, Phase 13 vérifiée
+    inchangée ; ne merge jamais elle-même — voir Phase 16)
 ```
 
 Décision importante :
@@ -3248,6 +3308,19 @@ Plus tard, on pourra automatiser l'écriture pour les patches
 
 # Phase 15 --- Commit automatique
 
+**Statut : TERMINÉE — `Survey/patch_commit.py` + `tools/commit_patch.py`.
+"patch PASS + régression PASS + live PASS" repris intégralement du verdict
+déjà calculé par la Phase 12 (`confidence="HIGH"`), jamais redérivé
+séparément. "BEM mise à jour" vérifiée par un fait Git observable
+(`Survey/BOT_EVOLUTION_MEMORY.md` parmi les fichiers modifiés depuis
+`base_sha`, réutilisation stricte des helpers de la Phase 8), jamais une
+déclaration — contournable uniquement via une raison explicite non vide.
+Sujet de commit mécanique (fonctions réellement modifiées, jamais une
+formulation évocatrice inventée), corps toujours généré (case_id, confiance,
+fichiers). Refus si un commit référençant déjà ce case_id existe sur la
+branche. Worktree déjà propre → traité comme déjà committé, jamais un commit
+vide. Jamais de push, jamais de merge — la branche reste séparée.**
+
 Une fois :
 
 ``` text
@@ -3274,6 +3347,18 @@ La branche reste séparée.
 ------------------------------------------------------------------------
 
 # Phase 16 --- Merge semi-automatique
+
+**Statut : TERMINÉE — `Survey/merge_review.py` + `tools/propose_merge.py`, et
+généralisation additive de `Survey/human_review.py`/`tools/check_human_review.py`
+(comportement de la Phase 13 vérifié inchangé). Raison impérative de cette
+généralisation : Telegram ne fournit qu'un seul flux `getUpdates` par bot —
+deux pollers indépendants se voleraient mutuellement leurs mises à jour. Un
+seul poller, un seul offset partagé, chaque callback routé vers
+`human_reviews/` (Phase 13) ou `merge_reviews/` (ici) selon son préfixe.
+Message : branche autofix, branche cible (`worktree.json.source_branch`,
+jamais codée en dur), sha/sujet du commit — jamais le diff complet. Ne
+déclenche JAMAIS elle-même un git merge, un push, ni une modification de la
+branche cible — la confirmation reste un signal à vérifier manuellement.**
 
 Première version :
 
@@ -3580,12 +3665,15 @@ Je suivrais exactement cet ordre :
 13  UI/review humaine simplifiée — TERMINÉE (human_review.py + CLI
     notify/check, via Telegram existant, polling getUpdates ; notifie
     seulement confidence=HIGH ; ne merge/commit rien)
-14  Proposition BEM
 14  Proposition BEM — TERMINÉE (bem_proposal.py + CLI ; déclenchée sur
     decision.json APPROVED ; détection fichiers/fonctions par Git+AST/hash,
     jamais collé automatiquement dans BEM)
-15  Commit automatique
-16  Merge semi-automatique
+15  Commit automatique — TERMINÉE (patch_commit.py + CLI ; confidence=HIGH
+    + decision=APPROVED + BEM vérifiée par fait Git ; sujet mécanique,
+    jamais push/merge)
+16  Merge semi-automatique — TERMINÉE (merge_review.py + CLI propose_merge,
+    généralisation additive de human_review.py ; un seul poller Telegram
+    partagé ; ne merge jamais elle-même)
 17  Auto-fix supervisé
 18  Boucle autonome attach
 19  Fleet learning / métriques
