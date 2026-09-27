@@ -923,6 +923,57 @@ niveau tant que le niveau précédent n'est pas fiable.
 > tous au moins partiellement implémentés** ; le chantier principal passe à
 > la Phase 11 (validation anti-régression) et à la fermeture de la 3D/3B.3/
 > 3B.4 encore ouvertes, sans compter le point de vigilance ci-dessus.
+> Mise à jour 2026-09-26 (suite 26) : Phase 11, partie A clôturée (hash
+> d'intégrité des fonctions gelées). `Survey/extractor_integrity_gate.py` +
+> `tools/check_extractor_integrity.py`, complément déterministe à
+> `Survey/extractor_integrity.py`/`.json` (script de hash SHA256 par
+> fonction protégée, fourni tel quel, ajouté à `Survey/` — jamais
+> réimplémenté, jamais modifié). Registre fourni corrigé avant intégration :
+> une clé dupliquée (`Survey/input_slider.py::set_sliderpoints`, même hash
+> que `input_slider.py::set_sliderpoints`) retirée — avec la racine
+> `worktree_path/Survey` déjà identifiée comme seule cohérente avec la
+> quasi-totalité des clés du registre (`../preselection/...` remontant vers
+> le dossier frère de `Survey/`), cette clé en double aurait cherché
+> `Survey/Survey/input_slider.py`, introuvable, et rejeté systématiquement
+> tout patch par ailleurs propre dès le premier run.
+> Portée explicitement limitée à cette partie A : le rejeu de DOM
+> historiques/génériques représentatifs (`regression_cases/`, décrit plus
+> loin dans ce document pour la Phase 11) reste un sous-chantier différé,
+> faute de bibliothèque de cas déjà curée — même principe que les
+> sous-chantiers différés en Phase 9/10.
+> Précondition orthogonale à la Phase 9/10 (ne dépend que de la Phase 8) :
+> `worktree.json` (Phase 7, worktree Git réel) + `validation_static.json`
+> (Phase 8) `verdict="ACCEPTED"` — inutile de vérifier l'intégrité d'un
+> patch qui ne compile même pas. `Survey/extractor_integrity.py` ET
+> `Survey/extractor_integrity.json` doivent exister réellement dans le
+> worktree à la racine de paquet résolue (`_resolve_package_root`, Phase 8,
+> réutilisée telle quelle) — sinon refus explicite plutôt qu'une racine
+> devinée.
+> Chargement du code gelé DU WORKTREE, jamais du dépôt principal : le
+> registre est relu depuis `Survey/extractor_integrity.json` du worktree
+> (le patch a pu légitimement y ajouter des entrées) ; `extractor_integrity.py`
+> est chargé dynamiquement (`importlib.util.spec_from_file_location`) sous
+> un nom de module dédié — jamais `"Survey.extractor_integrity"` — pour ne
+> jamais lire un module déjà en cache dans `sys.modules` provenant du dépôt
+> principal. Contrairement à la Phase 9/10, résolu SANS sous-processus :
+> `extractor_integrity.py` n'a aucune dépendance hors stdlib, un chargement
+> direct suffit et est exigé (jamais un sous-processus avec parsing de
+> texte). `_load_registry`/`_hash_function` appelées telles quelles ensuite,
+> jamais réimplémentées ; leur seule présence sur le module chargé est
+> elle-même vérifiée avant usage (refus explicite sinon, jamais de repli).
+> Budget de temps explicite sur le parcours du registre
+> (`DEFAULT_TIME_BUDGET_S=30s`) : au-delà, les entrées restantes comptent
+> comme des erreurs explicites (`budget_exceeded`), jamais un passe-droit
+> silencieux sur ce qui n'a pas pu être vérifié. Verdict strict : un hash
+> différent (fonction protégée modifiée) ET une fonction/fichier
+> introuvable (fonction protégée supprimée/renommée) sont tous deux des
+> motifs de rejet — jamais un passe-droit. Verdict tracé sous
+> `extractor_integrity_checks/<case_id>/extractor_integrity_check.json`,
+> même convention JSON que les phases précédentes. Le chantier principal
+> passe à la Phase 11, partie B (rejeu de `regression_cases/`, différée
+> jusqu'à curation d'une bibliothèque de DOM représentatifs) ou à la
+> Phase 12 (score de confiance du patch), désormais alimentable par les
+> verdicts déjà produits par les Phases 8/9/10/11-A.
 
 ## Contexte de travail actuel
 
@@ -985,6 +1036,11 @@ incident détecté
     jamais de navigation/close() sur la session distante ; point de
     vigilance ouvert : execute_case_action peut fermer réellement la page
     live sur timeout côté stage="action" — voir Phase 10)
+11  PARTIELLEMENT TERMINÉE (partie A — hash d'intégrité des fonctions gelées,
+    extractor_integrity_gate.py + CLI, code gelé chargé depuis le worktree
+    sous un nom de module dédié, jamais du dépôt principal ; toute anomalie
+    est un rejet ; partie B — rejeu de regression_cases/ — différée faute de
+    bibliothèque de cas curée — voir Phase 11)
 ```
 
 Décision importante :
@@ -2755,6 +2811,34 @@ pas ; seul son déclenchement devient systématique pour cette catégorie.
 
 # Phase 11 --- Validation anti-régression
 
+**Statut : PARTIELLEMENT TERMINÉE.**
+
+**Partie A (hash d'intégrité des fonctions gelées) : TERMINÉE —
+`Survey/extractor_integrity_gate.py` + `tools/check_extractor_integrity.py`.
+Complément déterministe, jamais un remplacement, au rejeu DOM décrit
+ci-dessous : un hash SHA256 par fonction protégée
+(`Survey/extractor_integrity.py`/`.json`, fournis tels quels, jamais
+réimplémentés ni modifiés) détecte toute modification du corps d'une
+fonction gelée, même une modification qui ne casserait aucun cas de test
+rejoué. Éligibilité : `worktree.json` (Phase 7, worktree Git réel) +
+`validation_static.json` (Phase 8) `ACCEPTED` — orthogonal aux Phases 9/10.
+Code gelé et registre relus DEPUIS LE WORKTREE patché, jamais du dépôt
+principal ; `extractor_integrity.py` chargé dynamiquement sous un nom de
+module dédié pour ne jamais entrer en collision avec un import déjà en
+cache. Budget de temps explicite sur le parcours du registre, dépassement
+traité en erreurs explicites. Toute anomalie (hash différent ou fonction/
+fichier introuvable) est un motif de rejet, jamais un passe-droit. Registre
+fourni corrigé avant intégration : une clé dupliquée
+(`Survey/input_slider.py::set_sliderpoints`) aurait, avec la racine
+`worktree_path/Survey` (seule cohérente avec le reste du registre), rejeté
+systématiquement tout patch dès le premier run — retirée avant que ce module
+ne soit écrit.**
+
+**Partie B (rejeu de `regression_cases/` décrit ci-dessous) : DIFFÉRÉE —
+aucune bibliothèque de DOM représentatifs n'est encore curée pour
+l'alimenter, même principe que les sous-chantiers déjà différés en
+Phase 9/10.**
+
 C'est là que `BOT_EVOLUTION_MEMORY.md` devient particulièrement utile.
 
 Avant d'accepter un patch :
@@ -3236,7 +3320,10 @@ Je suivrais exactement cet ordre :
     AUTOFIX_LIVE_VALIDATE double-vérifié ; point de vigilance ouvert :
     fermeture réelle de page possible sur timeout côté stage="action") ;
     devient la voie normale des cas EXTERNAL_NON_REPLAYABLE (post-3D)
-11  Suite de régression
+11  Suite de régression — PARTIELLEMENT TERMINÉE (partie A : hash
+    d'intégrité des fonctions gelées, extractor_integrity_gate.py + CLI,
+    verdict sur le worktree patché uniquement ; partie B : rejeu de
+    regression_cases/ différé, aucune bibliothèque de cas curée)
 12  Score de confiance
 13  UI/review humaine simplifiée
 14  Proposition BEM
