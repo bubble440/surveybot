@@ -115,21 +115,26 @@ navigateur, du contexte ou de la page distante. Cette règle est absolue : une
 page potentiellement tenue par un vrai répondant ne doit jamais être fermée par
 CE module.
 
-Limite résiduelle non neutralisée par ce module, disclosée plutôt que masquée :
-pour stage="action", `execute_case_action` (Phase 3C.4, non modifiée) ferme
-elle-même la PAGE (pas le navigateur) si son propre budget interne
-(`budget_s`) est dépassé — comportement déjà existant, conçu pour un Chromium
-isolé jetable où fermer la page est sans conséquence. Sur une page CDP live,
-cette même fermeture est réelle : un TIMEOUT du dispatcher ferme réellement
-l'onglet de l'opérateur/du répondant. Ce module ne peut pas neutraliser ce
-comportement sans modifier Survey/replay_browser.py (interdit par ce chantier) ;
-la seule atténuation possible ici est un budget conservateur (voir ci-dessous) et
-cette disclosure explicite, pour que l'opérateur lance ce test en connaissance de
-cause. Aucun risque équivalent pour stage="extraction" : `extract_case_blocks`
-n'effectue aucune mutation (lecture DOM + validation), une interruption brutale
-du sous-processus (budget global dépassé, voir ci-dessous) ne touche jamais la
-page distante elle-même — seule NOTRE connexion locale meurt avec le
-sous-processus.
+Limite résiduelle neutralisée pour stage="action" : par défaut,
+`execute_case_action` (Phase 3C.4) ferme elle-même la PAGE (pas le navigateur)
+si son propre budget interne (`budget_s`) est dépassé — comportement conçu à
+l'origine pour un Chromium isolé jetable où fermer la page est sans
+conséquence, et réel sur une page CDP live (un TIMEOUT du dispatcher fermerait
+alors réellement l'onglet de l'opérateur/du répondant). `execute_case_action`
+accepte depuis un paramètre additif `close_page_on_timeout` (défaut True,
+comportement inchangé pour tout appelant qui ne le fournit pas — Phases
+3C.4/9) ; ce module l'appelle explicitement avec `close_page_on_timeout=False`
+(voir `_ACTION_RUNNER_SCRIPT` ci-dessous), pour que ce TIMEOUT ne ferme jamais
+la page distante. Le dispatcher bloqué ne se débloque alors plus que par ses
+propres budgets internes, jamais par ce watchdog (cf. docstring de
+Survey/replay_browser.py, limite (1) d'`execute_case_action`) : c'est le budget
+global du sous-processus (voir ci-dessous), pas ce watchdog, qui borne
+effectivement l'opération dans ce cas — même mécanisme de repli, déjà en place,
+que pour stage="extraction" ci-dessous. Aucun risque équivalent pour
+stage="extraction" : `extract_case_blocks` n'effectue aucune mutation (lecture
+DOM + validation), une interruption brutale du sous-processus (budget global
+dépassé, voir ci-dessous) ne touche jamais la page distante elle-même — seule
+NOTRE connexion locale meurt avec le sous-processus.
 
 ── Budget de temps explicite sur l'ensemble de l'opération ────────────────────
 Un seul réglage exposé à l'opérateur (`budget_s`, connexion + rejeu confondus,
@@ -478,6 +483,7 @@ try:
         extraction = extract_case_blocks(page, case_dir)
         execution = execute_case_action(
             page, case_dir, budget_s=budget_s, question_blocks=extraction.blocks,
+            close_page_on_timeout=False,
         )
         result = {
             "status": execution.status,
@@ -490,10 +496,10 @@ try:
             "trace_replay": execution.trace_replay,
         }
     finally:
-        # Jamais browser.close() ici non plus : si TIMEOUT, execute_case_action a
-        # deja ferme la PAGE elle-meme (comportement existant, non modifie, cf.
-        # docstring du module) ; on ne ferme dans tous les cas que notre driver
-        # Playwright local, jamais une deuxieme fois la page, jamais le navigateur.
+        # Jamais browser.close() ici non plus : execute_case_action est appelee
+        # avec close_page_on_timeout=False (cf. docstring du module) donc un
+        # TIMEOUT ne ferme pas la page distante ; on ne ferme dans tous les cas
+        # que notre driver Playwright local, jamais la page, jamais le navigateur.
         pw.stop()
 except Exception as exc:
     result = {"status": None, "error": f"{type(exc).__name__}: {exc}"}
@@ -695,8 +701,9 @@ def validate_patch_live(
                 result.warnings.append(
                     "budget de temps dépassé pendant la validation live — traité comme non concluant, "
                     "même si trace_replay porte un signal favorable (jamais une confirmation active) ; "
-                    "la page live a déjà été fermée par execute_case_action (comportement existant, "
-                    "voir docstring du module)"
+                    "la page live n'a PAS été fermée par execute_case_action (appelée avec "
+                    "close_page_on_timeout=False, voir docstring du module) — mais son dispatcher peut "
+                    "rester bloqué jusqu'à l'expiration du budget global du sous-processus"
                 )
 
     result.outcome = outcome
