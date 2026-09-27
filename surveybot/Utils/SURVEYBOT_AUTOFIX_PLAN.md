@@ -1109,6 +1109,51 @@ niveau tant que le niveau précédent n'est pas fiable.
 > Phases 15/16. Le chantier principal passe aux étapes 14 à 20, à la
 > Phase 11 partie B dès curation d'une bibliothèque regression_cases/, ou à
 > la fermeture des sous-chantiers encore ouverts (3D/3B.3/3B.4).
+> Mise à jour 2026-09-26 (suite 30) : Phase 14 clôturée (proposition
+> automatique, jamais collée automatiquement, d'entrée BOT_EVOLUTION_MEMORY.md).
+> `Survey/bem_proposal.py` + `tools/propose_bem_entry.py`. Déclencheur exact :
+> decision.json (Phase 13) avec decision="APPROVED" — REJECTED, ou Phase 13
+> jamais déclenchée, refusent explicitement, jamais une proposition. Point
+> noté par Codex, non une précondition inventée : confidence_score.json
+> (Phase 12) est structurellement déjà garanti exister à ce stade (Phase 13
+> exige déjà confidence="HIGH" avant de pouvoir notifier) — vérifié ici avec
+> la même rigueur que les autres artefacts, pas une garantie supplémentaire
+> supposée.
+> Détection des fichiers réellement modifiés : Survey/static_validator.py::
+> _git_changed_paths/_filter_existing_python_files/_resolve_package_root
+> (Phase 8) réutilisées telles quelles, jamais réimplémentées. Limite héritée
+> assumée et disclosée : un fichier .py supprimé par le patch est filtré par
+> _filter_existing_python_files (réutilisée sans modification) — ses
+> fonctions supprimées ne sont donc jamais énumérées, signalé explicitement
+> en avertissement plutôt que masqué.
+> Détection des fonctions ajoutées/modifiées/supprimées : même technique que
+> Survey/extractor_integrity.py::_find_function_source (AST, segment source
+> exact décorateurs inclus, hash SHA256) — mais ce fichier n'est ni importé
+> ni modifié : nouvelle fonction d'énumération complète
+> (_enumerate_top_level_functions, module + méthodes de classes top-level,
+> jamais les imbrications) écrite dans le nouveau module, comparant le
+> contenu à base_sha (git show) au contenu courant du worktree. Stratégie
+> unique, sans repli textuel : un échec de parsing AST (worktree ou
+> base_sha) est signalé explicitement, jamais deviné.
+> Croisement avec context_selection.json (Phase 5) : la reason déjà calculée
+> est reprise telle quelle pour un fichier anticipé ; un fichier modifié mais
+> non anticipé par la Phase 5 est signalé explicitement, jamais omis.
+> Brouillon composé dans le format EXACT de l'en-tête de
+> BOT_EVOLUTION_MEMORY.md (### nom, Fichier, Bug corrigé, Correction,
+> Patterns couverts, Patterns exclus, Diagnostic associé, Statut) —
+> uniquement des faits déjà établis (fichiers/fonctions réellement modifiés,
+> symptom/cause de la Phase 4, confidence de la Phase 12) ; le titre lui-même
+> est construit uniquement à partir des noms de fonctions réellement
+> détectées comme ajoutées/modifiées, jamais une prose inventée. "Patterns
+> couverts"/"Patterns exclus" (jugement humain requis) portent un marqueur
+> explicite "[À COMPLÉTER — ...]", jamais une supposition qui aurait l'air
+> d'un fait. Sortie : bem_entry_proposal.md (le brouillon lui-même) +
+> bem_proposal.json (traçabilité), sous bem_proposals/<case_id>/ — n'écrit
+> JAMAIS dans BOT_EVOLUTION_MEMORY.md lui-même. Le chantier principal passe
+> aux Phases 15/16 (commit/merge semi-automatique, consommateurs naturels de
+> decision.json et bem_entry_proposal.md), à la Phase 11 partie B dès
+> curation d'une bibliothèque regression_cases/, ou à la fermeture des
+> sous-chantiers encore ouverts (3D/3B.3/3B.4).
 
 ## Contexte de travail actuel
 
@@ -1185,6 +1230,11 @@ incident détecté
     recevable sur PC/téléphone/tablette ; polling getUpdates, jamais de
     webhook, décision capturée même prise hors ligne ; notifie seulement
     confidence=HIGH ; ne merge/commit rien — voir Phase 13)
+14  TERMINÉE (bem_proposal.py + CLI ; déclenchée seulement sur decision.json
+    APPROVED ; fichiers/fonctions réellement modifiés détectés par diff Git +
+    AST/hash (technique d'extractor_integrity.py généralisée, jamais ce
+    fichier modifié) ; brouillon jamais collé automatiquement dans BEM,
+    jugements humains explicitement marqués "à compléter" — voir Phase 14)
 ```
 
 Décision importante :
@@ -3156,6 +3206,22 @@ C'est le premier niveau réellement utile de semi-autonomie.
 
 # Phase 14 --- Mise à jour automatique proposée de BEM
 
+**Statut : TERMINÉE — `Survey/bem_proposal.py` + `tools/propose_bem_entry.py`.
+Déclenchée uniquement par `decision.json` (Phase 13) avec `decision="APPROVED"`
+exactement. Fichiers réellement modifiés détectés par réutilisation stricte
+des helpers Git de la Phase 8 (`_git_changed_paths`/`_filter_existing_python_files`/
+`_resolve_package_root`) ; fonctions ajoutées/modifiées/supprimées détectées
+par la même technique AST/hash que `Survey/extractor_integrity.py` (généralisée
+à une énumération complète, sans jamais importer ni modifier ce fichier).
+Croisement avec `context_selection.json` (Phase 5) pour le contexte déjà
+calculé ; tout fichier modifié non anticipé par cette phase est signalé
+explicitement. Brouillon composé dans le format exact de l'en-tête de
+`BOT_EVOLUTION_MEMORY.md`, uniquement à partir de faits déjà établis — les
+sections exigeant un jugement humain ("Patterns couverts"/"Patterns exclus")
+portent un marqueur explicite, jamais une prose inventée. N'écrit JAMAIS dans
+`BOT_EVOLUTION_MEMORY.md` lui-même — seulement un brouillon séparé, destiné à
+une relecture humaine puis un collage manuel.**
+
 Après validation du patch seulement.
 
 Le système génère une proposition d'entrée :
@@ -3515,6 +3581,9 @@ Je suivrais exactement cet ordre :
     notify/check, via Telegram existant, polling getUpdates ; notifie
     seulement confidence=HIGH ; ne merge/commit rien)
 14  Proposition BEM
+14  Proposition BEM — TERMINÉE (bem_proposal.py + CLI ; déclenchée sur
+    decision.json APPROVED ; détection fichiers/fonctions par Git+AST/hash,
+    jamais collé automatiquement dans BEM)
 15  Commit automatique
 16  Merge semi-automatique
 17  Auto-fix supervisé
