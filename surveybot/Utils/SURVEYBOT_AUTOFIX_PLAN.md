@@ -1245,6 +1245,41 @@ niveau tant que le niveau précédent n'est pas fiable.
 > aucune liste de catégories de confiance, aucune logique de décision — le
 > déclencheur réel de la Phase 17 reste en attente de plusieurs semaines de
 > données réelles produites par cet outil.
+> Mise à jour 2026-09-26 (suite 33) : deux outils additifs construits, HORS
+> de la numérotation 1A-20 (à la demande de l'opérateur, en réaction aux
+> Phases 18-20 — cf. section dédiée « Outils complémentaires » plus bas pour
+> le détail complet) :
+> (1) Sécurité du parallélisme, en deux parties — `Survey/parallel_safety.py`
+> + `tools/check_parallel_safety.py` (avant lancement Codex, niveau fichier,
+> approximatif par construction) et `tools/check_function_overlap.py` (après
+> patchs produits, avant merge, niveau fonction, précis — réutilise
+> intégralement `Survey/bem_proposal.py::_detect_changed_files`, jamais
+> réimplémentée). BOT_EVOLUTION_MEMORY.md explicitement exclu de la
+> comparaison (présent dans presque tout `context_selection.json`, un
+> conflit dessus est un texte, pas un vrai risque de code). Ajouté et
+> supprimé/modifié comptent tous deux comme changement réel d'une fonction.
+> (2) Déduplication stricte de cases — `Survey/case_grouping.py` + `tools/
+> group_duplicate_cases.py`. Critère retenu (choix explicite de
+> l'opérateur, plus permissif écarté) : identité stricte de signature
+> (module + ensemble de matched_signals), jamais un simple recouvrement —
+> un case rattaché à plusieurs signatures distinctes est une ambiguïté,
+> retiré de tout regroupement automatique plutôt qu'assigné arbitrairement.
+> Groupe matérialisé comme un failure_case + diagnosis.json SYNTHÉTIQUES
+> (copie du case représentatif, case_id remplacé par group_id) — consommés
+> tels quels par les Phases 5 à 16 sans aucune modification de leur code.
+> group_id dérivé de la signature (pas du case_id du représentant), pour
+> que le même bug reconnu plus tard reproduise le même group_id — germe
+> exact du "Bot A → Bot B : déjà supporté" de la Phase 19, mais sans
+> aucune infrastructure fleet nécessaire pour ce mécanisme précis (il opère
+> une fois les cases déjà présents localement, quelle que soit leur
+> origine). Limite disclosée : Phase 9 ne rejoue le patch que contre le
+> représentant, jamais les N membres — se raccroche au sous-chantier déjà
+> différé "rejeu de cas historiques voisins" (Phase 9). Groupes gelés une
+> fois formés (jamais régénérés/étendus) — extension incrémentale d'un
+> groupe existant explicitement différée, documentée plutôt que masquée.
+> Le transport fleet lui-même (upload/import depuis ~100 machines de prod
+> vers la machine de dev, cf. échange précédent) reste à ce jour un prompt
+> rédigé mais NON implémenté — Phase 20 n'est donc pas close.
 
 ## Contexte de travail actuel
 
@@ -3665,6 +3700,49 @@ en Phase 3 (3A statique, 3B capture enrichie, 3C replay Chromium local,
 `EXTERNAL_NON_REPLAYABLE`) ; « Live Validation » correspond à la Phase 10,
 devenue le chemin normal pour les cas classés `EXTERNAL_NON_REPLAYABLE`.
 
+## Outils complémentaires (hors numérotation 1A-20)
+
+Ces outils ne correspondent à aucune phase numérotée du plan — construits à
+la demande de l'opérateur en réaction directe aux Phases 18-20, avant que
+ces phases elles-mêmes ne soient closes. Additifs, en lecture seule sur les
+artefacts déjà produits, ne modifient aucun fichier existant du pipeline.
+
+**Sécurité du parallélisme** (`Survey/parallel_safety.py`) — deux contrôles
+complémentaires, jamais une décision automatique :
+- `tools/check_parallel_safety.py` : AVANT le lancement de Codex, compare au
+  niveau FICHIER les `code_files` d'au moins deux `context_selection.json`
+  (Phase 5). Approximatif par construction (Codex n'a pas encore écrit de
+  code) — signalé comme tel dans la sortie. `BOT_EVOLUTION_MEMORY.md`
+  (`always_included`) explicitement exclu de la comparaison.
+- `tools/check_function_overlap.py` : APRÈS que Codex a produit ses patchs,
+  AVANT le merge, compare au niveau FONCTION au moins deux `worktree.json`
+  (Phase 7) — réutilise intégralement `Survey/bem_proposal.py::
+  _detect_changed_files` (elle-même déjà bâtie sur la Phase 8 et l'AST/hash
+  de la Phase 14), jamais réimplémentée. Une fonction ajoutée, modifiée OU
+  supprimée par plusieurs worktrees à la fois est un conflit réel signalé
+  explicitement ; un fichier partagé sans fonction en commun n'est jamais
+  signalé (Git le fusionne normalement) ; un échec de parsing AST est
+  signalé "non comparable", jamais deviné ni classé sûr par défaut.
+
+**Déduplication stricte de cases** (`Survey/case_grouping.py` + `tools/
+group_duplicate_cases.py`) — regroupe des `failure_cases` déjà diagnostiqués
+(Phase 4) mais pas encore engagés en Phase 5, qui partagent une signature
+IDENTIQUE (module + ensemble de `matched_signals`, jamais un recouvrement
+partiel — choix explicite de l'opérateur). Matérialise chaque groupe de
+taille ≥2 comme un `failure_case`/`diagnosis.json` SYNTHÉTIQUES (copie du
+représentant, `case_id` remplacé par `group_id`), consommés tels quels par
+les Phases 5 à 16 sans aucune modification de leur code. `group_id` dérivé
+de la signature (jamais du case_id du représentant) pour qu'un même bug
+reconnu plus tard reproduise le même groupe. Limite disclosée : la Phase 9
+ne rejoue le patch que contre le représentant, jamais les N membres (se
+raccroche au sous-chantier déjà différé "rejeu de cas historiques voisins").
+Groupes gelés une fois formés — extension incrémentale d'un groupe déjà
+formé différée, documentée plutôt que masquée.
+
+Le transport fleet (upload/import de `failure_cases/` depuis ~100 machines
+de prod vers la machine de dev, prérequis réel de la Phase 20) reste à ce
+jour un prompt rédigé mais NON implémenté.
+
 ## Ordre concret de développement
 
 Je suivrais exactement cet ordre :
@@ -3740,7 +3818,11 @@ Je suivrais exactement cet ordre :
     automatique par catégorie explicitement différé, en attente de
     plusieurs semaines de données réelles)
 18  Boucle autonome attach
-19  Fleet learning / métriques
+19  Fleet learning / métriques — CONTRIBUTION PARTIELLE, hors numérotation
+    (déduplication stricte de cases, case_grouping.py — résout "Bot A → Bot
+    B déjà supporté" sans infrastructure fleet ; le tableau de taux de
+    réussite par extracteur reste bloqué, aucune source ne compte les
+    extractions réussies)
 20  Pipeline de correction séparé de Prod
 ```
 
