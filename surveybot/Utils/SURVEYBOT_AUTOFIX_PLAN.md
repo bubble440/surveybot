@@ -1057,6 +1057,58 @@ niveau tant que le niveau précédent n'est pas fiable.
 > que masquée, cohérente avec celle déjà actée en Phase 10 : aucun
 > Chromium/point CDP réel disponible dans cet environnement pour un test de
 > bout en bout du nouveau paramètre.
+> Mise à jour 2026-09-26 (suite 29) : Phase 13 clôturée (validation humaine
+> simplifiée, via Telegram — recevable sur n'importe quel appareil : PC,
+> téléphone, tablette). `Survey/human_review.py` + `tools/notify_human_review.py`
+> + `tools/check_human_review.py`. Infrastructure Telegram existante réutilisée
+> telle quelle (variables d'environnement telegram_bot_token/telegram_chat_id,
+> déjà utilisées ailleurs dans ce dépôt — Management/notifier.py, launch.py,
+> Survey/survey_executor.py, Cash/*.py, platforms/*.py, vérifié avant
+> d'écrire ce module plutôt que supposé) — aucune nouvelle variable
+> introduite. Management/notifier.py::send_telegram() non réutilisé tel
+> quel (ne supporte ni reply_markup ni la récupération du message_id) :
+> client HTTP minimal dédié, stdlib urllib uniquement, une seule stratégie
+> de transport.
+> Polling (getUpdates), jamais un webhook — pas de serveur public à exposer,
+> cohérent avec l'architecture actuelle. Telegram met en file d'attente les
+> callback_query côté serveur : une décision prise à tout moment ("en
+> marchant dans la rue") est récupérée telle quelle à la prochaine
+> invocation de check_human_review.py, sans exiger de processus persistant
+> — cohérent avec le principe déjà en place que ce pipeline reste des
+> façades CLI actionnées manuellement (cf. Phase 7), jamais un démon.
+> Précondition stricte pour notifier (Partie 1) : confidence_score.json
+> (Phase 12) avec confidence="HIGH" exactement — MEDIUM/REJECT ne
+> déclenchent jamais de notification, déjà visibles via les sorties CLI
+> existantes. Message composé à partir de diagnosis.json (symptôme, cause)
+> et confidence_score.json (critères), jamais le diff du patch. Prudence
+> notable, non anticipée mot pour mot par le prompt d'origine mais dans son
+> esprit : le symptôme utilise volontairement `symptom.failure_types` (noms
+> de catégories) plutôt que `symptom.issues` (qui recopierait une donnée de
+> répondant déjà présente en amont), pour ne dépendre d'aucune sanitisation
+> antérieure. Refus explicite (jamais un envoi silencieux en double) si
+> pending.json/decision.json existe déjà sans --force.
+> Encodage case_id <-> callback_data : une seule stratégie, jamais un repli
+> conditionnel — hash SHA256 tronqué à 16 caractères hex (limite Telegram de
+> 64 octets vérifiée, jamais supposée), décodage par recherche symétrique du
+> même hash parmi les dossiers de case déjà connus sous human_reviews/
+> (jamais un décodage inverse, impossible par construction).
+> Partie 2 (check_human_review.py) : une seule interrogation getUpdates par
+> invocation, offset persisté avancé seulement après que TOUTES les
+> décisions du lot ont été durablement écrites ou explicitement ignorées —
+> jamais avant. Cas gérés sans jamais planter : callback pour un case
+> inconnu (avertissement, mise à jour quand même considérée traitée) ;
+> décision déjà enregistrée pour ce case (la première fait foi, callback
+> suivant ignoré). Bonus best-effort, sans risque pour la décision déjà
+> écrite : le message Telegram d'origine est édité pour retirer les boutons
+> et afficher la décision prise, et answerCallbackQuery est appelé pour
+> lever l'indicateur de chargement côté client — tout échec de ces deux
+> gestes est journalisé en debug, jamais bloquant.
+> Portée confirmée strictement limitée à la notification et la capture de
+> la décision (`decision.json`, APPROVED/REJECTED) : aucun merge, commit, ni
+> modification d'un worktree autofix déclenché ici — reste le périmètre des
+> Phases 15/16. Le chantier principal passe aux étapes 14 à 20, à la
+> Phase 11 partie B dès curation d'une bibliothèque regression_cases/, ou à
+> la fermeture des sous-chantiers encore ouverts (3D/3B.3/3B.4).
 
 ## Contexte de travail actuel
 
@@ -1129,6 +1181,10 @@ incident détecté
     intégrité en veto plutôt qu'en confirmation requise ; avertissement
     systématique : "régressions" ne couvre encore que le hash, pas un rejeu
     DOM — voir Phase 12)
+13  TERMINÉE (human_review.py + CLI notify/check, via Telegram existant —
+    recevable sur PC/téléphone/tablette ; polling getUpdates, jamais de
+    webhook, décision capturée même prise hors ligne ; notifie seulement
+    confidence=HIGH ; ne merge/commit rien — voir Phase 13)
 ```
 
 Décision importante :
@@ -3034,6 +3090,23 @@ REJECT
 
 # Phase 13 --- Validation humaine simplifiée
 
+**Statut : TERMINÉE — `Survey/human_review.py` + `tools/notify_human_review.py`
++ `tools/check_human_review.py`, via l'infrastructure Telegram déjà existante
+dans ce projet (monitoring/alertes bot), recevable sur n'importe quel
+appareil (PC, téléphone, tablette). Polling (`getUpdates`), jamais de
+webhook — Telegram met en file d'attente côté serveur, une décision prise à
+tout moment est récupérée telle quelle à la prochaine invocation, sans
+processus persistant à faire tourner. Notifie seulement les cas
+`confidence="HIGH"` (Phase 12) ; message composé du symptôme, de la cause
+probable et des critères déjà produits, jamais le diff du patch ni une
+donnée brute de répondant. Encodage case_id/callback_data par hash SHA256
+tronqué (limite Telegram de 64 octets vérifiée), décodage par recherche
+symétrique — une seule stratégie, jamais un repli conditionnel. Décision
+capturée dans `decision.json`, offset avancé seulement après écriture
+durable de tout le lot. Portée strictement limitée à la notification et à la
+capture de la décision — aucun merge, commit, ni modification de worktree
+déclenché ici (Phases 15/16, hors périmètre).**
+
 À ce stade ton travail change complètement.
 
 Au lieu de :
@@ -3438,7 +3511,9 @@ Je suivrais exactement cet ordre :
     effet de bord, verdict toujours produit ; HIGH/MEDIUM/REJECT par
     règles ordonnées ; avertissement systématique sur la portée limitée
     du critère "régressions" tant que la Phase 11-B n'existe pas)
-13  UI/review humaine simplifiée
+13  UI/review humaine simplifiée — TERMINÉE (human_review.py + CLI
+    notify/check, via Telegram existant, polling getUpdates ; notifie
+    seulement confidence=HIGH ; ne merge/commit rien)
 14  Proposition BEM
 15  Commit automatique
 16  Merge semi-automatique
