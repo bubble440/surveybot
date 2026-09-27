@@ -8,14 +8,14 @@ jamais lui-même un merge, un commit, ou une modification d'un worktree autofix
 (cf. Phases 15/16, hors périmètre).
 
 ── Précondition (Partie 1) ─────────────────────────────────────────────────
-confidence_score.json (Phase 12) doit exister pour ce case et porter
-confidence="HIGH" exactement. La Phase 12 n'est pas encore implémentée dans ce
-dépôt (statut "à faire" dans SURVEYBOT_AUTOFIX_PLAN.md) : le contrat minimal
-attendu ici, par cohérence avec le reste du pipeline (manifest.json,
-diagnosis.json), est un objet JSON portant au moins "case_id" et "confidence"
-("HIGH"/"MEDIUM"/"REJECT") ; une liste optionnelle "checks" ([{"name",
-"result"}, ...]) est reprise si présente pour synthétiser les tests déjà
-produits, sans jamais être inventée si absente.
+confidence_score.json (Phase 12, Survey/confidence_score.py — non modifié)
+doit exister pour ce case et porter confidence="HIGH" exactement. Le
+"résultat des tests" du message repris ici est le champ "criteria" réel de
+cette phase (static_validation/extractor_integrity/fix_confirmed/
+live_validation, chacun {"value", "detail", "source"}) — jamais un format
+inventé indépendamment. Un case sans "criteria" exploitable (garde-fou
+défensif, ne devrait pas arriver puisque Phase 12 la produit toujours)
+retombe sur "détail non disponible", jamais une valeur devinée.
 
 MEDIUM/REJECT ne déclenchent jamais de notification ici — l'opérateur les voit
 déjà via les sorties CLI existantes des phases précédentes.
@@ -237,13 +237,25 @@ def check_review_eligibility(
     return ReviewEligibility(eligible=not reasons, case_id=resolved_case_id, reasons=reasons)
 
 
+# Ordre et libellés d'affichage des quatre critères de Survey/confidence_score.py
+# (static_validation/extractor_integrity/fix_confirmed/live_validation) — noms de
+# clés repris tels quels de ce module (non modifié), jamais réinventés.
+_CRITERIA_ORDER = ("static_validation", "extractor_integrity", "fix_confirmed", "live_validation")
+_CRITERIA_LABELS = {
+    "static_validation": "Validation statique (Phase 8)",
+    "extractor_integrity": "Intégrité fonctions gelées (Phase 11-A)",
+    "fix_confirmed": "Correctif confirmé",
+    "live_validation": "Validation live (Phase 10)",
+}
+
+
 def _compose_message(*, case_id: str, diagnosis: dict, confidence_score: dict) -> str:
     """Symptôme, cause probable, tests, confiance — jamais le diff du patch, jamais
     une donnée brute d'un vrai répondant. Utilise volontairement
-    symptom.failure_types (liste de noms) plutôt que symptom.issues : ce dernier
-    recopie les issues de validation_report.json "telles quelles" (Phase 4), qui
-    peuvent porter une donnée réellement saisie par un répondant (cf. point de
-    vigilance Phase 6, jamais corrigé à la source)."""
+    symptom.failure_types (liste de noms de failure_type) plutôt que
+    symptom.issues : ce dernier recopie les issues de validation_report.json
+    (Phase 4), et rester sur les seuls noms de failure_type évite toute
+    dépendance à leur éventuel contenu, sanitisé ou non, en amont."""
     symptom = diagnosis.get("symptom") if isinstance(diagnosis.get("symptom"), dict) else {}
     failure_types = symptom.get("failure_types") or []
     symptom_line = ", ".join(str(x) for x in failure_types) if failure_types else "non documenté"
@@ -251,17 +263,16 @@ def _compose_message(*, case_id: str, diagnosis: dict, confidence_score: dict) -
     cause = diagnosis.get("cause") if isinstance(diagnosis.get("cause"), dict) else {}
     cause_line = str(cause.get("justification") or "non documentée")
 
-    checks = confidence_score.get("checks")
-    if isinstance(checks, list) and checks:
+    criteria = confidence_score.get("criteria")
+    tests_block = "détail non disponible"
+    if isinstance(criteria, dict) and criteria:
         lines = []
-        for item in checks:
-            if isinstance(item, dict):
-                lines.append(f"- {item.get('name', '?')} : {item.get('result', '?')}")
-            else:
-                lines.append(f"- {item}")
-        tests_block = "\n".join(lines)
-    else:
-        tests_block = "détail non disponible"
+        for key in _CRITERIA_ORDER:
+            entry = criteria.get(key)
+            if isinstance(entry, dict):
+                lines.append(f"- {_CRITERIA_LABELS.get(key, key)} : {entry.get('value', '?')}")
+        if lines:
+            tests_block = "\n".join(lines)
 
     confidence = str(confidence_score.get("confidence") or "?")
 
