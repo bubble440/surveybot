@@ -42,6 +42,24 @@ toujours dans cette limite. La stratégie retenue, appliquée systématiquement
 (impossible, sens unique) : il recherche, parmi les dossiers déjà connus sous
 human_reviews/, celui dont le même hachage correspond — symétrique par
 construction, une seule fonction (_encode_case_ref) utilisée des deux côtés.
+
+── Généralisation Phase 16 (merge semi-automatique) ────────────────────────
+Telegram ne fournit qu'UN SEUL flux getUpdates par bot : deux pollers
+indépendants avec deux offsets indépendants se voleraient mutuellement les
+mises à jour dès qu'ils tournent tous les deux. La plomberie Telegram
+partagée (client HTTP minimal, encodage/décodage case_id <-> callback_data,
+gestion de l'offset persisté, envoi d'un message à deux boutons + persistance
+de pending.json) est donc factorisée ici en fonctions internes réutilisables
+par deux points d'entrée publics distincts : send_review_request/
+check_pending_reviews (Phase 13, comportement inchangé, human_reviews/) et
+Survey/merge_review.py::send_merge_confirmation_request (Phase 16,
+merge_reviews/), qui importe ces internes telles quelles plutôt que de
+réimplémenter un second poller. check_pending_reviews interroge getUpdates
+UNE SEULE FOIS par invocation et route chaque callback_query, selon son
+préfixe de callback_data, vers human_reviews/ OU merge_reviews/ avec le même
+offset persisté — jamais deux invocations séparées de getUpdates. Un préfixe
+de callback_data non reconnu (ni Phase 13 ni Phase 16) est ignoré avec un
+avertissement, comme avant ce patch.
 """
 
 import hashlib
@@ -65,9 +83,22 @@ _CB_APPROVE_PREFIX = "hrA:"
 _CB_REJECT_PREFIX = "hrR:"
 _CB_TOKEN_HEX_LEN = 16  # 16 octets, très en-dessous de la limite de 64 octets
 
-_DECISION_BY_PREFIX = {
-    _CB_APPROVE_PREFIX: "APPROVED",
-    _CB_REJECT_PREFIX: "REJECTED",
+# Phase 16 — préfixes distincts pour la confirmation de merge, jamais réutilisés
+# tels quels ailleurs : un seul flux getUpdates partagé (cf. docstring du module),
+# désambiguïsé uniquement par ce préfixe.
+_CB_MERGE_APPROVE_PREFIX = "mrA:"
+_CB_MERGE_REJECT_PREFIX = "mrR:"
+
+KIND_HUMAN_REVIEW = "human_review"
+KIND_MERGE_REVIEW = "merge_review"
+
+# (kind, decision) par préfixe de callback_data — une seule table, jamais deux
+# mécanismes de décodage parallèles pour les deux points d'entrée publics.
+_KIND_AND_DECISION_BY_PREFIX = {
+    _CB_APPROVE_PREFIX: (KIND_HUMAN_REVIEW, "APPROVED"),
+    _CB_REJECT_PREFIX: (KIND_HUMAN_REVIEW, "REJECTED"),
+    _CB_MERGE_APPROVE_PREFIX: (KIND_MERGE_REVIEW, "APPROVED"),
+    _CB_MERGE_REJECT_PREFIX: (KIND_MERGE_REVIEW, "REJECTED"),
 }
 
 # Composant de chemin unique, allowlist conservatrice — même garde-fou que
@@ -121,11 +152,12 @@ def _encode_case_ref(case_id: str) -> str:
     return hashlib.sha256(case_id.encode("utf-8")).hexdigest()[:_CB_TOKEN_HEX_LEN]
 
 
-def _parse_callback_data(data: str) -> "Optional[tuple[str, str]]":
-    """Retourne (decision, token) ou None si le préfixe n'est pas reconnu."""
-    for prefix, decision in _DECISION_BY_PREFIX.items():
+def _parse_callback_data(data: str) -> "Optional[tuple[str, str, str]]":
+    """Retourne (kind, decision, token) ou None si le préfixe n'est pas reconnu
+    (ni Phase 13, ni Phase 16)."""
+    for prefix, (kind, decision) in _KIND_AND_DECISION_BY_PREFIX.items():
         if data.startswith(prefix):
-            return decision, data[len(prefix):]
+            return kind, decision, data[len(prefix):]
     return None
 
 
@@ -293,28 +325,28 @@ class ReviewRequestResult:
     pending_path: Path
 
 
-def send_review_request(
+def _send_two_button_review(
     *,
-    confidence_score_dir: "str | Path",
-    diagnosis_dir: "str | Path",
-    out_root: "str | Path" = "human_reviews",
-    force: bool = False,
+    out_root: Path,
+    case_id: str,
+    text: str,
+    approve_prefix: str,
+    approve_label: str,
+    reject_prefix: str,
+    reject_label: str,
+    force: bool,
+    log_tag: str = _TAG,
 ) -> ReviewRequestResult:
-    confidence_score_dir = Path(confidence_score_dir)
-    diagnosis_dir = Path(diagnosis_dir)
-    out_root = Path(out_root)
-
-    eligibility = check_review_eligibility(
-        confidence_score_dir=confidence_score_dir,
-        diagnosis_dir=diagnosis_dir,
-    )
-    if not eligibility.eligible:
-        raise HumanReviewError(
-            "case non éligible à la notification (Phase 13) : " + " ; ".join(eligibility.reasons)
-        )
-    case_id = eligibility.case_id
-    assert case_id is not None  # garanti par eligible=True
-
+    """Plomberie Telegram partagée (Phase 13 ET Phase 16, cf. docstring du
+    module) : vérifie la configuration Telegram, refuse un envoi en double
+    (pending.json/decision.json déjà présents, sauf force=True), envoie `text`
+    avec un clavier inline à deux boutons dont les callback_data sont préfixés
+    par approve_prefix/reject_prefix, puis persiste out_root/<case_id>/
+    pending.json (même schéma pour les deux points d'entrée). Ne calcule
+    aucune éligibilité ni aucun contenu de message — l'appelant reste seul
+    responsable de ces deux choix, spécifiques à sa phase. `log_tag` (défaut :
+    le tag de ce module, comportement Phase 13 inchangé) permet à l'appelant
+    de journaliser sous son propre tag plutôt que [HUMAN_REVIEW]."""
     tg_token = os.getenv("telegram_bot_token", "").strip()
     tg_chat = os.getenv("telegram_chat_id", "").strip()
     if not tg_token or not tg_chat:
@@ -333,18 +365,14 @@ def send_review_request(
                 f"{existing} déjà présent dans {out_dir} (utiliser --force pour renotifier — "
                 "jamais un envoi silencieux en double)"
             )
-        log_info(_TAG, f"--force : suppression de {out_dir} avant renvoi")
+        log_info(log_tag, f"--force : suppression de {out_dir} avant renvoi")
         shutil.rmtree(out_dir)
-
-    confidence_score, _ = _load_json(confidence_score_dir / "confidence_score.json")
-    diagnosis, _ = _load_json(diagnosis_dir / "diagnosis.json")
-    text = _compose_message(case_id=case_id, diagnosis=diagnosis, confidence_score=confidence_score)
 
     token = _encode_case_ref(case_id)
     reply_markup = {
         "inline_keyboard": [[
-            {"text": "✅ Approuver", "callback_data": f"{_CB_APPROVE_PREFIX}{token}"},
-            {"text": "❌ Rejeter", "callback_data": f"{_CB_REJECT_PREFIX}{token}"},
+            {"text": approve_label, "callback_data": f"{approve_prefix}{token}"},
+            {"text": reject_label, "callback_data": f"{reject_prefix}{token}"},
         ]]
     }
 
@@ -370,9 +398,47 @@ def send_review_request(
         encoding="utf-8",
     )
 
-    log_info(_TAG, f"notification envoyée case={case_id} chat_id={chat_id} message_id={message_id}")
+    log_info(log_tag, f"notification envoyée case={case_id} chat_id={chat_id} message_id={message_id}")
 
     return ReviewRequestResult(case_id=case_id, chat_id=chat_id, message_id=message_id, pending_path=pending_file)
+
+
+def send_review_request(
+    *,
+    confidence_score_dir: "str | Path",
+    diagnosis_dir: "str | Path",
+    out_root: "str | Path" = "human_reviews",
+    force: bool = False,
+) -> ReviewRequestResult:
+    confidence_score_dir = Path(confidence_score_dir)
+    diagnosis_dir = Path(diagnosis_dir)
+    out_root = Path(out_root)
+
+    eligibility = check_review_eligibility(
+        confidence_score_dir=confidence_score_dir,
+        diagnosis_dir=diagnosis_dir,
+    )
+    if not eligibility.eligible:
+        raise HumanReviewError(
+            "case non éligible à la notification (Phase 13) : " + " ; ".join(eligibility.reasons)
+        )
+    case_id = eligibility.case_id
+    assert case_id is not None  # garanti par eligible=True
+
+    confidence_score, _ = _load_json(confidence_score_dir / "confidence_score.json")
+    diagnosis, _ = _load_json(diagnosis_dir / "diagnosis.json")
+    text = _compose_message(case_id=case_id, diagnosis=diagnosis, confidence_score=confidence_score)
+
+    return _send_two_button_review(
+        out_root=out_root,
+        case_id=case_id,
+        text=text,
+        approve_prefix=_CB_APPROVE_PREFIX,
+        approve_label="✅ Approuver",
+        reject_prefix=_CB_REJECT_PREFIX,
+        reject_label="❌ Rejeter",
+        force=force,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -413,6 +479,7 @@ def _best_effort_answer_callback(tg_token: str, callback_id: Any) -> None:
 
 @dataclass
 class ProcessedCallback:
+    kind: str  # "human_review" | "merge_review"
     case_id: Optional[str]
     decision: str
     outcome: str  # "written" | "ignored_duplicate" | "unknown_case"
@@ -436,15 +503,28 @@ def _load_offset(offset_file: Path) -> int:
     return 0
 
 
+def _root_for_kind(kind: str, *, human_out_root: Path, merge_out_root: Optional[Path]) -> Optional[Path]:
+    if kind == KIND_HUMAN_REVIEW:
+        return human_out_root
+    if kind == KIND_MERGE_REVIEW:
+        return merge_out_root
+    return None
+
+
 def check_pending_reviews(
     *,
     out_root: "str | Path" = "human_reviews",
+    merge_out_root: "Optional[str | Path]" = "merge_reviews",
     offset_file: "Optional[str | Path]" = None,
 ) -> CheckResult:
-    """Interroge getUpdates UNE SEULE FOIS, traite chaque callback_query du lot,
-    puis avance l'offset persisté seulement après que toutes les décisions du
-    lot ont été durablement écrites ou explicitement ignorées — jamais avant."""
+    """Interroge getUpdates UNE SEULE FOIS et route chaque callback_query du
+    lot, selon son préfixe de callback_data, vers human_reviews/ (Phase 13) OU
+    merge_reviews/ (Phase 16) — même offset persisté pour les deux, jamais
+    deux invocations séparées de getUpdates (cf. docstring du module).
+    L'offset persisté n'avance qu'après que toutes les décisions du lot ont
+    été durablement écrites ou explicitement ignorées — jamais avant."""
     out_root = Path(out_root)
+    merge_root = Path(merge_out_root) if merge_out_root is not None else None
     offset_path = Path(offset_file) if offset_file else out_root / "_telegram_offset.json"
 
     tg_token = os.getenv("telegram_bot_token", "").strip()
@@ -482,26 +562,35 @@ def check_pending_reviews(
         if parsed is None:
             log_info(_TAG, f"avertissement : callback_data non reconnu, ignoré ({data!r})")
             continue
-        decision_label, token = parsed
+        kind, decision_label, token = parsed
 
-        case_id = _find_case_id_by_token(token, out_root=out_root)
+        kind_root = _root_for_kind(kind, human_out_root=out_root, merge_out_root=merge_root)
+        if kind_root is None:
+            log_info(
+                _TAG,
+                f"avertissement : callback_data reconnu (kind={kind}) mais aucun dossier configuré pour "
+                "ce type dans cette invocation, ignoré",
+            )
+            continue
+
+        case_id = _find_case_id_by_token(token, out_root=kind_root)
         if case_id is None:
-            log_info(_TAG, f"avertissement : callback reçu pour un case inconnu (token={token}) — ignoré")
-            processed.append(ProcessedCallback(case_id=None, decision=decision_label, outcome="unknown_case"))
+            log_info(_TAG, f"avertissement : callback reçu pour un case inconnu (kind={kind}, token={token}) — ignoré")
+            processed.append(ProcessedCallback(kind=kind, case_id=None, decision=decision_label, outcome="unknown_case"))
             callback_id = callback.get("id")
             if callback_id:
                 _best_effort_answer_callback(tg_token, callback_id)
             continue
 
-        case_dir = out_root / case_id
+        case_dir = kind_root / case_id
         decision_file = case_dir / "decision.json"
         if decision_file.is_file():
             log_info(
                 _TAG,
-                f"avertissement : décision déjà enregistrée pour case={case_id} — "
+                f"avertissement : décision déjà enregistrée pour kind={kind} case={case_id} — "
                 "callback ignoré (première décision fait foi)",
             )
-            processed.append(ProcessedCallback(case_id=case_id, decision=decision_label, outcome="ignored_duplicate"))
+            processed.append(ProcessedCallback(kind=kind, case_id=case_id, decision=decision_label, outcome="ignored_duplicate"))
             callback_id = callback.get("id")
             if callback_id:
                 _best_effort_answer_callback(tg_token, callback_id)
@@ -520,8 +609,8 @@ def check_pending_reviews(
             }, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        log_info(_TAG, f"décision enregistrée case={case_id} decision={decision_label}")
-        processed.append(ProcessedCallback(case_id=case_id, decision=decision_label, outcome="written"))
+        log_info(_TAG, f"décision enregistrée kind={kind} case={case_id} decision={decision_label}")
+        processed.append(ProcessedCallback(kind=kind, case_id=case_id, decision=decision_label, outcome="written"))
 
         _best_effort_finalize_message(tg_token, callback=callback, decision_label=decision_label)
         callback_id = callback.get("id")
