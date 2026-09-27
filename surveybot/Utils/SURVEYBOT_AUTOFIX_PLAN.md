@@ -1280,6 +1280,56 @@ niveau tant que le niveau précédent n'est pas fiable.
 > Le transport fleet lui-même (upload/import depuis ~100 machines de prod
 > vers la machine de dev, cf. échange précédent) reste à ce jour un prompt
 > rédigé mais NON implémenté — Phase 20 n'est donc pas close.
+> Mise à jour 2026-09-26 (suite 34) : transport fleet implémenté — le
+> maillon manquant de la Phase 20 est comblé. `Survey/fleet_case_upload.py`
+> (Partie A, tourne sur chaque machine de prod) + `tools/upload_fleet_cases.py` ;
+> `Survey/fleet_case_import.py` (Partie B, machine de dev) + `tools/
+> import_fleet_cases.py` ; extension additive de `Survey/autofix_metrics.py`
+> (Partie C).
+> Conventions R2 vérifiées avant écriture plutôt que devinées : seul
+> client R2 déjà existant dans ce dépôt (`Management/snap_uploader.py`,
+> boto3, endpoint Cloudflare S3-compatible) réutilisé à l'identique côté
+> construction du client et résolution de machine_id
+> (`Management.guards.runtime_guard`, repli "unknown") ; nouveau namespace
+> `FLEET_R2_*` dédié (jamais réutilisé `SNAP_R2_*`, bucket distinct sans
+> rapport), toutes les variables requises, jamais de repli en dur.
+> Vérification positive après upload (sujet du point de vigilance soulevé
+> par l'opérateur) : chaque objet est revérifié par `head_object` avant que
+> le marqueur local `fleet_upload_state.json` (`verified=true`) ne soit
+> écrit — jamais sur la seule confiance dans le code de retour de
+> `put_object`. Nettoyage local différé (sous-partie A2) : ne supprime
+> jamais un case sans ce marqueur vérifié, quel que soit son âge ; délai de
+> rétention configurable (`--retention-days`, défaut 7 jours),
+> `--no-cleanup` pour le désactiver entièrement ; chaque suppression
+> individuellement journalisée, jamais groupée/silencieuse.
+> Côté import : structure de clé `{prefix}/{machine_id}/{case_id}/...`
+> reconstruite depuis les objets R2 réels, jamais supposée ; un case_id
+> porté par plusieurs machine_id distincts est traité comme une origine
+> ambiguë, jamais devinée. `case_id` revalidé via
+> `Survey.autofix_worktree._is_safe_case_id` avant toute écriture disque —
+> une donnée relue depuis un stockage partagé n'est jamais supposée sûre
+> par construction, même si elle ne devrait provenir que de machines de la
+> fleet. Téléchargement partiel/en échec entièrement nettoyé localement
+> (même principe que `failure_case_builder.py`). `fleet_origin.json`
+> (machine_id, uploaded_at réel — lu depuis `LastModified` de l'objet R2,
+> jamais un horodatage auto-déclaré transporté séparément —,
+> `live_validation_possible=false`) écrit en sidecar, jamais dans
+> `manifest.json`. Aucune suppression déclenchée côté import : le nettoyage
+> prod reste entièrement du ressort de la Partie A2, sur son propre délai,
+> indépendant du moment où le dev importe.
+> Partie C : extension purement additive de `Survey/autofix_metrics.py` —
+> nouvelle section `phase20_fleet_transport` (cases d'origine fleet vs
+> locale, cas fleet NON_CONCLUANT en Phase 9 signalés "Phase 10 non
+> applicable" plutôt que comptés comme ambigus) ; la définition déjà
+> existante de "validés du premier coup"/Phase 10 (Phase 17) a été
+> affinée en cohérence, pour ne compter le "NON_CONCLUANT en attente de
+> Phase 10" que parmi les cases d'origine LOCALE — un cas fleet
+> NON_CONCLUANT n'a jamais été, et ne sera jamais, éligible à la Phase 10
+> (aucun `--cdp-endpoint` valide n'existe pour une machine distante),
+> le confondre aurait faussé ce compteur.
+> Phase 20 est désormais close : le schéma "PROD BOTS → stockage des
+> failure_cases → LOCAL/DEV AUTOFIX WORKER" du plan est entièrement
+> opérationnel.
 
 ## Contexte de travail actuel
 
@@ -1373,6 +1423,11 @@ incident détecté
     + CLI, purement en lecture seule, instantané horodaté ; le mécanisme de
     merge automatique par catégorie reste explicitement différé, en attente
     de plusieurs semaines de données réelles — voir Phase 17)
+20  TERMINÉE (transport fleet — fleet_case_upload.py/fleet_case_import.py +
+    CLI, R2 déjà existant réutilisé ; vérification positive head_object
+    avant tout marquage ; nettoyage local différé, jamais sans vérification
+    préalable ; fleet_origin.json en sidecar, jamais dans manifest.json —
+    voir Phase 20)
 ```
 
 Décision importante :
@@ -3589,6 +3644,19 @@ On sait alors précisément où investir du temps.
 
 # Phase 20 --- Production
 
+**Statut : TERMINÉE — le maillon manquant (transport des `failure_cases` de
+~100 machines de prod vers la machine de dev) est comblé par
+`Survey/fleet_case_upload.py` + `Survey/fleet_case_import.py` (et leurs
+façades CLI), réutilisant le client R2 déjà existant du dépôt
+(`Management/snap_uploader.py`) plutôt qu'une nouvelle convention. Le bot de
+prod lui-même n'est jamais modifié dans sa logique d'exécution — l'uploader
+est un outil séparé, invoqué par l'orchestration déjà existante. Vérification
+positive (`head_object`) avant tout marquage local "uploadé et vérifié" ;
+nettoyage local différé sur un délai de rétention configurable, jamais sans
+cette vérification préalable, jamais une suppression groupée silencieuse.
+Le schéma "PROD BOTS → stockage des failure_cases → LOCAL/DEV AUTOFIX
+WORKER" ci-dessous est désormais entièrement opérationnel.**
+
 Je ne recommande **pas** de faire tourner Codex directement dans le
 processus SurveyBot de production.
 
@@ -3739,9 +3807,13 @@ raccroche au sous-chantier déjà différé "rejeu de cas historiques voisins").
 Groupes gelés une fois formés — extension incrémentale d'un groupe déjà
 formé différée, documentée plutôt que masquée.
 
-Le transport fleet (upload/import de `failure_cases/` depuis ~100 machines
-de prod vers la machine de dev, prérequis réel de la Phase 20) reste à ce
-jour un prompt rédigé mais NON implémenté.
+**Transport fleet** (`Survey/fleet_case_upload.py` + `Survey/fleet_case_import.py`)
+— le maillon manquant de la Phase 20, désormais implémenté : upload depuis
+chaque machine de prod (vérification positive `head_object` avant tout
+marquage, nettoyage local différé sur délai de rétention configurable,
+jamais sans vérification préalable) et import côté machine de dev
+(`fleet_origin.json` en sidecar, `live_validation_possible=false`, aucune
+suppression déclenchée côté import). Voir Phase 20 pour le détail complet.
 
 ## Ordre concret de développement
 
@@ -3823,7 +3895,9 @@ Je suivrais exactement cet ordre :
     B déjà supporté" sans infrastructure fleet ; le tableau de taux de
     réussite par extracteur reste bloqué, aucune source ne compte les
     extractions réussies)
-20  Pipeline de correction séparé de Prod
+20  Pipeline de correction séparé de Prod — TERMINÉE (fleet_case_upload.py/
+    fleet_case_import.py + CLI ; R2 existant réutilisé ; vérification
+    positive avant marquage/suppression ; bot de prod jamais modifié)
 ```
 
 Le point le plus important est que **1A → 12 constituent le vrai cœur du
