@@ -974,6 +974,57 @@ niveau tant que le niveau précédent n'est pas fiable.
 > jusqu'à curation d'une bibliothèque de DOM représentatifs) ou à la
 > Phase 12 (score de confiance du patch), désormais alimentable par les
 > verdicts déjà produits par les Phases 8/9/10/11-A.
+> Mise à jour 2026-09-26 (suite 27) : Phase 12 clôturée. `Survey/confidence_score.py`
+> + `tools/score_patch_confidence.py`. Différence assumée et documentée par
+> rapport aux Phases 7 à 11 : celles-ci refusent avant tout effet de bord
+> dès qu'une précondition manque (elles s'apprêtent à faire quelque chose de
+> risqué — Git, un vrai navigateur, une vraie page CDP) ; cette phase-ci n'a
+> AUCUN effet de bord, seulement une lecture et un calcul — sa valeur vient
+> de toujours produire un verdict, même dégradé (MEDIUM/REJECT), plutôt que
+> de refuser dès qu'une pièce manque. Seule une véritable erreur d'usage
+> reste bloquante (`ConfidenceScoreError`, jamais un résultat dégradé) :
+> case_id ou branch incohérents entre les artefacts/chemins fournis, ou
+> aucun case_id exploitable du tout — toute autre absence/incohérence de
+> contenu dégrade le critère concerné à MISSING/NOT_RUN, jamais un crash.
+> Quatre critères indépendants, jamais un booléen simple
+> (PASS/FAIL/INCONCLUSIVE/MISSING, et NOT_RUN spécifiquement pour la
+> validation live — une absence normale et attendue, jamais confondue avec
+> un échec) : validation statique (Phase 8) et intégrité des fonctions
+> gelées (Phase 11-A) via le même vocabulaire ACCEPTED/REJECTED, vérifié
+> identique dans les deux modules avant d'écrire la traduction ; correctif
+> confirmé sur le case ciblé dérivé par défaut de patch_replay.json
+> (Phase 9), sauf si son outcome est resté NON_CONCLUANT ET que
+> live_validation.json (Phase 10) existe et porte refused=false, auquel cas
+> c'est SON outcome qui prévaut pour ce seul critère — un verdict Phase 9
+> déjà tranché (CORRECTIF_CONFIRME/BUG_PERSISTANT) n'est jamais réexaminé
+> par la Phase 10 ; validation live rapportée indépendamment, pour
+> transparence complète, mais n'entrant dans la décision que via ce même
+> mécanisme de préséance (jamais une cinquième branche testée seule).
+> Décision par règles ORDONNÉES, jamais une formule pondérée (conforme à la
+> demande d'origine) : statique != PASS -> REJECT ; intégrité = FAIL ->
+> REJECT (toujours dominant, même correctif confirmé par ailleurs) ;
+> correctif = FAIL -> REJECT ; correctif = PASS (statique/intégrité déjà
+> acquis à ce stade) -> HIGH ; sinon MEDIUM avec le détail exact du critère
+> bloquant dans `reason`. Nuance explicitée dans le module, non anticipée
+> mot pour mot par le prompt d'origine mais conforme à son intention :
+> l'intégrité fonctionne en VETO (seul un FAIL réel bloque), jamais en
+> confirmation positive requise comme la validation statique et le
+> correctif confirmé — une intégrité MISSING (Phase 11-A jamais lancée) ne
+> bloque donc pas à elle seule un HIGH, mais reste toujours visible telle
+> quelle dans `criteria`, jamais masquée par le verdict global.
+> Avertissement systématique, non conditionnel, présent dans `warnings`
+> quel que soit le verdict : le critère d'intégrité ne couvre à ce jour que
+> le hash des fonctions gelées (Phase 11, partie A) — la Partie B (rejeu de
+> DOM représentatifs) n'existe pas encore, donc un HIGH ne garantit pas
+> l'absence de régression comportementale, seulement l'absence de
+> modification détectée du code gelé. Verdict tracé sous
+> `confidence_scores/<case_id>/confidence_score.json`, même convention
+> JSON que les phases précédentes. Avec cette clôture, **1A → 12 — le cœur
+> du système tel que défini par le plan lui-même — sont désormais tous au
+> moins partiellement implémentés** ; le chantier principal passe aux
+> étapes 13 à 20 (automatisation opérationnelle), à la Phase 11 partie B
+> dès curation d'une bibliothèque regression_cases/, ou à la fermeture des
+> sous-chantiers encore ouverts (3D/3B.3/3B.4, point de vigilance Phase 10).
 
 ## Contexte de travail actuel
 
@@ -1041,6 +1092,11 @@ incident détecté
     sous un nom de module dédié, jamais du dépôt principal ; toute anomalie
     est un rejet ; partie B — rejeu de regression_cases/ — différée faute de
     bibliothèque de cas curée — voir Phase 11)
+12  TERMINÉE (confidence_score.py + CLI ; aucun effet de bord, produit
+    toujours un verdict même dégradé ; règles ordonnées HIGH/MEDIUM/REJECT,
+    intégrité en veto plutôt qu'en confirmation requise ; avertissement
+    systématique : "régressions" ne couvre encore que le hash, pas un rejeu
+    DOM — voir Phase 12)
 ```
 
 Décision importante :
@@ -2874,6 +2930,25 @@ Une sélection de **DOM représentatifs** suffit.
 
 # Phase 12 --- Score de confiance du patch
 
+**Statut : TERMINÉE — `Survey/confidence_score.py` + `tools/score_patch_confidence.py`.
+Différence assumée par rapport aux Phases 7 à 11 : celles-ci refusent avant
+tout effet de bord ; cette phase n'en a aucun (lecture + calcul seulement) et
+produit toujours un verdict, même dégradé — seule une véritable incohérence
+d'usage (case_id/branch incohérents entre artefacts fournis) reste bloquante.
+Quatre critères indépendants (PASS/FAIL/INCONCLUSIVE/MISSING, NOT_RUN pour la
+validation live) dérivés du vocabulaire déjà en usage dans les Phases 8/9/10/
+11-A, jamais redéfini en dur. Décision par règles ordonnées, jamais une
+formule pondérée : statique≠PASS ou intégrité=FAIL ou correctif=FAIL →
+REJECT (intégrité toujours dominante) ; correctif=PASS (le reste déjà acquis)
+→ HIGH ; sinon MEDIUM avec la raison exacte. Nuance notable : l'intégrité
+fonctionne en veto (seul un FAIL bloque), jamais en confirmation positive
+requise — une intégrité MISSING ne bloque pas HIGH à elle seule, mais reste
+visible telle quelle dans `criteria`. Avertissement systématique, présent
+quel que soit le verdict : "régressions" ne couvre à ce jour que le hash des
+fonctions gelées (Phase 11-A), pas un rejeu DOM comportemental (Phase 11-B,
+non construite) — un HIGH ne garantit donc pas l'absence de régression
+comportementale.**
+
 On évite le choix binaire trop simpliste :
 
 ``` text
@@ -3324,7 +3399,10 @@ Je suivrais exactement cet ordre :
     d'intégrité des fonctions gelées, extractor_integrity_gate.py + CLI,
     verdict sur le worktree patché uniquement ; partie B : rejeu de
     regression_cases/ différé, aucune bibliothèque de cas curée)
-12  Score de confiance
+12  Score de confiance — TERMINÉE (confidence_score.py + CLI ; aucun
+    effet de bord, verdict toujours produit ; HIGH/MEDIUM/REJECT par
+    règles ordonnées ; avertissement systématique sur la portée limitée
+    du critère "régressions" tant que la Phase 11-B n'existe pas)
 13  UI/review humaine simplifiée
 14  Proposition BEM
 15  Commit automatique
