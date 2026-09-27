@@ -1025,6 +1025,38 @@ niveau tant que le niveau précédent n'est pas fiable.
 > étapes 13 à 20 (automatisation opérationnelle), à la Phase 11 partie B
 > dès curation d'une bibliothèque regression_cases/, ou à la fermeture des
 > sous-chantiers encore ouverts (3D/3B.3/3B.4, point de vigilance Phase 10).
+> Mise à jour 2026-09-26 (suite 28) : point de vigilance de la Phase 10
+> fermé (fermeture réelle de la page live sur timeout, stage="action").
+> Exception délibérée et documentée à la règle de lecture seule habituelle :
+> `Survey/replay_browser.py::execute_case_action` (et son helper interne
+> `_run_with_deadline`) sont modifiés — autorisé explicitement parce que cette
+> fonction n'est PAS une fonction protégée du bot (absente d'`extractor_integrity
+> .json`) : c'est l'infrastructure de test d'autofix construite par ce chantier
+> lui-même (Phases 3C.4/9/10), pas un extracteur ni le dispatcher de
+> production. Modification strictement ADDITIVE : nouveau paramètre
+> `close_page_on_timeout: bool = True`, défaut préservant EXACTEMENT le
+> comportement actuel pour tout appelant qui ne le fournit pas (Phases
+> 3C.4/9, Chromium isolé jetable, aucune régression possible par
+> construction du défaut) ; seul le geste de fermeture de page à
+> l'échéance du watchdog est conditionné, jamais le calcul ni la détection
+> du dépassement de budget. `Survey/live_validator.py` (Phase 10) appelle
+> désormais explicitement `close_page_on_timeout=False` : un TIMEOUT du
+> dispatcher pendant un test live ne ferme plus la page CDP distante.
+> Conséquence réelle, non anticipée mot pour mot par le prompt d'origine
+> mais documentée plutôt que masquée : sans ce watchdog, le dispatcher
+> bloqué ne se débloque alors plus que par ses propres budgets internes —
+> c'est désormais le budget global du sous-processus (déjà existant côté
+> Phase 10, `_SUBPROCESS_MARGIN_S`) qui borne effectivement l'opération
+> dans ce cas, pas ce watchdog. Docstrings et avertissement JSON de la
+> Phase 10 corrigés en conséquence (l'ancienne affirmation "la page live a
+> déjà été fermée par execute_case_action" aurait été fausse une fois ce
+> patch appliqué — retirée, remplacée par la description du nouveau
+> comportement). Phase 9 (`Survey/patch_replay.py`) non touchée, continue
+> sur son comportement par défaut inchangé (Chromium isolé jetable, fermer
+> sa page reste sans conséquence). Limite de vérification disclosée plutôt
+> que masquée, cohérente avec celle déjà actée en Phase 10 : aucun
+> Chromium/point CDP réel disponible dans cet environnement pour un test de
+> bout en bout du nouveau paramètre.
 
 ## Contexte de travail actuel
 
@@ -1085,8 +1117,8 @@ incident détecté
 10  TERMINÉE (garde-fou AUTOFIX_LIVE_VALIDATE="1" vérifié à deux endroits ;
     connexion connect_over_cdp à une page déjà ouverte par l'opérateur,
     jamais de navigation/close() sur la session distante ; point de
-    vigilance ouvert : execute_case_action peut fermer réellement la page
-    live sur timeout côté stage="action" — voir Phase 10)
+    vigilance de la fermeture réelle de page sur timeout (stage="action")
+    résolu — close_page_on_timeout=False, voir Phase 10)
 11  PARTIELLEMENT TERMINÉE (partie A — hash d'intégrité des fonctions gelées,
     extractor_integrity_gate.py + CLI, code gelé chargé depuis le worktree
     sous un nom de module dédié, jamais du dépôt principal ; toute anomalie
@@ -2804,14 +2836,16 @@ par l'opérateur (jamais `new_page()`, jamais de navigation, jamais de
 `close()` sur la session distante). Une seule tentative par invocation,
 jamais de boucle interne.**
 
-**Point de vigilance sérieux, découvert en écrivant ce module, non anticipé
-par le prompt d'origine : pour `stage="action"`, `execute_case_action`
-(non modifiée) ferme réellement la page si son propre budget interne est
-dépassé — sans conséquence sur un Chromium isolé jetable, mais réel ici : un
-timeout du dispatcher ferme l'onglet de l'opérateur/du répondant. Non
-neutralisé par ce patch (aurait exigé de modifier Survey/replay_browser.py,
-hors périmètre). À traiter avant tout usage réel sur un case `stage="action"`
-— accepter le risque au cas par cas, ou rouvrir un chantier dédié.**
+**Point de vigilance découvert en écrivant ce module — RÉSOLU (suite 28) :
+pour `stage="action"`, `execute_case_action` fermait réellement la page si
+son propre budget interne était dépassé — sans conséquence sur un Chromium
+isolé jetable, mais réel sur une page CDP live. `Survey/replay_browser.py::
+execute_case_action` accepte désormais un paramètre additif
+`close_page_on_timeout` (défaut `True`, comportement inchangé pour les
+Phases 3C.4/9) ; ce module l'appelle avec `close_page_on_timeout=False` — un
+timeout du dispatcher ne ferme plus la page distante. Conséquence assumée :
+le dispatcher bloqué ne se débloque alors plus que par le budget global du
+sous-processus de cette phase, pas par ce watchdog.**
 
 Certains bugs ne peuvent être validés qu'avec une vraie page.
 
@@ -3392,8 +3426,9 @@ Je suivrais exactement cet ordre :
     historiques voisins différée)
 10  Validation live attach — TERMINÉE (live_validator.py + CLI ; éligible
     seulement sur patch_replay.json NON_CONCLUANT ; garde-fou
-    AUTOFIX_LIVE_VALIDATE double-vérifié ; point de vigilance ouvert :
-    fermeture réelle de page possible sur timeout côté stage="action") ;
+    AUTOFIX_LIVE_VALIDATE double-vérifié ; point de vigilance de la fermeture
+    réelle de page sur timeout (stage="action") résolu par
+    close_page_on_timeout=False dans replay_browser.py) ;
     devient la voie normale des cas EXTERNAL_NON_REPLAYABLE (post-3D)
 11  Suite de régression — PARTIELLEMENT TERMINÉE (partie A : hash
     d'intégrité des fonctions gelées, extractor_integrity_gate.py + CLI,
