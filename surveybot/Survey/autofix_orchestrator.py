@@ -1,0 +1,873 @@
+from __future__ import annotations
+
+"""Orchestrateur autofix — lancement automatique de Claude Code (mode headless)
+puis enchaînement des phases existantes (8, 9, 11-A, 12, 13) jusqu'à la
+notification humaine, pour jusqu'à --max-cases cases éligibles, UN À LA FOIS
+(jamais en parallèle dans ce module — cf. RÈGLES STRICTES ci-dessous).
+
+N'orchestre que des phases déjà écrites et déjà validées séparément
+(Survey/static_validator.py, Survey/patch_replay.py,
+Survey/extractor_integrity_gate.py, Survey/confidence_score.py,
+Survey/human_review.py, Survey/parallel_safety.py) — importées et appelées
+TELLES QUELLES, jamais réimplémentées ni modifiées. Ne touche à aucun
+extracteur ni stratégie de dispatch. La Phase 7 (préparation du worktree,
+Survey/autofix_worktree.py) n'est PAS déclenchée par ce module : elle est une
+précondition d'éligibilité déjà satisfaite en amont (worktree.json déjà
+présent), par un lancement séparé de tools/prepare_autofix_worktree.py — cf.
+"Éligibilité" ci-dessous.
+
+── Éligibilité d'un case (toutes les conditions ensemble) ────────────────────
+autofix_worktrees/<case_id>/worktree.json existe (Phase 7 déjà faite) ; ET
+prompts/<case_id>/prompt.txt existe RÉELLEMENT (jamais
+MANUAL_REVIEW_REQUIRED.txt à sa place) ; ET codex_runs/<case_id>/
+run_result.json N'EXISTE PAS ENCORE. Cases triés par case_id (ordre
+lexicographique — les case_id de ce pipeline sont des horodatages, donc cet
+ordre est aussi chronologique), les --max-cases premiers retenus pour cette
+invocation. Aucune tentative de réordonnancement plus intelligent au-delà de
+ce tri déterministe : un case durablement bloqué par le contrôle de
+parallélisme (point 1 ci-dessous) resterait en tête à chaque invocation —
+accepté explicitement, cf. Survey/parallel_safety.py ("l'ordre de traitement
+[...] reste une décision humaine").
+
+── Conséquence disclosée de la règle d'éligibilité ────────────────────────────
+run_result.json, une fois écrit (succès OU échec de l'invocation Claude
+Code), rend le case définitivement non éligible à une reprise AUTOMATIQUE par
+une future invocation de ce module — conforme à la lettre de la règle
+d'éligibilité ci-dessus, et cohérent avec la RÈGLE STRICTE "jamais de retry
+automatique sur échec [...] attend la prochaine invocation planifiée" (une
+invocation planifiée reprend un NOUVEAU case, jamais silencieusement le même
+en boucle). Une reprise du même case reste possible mais MANUELLE : soit un
+humain supprime codex_runs/<case_id>/ après investigation, soit — si
+l'invocation Claude Code avait réussi mais qu'une phase suivante a échoué ou
+que ce process a été interrompu en cours de chaîne — un humain relance
+directement les façades CLI existantes (tools/validate_patch_static.py,
+tools/replay_patch.py, tools/check_extractor_integrity.py,
+tools/score_patch_confidence.py, tools/notify_human_review.py) sur les
+artefacts déjà écrits sur disque : rien n'est perdu, seule l'automatisation
+de bout en bout s'arrête à l'endroit exact où ce module s'est arrêté.
+
+── Point 1 : contrôle de sécurité du parallélisme (avant tout lancement) ─────
+Réutilise Survey/parallel_safety.py::check_pre_launch_safety (le nom exact
+dans le code — pas "check_pre_launch_safety_check" — vérifié en lisant le
+module avant d'écrire celui-ci), importée telle quelle, jamais réimplémentée.
+
+Investigation faite avant d'écrire cette logique, conformément à la demande :
+Survey/merge_executor.py N'EXISTE PAS dans ce dépôt (vérifié par recherche),
+et aucun fichier merge_result.json n'est écrit par AUCUN module existant — la
+Phase 16 (Survey/merge_review.py) ne fait que proposer une confirmation
+Telegram de merge, elle "NE DÉCLENCHE JAMAIS elle-même un git merge" (sa
+propre docstring). Il n'existe donc, à ce jour, aucun artefact qui
+distinguerait un worktree autofix déjà mergé (et donc réellement "sorti du
+vol") d'un worktree simplement laissé tel quel après un merge manuel. La
+définition opérationnelle retenue ici, documentée plutôt que masquée : TOUT
+worktree.json présent sous autofix_worktrees/ (hors le case en cours
+d'examen) compte comme "en vol" — y compris un case déjà traité par une
+invocation précédente de ce même orchestrateur, puisque son worktree n'est
+jamais supprimé par aucune phase de ce chantier. Ce comptage est donc
+délibérément large (jamais optimiste) ; il redeviendra plus précis
+automatiquement si un futur chantier introduit un artefact de merge réel, sans
+qu'aucun changement ne soit nécessaire ici.
+
+Pour chaque case candidat, si au moins un autre worktree est "en vol" :
+compare context_selection.json (Phase 5) du candidat à celui de chacun de ces
+autres cases, au niveau fichier (granularité déjà celle de
+check_pre_launch_safety). Toute paire non sûre IMPLIQUANT LE CANDIDAT (jamais
+une paire non sûre entre deux AUTRES cases en vol, hors de propos ici) reporte
+ce case : il n'est pas lancé cette fois, signalé explicitement dans
+autofix_pipeline_runs/<case_id>/pipeline_run.json et dans le résumé imprimé,
+mais reste éligible à une invocation future (aucun codex_runs/ écrit pour un
+case reporté). Une erreur de lecture d'un context_selection.json (candidat ou
+en vol) est traitée de la même façon (jamais deviné sûr par défaut) —
+ParallelSafetyError capturée et convertie en report.
+
+── Point 2 : invocation Claude Code en mode headless ─────────────────────────
+Syntaxe vérifiée dans `claude --help` (CLI réellement installée dans cet
+environnement, version 2.1.283) AVANT d'écrire ce module, jamais supposée :
+  - Pas de flag --cwd (n'existe pas dans cette version). "worktree_path EXACT"
+    est obtenu par le paramètre `cwd=` du sous-processus Python lui-même —
+    équivalent fonctionnel exact, seule façon réellement disponible.
+  - --allowedTools <tools...> : "Comma or space-separated list of tool names"
+    — une seule chaîne espacée est passée ("Read Edit Write Grep Glob" par
+    défaut), vérifié fonctionnel par un appel réel (--allowedTools "Read Edit
+    Write Grep Glob" a bien limité l'agent à ces outils lors d'un test réel
+    dans ce chantier). Ensemble volontairement restreint : ni Bash, ni accès
+    réseau/web, ni sous-agents — seuls les outils nécessaires pour lire et
+    modifier des fichiers dans le worktree isolé (le prompt Phase 6 demande
+    "identifier la cause racine, appliquer un patch minimal", jamais
+    d'exécuter des tests — ceux-ci sont déjà couverts séparément par les
+    Phases 8/9/11-A qui suivent).
+  - --output-format json (exige --print/-p) : un seul objet JSON en sortie
+    standard, vérifié par un appel réel — contient au moins
+    is_error/subtype/session_id/result/num_turns. Stocké tel quel (sortie
+    brute) dans run_result.json, jamais réinterprété au-delà de ces champs.
+  - Transmission du prompt : NI un argument positionnel (risque de limite de
+    longueur argv/de quoting shell pour un prompt long et multi-lignes), NI un
+    fichier temporaire supplémentaire (le prompt existe déjà sur disque,
+    prompts/<case_id>/prompt.txt, mais le lire puis le réécrire ailleurs
+    n'apporterait rien) : ENTRÉE STANDARD, vérifiée fonctionnelle par un appel
+    réel (aucun argument positionnel donné à `claude -p`, prompt fourni via
+    subprocess.run(..., input=prompt_text)). Une seule stratégie, comme les
+    Phases 8/9 avant ce module.
+  - --permission-mode acceptEdits : passé explicitement plutôt que de compter
+    sur un défaut ambiant (potentiellement différent d'un environnement à
+    l'autre) — accepte automatiquement les opérations d'édition de fichier
+    (Edit/Write, déjà seuls listés dans --allowedTools avec Read/Grep/Glob qui
+    ne mutent rien), sans ouvrir la porte à des outils non listés. Vérifié
+    fonctionnel par un appel réel (Write a réussi sans blocage avec ce mode).
+
+Un seul mécanisme d'invocation, un seul essai (subprocess.run avec
+timeout=claude_timeout_s explicite) — jamais de retry automatique. Un
+dépassement de budget (TimeoutExpired) ou un code de sortie non nul arrête la
+chaîne ICI pour ce case, jamais les phases suivantes pour LUI, et jamais les
+autres cases de cette même invocation (chaque case est indépendant). Le
+binaire "claude" est résolu via shutil.which (jamais un chemin codé en dur) ;
+son absence sur PATH est un statut ERROR explicite, jamais une exception non
+gérée. Écrit systématiquement codex_runs/<case_id>/run_result.json (schéma :
+schema_version/case_id/created_at + branch/worktree_path/status/exit_code/
+timed_out/session_id/is_error/subtype/command/raw_stdout/raw_stderr/error),
+même convention JSON que les phases précédentes. raw_stdout/raw_stderr sont
+bornés (_MAX_RAW_OUTPUT_CHARS) par précaution, même si --output-format json
+produit normalement une sortie compacte.
+
+── Point 3 : enchaînement des phases existantes, dans l'ordre imposé ─────────
+a. Phase 8 (Survey.static_validator.write_static_validation) : verdict
+   REJECTED (ou StaticValidationError) arrête la chaîne ici pour ce case.
+b. Phase 9 (Survey.patch_replay.write_patch_replay) : continue quel que soit
+   l'outcome (CORRECTIF_CONFIRME/BUG_PERSISTANT/NON_CONCLUANT, ou même
+   refused=true) — seule une PatchReplayError (précondition d'usage cassée)
+   arrête la chaîne ici. Un refused=true est transmis tel quel à la Phase 12,
+   qui sait déjà le traiter (CRITERION_INCONCLUSIVE), jamais réinterprété ici.
+c. Phase 11-A (Survey.extractor_integrity_gate.write_extractor_integrity_check).
+d. Phase 12 (Survey.confidence_score.write_patch_confidence),
+   live_validation_path=None explicitement (Phase 10 jamais tentée
+   automatiquement par ce module — exige un humain avec un vrai navigateur,
+   structurellement hors de portée ici, cf. demande d'origine).
+e. confidence="HIGH" -> Phase 13 (Survey.human_review.send_review_request).
+   Toute autre valeur (MEDIUM/REJECT) arrête la chaîne ici, sans notification
+   — ces cases restent visibles via confidence_scores/<case_id>/
+   confidence_score.json (rapports déjà existants), conformément à la Phase
+   13 elle-même ("MEDIUM/REJECT ne déclenchent jamais de notification").
+
+── Sortie : résumé par case ───────────────────────────────────────────────────
+Pour CHAQUE case retenu dans cette invocation (traité OU reporté),
+autofix_pipeline_runs/<case_id>/pipeline_run.json est écrit avec le point
+d'arrêt exact (stopped_at), la raison, les chemins des artefacts déjà produits
+par les phases atteintes, et si la notification a eu lieu. CONTRAIREMENT à
+tous les autres artefacts de ce chantier, ce fichier est TOUJOURS écrasé sans
+garde --force : ce n'est pas un artefact consommé comme précondition par une
+autre phase (à la différence de worktree.json/validation_static.json/etc.),
+seulement un instantané diagnostique de la dernière tentative de ce module
+pour ce case — un case reporté peut légitimement être réexaminé plusieurs
+fois avant d'être enfin lancé, et chaque réexamen doit remplacer le résumé
+précédent, pas être bloqué par lui. Décision documentée explicitivement ici
+plutôt que masquée, en écart volontaire avec la convention par défaut du
+reste du chantier.
+
+── RÈGLES STRICTES respectées ────────────────────────────────────────────────
+Un seul mécanisme d'invocation Claude Code, jamais de fallback. Budget de
+temps explicite sur cette invocation ; les budgets internes des phases
+réutilisées (Phases 8/9/11-A) sont déjà les leurs, inchangés, jamais modifiés
+ici. Traitement strictement séquentiel des cases retenus — une simple boucle
+for Python, jamais un thread/process/async lancé par ce module : le contrôle
+de sécurité du parallélisme (point 1) reste un filet de sécurité pour une
+parallélisation future, hors périmètre de ce patch. Aucune logique de phase
+existante réimplémentée : chaque étape n'est qu'un appel direct à la fonction
+déjà écrite et déjà testée de la phase correspondante.
+"""
+
+import json
+import re
+import shutil
+import subprocess
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Optional
+
+from Survey.confidence_score import (
+    CONFIDENCE_HIGH,
+    ConfidenceScoreError,
+    write_patch_confidence,
+)
+from Survey.extractor_integrity_gate import (
+    IntegrityGateError,
+    write_extractor_integrity_check,
+)
+from Survey.human_review import HumanReviewError, send_review_request
+from Survey.log_utils import log_debug, log_info
+from Survey.parallel_safety import ParallelSafetyError, check_pre_launch_safety
+from Survey.patch_replay import PatchReplayError, write_patch_replay
+from Survey.static_validator import StaticValidationError, write_static_validation
+
+_TAG = "[AUTOFIX_ORCHESTRATOR]"
+SCHEMA_VERSION = "1.0"
+
+DEFAULT_MAX_CASES = 5
+DEFAULT_CLAUDE_TIMEOUT_S = 600.0
+DEFAULT_ALLOWED_TOOLS = "Read Edit Write Grep Glob"
+DEFAULT_PERMISSION_MODE = "acceptEdits"
+
+# Bornes de stockage pour la sortie brute de l'invocation Claude Code —
+# --output-format json produit normalement une sortie compacte, mais jamais
+# de croissance non bornée par précaution (même philosophie que
+# Survey/static_validator.py::_check_tests, err.strip()[-4000:]).
+_MAX_RAW_OUTPUT_CHARS = 200_000
+
+STATUS_SUCCESS = "SUCCESS"
+STATUS_FAILURE = "FAILURE"
+STATUS_TIMEOUT = "TIMEOUT"
+STATUS_ERROR = "ERROR"
+
+STAGE_PARALLEL_SAFETY = "parallel_safety"
+STAGE_CLAUDE_INVOCATION = "claude_invocation"
+STAGE_STATIC_VALIDATION = "static_validation"
+STAGE_PATCH_REPLAY = "patch_replay"
+STAGE_EXTRACTOR_INTEGRITY = "extractor_integrity"
+STAGE_CONFIDENCE_SCORE = "confidence_score"
+STAGE_HUMAN_REVIEW = "human_review"
+
+# Composant de chemin unique, allowlist conservatrice — même garde-fou que
+# Survey/autofix_worktree.py::_CASE_ID_RE, dupliqué volontairement (modules
+# indépendants, cf. convention déjà en place ailleurs dans ce chantier pour
+# ce même petit utilitaire).
+_CASE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
+_WINDOWS_RESERVED_NAMES = {
+    "con", "prn", "aux", "nul",
+    *(f"com{i}" for i in range(1, 10)),
+    *(f"lpt{i}" for i in range(1, 10)),
+}
+
+
+class AutofixOrchestratorError(Exception):
+    """Erreur d'usage bloquante (racine invalide, --max-cases invalide). Jamais
+    levée pour l'échec/le report d'un case particulier — cf. CaseRunSummary."""
+
+
+class AutofixOrchestratorExistsError(AutofixOrchestratorError):
+    """codex_runs/<case_id>/run_result.json existe déjà et force=False."""
+
+
+def _is_safe_case_id(case_id: str) -> bool:
+    if not case_id or not _CASE_ID_RE.match(case_id):
+        return False
+    if ".." in case_id:
+        return False
+    if case_id.lower() in _WINDOWS_RESERVED_NAMES:
+        return False
+    return True
+
+
+def _load_json(path: Path) -> "tuple[Any, Optional[str]]":
+    if not path.is_file():
+        return None, f"{path} absent"
+    try:
+        return json.loads(path.read_text(encoding="utf-8")), None
+    except OSError as exc:
+        return None, f"{path} illisible ({exc})"
+    except ValueError as exc:  # json.JSONDecodeError est une sous-classe de ValueError
+        return None, f"{path} JSON invalide ({exc})"
+
+
+# ═══════════════════════ Découverte des cases éligibles ══════════════════════
+
+
+@dataclass
+class EligibleCase:
+    case_id: str
+    worktree_manifest_path: Path
+    prompt_path: Path
+
+
+def discover_eligible_cases(
+    *,
+    worktrees_root: "str | Path",
+    prompts_root: "str | Path",
+    codex_runs_root: "str | Path",
+) -> "list[EligibleCase]":
+    """Toutes les conditions ensemble (cf. docstring du module) ; triés par
+    case_id (ordre déterministe). Lecture seule : ne modifie rien."""
+    worktrees_root = Path(worktrees_root)
+    prompts_root = Path(prompts_root)
+    codex_runs_root = Path(codex_runs_root)
+
+    if not worktrees_root.is_dir():
+        return []
+
+    eligible: "list[EligibleCase]" = []
+    for entry in sorted(worktrees_root.iterdir()):
+        if not entry.is_dir():
+            continue
+        case_id = entry.name
+        if not _is_safe_case_id(case_id):
+            log_debug(_TAG, f"case_id ignoré (non sûr comme composant de chemin) : {case_id!r}")
+            continue
+
+        worktree_manifest_path = entry / "worktree.json"
+        if not worktree_manifest_path.is_file():
+            continue
+
+        prompt_path = prompts_root / case_id / "prompt.txt"
+        manual_review_path = prompts_root / case_id / "MANUAL_REVIEW_REQUIRED.txt"
+        if not prompt_path.is_file() or manual_review_path.is_file():
+            continue
+
+        if (codex_runs_root / case_id / "run_result.json").is_file():
+            continue
+
+        eligible.append(EligibleCase(
+            case_id=case_id,
+            worktree_manifest_path=worktree_manifest_path,
+            prompt_path=prompt_path,
+        ))
+
+    return eligible
+
+
+# ═══════════════════════ Point 1 — sécurité du parallélisme ══════════════════
+
+
+@dataclass
+class SafetyOutcome:
+    checked: bool
+    safe: bool
+    reason: Optional[str]
+
+
+def _check_case_parallel_safety(
+    case_id: str,
+    *,
+    context_selections_root: Path,
+    worktrees_root: Path,
+) -> SafetyOutcome:
+    """cf. docstring du module (Point 1) pour la définition retenue de "en
+    vol" et sa justification. N'écrit rien : lecture seule, jamais de
+    décision automatique au-delà du report du seul case candidat."""
+    in_flight_ids = []
+    if worktrees_root.is_dir():
+        in_flight_ids = sorted(
+            p.name for p in worktrees_root.iterdir()
+            if p.is_dir() and p.name != case_id and (p / "worktree.json").is_file()
+        )
+
+    if not in_flight_ids:
+        log_debug(_TAG, f"case={case_id} : aucun autre worktree en vol — contrôle trivialement sûr")
+        return SafetyOutcome(checked=False, safe=True, reason=None)
+
+    paths = [context_selections_root / case_id / "context_selection.json"] + [
+        context_selections_root / cid / "context_selection.json" for cid in in_flight_ids
+    ]
+
+    try:
+        result = check_pre_launch_safety(paths)
+    except ParallelSafetyError as exc:
+        return SafetyOutcome(
+            checked=True, safe=False,
+            reason=f"contrôle de sécurité du parallélisme impossible (Survey/parallel_safety.py) : {exc}",
+        )
+
+    unsafe_for_candidate = [
+        pair for pair in result.unsafe_pairs
+        if case_id in (pair.case_id_a, pair.case_id_b)
+    ]
+    if unsafe_for_candidate:
+        detail = "; ".join(
+            f"{p.case_id_a}<->{p.case_id_b} fichier(s) partagé(s)={p.shared_files}"
+            for p in unsafe_for_candidate
+        )
+        return SafetyOutcome(
+            checked=True, safe=False,
+            reason=f"fichier(s) candidat(s) partagé(s) avec au moins un case en vol : {detail}",
+        )
+
+    return SafetyOutcome(checked=True, safe=True, reason=None)
+
+
+# ═══════════════════════ Point 2 — invocation Claude Code ════════════════════
+
+
+@dataclass
+class ClaudeInvocationResult:
+    case_id: str
+    branch: str
+    worktree_path: str
+    status: str
+    exit_code: Optional[int]
+    timed_out: bool
+    session_id: Optional[str]
+    is_error: Optional[bool]
+    subtype: Optional[str]
+    command: "list[str]"
+    raw_stdout: str
+    raw_stderr: str
+    error: Optional[str]
+    warnings: "list[str]" = field(default_factory=list)
+
+    def as_dict(self) -> dict:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "case_id": self.case_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "branch": self.branch,
+            "worktree_path": self.worktree_path,
+            "status": self.status,
+            "exit_code": self.exit_code,
+            "timed_out": self.timed_out,
+            "session_id": self.session_id,
+            "is_error": self.is_error,
+            "subtype": self.subtype,
+            "command": self.command,
+            "raw_stdout": self.raw_stdout,
+            "raw_stderr": self.raw_stderr,
+            "error": self.error,
+            "warnings": self.warnings,
+        }
+
+
+def _decode(part: Any) -> str:
+    if isinstance(part, bytes):
+        return part.decode("utf-8", errors="replace")
+    return part or ""
+
+
+def invoke_claude_headless(
+    *,
+    case_id: str,
+    branch: str,
+    worktree_path: Path,
+    prompt_text: str,
+    allowed_tools: str = DEFAULT_ALLOWED_TOOLS,
+    permission_mode: str = DEFAULT_PERMISSION_MODE,
+    timeout_s: float = DEFAULT_CLAUDE_TIMEOUT_S,
+) -> ClaudeInvocationResult:
+    """Un seul mécanisme, un seul essai — jamais de retry. cf. docstring du
+    module (Point 2) pour la justification de chaque flag, vérifiée avant
+    d'écrire cette fonction (claude --help + appels réels)."""
+    claude_bin = shutil.which("claude")
+    if not claude_bin:
+        return ClaudeInvocationResult(
+            case_id=case_id, branch=branch, worktree_path=str(worktree_path),
+            status=STATUS_ERROR, exit_code=None, timed_out=False,
+            session_id=None, is_error=None, subtype=None, command=[],
+            raw_stdout="", raw_stderr="",
+            error="binaire 'claude' introuvable sur PATH — invocation impossible",
+        )
+
+    cmd = [
+        claude_bin, "-p",
+        "--output-format", "json",
+        "--allowedTools", allowed_tools,
+        "--permission-mode", permission_mode,
+    ]
+    log_debug(_TAG, f"case={case_id} : {' '.join(cmd)} (cwd={worktree_path}, timeout={timeout_s}s)")
+
+    try:
+        proc = subprocess.run(
+            cmd, cwd=str(worktree_path), input=prompt_text,
+            capture_output=True, text=True, timeout=timeout_s, check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return ClaudeInvocationResult(
+            case_id=case_id, branch=branch, worktree_path=str(worktree_path),
+            status=STATUS_TIMEOUT, exit_code=None, timed_out=True,
+            session_id=None, is_error=None, subtype=None, command=cmd,
+            raw_stdout=_decode(exc.stdout)[-_MAX_RAW_OUTPUT_CHARS:],
+            raw_stderr=_decode(exc.stderr)[-_MAX_RAW_OUTPUT_CHARS:],
+            error=f"invocation Claude Code expirée après {timeout_s:.1f}s (budget dépassé)",
+        )
+    except OSError as exc:
+        return ClaudeInvocationResult(
+            case_id=case_id, branch=branch, worktree_path=str(worktree_path),
+            status=STATUS_ERROR, exit_code=None, timed_out=False,
+            session_id=None, is_error=None, subtype=None, command=cmd,
+            raw_stdout="", raw_stderr="", error=f"exécution impossible : {exc}",
+        )
+
+    raw_stdout = (proc.stdout or "")[-_MAX_RAW_OUTPUT_CHARS:]
+    raw_stderr = (proc.stderr or "")[-_MAX_RAW_OUTPUT_CHARS:]
+
+    parsed: Optional[dict] = None
+    parse_error: Optional[str] = None
+    stripped = (proc.stdout or "").strip()
+    if not stripped:
+        parse_error = "sortie standard vide — aucun résultat JSON exploitable"
+    else:
+        try:
+            candidate = json.loads(stripped)
+        except ValueError as exc:
+            parse_error = f"sortie standard non-JSON exploitable ({exc})"
+        else:
+            if isinstance(candidate, dict):
+                parsed = candidate
+            else:
+                parse_error = "sortie standard JSON valide mais pas un objet"
+
+    session_id = parsed.get("session_id") if parsed else None
+    is_error = parsed.get("is_error") if parsed else None
+    subtype = parsed.get("subtype") if parsed else None
+
+    if proc.returncode != 0:
+        status = STATUS_FAILURE
+        error = f"code de sortie non nul ({proc.returncode})" + (f" ; {parse_error}" if parse_error else "")
+    elif parsed is None:
+        status = STATUS_ERROR
+        error = parse_error
+    elif is_error is False:
+        status = STATUS_SUCCESS
+        error = None
+    else:
+        status = STATUS_FAILURE
+        error = f"Claude Code a rapporté is_error={is_error!r} (subtype={subtype!r})"
+
+    return ClaudeInvocationResult(
+        case_id=case_id, branch=branch, worktree_path=str(worktree_path),
+        status=status, exit_code=proc.returncode, timed_out=False,
+        session_id=session_id, is_error=is_error, subtype=subtype,
+        command=cmd, raw_stdout=raw_stdout, raw_stderr=raw_stderr, error=error,
+    )
+
+
+def _run_result_paths(out_root: Path, case_id: str) -> "tuple[Path, Path]":
+    out_dir = out_root / case_id
+    return out_dir, out_dir / "run_result.json"
+
+
+def write_run_result(
+    result: ClaudeInvocationResult,
+    *,
+    out_root: "str | Path" = "codex_runs",
+    force: bool = False,
+) -> Path:
+    """Persiste result sous out_root/<case_id>/run_result.json. Refuse un
+    écrasement silencieux (sauf --force) — même si, en usage normal via
+    run_autofix_pipeline, la découverte garantit déjà que ce chemin n'existe
+    pas encore pour un case retenu (défense en profondeur, jamais une
+    hypothèse fragile)."""
+    out_root = Path(out_root)
+    out_dir, out_file = _run_result_paths(out_root, result.case_id)
+
+    if out_dir.exists():
+        if not force:
+            raise AutofixOrchestratorExistsError(
+                f"run_result.json déjà existant : {out_dir} (utiliser --force pour régénérer)"
+            )
+        if not out_file.is_file():
+            raise AutofixOrchestratorError(
+                f"{out_dir} existe mais ne ressemble pas à une sortie générée par cet outil "
+                "(pas de run_result.json) — suppression refusée, vérifier manuellement"
+            )
+        log_debug(_TAG, f"régénération forcée : suppression de {out_dir}")
+        shutil.rmtree(out_dir)
+
+    out_dir.mkdir(parents=True, exist_ok=False)
+    out_file.write_text(json.dumps(result.as_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+
+    log_info(_TAG, f"case={result.case_id} invocation Claude Code status={result.status} -> {out_file}")
+    return out_file
+
+
+# ═══════════════════════ Résumé de chaîne par case ════════════════════════════
+
+
+@dataclass
+class CaseRunSummary:
+    case_id: str
+    deferred: bool
+    stopped_at: Optional[str]
+    stop_reason: Optional[str]
+    is_error: bool
+    artifacts: "dict[str, str]" = field(default_factory=dict)
+    confidence: Optional[str] = None
+    notified: bool = False
+    warnings: "list[str]" = field(default_factory=list)
+
+    def as_dict(self) -> dict:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "case_id": self.case_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "deferred": self.deferred,
+            "stopped_at": self.stopped_at,
+            "stop_reason": self.stop_reason,
+            "is_error": self.is_error,
+            "artifacts": self.artifacts,
+            "confidence": self.confidence,
+            "notified": self.notified,
+            "warnings": self.warnings,
+        }
+
+
+def _pipeline_run_paths(out_root: Path, case_id: str) -> "tuple[Path, Path]":
+    out_dir = out_root / case_id
+    return out_dir, out_dir / "pipeline_run.json"
+
+
+def write_pipeline_run_summary(
+    summary: CaseRunSummary,
+    *,
+    out_root: "str | Path" = "autofix_pipeline_runs",
+) -> Path:
+    """TOUJOURS écrasé, sans garde --force — cf. docstring du module ("Sortie
+    : résumé par case") pour la justification de cet écart volontaire avec la
+    convention --force du reste de ce chantier."""
+    out_root = Path(out_root)
+    out_dir, out_file = _pipeline_run_paths(out_root, summary.case_id)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_file.write_text(json.dumps(summary.as_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+
+    log_info(
+        _TAG,
+        f"case={summary.case_id} stopped_at={summary.stopped_at!r} "
+        f"notified={summary.notified} is_error={summary.is_error} -> {out_file}",
+    )
+    return out_file
+
+
+# ═══════════════════════ Traitement d'un case ═════════════════════════════════
+
+
+def process_case(
+    case: EligibleCase,
+    *,
+    failure_cases_root: Path,
+    diagnoses_root: Path,
+    context_selections_root: Path,
+    worktrees_root: Path,
+    codex_runs_root: Path,
+    static_validations_root: Path,
+    patch_replays_root: Path,
+    extractor_integrity_checks_root: Path,
+    confidence_scores_root: Path,
+    human_reviews_root: Path,
+    claude_timeout_s: float,
+    allowed_tools: str,
+    permission_mode: str,
+    force: bool,
+) -> CaseRunSummary:
+    """Traite UN case, du contrôle de parallélisme jusqu'à la notification
+    humaine (ou l'arrêt contrôlé le plus loin possible dans cet ordre).
+    Ne lève jamais d'exception vers l'appelant pour un problème propre à ce
+    case : toute erreur contrôlée devient un CaseRunSummary avec is_error=True
+    et stopped_at pointant l'étape concernée."""
+    case_id = case.case_id
+    artifacts: "dict[str, str]" = {}
+    warnings: "list[str]" = []
+
+    worktree_data, wt_err = _load_json(case.worktree_manifest_path)
+    if wt_err or not isinstance(worktree_data, dict):
+        return CaseRunSummary(
+            case_id=case_id, deferred=True, stopped_at=None,
+            stop_reason=f"worktree.json (Phase 7) {wt_err or 'ne contient pas un objet JSON'}",
+            is_error=True, artifacts=artifacts, warnings=warnings,
+        )
+    if str(worktree_data.get("case_id") or "") != case_id:
+        return CaseRunSummary(
+            case_id=case_id, deferred=True, stopped_at=None,
+            stop_reason=(
+                f"worktree.json.case_id={worktree_data.get('case_id')!r} incohérent avec le "
+                f"dossier {case_id!r}"
+            ),
+            is_error=True, artifacts=artifacts, warnings=warnings,
+        )
+    branch = str(worktree_data.get("branch") or "")
+    worktree_path = Path(str(worktree_data.get("worktree_path") or ""))
+
+    # ── Point 1 ────────────────────────────────────────────────────────────
+    safety = _check_case_parallel_safety(
+        case_id, context_selections_root=context_selections_root, worktrees_root=worktrees_root,
+    )
+    if not safety.safe:
+        return CaseRunSummary(
+            case_id=case_id, deferred=True, stopped_at=STAGE_PARALLEL_SAFETY,
+            stop_reason=safety.reason, is_error=False, artifacts=artifacts, warnings=warnings,
+        )
+
+    # ── Point 2 ────────────────────────────────────────────────────────────
+    prompt_text = case.prompt_path.read_text(encoding="utf-8")
+    invocation = invoke_claude_headless(
+        case_id=case_id, branch=branch, worktree_path=worktree_path,
+        prompt_text=prompt_text, allowed_tools=allowed_tools,
+        permission_mode=permission_mode, timeout_s=claude_timeout_s,
+    )
+    run_result_path = write_run_result(invocation, out_root=codex_runs_root, force=force)
+    artifacts[STAGE_CLAUDE_INVOCATION] = str(run_result_path)
+
+    if invocation.status != STATUS_SUCCESS:
+        return CaseRunSummary(
+            case_id=case_id, deferred=False, stopped_at=STAGE_CLAUDE_INVOCATION,
+            stop_reason=invocation.error or f"status={invocation.status}",
+            is_error=True, artifacts=artifacts, warnings=warnings,
+        )
+
+    # ── Point 3a — Phase 8 ──────────────────────────────────────────────────
+    try:
+        static_validation_path = write_static_validation(
+            case.worktree_manifest_path, out_root=static_validations_root, force=force,
+        )
+    except StaticValidationError as exc:
+        return CaseRunSummary(
+            case_id=case_id, deferred=False, stopped_at=STAGE_STATIC_VALIDATION,
+            stop_reason=str(exc), is_error=True, artifacts=artifacts, warnings=warnings,
+        )
+    artifacts[STAGE_STATIC_VALIDATION] = str(static_validation_path)
+
+    static_data, _ = _load_json(static_validation_path)
+    static_verdict = (static_data or {}).get("verdict")
+    if static_verdict != "ACCEPTED":
+        return CaseRunSummary(
+            case_id=case_id, deferred=False, stopped_at=STAGE_STATIC_VALIDATION,
+            stop_reason=f"validation_static.json.verdict={static_verdict!r} (\"ACCEPTED\" requis)",
+            is_error=False, artifacts=artifacts, warnings=warnings,
+        )
+
+    # ── Point 3b — Phase 9 (continue quel que soit l'outcome) ──────────────
+    try:
+        patch_replay_path = write_patch_replay(
+            failure_case_dir=failure_cases_root / case_id,
+            diagnosis_dir=diagnoses_root / case_id,
+            worktree_manifest_path=case.worktree_manifest_path,
+            validation_static_path=static_validation_path,
+            out_root=patch_replays_root, force=force,
+        )
+    except PatchReplayError as exc:
+        return CaseRunSummary(
+            case_id=case_id, deferred=False, stopped_at=STAGE_PATCH_REPLAY,
+            stop_reason=str(exc), is_error=True, artifacts=artifacts, warnings=warnings,
+        )
+    artifacts[STAGE_PATCH_REPLAY] = str(patch_replay_path)
+
+    # ── Point 3c — Phase 11-A ────────────────────────────────────────────────
+    try:
+        integrity_path = write_extractor_integrity_check(
+            case.worktree_manifest_path, static_validation_path,
+            out_root=extractor_integrity_checks_root, force=force,
+        )
+    except IntegrityGateError as exc:
+        return CaseRunSummary(
+            case_id=case_id, deferred=False, stopped_at=STAGE_EXTRACTOR_INTEGRITY,
+            stop_reason=str(exc), is_error=True, artifacts=artifacts, warnings=warnings,
+        )
+    artifacts[STAGE_EXTRACTOR_INTEGRITY] = str(integrity_path)
+
+    # ── Point 3d — Phase 12 (live_validation_path=None, jamais automatique) ─
+    try:
+        confidence_path = write_patch_confidence(
+            worktree_manifest_path=case.worktree_manifest_path,
+            validation_static_path=static_validation_path,
+            patch_replay_path=patch_replay_path,
+            extractor_integrity_check_path=integrity_path,
+            live_validation_path=None,
+            out_root=confidence_scores_root, force=force,
+        )
+    except ConfidenceScoreError as exc:
+        return CaseRunSummary(
+            case_id=case_id, deferred=False, stopped_at=STAGE_CONFIDENCE_SCORE,
+            stop_reason=str(exc), is_error=True, artifacts=artifacts, warnings=warnings,
+        )
+    artifacts[STAGE_CONFIDENCE_SCORE] = str(confidence_path)
+
+    confidence_data, _ = _load_json(confidence_path)
+    confidence = (confidence_data or {}).get("confidence")
+
+    if confidence != CONFIDENCE_HIGH:
+        return CaseRunSummary(
+            case_id=case_id, deferred=False, stopped_at=STAGE_CONFIDENCE_SCORE,
+            stop_reason=f"confidence={confidence!r} (\"HIGH\" requis pour notifier)",
+            is_error=False, artifacts=artifacts, confidence=confidence, warnings=warnings,
+        )
+
+    # ── Point 3e — Phase 13 ─────────────────────────────────────────────────
+    try:
+        review_result = send_review_request(
+            confidence_score_dir=confidence_scores_root / case_id,
+            diagnosis_dir=diagnoses_root / case_id,
+            out_root=human_reviews_root, force=force,
+        )
+    except HumanReviewError as exc:
+        return CaseRunSummary(
+            case_id=case_id, deferred=False, stopped_at=STAGE_HUMAN_REVIEW,
+            stop_reason=str(exc), is_error=True, artifacts=artifacts,
+            confidence=confidence, warnings=warnings,
+        )
+    artifacts[STAGE_HUMAN_REVIEW] = str(review_result.pending_path)
+
+    return CaseRunSummary(
+        case_id=case_id, deferred=False, stopped_at=STAGE_HUMAN_REVIEW, stop_reason=None,
+        is_error=False, artifacts=artifacts, confidence=confidence, notified=True, warnings=warnings,
+    )
+
+
+# ═══════════════════════ Orchestration de l'invocation complète ══════════════
+
+
+def run_autofix_pipeline(
+    *,
+    failure_cases_root: "str | Path" = "failure_cases",
+    diagnoses_root: "str | Path" = "diagnoses",
+    context_selections_root: "str | Path" = "context_selections",
+    prompts_root: "str | Path" = "prompts",
+    worktrees_root: "str | Path" = "autofix_worktrees",
+    codex_runs_root: "str | Path" = "codex_runs",
+    static_validations_root: "str | Path" = "autofix_static_validations",
+    patch_replays_root: "str | Path" = "patch_replays",
+    extractor_integrity_checks_root: "str | Path" = "extractor_integrity_checks",
+    confidence_scores_root: "str | Path" = "confidence_scores",
+    human_reviews_root: "str | Path" = "human_reviews",
+    pipeline_runs_root: "str | Path" = "autofix_pipeline_runs",
+    max_cases: int = DEFAULT_MAX_CASES,
+    claude_timeout_s: float = DEFAULT_CLAUDE_TIMEOUT_S,
+    allowed_tools: str = DEFAULT_ALLOWED_TOOLS,
+    permission_mode: str = DEFAULT_PERMISSION_MODE,
+    force: bool = False,
+) -> "list[CaseRunSummary]":
+    """Point d'entrée unique. Découvre jusqu'à max_cases cases éligibles
+    (triés par case_id) et les traite un à la fois, strictement
+    séquentiellement (aucun thread/process concurrent lancé par ce module)."""
+    if max_cases < 1:
+        raise AutofixOrchestratorError(f"--max-cases doit être >= 1 ({max_cases} fourni)")
+
+    failure_cases_root = Path(failure_cases_root)
+    diagnoses_root = Path(diagnoses_root)
+    context_selections_root = Path(context_selections_root)
+    prompts_root = Path(prompts_root)
+    worktrees_root = Path(worktrees_root)
+    codex_runs_root = Path(codex_runs_root)
+    static_validations_root = Path(static_validations_root)
+    patch_replays_root = Path(patch_replays_root)
+    extractor_integrity_checks_root = Path(extractor_integrity_checks_root)
+    confidence_scores_root = Path(confidence_scores_root)
+    human_reviews_root = Path(human_reviews_root)
+    pipeline_runs_root = Path(pipeline_runs_root)
+
+    eligible = discover_eligible_cases(
+        worktrees_root=worktrees_root, prompts_root=prompts_root, codex_runs_root=codex_runs_root,
+    )
+    batch = eligible[:max_cases]
+    log_info(
+        _TAG,
+        f"{len(eligible)} case(s) éligible(s), {len(batch)} retenu(s) pour cette invocation "
+        f"(--max-cases={max_cases})",
+    )
+
+    summaries: "list[CaseRunSummary]" = []
+    for case in batch:
+        summary = process_case(
+            case,
+            failure_cases_root=failure_cases_root,
+            diagnoses_root=diagnoses_root,
+            context_selections_root=context_selections_root,
+            worktrees_root=worktrees_root,
+            codex_runs_root=codex_runs_root,
+            static_validations_root=static_validations_root,
+            patch_replays_root=patch_replays_root,
+            extractor_integrity_checks_root=extractor_integrity_checks_root,
+            confidence_scores_root=confidence_scores_root,
+            human_reviews_root=human_reviews_root,
+            claude_timeout_s=claude_timeout_s,
+            allowed_tools=allowed_tools,
+            permission_mode=permission_mode,
+            force=force,
+        )
+        write_pipeline_run_summary(summary, out_root=pipeline_runs_root)
+        summaries.append(summary)
+
+    return summaries
