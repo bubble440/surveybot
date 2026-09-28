@@ -1,32 +1,56 @@
 """
-run_autofix_pipeline.py — orchestrateur autofix. Lance automatiquement Claude
-Code (mode headless) sur jusqu'à --max-cases cases déjà diagnostiqués, prompt
-és et préparés dans un worktree isolé (Phase 7, tools/prepare_autofix_worktree.py
-— déjà exécutée séparément, précondition d'éligibilité, jamais déclenchée par
-cet outil), UN À LA FOIS, puis enchaîne les phases existantes (8, 9, 11-A, 12,
-13) jusqu'à la notification humaine si confidence="HIGH".
+run_autofix_pipeline.py — orchestrateur autofix. Par défaut, lance d'abord une
+étape amont (failure_cases/ -> worktree prêt : Phases 4/5/6/7 enchaînées
+automatiquement, déduplication incluse — cf. Survey/autofix_orchestrator.py,
+section "Étape amont" de son docstring) puis, dans la même invocation, lance
+automatiquement Claude Code (mode headless) sur jusqu'à --max-cases cases
+ainsi préparés (ou déjà préparés manuellement auparavant), UN À LA FOIS, et
+enchaîne les phases existantes (8, 9, 11-A, 12, 13) jusqu'à la notification
+humaine si confidence="HIGH". --no-upstream restaure le comportement
+antérieur à cette étape amont (worktree.json/prompt.txt déjà présents restent
+alors une précondition satisfaite manuellement en amont).
 
-Éligibilité d'un case (toutes les conditions ensemble) : worktree.json
-(--worktrees-root/<case_id>/worktree.json) présent ; prompt.txt présent dans
---prompts-root/<case_id>/ (jamais MANUAL_REVIEW_REQUIRED.txt à sa place) ;
-aucun run_result.json déjà écrit sous --codex-runs-root/<case_id>/. Avant
-chaque lancement, un contrôle de sécurité du parallélisme (Survey/
-parallel_safety.py::check_pre_launch_safety, réutilisée telle quelle) compare
-le case candidat à tout autre worktree déjà présent ("en vol") ; une paire non
-sûre reporte le case (jamais lancé quand même), sans consommer son éligibilité
-future.
+Éligibilité d'un case pour l'étape EXISTANTE (toutes les conditions
+ensemble) : worktree.json (--worktrees-root/<case_id>/worktree.json) présent ;
+prompt.txt présent dans --prompts-root/<case_id>/ (jamais
+MANUAL_REVIEW_REQUIRED.txt à sa place) ; aucun run_result.json déjà écrit sous
+--codex-runs-root/<case_id>/. Avant chaque lancement, un contrôle de sécurité
+du parallélisme (Survey/parallel_safety.py::check_pre_launch_safety,
+réutilisée telle quelle) compare le case candidat à tout autre worktree encore
+"en vol" (issue non définitive — merge/décision/confiance/validation/
+invocation) ; une paire non sûre reporte le case (jamais lancé quand même),
+sans consommer son éligibilité future.
+
+Éligibilité d'un case pour l'étape AMONT (sauf --no-upstream) : dossier
+--failure-cases-root/<case_id>/ (manifest.json présent) sans worktree.json ni
+upstream_run.json terminal, et qui n'est membre d'aucun groupe de doublons
+déjà formé (Survey/case_grouping.py). Le nombre de DIAGNOSTICS (Phase 4)
+réellement NOUVEAUX par invocation est borné par --max-upstream-cases (la
+Phase 4 lance un vrai Chromium isolé pour un case stage="action") ; un case
+déjà diagnostiqué continue d'avancer sans consommer ce budget. Pour retenter
+automatiquement un case dont l'étape amont s'est arrêtée sur un état terminal
+(MANUAL_REVIEW_REQUIRED.txt, inéligibilité Phase 7, ou fusion dans un
+groupe) : supprimer manuellement
+--pipeline-runs-root/<case_id>/upstream_run.json. Un échec opérationnel non
+terminal (ex. échec Git de la Phase 7) est, lui, retenté automatiquement à
+l'invocation suivante, sans action manuelle.
 
 Toute la logique vit dans Survey/autofix_orchestrator.py ; ce script n'est
 qu'une façade CLI. Aucune phase existante n'est réimplémentée : chacune est
 importée et appelée telle quelle par ce module (Survey/static_validator.py,
 Survey/patch_replay.py, Survey/extractor_integrity_gate.py,
 Survey/confidence_score.py, Survey/human_review.py,
-Survey/parallel_safety.py).
+Survey/parallel_safety.py, et pour l'étape amont : Survey/fleet_case_import.py,
+Survey/failure_diagnosis.py, Survey/case_grouping.py,
+Survey/context_selector.py, Survey/prompt_generator.py,
+Survey/autofix_worktree.py).
 
 Usage :
     python tools\\run_autofix_pipeline.py
     python tools\\run_autofix_pipeline.py --max-cases 3
     python tools\\run_autofix_pipeline.py --claude-timeout-s 900 --force
+    python tools\\run_autofix_pipeline.py --no-upstream
+    python tools\\run_autofix_pipeline.py --import-fleet --max-upstream-cases 5
 """
 
 from __future__ import annotations
@@ -41,6 +65,7 @@ from Survey.autofix_orchestrator import (  # noqa: E402
     DEFAULT_ALLOWED_TOOLS,
     DEFAULT_CLAUDE_TIMEOUT_S,
     DEFAULT_MAX_CASES,
+    DEFAULT_MAX_UPSTREAM_CASES,
     DEFAULT_PERMISSION_MODE,
     AutofixOrchestratorError,
     run_autofix_pipeline,
@@ -73,10 +98,13 @@ def main(argv: "list[str] | None" = None) -> int:
     parser.add_argument("--allowed-tools", default=DEFAULT_ALLOWED_TOOLS, help=f"Liste d'outils autorisés pour Claude Code (--allowedTools), défaut={DEFAULT_ALLOWED_TOOLS!r}")
     parser.add_argument("--permission-mode", default=DEFAULT_PERMISSION_MODE, help=f"Mode de permission Claude Code (--permission-mode), défaut={DEFAULT_PERMISSION_MODE!r}")
     parser.add_argument("--force", action="store_true", help="Régénère un artefact déjà existant pour un case traité dans cette invocation (jamais un écrasement silencieux)")
+    parser.add_argument("--no-upstream", dest="upstream", action="store_false", default=True, help="Désactive l'étape amont (failure_cases -> worktree) — restaure le comportement d'avant cette étape (worktree.json/prompt.txt déjà présents restent une précondition manuelle)")
+    parser.add_argument("--import-fleet", action="store_true", help="Avant l'étape amont, importe les failure_cases disponibles côté stockage fleet (Survey/fleet_case_import.py) — désactivé par défaut, exige FLEET_R2_* dans l'environnement ; un échec est un avertissement, jamais un arrêt")
+    parser.add_argument("--max-upstream-cases", type=int, default=DEFAULT_MAX_UPSTREAM_CASES, help=f"Nombre maximum de DIAGNOSTICS (Phase 4) réellement nouveaux tentés par invocation — un case déjà diagnostiqué n'est pas compté (défaut : {DEFAULT_MAX_UPSTREAM_CASES}, conservateur car la Phase 4 lance un vrai Chromium isolé pour un case stage=\"action\")")
     args = parser.parse_args(argv)
 
     try:
-        summaries = run_autofix_pipeline(
+        upstream_summaries, summaries = run_autofix_pipeline(
             failure_cases_root=args.failure_cases_root,
             diagnoses_root=args.diagnoses_root,
             context_selections_root=args.context_selections_root,
@@ -96,16 +124,34 @@ def main(argv: "list[str] | None" = None) -> int:
             allowed_tools=args.allowed_tools,
             permission_mode=args.permission_mode,
             force=args.force,
+            run_upstream=args.upstream,
+            import_fleet=args.import_fleet,
+            max_upstream_cases=args.max_upstream_cases,
         )
     except AutofixOrchestratorError as exc:
         print(f"[ERREUR] {exc}", file=sys.stderr)
         return 1
 
-    if not summaries:
-        print("aucun case éligible pour cette invocation")
-        return 0
-
     any_error = False
+
+    if upstream_summaries:
+        print("== Étape amont (failure_cases -> worktree) ==")
+        for u in upstream_summaries:
+            print(f"case          : {u.case_id}")
+            print(f"  arrêté à    : {u.stopped_at}")
+            if u.stop_reason:
+                print(f"  raison      : {u.stop_reason}")
+            print(f"  terminal    : {u.terminal}")
+            for stage, path in u.artifacts.items():
+                print(f"    - {stage} -> {path}")
+            any_error = any_error or u.is_error
+        print()
+
+    if not summaries:
+        print("aucun case éligible pour cette invocation (étape existante)")
+        return 1 if any_error else 0
+
+    print("== Étape existante (worktree -> patch) ==")
     for summary in summaries:
         print(f"case          : {summary.case_id}")
         if summary.deferred:

@@ -8,13 +8,22 @@ notification humaine, pour jusqu'à --max-cases cases éligibles, UN À LA FOIS
 N'orchestre que des phases déjà écrites et déjà validées séparément
 (Survey/static_validator.py, Survey/patch_replay.py,
 Survey/extractor_integrity_gate.py, Survey/confidence_score.py,
-Survey/human_review.py, Survey/parallel_safety.py) — importées et appelées
-TELLES QUELLES, jamais réimplémentées ni modifiées. Ne touche à aucun
-extracteur ni stratégie de dispatch. La Phase 7 (préparation du worktree,
-Survey/autofix_worktree.py) n'est PAS déclenchée par ce module : elle est une
-précondition d'éligibilité déjà satisfaite en amont (worktree.json déjà
-présent), par un lancement séparé de tools/prepare_autofix_worktree.py — cf.
-"Éligibilité" ci-dessous.
+Survey/human_review.py, Survey/parallel_safety.py, et — pour l'étape amont
+ci-dessous — Survey/fleet_case_import.py, Survey/failure_diagnosis.py,
+Survey/case_grouping.py, Survey/context_selector.py,
+Survey/prompt_generator.py, Survey/autofix_worktree.py) — importées et
+appelées TELLES QUELLES, jamais réimplémentées ni modifiées. Ne touche à
+aucun extracteur ni stratégie de dispatch.
+
+Depuis l'introduction de l'étape amont (cf. section dédiée ci-dessous), la
+Phase 7 (préparation du worktree, Survey/autofix_worktree.py) EST déclenchée
+par ce module, par défaut, avant l'étape ci-dessous — sauf --no-upstream, qui
+restaure exactement le comportement antérieur (worktree.json/prompt.txt déjà
+présents restent une précondition satisfaite manuellement en amont). La
+section "Éligibilité d'un case" ci-dessous décrit l'étape EXISTANTE
+(inchangée) qui part de worktree.json déjà présent ; elle s'exécute, dans la
+même invocation, juste après l'étape amont, et découvre donc naturellement
+les worktrees que celle-ci vient de créer.
 
 ── Éligibilité d'un case (toutes les conditions ensemble) ────────────────────
 autofix_worktrees/<case_id>/worktree.json existe (Phase 7 déjà faite) ; ET
@@ -186,6 +195,111 @@ de sécurité du parallélisme (point 1) reste un filet de sécurité pour une
 parallélisation future, hors périmètre de ce patch. Aucune logique de phase
 existante réimplémentée : chaque étape n'est qu'un appel direct à la fonction
 déjà écrite et déjà testée de la phase correspondante.
+
+── Étape amont : de failure_cases/ jusqu'au worktree prêt (run_upstream_stage) ─
+Active par défaut, avant l'étape existante ci-dessus, dans la MÊME invocation
+(même simple boucle for séquentielle — jamais de thread/process concurrent,
+la Phase 7 modifiant l'état Git du dépôt principal). Désactivée entièrement
+par --no-upstream, qui restaure alors le comportement exact d'avant cette
+extension.
+
+1. Import fleet optionnel (--import-fleet, désactivé par défaut car il exige
+   FLEET_R2_* dans l'environnement) : Survey/fleet_case_import.py::
+   import_available_cases(), appelée SANS argument (racine/prefixe/budgets par
+   défaut de ce module, non exposés ici — hors périmètre de cette extension).
+   Un échec (FleetImportError : credentials R2 absentes ; ou toute autre
+   exception, notamment réseau, puisque le listing S3 interne à ce module
+   n'est pas lui-même protégé) est un avertissement journalisé (log_info),
+   JAMAIS un arrêt de l'invocation.
+
+2. Sélection déterministe des cases amont (discover_upstream_candidates,
+   triée par case_id) : dossiers de failure_cases/<case_id>/ (manifest.json
+   présent, case_id sûr comme composant de chemin) qui n'ont NI
+   autofix_worktrees/<case_id>/worktree.json (Phase 7 déjà faite — le case
+   relève alors déjà de l'étape existante ci-dessus), NI
+   autofix_pipeline_runs/<case_id>/upstream_run.json avec terminal=true (état
+   définitif déjà atteint par une invocation précédente de CETTE étape — cf.
+   point 6), ET qui ne sont membres d'AUCUN groupe déjà formé
+   (failure_cases/dupgroup_*/group_members.json, cf. point 4 : un membre n'est
+   jamais un candidat individuel).
+
+3. Phase 4 (Survey/failure_diagnosis.py::write_diagnosis) pour chaque
+   candidat de la sélection ci-dessus SANS diagnoses/<case_id>/diagnosis.json
+   — réutilisé tel quel sinon, jamais recalculé. Borné par
+   --max-upstream-cases (DEFAULT_MAX_UPSTREAM_CASES) sur le nombre de
+   diagnostics RÉELLEMENT NOUVEAUX tentés (succès ou échec ; un case déjà
+   diagnostiqué ne consomme jamais ce budget) — cf. DEFAULT_MAX_UPSTREAM_CASES
+   pour la justification (coût Chromium réel de la Phase 4 pour
+   stage="action"). Un candidat non encore diagnostiqué au moment où ce
+   budget est épuisé n'est PAS touché cette invocation (aucun
+   upstream_run.json écrit pour lui) : il reste éligible à une invocation
+   future, exactement comme un case au-delà de --max-cases pour l'étape
+   existante. Un DiagnosisError (échec opérationnel : manifest.json/
+   validation_report.json manquant ou invalide) est signalé (upstream_run.json
+   terminal=false, is_error=true) — jamais de retry dans cette même invocation.
+
+4. Déduplication, UNE FOIS, après le point 3 et AVANT toute sélection de
+   contexte (Survey/case_grouping.py::write_case_groups, sur ses racines par
+   défaut — jamais réimplémentée : déjà idempotente par construction, un
+   groupe complet sur disque n'est jamais régénéré ni étendu, vérifié dans
+   son code avant d'écrire ce point). Chaque membre d'un groupe FORMÉ (nouveau
+   ou déjà gelé, recalculé identique par compute_case_groups) reçoit, s'il
+   n'en a pas déjà un, un upstream_run.json terminal=true (stopped_at=
+   "deduplication") nommant le group_id qui le remplace désormais — c'est
+   cet artefact qui, à l'invocation suivante, l'exclut définitivement de la
+   sélection du point 2 (en plus de l'exclusion directe déjà faite via
+   group_members.json). Le group_id lui-même est un dossier failure_cases/
+   ordinaire une fois formé (manifest.json + diagnosis.json déjà copiés par
+   Survey/case_grouping.py) : il retraverse naturellement la sélection du
+   point 2 et poursuit au point 5 comme n'importe quel case. Un
+   CaseGroupingError (racine failure_cases/diagnoses introuvable — véritable
+   erreur d'usage, jamais un case précis) est un avertissement : les cases
+   continuent individuellement, jamais un arrêt de l'invocation.
+
+5. Pour chaque case retenu (sélection du point 2 RECALCULÉE après le point 4,
+   filtrée aux seuls cases ayant désormais un diagnosis.json — ce qui exclut
+   naturellement les candidats non diagnostiqués faute de budget au point 3
+   et inclut les group_id fraîchement formés) : Phase 5
+   (Survey/context_selector.py::write_context_selection), Phase 6
+   (Survey/prompt_generator.py::write_prompt), Phase 7
+   (Survey/autofix_worktree.py::prepare_autofix_worktree) — chacune appelée
+   SEULEMENT si son artefact de sortie n'existe pas déjà (context_selection.json/
+   prompt.txt ou MANUAL_REVIEW_REQUIRED.txt/worktree.json), pour permettre une
+   reprise après interruption sans jamais recalculer un artefact déjà présent.
+   Deux arrêts NORMAUX (terminal=true, is_error=false, jamais une exception) :
+   MANUAL_REVIEW_REQUIRED.txt écrit par la Phase 6 (case non éligible à un
+   prompt automatique) ; case jugé inéligible par
+   Survey/autofix_worktree.py::check_eligibility (nom exact vérifié dans le
+   code), appelée SÉPARÉMENT par ce module avant prepare_autofix_worktree —
+   seule façon de distinguer une INÉLIGIBILITÉ (stage/verdict/confiance :
+   étale les raisons, terminal) d'un ÉCHEC OPÉRATIONNEL git dans
+   prepare_autofix_worktree lui-même (AutofixWorktreeError une fois
+   l'éligibilité déjà confirmée par ce module : terminal=false, is_error=true,
+   jamais de retry automatique — prepare_autofix_worktree ne distingue pas
+   ces deux cas par des exceptions différentes, seul un appel préalable à
+   check_eligibility le permet).
+
+6. Chaque case touché par les points 3 à 5 écrit
+   autofix_pipeline_runs/<case_id>/upstream_run.json (même convention JSON que
+   les phases précédentes : schema_version, case_id, created_at, stopped_at,
+   stop_reason, terminal, artefacts déjà produits) — TOUJOURS écrasé sans
+   garde --force, même raisonnement que pipeline_run.json pour l'étape
+   existante (instantané de la dernière tentative, jamais une précondition
+   consommée par une autre phase). terminal=true empêche tout retraitement
+   AUTOMATIQUE par une invocation future (évite de relancer un Chromium pour
+   un résultat déterministe, cf. point 3) ; pour retenter malgré tout :
+   suppression manuelle de ce fichier. terminal=false (échec opérationnel)
+   n'empêche PAS une invocation future de retenter automatiquement ce même
+   case (pas d'exclusion dans discover_upstream_candidates), mais jamais de
+   retry AUTOMATIQUE dans la même invocation.
+
+7. --no-upstream désactive entièrement cette étape (comportement exact
+   d'avant ce chantier) ; l'étape amont est active PAR DÉFAUT.
+
+Sortie : run_autofix_pipeline() retourne désormais (upstream_summaries,
+case_summaries) — les deux imprimés par tools/run_autofix_pipeline.py, la
+liste amont en premier, avec pour chaque case son point d'arrêt et sa raison
+(dont les cases fusionnés dans un groupe, point 4 ci-dessus).
 """
 
 import json
@@ -197,21 +311,31 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from Survey.autofix_worktree import AutofixWorktreeError, check_eligibility, prepare_autofix_worktree
+from Survey.case_grouping import CaseGroupingError, write_case_groups
 from Survey.confidence_score import (
     CONFIDENCE_HIGH,
     CONFIDENCE_REJECT,
     ConfidenceScoreError,
     write_patch_confidence,
 )
+from Survey.context_selector import ContextSelectionError, write_context_selection
 from Survey.extractor_integrity_gate import (
     IntegrityGateError,
     write_extractor_integrity_check,
 )
+from Survey.failure_diagnosis import DiagnosisError, write_diagnosis
 from Survey.human_review import HumanReviewError, send_review_request
 from Survey.log_utils import log_debug, log_info
 from Survey.merge_executor import STATUS_ALREADY_MERGED, STATUS_MERGED
 from Survey.parallel_safety import ParallelSafetyError, check_pre_launch_safety
 from Survey.patch_replay import PatchReplayError, write_patch_replay
+from Survey.prompt_generator import (
+    MANUAL_REVIEW_FILENAME,
+    PROMPT_FILENAME,
+    PromptGenerationError,
+    write_prompt,
+)
 from Survey.static_validator import StaticValidationError, write_static_validation
 
 _TAG = "[AUTOFIX_ORCHESTRATOR]"
@@ -221,6 +345,15 @@ DEFAULT_MAX_CASES = 5
 DEFAULT_CLAUDE_TIMEOUT_S = 600.0
 DEFAULT_ALLOWED_TOOLS = "Read Edit Write Grep Glob"
 DEFAULT_PERMISSION_MODE = "acceptEdits"
+
+# Borne conservatrice, distincte de DEFAULT_MAX_CASES : la Phase 4 (diagnostic)
+# lance un vrai Chromium isolé pour tout case stage="action" avec
+# real_dispatch_replay (Survey/replay_browser.py::execute_case_action) — un
+# coût par case bien plus élevé qu'un simple calcul JSON. Ne borne QUE le
+# nombre de cases NOUVELLEMENT diagnostiqués par invocation (cf. docstring de
+# run_upstream_stage) : un case déjà diagnostiqué lors d'une invocation
+# précédente continue d'avancer (Phases 5/6/7) sans être compté ici.
+DEFAULT_MAX_UPSTREAM_CASES = 3
 
 # Bornes de stockage pour la sortie brute de l'invocation Claude Code —
 # --output-format json produit normalement une sortie compacte, mais jamais
@@ -240,6 +373,15 @@ STAGE_PATCH_REPLAY = "patch_replay"
 STAGE_EXTRACTOR_INTEGRITY = "extractor_integrity"
 STAGE_CONFIDENCE_SCORE = "confidence_score"
 STAGE_HUMAN_REVIEW = "human_review"
+
+# Étapes de l'étape amont (failure_cases/ -> worktree prêt), distinctes des
+# étapes ci-dessus (qui commencent, elles, une fois worktree.json déjà là).
+STAGE_UPSTREAM_DIAGNOSIS = "diagnosis"
+STAGE_UPSTREAM_DEDUPLICATION = "deduplication"
+STAGE_UPSTREAM_CONTEXT_SELECTION = "context_selection"
+STAGE_UPSTREAM_PROMPT = "prompt_generation"
+STAGE_UPSTREAM_WORKTREE_ELIGIBILITY = "worktree_eligibility"
+STAGE_UPSTREAM_WORKTREE = "worktree"
 
 # Composant de chemin unique, allowlist conservatrice — même garde-fou que
 # Survey/autofix_worktree.py::_CASE_ID_RE, dupliqué volontairement (modules
@@ -281,6 +423,357 @@ def _load_json(path: Path) -> "tuple[Any, Optional[str]]":
         return None, f"{path} illisible ({exc})"
     except ValueError as exc:  # json.JSONDecodeError est une sous-classe de ValueError
         return None, f"{path} JSON invalide ({exc})"
+
+
+# ═══════════════════════ Étape amont : failure_cases/ -> worktree prêt ═══════
+
+
+@dataclass
+class UpstreamCaseSummary:
+    case_id: str
+    stopped_at: str
+    stop_reason: Optional[str]
+    terminal: bool
+    is_error: bool
+    artifacts: "dict[str, str]" = field(default_factory=dict)
+
+    def as_dict(self) -> dict:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "case_id": self.case_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "stopped_at": self.stopped_at,
+            "stop_reason": self.stop_reason,
+            "terminal": self.terminal,
+            "is_error": self.is_error,
+            "artifacts": self.artifacts,
+        }
+
+
+def _upstream_run_paths(out_root: Path, case_id: str) -> "tuple[Path, Path]":
+    out_dir = out_root / case_id
+    return out_dir, out_dir / "upstream_run.json"
+
+
+def write_upstream_run_result(
+    summary: UpstreamCaseSummary,
+    *,
+    out_root: "str | Path" = "autofix_pipeline_runs",
+) -> Path:
+    """TOUJOURS écrasé, sans garde --force — même raisonnement que
+    write_pipeline_run_summary (instantané de la dernière tentative de
+    l'étape amont pour ce case, jamais une précondition consommée par une
+    autre phase). Vit dans le même dossier que pipeline_run.json (nom de
+    fichier distinct : upstream_run.json), sans conflit."""
+    out_root = Path(out_root)
+    out_dir, out_file = _upstream_run_paths(out_root, summary.case_id)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_file.write_text(json.dumps(summary.as_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+
+    log_info(
+        _TAG,
+        f"case={summary.case_id} [amont] stopped_at={summary.stopped_at!r} "
+        f"terminal={summary.terminal} is_error={summary.is_error} -> {out_file}",
+    )
+    return out_file
+
+
+def _group_members_on_disk(failure_cases_root: Path) -> "set[str]":
+    """Union des membres de TOUS les groupes déjà formés
+    (failure_cases/dupgroup_*/group_members.json) — ces membres ne sont
+    jamais des candidats individuels (cf. Survey/case_grouping.py, "le
+    group_id est traité comme un case ordinaire"). Un group_members.json
+    absent/illisible pour un dossier dupgroup_* présent est ignoré pour ce
+    groupe (aucun membre compté pour lui) plutôt que de bloquer la
+    découverte des autres cases — jamais une exception ici."""
+    from Survey.case_grouping import GROUP_ID_PREFIX
+
+    members: "set[str]" = set()
+    if not failure_cases_root.is_dir():
+        return members
+    for entry in failure_cases_root.iterdir():
+        if not entry.is_dir() or not entry.name.startswith(GROUP_ID_PREFIX):
+            continue
+        data, _err = _load_json(entry / "group_members.json")
+        if isinstance(data, dict):
+            for m in data.get("members") or []:
+                if isinstance(m, str):
+                    members.add(m)
+    return members
+
+
+def discover_upstream_candidates(
+    *,
+    failure_cases_root: Path,
+    worktrees_root: Path,
+    pipeline_runs_root: Path,
+) -> "list[str]":
+    """cf. docstring du module ("Étape amont", point 2) : dossiers de
+    failure_cases/ (manifest.json présent, case_id sûr) sans worktree.json
+    (Phase 7 déjà faite), sans upstream_run.json terminal=true (issue
+    définitive déjà atteinte), et qui ne sont membres d'aucun groupe déjà
+    formé. Triés par case_id (ordre déterministe). Lecture seule."""
+    if not failure_cases_root.is_dir():
+        return []
+    grouped_members = _group_members_on_disk(failure_cases_root)
+
+    out: "list[str]" = []
+    for entry in sorted(failure_cases_root.iterdir()):
+        if not entry.is_dir():
+            continue
+        case_id = entry.name
+        if not _is_safe_case_id(case_id):
+            log_debug(_TAG, f"case_id ignoré (non sûr comme composant de chemin) : {case_id!r}")
+            continue
+        if not (entry / "manifest.json").is_file():
+            continue
+        if case_id in grouped_members:
+            continue
+        if (worktrees_root / case_id / "worktree.json").is_file():
+            continue
+        upstream_data, _err = _load_json(pipeline_runs_root / case_id / "upstream_run.json")
+        if isinstance(upstream_data, dict) and upstream_data.get("terminal"):
+            continue
+        out.append(case_id)
+    return out
+
+
+def _run_fleet_import() -> None:
+    """--import-fleet uniquement (désactivé par défaut). Réutilise
+    Survey/fleet_case_import.py::import_available_cases telle quelle, avec
+    ses racines/budgets par défaut. Import lazy (dépendance boto3
+    optionnelle, seulement nécessaire pour --import-fleet) : un échec de
+    n'importe quelle nature (config R2 manquante, dépendance absente,
+    réseau) est un avertissement journalisé, jamais un arrêt de
+    l'invocation — cf. docstring du module."""
+    try:
+        from Survey.fleet_case_import import FleetImportError, import_available_cases
+    except Exception as exc:  # dépendance optionnelle potentiellement absente
+        log_info(_TAG, f"avertissement : import fleet indisponible (dépendance manquante ?) : {exc}")
+        return
+
+    try:
+        results, warnings = import_available_cases()
+    except FleetImportError as exc:
+        log_info(_TAG, f"avertissement : import fleet échoué (FLEET_R2_* absentes ?) : {exc}")
+        return
+    except Exception as exc:
+        log_info(_TAG, f"avertissement : import fleet échoué (réseau ?) : {type(exc).__name__}: {exc}")
+        return
+
+    imported = sum(1 for r in results if r.status == "IMPORTED")
+    log_info(
+        _TAG,
+        f"import fleet : {imported}/{len(results)} case(s) importé(s), {len(warnings)} avertissement(s)",
+    )
+
+
+def _process_upstream_case(
+    case_id: str,
+    *,
+    failure_cases_root: Path,
+    diagnoses_root: Path,
+    context_selections_root: Path,
+    prompts_root: Path,
+    worktrees_root: Path,
+) -> UpstreamCaseSummary:
+    """Phases 5, 6, 7 pour UN case déjà diagnostiqué (diagnosis.json présent —
+    garanti par l'appelant). Chaque étape est sautée si son artefact de
+    sortie existe déjà (reprise après interruption, cf. docstring du
+    module)."""
+    failure_case_dir = failure_cases_root / case_id
+    diagnosis_dir = diagnoses_root / case_id
+    artifacts: "dict[str, str]" = {}
+
+    # ── Phase 5 ──────────────────────────────────────────────────────────────
+    context_selection_dir = context_selections_root / case_id
+    context_selection_path = context_selection_dir / "context_selection.json"
+    if context_selection_path.is_file():
+        artifacts[STAGE_UPSTREAM_CONTEXT_SELECTION] = str(context_selection_path)
+    else:
+        try:
+            path = write_context_selection(
+                diagnosis_dir, failure_cases_root=failure_cases_root,
+                out_root=context_selections_root, force=False,
+            )
+        except ContextSelectionError as exc:
+            return UpstreamCaseSummary(
+                case_id=case_id, stopped_at=STAGE_UPSTREAM_CONTEXT_SELECTION,
+                stop_reason=str(exc), terminal=False, is_error=True, artifacts=artifacts,
+            )
+        artifacts[STAGE_UPSTREAM_CONTEXT_SELECTION] = str(path)
+
+    # ── Phase 6 ──────────────────────────────────────────────────────────────
+    prompt_dir = prompts_root / case_id
+    prompt_file = prompt_dir / PROMPT_FILENAME
+    manual_review_file = prompt_dir / MANUAL_REVIEW_FILENAME
+    if prompt_file.is_file() or manual_review_file.is_file():
+        artifacts[STAGE_UPSTREAM_PROMPT] = str(prompt_file if prompt_file.is_file() else manual_review_file)
+    else:
+        try:
+            path = write_prompt(diagnosis_dir, context_selection_dir, out_root=prompts_root, force=False)
+        except PromptGenerationError as exc:
+            return UpstreamCaseSummary(
+                case_id=case_id, stopped_at=STAGE_UPSTREAM_PROMPT,
+                stop_reason=str(exc), terminal=False, is_error=True, artifacts=artifacts,
+            )
+        artifacts[STAGE_UPSTREAM_PROMPT] = str(path)
+
+    if manual_review_file.is_file():
+        return UpstreamCaseSummary(
+            case_id=case_id, stopped_at=STAGE_UPSTREAM_PROMPT,
+            stop_reason=(
+                f"{MANUAL_REVIEW_FILENAME} (Phase 6) — case non éligible à la génération "
+                "automatique de prompt, revue manuelle requise"
+            ),
+            terminal=True, is_error=False, artifacts=artifacts,
+        )
+
+    # ── Phase 7 ──────────────────────────────────────────────────────────────
+    worktree_manifest_path = worktrees_root / case_id / "worktree.json"
+    if worktree_manifest_path.is_file():
+        artifacts[STAGE_UPSTREAM_WORKTREE] = str(worktree_manifest_path)
+        return UpstreamCaseSummary(
+            case_id=case_id, stopped_at=STAGE_UPSTREAM_WORKTREE, stop_reason=None,
+            terminal=True, is_error=False, artifacts=artifacts,
+        )
+
+    # check_eligibility (nom exact) appelée SÉPARÉMENT de prepare_autofix_worktree
+    # (qui l'appelle aussi en interne, mais ne distingue jamais par des
+    # exceptions différentes une inéligibilité d'un échec opérationnel git) —
+    # seule façon de distinguer les deux, cf. docstring du module.
+    eligibility = check_eligibility(
+        failure_case_dir=failure_case_dir, diagnosis_dir=diagnosis_dir, prompt_dir=prompt_dir,
+    )
+    if not eligibility.eligible:
+        return UpstreamCaseSummary(
+            case_id=case_id, stopped_at=STAGE_UPSTREAM_WORKTREE_ELIGIBILITY,
+            stop_reason="; ".join(eligibility.reasons), terminal=True, is_error=False, artifacts=artifacts,
+        )
+
+    try:
+        prepare_autofix_worktree(
+            failure_case_dir=failure_case_dir, diagnosis_dir=diagnosis_dir, prompt_dir=prompt_dir,
+            out_root=worktrees_root, force=False,
+        )
+    except AutofixWorktreeError as exc:
+        return UpstreamCaseSummary(
+            case_id=case_id, stopped_at=STAGE_UPSTREAM_WORKTREE,
+            stop_reason=str(exc), terminal=False, is_error=True, artifacts=artifacts,
+        )
+
+    artifacts[STAGE_UPSTREAM_WORKTREE] = str(worktree_manifest_path)
+    return UpstreamCaseSummary(
+        case_id=case_id, stopped_at=STAGE_UPSTREAM_WORKTREE, stop_reason=None,
+        terminal=True, is_error=False, artifacts=artifacts,
+    )
+
+
+def run_upstream_stage(
+    *,
+    failure_cases_root: "str | Path" = "failure_cases",
+    diagnoses_root: "str | Path" = "diagnoses",
+    context_selections_root: "str | Path" = "context_selections",
+    prompts_root: "str | Path" = "prompts",
+    worktrees_root: "str | Path" = "autofix_worktrees",
+    pipeline_runs_root: "str | Path" = "autofix_pipeline_runs",
+    import_fleet: bool = False,
+    max_upstream_cases: int = DEFAULT_MAX_UPSTREAM_CASES,
+) -> "list[UpstreamCaseSummary]":
+    """Point d'entrée de l'étape amont — cf. docstring du module pour le
+    détail point par point. Désactivée par --no-upstream côté
+    run_autofix_pipeline (cette fonction n'est alors jamais appelée)."""
+    failure_cases_root = Path(failure_cases_root)
+    diagnoses_root = Path(diagnoses_root)
+    context_selections_root = Path(context_selections_root)
+    prompts_root = Path(prompts_root)
+    worktrees_root = Path(worktrees_root)
+    pipeline_runs_root = Path(pipeline_runs_root)
+
+    summaries: "list[UpstreamCaseSummary]" = []
+
+    # ── Point 1 ────────────────────────────────────────────────────────────
+    if import_fleet:
+        _run_fleet_import()
+
+    # ── Points 2/3 : sélection + Phase 4 bornée aux diagnostics NOUVEAUX ────
+    candidates = discover_upstream_candidates(
+        failure_cases_root=failure_cases_root, worktrees_root=worktrees_root,
+        pipeline_runs_root=pipeline_runs_root,
+    )
+    new_diagnoses = 0
+    for case_id in candidates:
+        diagnosis_path = diagnoses_root / case_id / "diagnosis.json"
+        if diagnosis_path.is_file():
+            continue  # réutilisé tel quel, jamais recalculé
+        if new_diagnoses >= max_upstream_cases:
+            log_debug(
+                _TAG,
+                f"case={case_id} : diagnostic (Phase 4) reporté "
+                f"(--max-upstream-cases={max_upstream_cases} atteint pour cette invocation)",
+            )
+            continue
+        new_diagnoses += 1
+        try:
+            write_diagnosis(failure_cases_root / case_id, out_root=diagnoses_root, force=False)
+        except DiagnosisError as exc:
+            summary = UpstreamCaseSummary(
+                case_id=case_id, stopped_at=STAGE_UPSTREAM_DIAGNOSIS,
+                stop_reason=str(exc), terminal=False, is_error=True,
+            )
+            write_upstream_run_result(summary, out_root=pipeline_runs_root)
+            summaries.append(summary)
+
+    # ── Point 4 : déduplication, une fois, avant toute sélection de contexte ─
+    grouping_result = None
+    try:
+        grouping_result, _report_path = write_case_groups(
+            diagnoses_root=diagnoses_root, failure_cases_root=failure_cases_root,
+            context_selections_root=context_selections_root,
+        )
+    except CaseGroupingError as exc:
+        log_info(
+            _TAG,
+            f"avertissement : regroupement (déduplication) échoué, cases traités individuellement : {exc}",
+        )
+
+    if grouping_result is not None:
+        for group in grouping_result.groups:
+            for member_id in group.members:
+                if (pipeline_runs_root / member_id / "upstream_run.json").is_file():
+                    continue  # déjà signalé par une invocation précédente
+                summary = UpstreamCaseSummary(
+                    case_id=member_id, stopped_at=STAGE_UPSTREAM_DEDUPLICATION,
+                    stop_reason=(
+                        f"fusionné dans le groupe {group.group_id} "
+                        f"(représentant={group.representative_case_id}) — traité désormais comme ce "
+                        "seul case, jamais individuellement"
+                    ),
+                    terminal=True, is_error=False,
+                    artifacts={"case_group": str(failure_cases_root / group.group_id)},
+                )
+                write_upstream_run_result(summary, out_root=pipeline_runs_root)
+                summaries.append(summary)
+
+    # ── Point 5 : Phases 5/6/7, sélection recalculée + filtrée aux diagnostiqués ─
+    final_ids = [
+        cid for cid in discover_upstream_candidates(
+            failure_cases_root=failure_cases_root, worktrees_root=worktrees_root,
+            pipeline_runs_root=pipeline_runs_root,
+        )
+        if (diagnoses_root / cid / "diagnosis.json").is_file()
+    ]
+    for case_id in final_ids:
+        summary = _process_upstream_case(
+            case_id,
+            failure_cases_root=failure_cases_root, diagnoses_root=diagnoses_root,
+            context_selections_root=context_selections_root, prompts_root=prompts_root,
+            worktrees_root=worktrees_root,
+        )
+        write_upstream_run_result(summary, out_root=pipeline_runs_root)
+        summaries.append(summary)
+
+    return summaries
 
 
 # ═══════════════════════ Découverte des cases éligibles ══════════════════════
@@ -936,12 +1429,20 @@ def run_autofix_pipeline(
     allowed_tools: str = DEFAULT_ALLOWED_TOOLS,
     permission_mode: str = DEFAULT_PERMISSION_MODE,
     force: bool = False,
-) -> "list[CaseRunSummary]":
-    """Point d'entrée unique. Découvre jusqu'à max_cases cases éligibles
-    (triés par case_id) et les traite un à la fois, strictement
+    run_upstream: bool = True,
+    import_fleet: bool = False,
+    max_upstream_cases: int = DEFAULT_MAX_UPSTREAM_CASES,
+) -> "tuple[list[UpstreamCaseSummary], list[CaseRunSummary]]":
+    """Point d'entrée unique. Lance d'abord l'étape amont (failure_cases/ ->
+    worktree prêt, cf. docstring du module) sauf run_upstream=False
+    (--no-upstream), PUIS découvre jusqu'à max_cases cases éligibles pour
+    l'étape existante (triés par case_id, worktrees fraîchement créés par
+    l'étape amont inclus) et les traite un à la fois, strictement
     séquentiellement (aucun thread/process concurrent lancé par ce module)."""
     if max_cases < 1:
         raise AutofixOrchestratorError(f"--max-cases doit être >= 1 ({max_cases} fourni)")
+    if max_upstream_cases < 1:
+        raise AutofixOrchestratorError(f"--max-upstream-cases doit être >= 1 ({max_upstream_cases} fourni)")
 
     failure_cases_root = Path(failure_cases_root)
     diagnoses_root = Path(diagnoses_root)
@@ -957,6 +1458,19 @@ def run_autofix_pipeline(
     merge_results_root = Path(merge_results_root)
     merge_reviews_root = Path(merge_reviews_root)
     pipeline_runs_root = Path(pipeline_runs_root)
+
+    upstream_summaries: "list[UpstreamCaseSummary]" = []
+    if run_upstream:
+        upstream_summaries = run_upstream_stage(
+            failure_cases_root=failure_cases_root,
+            diagnoses_root=diagnoses_root,
+            context_selections_root=context_selections_root,
+            prompts_root=prompts_root,
+            worktrees_root=worktrees_root,
+            pipeline_runs_root=pipeline_runs_root,
+            import_fleet=import_fleet,
+            max_upstream_cases=max_upstream_cases,
+        )
 
     eligible = discover_eligible_cases(
         worktrees_root=worktrees_root, prompts_root=prompts_root, codex_runs_root=codex_runs_root,
@@ -992,4 +1506,4 @@ def run_autofix_pipeline(
         write_pipeline_run_summary(summary, out_root=pipeline_runs_root)
         summaries.append(summary)
 
-    return summaries
+    return upstream_summaries, summaries
