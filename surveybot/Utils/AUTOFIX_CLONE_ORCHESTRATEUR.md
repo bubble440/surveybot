@@ -83,6 +83,12 @@ l'opérateur en parallèle du clone.**
    ```powershell
    .\schedule_autofix_pipeline_task.ps1
    ```
+   Le lanceur généré est un frère du dossier du clone, nommé
+   `<nom-du-clone>.run_autofix_pipeline_task_launcher.ps1` (par exemple à côté
+   de `surveybot-autofix-clone/`). Il reste hors du dépôt Git ; `-Unregister`
+   retire aussi ce lanceur. Un ancien lanceur dans le paquet du clone est retiré
+   lors d'une nouvelle planification ou désinstallation seulement si son en-tête
+   de génération est reconnu.
 
 Aucun de ces scripts ne lance l'orchestrateur lui-même, ne pousse quoi que ce
 soit vers un dépôt distant, ni ne merge dans une branche protégée.

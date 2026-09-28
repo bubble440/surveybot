@@ -60,21 +60,6 @@ if (-not (Get-Command Register-ScheduledTask -ErrorAction SilentlyContinue)) {
 }
 
 # ---------------------------------------------------------------------------
-# Desinstallation (optionnelle)
-# ---------------------------------------------------------------------------
-
-if ($Unregister) {
-    $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-    if (-not $existing) {
-        Write-Log "Tache '$TaskName' deja absente -- rien a faire."
-        exit 0
-    }
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-    Write-Log "Tache '$TaskName' desinstallee."
-    exit 0
-}
-
-# ---------------------------------------------------------------------------
 # 0) Resolution des chemins
 # ---------------------------------------------------------------------------
 
@@ -83,6 +68,61 @@ if (-not (Test-Path $ClonePackageRoot)) {
     exit 1
 }
 $ClonePackageRoot = (Resolve-Path $ClonePackageRoot).Path
+$cloneRepoRoot = & git -C $ClonePackageRoot rev-parse --show-toplevel
+if ($LASTEXITCODE -ne 0 -or -not $cloneRepoRoot) {
+    Write-Error "Impossible de resoudre le depot Git du clone depuis $ClonePackageRoot."
+    exit 1
+}
+$cloneRepoRoot = $cloneRepoRoot.Trim()
+$launcherPath = Join-Path (Split-Path -Parent $cloneRepoRoot) "$(Split-Path -Leaf $cloneRepoRoot).run_autofix_pipeline_task_launcher.ps1"
+$legacyLauncherPath = Join-Path $ClonePackageRoot "run_autofix_pipeline_task_launcher.ps1"
+
+function Test-GeneratedLauncher {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    $firstLine = [System.IO.File]::ReadAllLines($Path)[0]
+    return ($firstLine -cmatch '^# GENERE AUTOMATIQUEMENT par schedule_autofix_pipeline_task\.ps1 \(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\) -- NE PAS EDITER A LA MAIN, regenere a chaque \(re\)planification\.$')
+}
+
+function Remove-LegacyGeneratedLauncher {
+    if (Test-Path -LiteralPath $legacyLauncherPath) {
+        if (Test-GeneratedLauncher $legacyLauncherPath) {
+            Remove-Item -LiteralPath $legacyLauncherPath
+            Write-Log "Ancien lanceur genere retire : $legacyLauncherPath"
+        } else {
+            Write-Log "Ancien lanceur homonyme non reconnu conserve : $legacyLauncherPath"
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Desinstallation (optionnelle)
+# ---------------------------------------------------------------------------
+
+if ($Unregister) {
+    $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($existing) {
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+        Write-Log "Tache '$TaskName' desinstallee."
+    } else {
+        Write-Log "Tache '$TaskName' deja absente."
+    }
+    Remove-LegacyGeneratedLauncher
+    if (Test-Path -LiteralPath $launcherPath) {
+        if (Test-GeneratedLauncher $launcherPath) {
+            Remove-Item -LiteralPath $launcherPath
+            Write-Log "Lanceur retire : $launcherPath"
+        } else {
+            Write-Log "Lanceur homonyme non reconnu conserve : $launcherPath"
+        }
+    }
+    exit 0
+}
+
+if ((Test-Path -LiteralPath $launcherPath) -and -not (Test-GeneratedLauncher $launcherPath)) {
+    Write-Error "Lanceur homonyme non reconnu : $launcherPath -- refus de l'ecraser."
+    exit 1
+}
 
 if (-not $VenvPythonRelPath) {
     $VenvPythonRelPath = Join-Path $VenvDirName (Join-Path "Scripts" "python.exe")
@@ -101,9 +141,9 @@ if (-not (Test-Path $runnerScript)) {
 }
 
 # ---------------------------------------------------------------------------
-# 1) Lanceur genere -- fichier technique, jamais un fichier source de ce
-#    chantier, regenere a chaque execution de ce script (jamais edite a la
-#    main). Un seul mecanisme, ici, pour tout ce qu'un declenchement planifie
+# 1) Lanceur genere -- frere du depot Git du clone, nomme d'apres celui-ci,
+#    jamais dans son arbre. Regenere a chaque execution de ce script (jamais
+#    edite a la main). Un seul mecanisme pour tout ce qu'un declenchement planifie
 #    doit faire avant d'invoquer le pipeline : prefixer le PATH du dossier
 #    Scripts du venv (verifie empiriquement en Partie A -- shutil.which("ruff"),
 #    utilise par Survey/static_validator.py Phase 8, ne resout que par rapport
@@ -115,7 +155,6 @@ if (-not (Test-Path $runnerScript)) {
 #    l'echappement de guillemets.
 # ---------------------------------------------------------------------------
 
-$launcherPath = Join-Path $ClonePackageRoot "run_autofix_pipeline_task_launcher.ps1"
 $launcherContent = @"
 # GENERE AUTOMATIQUEMENT par schedule_autofix_pipeline_task.ps1 ($(Get-Date -Format "yyyy-MM-dd HH:mm:ss")) -- NE PAS EDITER A LA MAIN, regenere a chaque (re)planification.
 `$env:PATH = "$venvScriptsDir;`$env:PATH"
@@ -157,6 +196,7 @@ $settings = New-ScheduledTaskSettingsSet `
 # -- necessaire si jamais le pipeline devait un jour piloter un navigateur non
 # headless (non le cas aujourd'hui, Survey/replay_browser.py tourne headless).
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
+Remove-LegacyGeneratedLauncher
 
 Write-Output ""
 Write-Output "=== schedule_autofix_pipeline_task.ps1 termine ==="
