@@ -1421,6 +1421,48 @@ niveau tant que le niveau précédent n'est pas fiable.
 > Cette suite est décrite à partir des artefacts déposés ; les Phases 6, 14, 15
 > et 16 ont été étendues/complétées, aucune autre phase modifiée.
 
+> Mise à jour 2026-09-27 (suite 36) : `Survey/autofix_orchestrator.py` et
+> `tools/run_autofix_pipeline.py` étendus (deux chantiers successifs sur le
+> même fichier, lancés l'un après l'autre pour ne pas se marcher dessus).
+> (1) Définition de "en vol" resserrée — corrige la limite (iii) de la suite
+> 35. Un worktree n'est "en vol" que s'il peut encore aboutir à un merge ; son
+> issue est définitive, et il ne bloque plus personne, dans l'un de ces cas
+> UNIQUEMENT, lu sur un artefact bien formé : merge_result.json MERGED ou
+> ALREADY_MERGED (un CONFLICT reste en vol : résolution manuelle encore
+> possible) ; décision Phase 13 REJECTED ; décision Phase 16 REJECTED ;
+> confidence="REJECT" (MEDIUM reste en vol : un humain peut trancher) ;
+> validation statique REJECTED ; invocation de l'agent échouée. Artefact
+> absent, illisible ou ambigu = reste en vol, jamais une hypothèse optimiste.
+> Le message de report nomme désormais le ou les case_id bloquants et leur
+> état. Sans aucun de ces artefacts, comportement identique à avant.
+> (2) Étape amont, active par défaut (--no-upstream la désactive et restaure
+> l'ancien comportement) — corrige la limite (i) de la suite 35 : les Phases 4,
+> 5, 6 et 7 n'ont plus à être lancées à la main. Dans l'ordre : import fleet
+> optionnel (--import-fleet, exige FLEET_R2_* ; un échec est un
+> avertissement, jamais un arrêt) ; Phase 4 pour les cases sans diagnostic,
+> bornée par --max-upstream-cases sur les diagnostics RÉELLEMENT nouveaux
+> (la Phase 4 lance un vrai Chromium pour un case stage="action") ;
+> déduplication une fois, avant toute sélection de contexte — un groupe formé
+> remplace ses membres, qui reçoivent un upstream_run.json terminal ;
+> puis Phases 5, 6, 7 par case, chacune sautée si son artefact existe déjà
+> (reprise possible après interruption). Deux arrêts NORMAUX et terminaux,
+> jamais des erreurs : prompt en MANUAL_REVIEW_REQUIRED, et case inéligible à
+> la Phase 7 (check_eligibility appelée séparément pour distinguer une
+> inéligibilité d'un échec git opérationnel). Chaque case écrit
+> autofix_pipeline_runs/<id>/upstream_run.json. Un état terminal n'est jamais
+> retraité (évite de relancer Chromium pour un résultat déterministe) ; un
+> échec opérationnel non terminal, lui, EST retenté à l'invocation suivante,
+> jamais dans la même. Traitement strictement séquentiel (la Phase 7 modifie
+> l'état Git du dépôt principal).
+> Limites restantes : le pipeline s'arrête toujours à la notification Telegram
+> de la Phase 13. Ce qui suit le clic — relever la décision (check_human_review),
+> committer (commit_patch), proposer le merge (propose_merge), relever la
+> seconde décision, merger (execute_confirmed_merge) — reste cinq commandes
+> séparées, non chaînées. Et la Phase 16 conserve une seconde confirmation
+> Telegram, que l'opérateur a lui-même qualifiée de cérémonie pour le geste
+> git equivalent. Groupes de doublons gelés une fois formés : un case de même
+> signature diagnostiqué lors d'une invocation ultérieure ne les rejoint pas.
+
 ## Contexte de travail actuel
 
 Nous développons le module d'observabilité, de diagnostic et d'auto-correction supervisée de SurveyBot.
@@ -3913,8 +3955,9 @@ suppression déclenchée côté import). Voir Phase 20 pour le détail complet.
 
 **Orchestrateur autofix** (`Survey/autofix_orchestrator.py`) — lance Claude
 Code en mode headless puis enchaîne les Phases 8, 9, 11-A, 12 et 13 jusqu'à la
-notification Telegram. Un cas à la fois, jamais en parallèle ; la Phase 7 reste
-une précondition ; voir la suite 35 pour les limites disclosées.
+notification Telegram. Un cas à la fois, jamais en parallèle. Depuis la suite
+36, une étape amont (Phases 4 à 7, déduplication, import fleet optionnel)
+s'exécute d'abord par défaut ; voir les suites 35 et 36 pour les limites.
 
 **Merge automatique** (`Survey/merge_executor.py`) — merge local `--no-ff`
 dès confirmation Telegram, sur la vraie branche cible du dépôt principal ;
@@ -3999,9 +4042,10 @@ Je suivrais exactement cet ordre :
     outil de statistiques en lecture seule uniquement ; mécanisme de merge
     automatique par catégorie explicitement différé, en attente de
     plusieurs semaines de données réelles)
-18  Boucle autonome attach — PREMIÈRE BRIQUE SEULEMENT (lancement
-    automatique de Claude Code en headless, autofix_orchestrator.py ; la
-    boucle complète en attach reste hors périmètre)
+18  Boucle autonome attach — PREMIÈRE BRIQUE SEULEMENT (autofix_orchestrator.py :
+    import -> Phases 4-7 -> Claude Code headless -> Phases 8-13, sans attach
+    live ; ce qui suit la décision Telegram reste manuel ; la boucle complète
+    en attach reste hors périmètre)
 19  Fleet learning / métriques — CONTRIBUTION PARTIELLE, hors numérotation
     (déduplication stricte de cases, case_grouping.py — résout "Bot A → Bot
     B déjà supporté" sans infrastructure fleet ; le tableau de taux de
