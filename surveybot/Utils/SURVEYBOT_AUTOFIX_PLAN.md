@@ -1330,6 +1330,96 @@ niveau tant que le niveau précédent n'est pas fiable.
 > Phase 20 est désormais close : le schéma "PROD BOTS → stockage des
 > failure_cases → LOCAL/DEV AUTOFIX WORKER" du plan est entièrement
 > opérationnel.
+> Mise à jour 2026-09-27 (suite 35) : REVIREMENT DÉLIBÉRÉ sur trois garde-fous
+> manuels, à la demande explicite de l'opérateur — et sur trois points, l'avis
+> initial était mal calibré. (1) Le lancement de l'agent de coding n'a plus
+> besoin d'un humain : la garantie ne vient pas du clic mais de tout ce qui
+> suit (Phases 8, 9, 11-A, 12 -> confidence=HIGH), qui existe déjà et ne
+> dépend d'aucune intervention. (2) L'entrée BEM n'est plus un brouillon à
+> coller : l'opérateur ne relisait déjà pas ce que Claude Code y écrivait ;
+> c'est désormais l'agent lui-même qui l'écrit, dans le même prompt que le
+> patch. (3) Exiger en plus un `git merge` manuel après une confirmation
+> Telegram n'ajoutait rien (la vraie décision a lieu au clic) ; le merge local
+> s'exécute désormais seul. Ce qui RESTE manuel, seul point réellement
+> difficile à annuler : le push vers un dépôt partagé et tout déclenchement de
+> release. Les mentions "ne merge jamais", "jamais collé automatiquement" et
+> "aucune invocation automatique d'agent" des Phases 7/14/16 et de la suite 31
+> décrivent l'état AVANT cette suite ; elles restent vraies pour le module
+> concerné pris isolément, mais ne décrivent plus le pipeline dans son
+> ensemble.
+> (A) Codex écrit l'entrée BEM : `Survey/prompt_generator.py` (Phase 6) reçoit
+> une ligne fixe additive dans ACTION REQUISE — après implémentation et
+> vérification, ajouter une entrée dans Survey/BOT_EVOLUTION_MEMORY.md au
+> format exact de son en-tête — appliquée à TOUS les prompts, jamais
+> conditionnelle. Filet de sécurité dans `Survey/patch_commit.py` (Phase 15) :
+> si l'entrée manque (fait Git déjà vérifié) et que --diagnosis-dir +
+> --context-selection-dir sont fournis, le brouillon mécanique de
+> `Survey/bem_proposal.py` (Phase 14, non modifiée) est ajouté automatiquement
+> en fin de BEM, précédé d'un marqueur explicite ("Entrée auto-générée —
+> Codex n'a pas rédigé cette entrée, patterns couverts/exclus non validés"),
+> pour qu'un futur diagnostic distingue une entrée validée d'une entrée de
+> secours. Sans ces deux options, comportement strictement inchangé.
+> (B) Merge automatique : `Survey/merge_executor.py` + `tools/
+> execute_confirmed_merge.py`. Précondition : merge_reviews/<id>/decision.json
+> APPROVED, worktree réel, commit_result.json avec commit_sha, source_branch
+> hors PROTECTED_BRANCHES (protection RÉELLE ici — source_branch est purement
+> informatif en Phase 7 et pourrait valoir "main"), jamais "HEAD (detached)".
+> Première phase du chantier qui agit sur le dépôt PRINCIPAL et son checkout
+> réel plutôt que sur le worktree isolé — d'où : dépôt principal exigé
+> entièrement propre avant tout basculement (jamais de stash automatique),
+> `git merge --no-ff` avec marqueur "case_id=<id>" (idempotent : un merge déjà
+> fait donne ALREADY_MERGED, jamais un doublon), conflit réel -> `git merge
+> --abort` puis signalement, jamais de résolution automatique. Jamais de push.
+> Sortie : merge_results/<id>/merge_result.json.
+> (C) Registre de stabilité prouvée : `Survey/extractor_stability.py` +
+> `tools/report_extractor_stability.py`, complément de BEM (jamais un
+> remplacement), lecture seule. Relit le contenu COMPLET de
+> Survey/extractor_integrity.json à chaque commit qui le touche, comparé clé
+> par clé — jamais un parsing de diff, invalidé en pratique par un renommage de
+> clé déjà survenu. Par fonction : stable depuis quel commit, nombre de
+> valeurs de hash distinctes jamais portées, trou dans l'historique, et
+> incidents diagnostiqués DEPUIS la dernière modification (les incidents
+> antérieurs ne concernent plus la version actuelle). Jamais un pourcentage
+> (aucune source ne compte les succès) ; historique non exploitable = raison
+> explicite, jamais un zéro silencieux. Limite à connaître : l'historique
+> Git du registre ne compte que 4 commits — la preuve de stabilité ne couvre
+> que la période APRÈS la création du registre, pas l'avant ; les hashs
+> initiaux fixent l'état du code au moment du seed, sans prouver qu'il n'avait
+> pas été retouché avant.
+> (D) Orchestrateur : `Survey/autofix_orchestrator.py` + `tools/
+> run_autofix_pipeline.py`. Lance Claude Code en mode headless puis enchaîne
+> les Phases 8, 9, 11-A, 12, 13 (fonctions d'écriture existantes importées
+> telles quelles, jamais réimplémentées ni appelées via leurs CLI) jusqu'à la
+> notification Telegram si confidence=HIGH. Traite jusqu'à --max-cases (défaut
+> 5) cases UN À LA FOIS, jamais en parallèle. Syntaxe de la CLI vérifiée
+> contre la version réellement installée (`claude --help`) : le flag --cwd
+> suggéré dans l'échange préalable n'existe PAS dans cette version — l'ERREUR
+> venait de la description initiale, non d'un défaut de l'orchestrateur ;
+> le répertoire du worktree est fixé par le paramètre `cwd=` du sous-processus,
+> équivalent fonctionnel exact. Prompt transmis par entrée standard (pas en
+> argument : limite de longueur/quoting d'un prompt long multi-lignes),
+> --output-format json, --permission-mode acceptEdits explicite, outils
+> restreints à "Read Edit Write Grep Glob" (pas de Bash : le prompt demande un
+> patch, les tests étant couverts par les phases suivantes). Un seul essai,
+> jamais de retry automatique.
+> Contrôle de parallélisme actif avant chaque lancement (check_pre_launch_safety
+> réutilisée) ; un case en collision est reporté, jamais lancé quand même.
+> Limites disclosées : (i) la Phase 7 (préparation du worktree) n'est PAS
+> déclenchée par l'orchestrateur — elle reste une précondition ; les Phases
+> 4, 5, 6, 7 sont donc encore à lancer séparément case par case avant qu'il
+> prenne le relais. (ii) run_result.json écrit (succès OU échec) rend le case
+> inéligible à une reprise automatique : un échec transitoire d'une phase
+> suivante exige une relance manuelle. (iii) Est "en vol" TOUT worktree
+> présent, y compris déjà mergé — définition volontairement large qui, avec
+> le temps, reportera de plus en plus de cases ; à resserrer maintenant que
+> merge_result.json existe. (iv) Sans Bash, l'agent ne peut pas vérifier son
+> propre patch avant de rendre la main : compromis sécurité/taux de réussite
+> au premier essai, ajustable via --allowed-tools.
+> Effet sur la Phase 18 : le lancement automatique de l'agent (mode headless,
+> sans attach live) en constitue désormais la première brique ; la boucle
+> complète en attach reste hors périmètre.
+> Cette suite est décrite à partir des artefacts déposés ; les Phases 6, 14, 15
+> et 16 ont été étendues/complétées, aucune autre phase modifiée.
 
 ## Contexte de travail actuel
 
@@ -3413,7 +3503,10 @@ explicitement. Brouillon composé dans le format exact de l'en-tête de
 sections exigeant un jugement humain ("Patterns couverts"/"Patterns exclus")
 portent un marqueur explicite, jamais une prose inventée. N'écrit JAMAIS dans
 `BOT_EVOLUTION_MEMORY.md` lui-même — seulement un brouillon séparé, destiné à
-une relecture humaine puis un collage manuel.**
+une relecture humaine puis un collage manuel. (Mise à jour suite 35 : ce
+mode "brouillon à coller" n'est plus le chemin normal — c'est désormais
+l'agent de coding qui écrit l'entrée dans son prompt, et ce module ne sert
+plus que de filet de sécurité automatique côté Phase 15.)**
 
 Après validation du patch seulement.
 
@@ -3491,7 +3584,10 @@ seul poller, un seul offset partagé, chaque callback routé vers
 Message : branche autofix, branche cible (`worktree.json.source_branch`,
 jamais codée en dur), sha/sujet du commit — jamais le diff complet. Ne
 déclenche JAMAIS elle-même un git merge, un push, ni une modification de la
-branche cible — la confirmation reste un signal à vérifier manuellement.**
+branche cible — la confirmation reste un signal à vérifier manuellement.
+(Mise à jour suite 35 : le merge local s'exécute désormais seul, via
+`Survey/merge_executor.py`, dès `APPROVED` — cette phase-ci, prise
+isolément, ne merge toujours pas.)**
 
 Première version :
 
@@ -3815,6 +3911,19 @@ jamais sans vérification préalable) et import côté machine de dev
 (`fleet_origin.json` en sidecar, `live_validation_possible=false`, aucune
 suppression déclenchée côté import). Voir Phase 20 pour le détail complet.
 
+**Orchestrateur autofix** (`Survey/autofix_orchestrator.py`) — lance Claude
+Code en mode headless puis enchaîne les Phases 8, 9, 11-A, 12 et 13 jusqu'à la
+notification Telegram. Un cas à la fois, jamais en parallèle ; la Phase 7 reste
+une précondition ; voir la suite 35 pour les limites disclosées.
+
+**Merge automatique** (`Survey/merge_executor.py`) — merge local `--no-ff`
+dès confirmation Telegram, sur la vraie branche cible du dépôt principal ;
+jamais de push ni de release (voir suite 35).
+
+**Registre de stabilité prouvée** (`Survey/extractor_stability.py`) —
+complément factuel de BEM, calculé depuis l'historique Git réel de
+`Survey/extractor_integrity.json` (voir suite 35).
+
 ## Ordre concret de développement
 
 Je suivrais exactement cet ordre :
@@ -3876,20 +3985,23 @@ Je suivrais exactement cet ordre :
 13  UI/review humaine simplifiée — TERMINÉE (human_review.py + CLI
     notify/check, via Telegram existant, polling getUpdates ; notifie
     seulement confidence=HIGH ; ne merge/commit rien)
-14  Proposition BEM — TERMINÉE (bem_proposal.py + CLI ; déclenchée sur
-    decision.json APPROVED ; détection fichiers/fonctions par Git+AST/hash,
-    jamais collé automatiquement dans BEM)
+14  Proposition BEM — TERMINÉE (bem_proposal.py + CLI ; détection
+    fichiers/fonctions par Git+AST/hash) ; depuis la suite 35, devenue un
+    filet de sécurité : l'agent de coding écrit lui-même l'entrée BEM
 15  Commit automatique — TERMINÉE (patch_commit.py + CLI ; confidence=HIGH
     + decision=APPROVED + BEM vérifiée par fait Git ; sujet mécanique,
     jamais push/merge)
 16  Merge semi-automatique — TERMINÉE (merge_review.py + CLI propose_merge,
     généralisation additive de human_review.py ; un seul poller Telegram
-    partagé ; ne merge jamais elle-même)
+    partagé) ; depuis la suite 35, le merge local s'exécute seul
+    (merge_executor.py), jamais de push
 17  Auto-fix supervisé — PARTIELLEMENT TERMINÉE (autofix_metrics.py + CLI,
     outil de statistiques en lecture seule uniquement ; mécanisme de merge
     automatique par catégorie explicitement différé, en attente de
     plusieurs semaines de données réelles)
-18  Boucle autonome attach
+18  Boucle autonome attach — PREMIÈRE BRIQUE SEULEMENT (lancement
+    automatique de Claude Code en headless, autofix_orchestrator.py ; la
+    boucle complète en attach reste hors périmètre)
 19  Fleet learning / métriques — CONTRIBUTION PARTIELLE, hors numérotation
     (déduplication stricte de cases, case_grouping.py — résout "Bot A → Bot
     B déjà supporté" sans infrastructure fleet ; le tableau de taux de
