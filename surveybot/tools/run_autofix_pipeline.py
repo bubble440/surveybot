@@ -65,6 +65,8 @@ def main(argv: "list[str] | None" = None) -> int:
     parser.add_argument("--extractor-integrity-checks-root", default="extractor_integrity_checks", help="Racine des vérifications d'intégrité (Phase 11-A, défaut : extractor_integrity_checks)")
     parser.add_argument("--confidence-scores-root", default="confidence_scores", help="Racine des scores de confiance (Phase 12, défaut : confidence_scores)")
     parser.add_argument("--human-reviews-root", default="human_reviews", help="Racine des revues humaines (Phase 13, défaut : human_reviews)")
+    parser.add_argument("--merge-results-root", default="merge_results", help="Racine des résultats de merge (Survey/merge_executor.py, défaut : merge_results)")
+    parser.add_argument("--merge-reviews-root", default="merge_reviews", help="Racine des revues de merge (Phase 16, défaut : merge_reviews)")
     parser.add_argument("--pipeline-runs-root", default="autofix_pipeline_runs", help="Racine des résumés de chaîne de cet orchestrateur (défaut : autofix_pipeline_runs)")
     parser.add_argument("--max-cases", type=int, default=DEFAULT_MAX_CASES, help=f"Nombre maximum de cases éligibles traités par invocation (défaut : {DEFAULT_MAX_CASES})")
     parser.add_argument("--claude-timeout-s", type=float, default=DEFAULT_CLAUDE_TIMEOUT_S, help=f"Budget de temps (s) de l'invocation Claude Code, défaut={DEFAULT_CLAUDE_TIMEOUT_S}")
@@ -86,6 +88,8 @@ def main(argv: "list[str] | None" = None) -> int:
             extractor_integrity_checks_root=args.extractor_integrity_checks_root,
             confidence_scores_root=args.confidence_scores_root,
             human_reviews_root=args.human_reviews_root,
+            merge_results_root=args.merge_results_root,
+            merge_reviews_root=args.merge_reviews_root,
             pipeline_runs_root=args.pipeline_runs_root,
             max_cases=args.max_cases,
             claude_timeout_s=args.claude_timeout_s,

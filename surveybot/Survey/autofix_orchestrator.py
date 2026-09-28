@@ -50,30 +50,43 @@ de bout en bout s'arrête à l'endroit exact où ce module s'est arrêté.
 Réutilise Survey/parallel_safety.py::check_pre_launch_safety (le nom exact
 dans le code — pas "check_pre_launch_safety_check" — vérifié en lisant le
 module avant d'écrire celui-ci), importée telle quelle, jamais réimplémentée.
+Le comportement de ce contrôle lui-même (comparaison au niveau fichier) ne
+change pas ; seul l'ensemble des worktrees comparés change (cf. ci-dessous).
 
-Investigation faite avant d'écrire cette logique, conformément à la demande :
-Survey/merge_executor.py N'EXISTE PAS dans ce dépôt (vérifié par recherche),
-et aucun fichier merge_result.json n'est écrit par AUCUN module existant — la
-Phase 16 (Survey/merge_review.py) ne fait que proposer une confirmation
-Telegram de merge, elle "NE DÉCLENCHE JAMAIS elle-même un git merge" (sa
-propre docstring). Il n'existe donc, à ce jour, aucun artefact qui
-distinguerait un worktree autofix déjà mergé (et donc réellement "sorti du
-vol") d'un worktree simplement laissé tel quel après un merge manuel. La
-définition opérationnelle retenue ici, documentée plutôt que masquée : TOUT
-worktree.json présent sous autofix_worktrees/ (hors le case en cours
-d'examen) compte comme "en vol" — y compris un case déjà traité par une
-invocation précédente de ce même orchestrateur, puisque son worktree n'est
-jamais supprimé par aucune phase de ce chantier. Ce comptage est donc
-délibérément large (jamais optimiste) ; il redeviendra plus précis
-automatiquement si un futur chantier introduit un artefact de merge réel, sans
-qu'aucun changement ne soit nécessaire ici.
+Définition resserrée de "en vol" (remplace l'ancienne définition volontairement
+large "tout worktree.json présent", documentée comme provisoire dès son
+introduction — cf. suite 35 de SURVEYBOT_AUTOFIX_PLAN.md — maintenant que
+merge_result.json (Survey/merge_executor.py) existe) : un worktree n'est "en
+vol" que s'il peut encore réellement aboutir à un merge. Un worktree dont
+l'issue est définitive ne bloque plus aucun autre case. Est définitive,
+et SEULEMENT, l'une de ces conditions, vérifiée sur un artefact réellement lu
+et bien formé (jamais devinée) :
+  - merge_results/<case_id>/merge_result.json (Phase "merge automatique",
+    Survey/merge_executor.py) : status="MERGED" ou "ALREADY_MERGED" — un
+    status="CONFLICT" reste "en vol" (résolution manuelle encore possible) ;
+  - human_reviews/<case_id>/decision.json (Phase 13) : decision="REJECTED" ;
+  - merge_reviews/<case_id>/decision.json (Phase 16) : decision="REJECTED"
+    (confirmation de merge annulée) ;
+  - confidence_scores/<case_id>/confidence_score.json (Phase 12) :
+    confidence="REJECT" — confidence="MEDIUM" reste "en vol" (un humain peut
+    encore trancher) ;
+  - autofix_static_validations/<case_id>/validation_static.json (Phase 8) :
+    verdict="REJECTED" ;
+  - codex_runs/<case_id>/run_result.json (invocation Claude Code de CE
+    module) : status différent de "SUCCESS" (invocation échouée, aucun patch
+    produit).
+Un artefact absent, illisible, malformé ou dont le champ attendu est absent
+laisse le worktree "en vol" — jamais une hypothèse optimiste. Une seule
+définition, pas de règles empilées ni de délai d'expiration : un worktree qui
+ne remplit AUCUNE de ces conditions reste "en vol" quel que soit son âge.
 
-Pour chaque case candidat, si au moins un autre worktree est "en vol" :
-compare context_selection.json (Phase 5) du candidat à celui de chacun de ces
-autres cases, au niveau fichier (granularité déjà celle de
-check_pre_launch_safety). Toute paire non sûre IMPLIQUANT LE CANDIDAT (jamais
-une paire non sûre entre deux AUTRES cases en vol, hors de propos ici) reporte
-ce case : il n'est pas lancé cette fois, signalé explicitement dans
+Pour chaque case candidat, si au moins un autre worktree est "en vol" (au sens
+resserré ci-dessus) : compare context_selection.json (Phase 5) du candidat à
+celui de chacun de ces autres cases, au niveau fichier (granularité déjà celle
+de check_pre_launch_safety). Toute paire non sûre IMPLIQUANT LE CANDIDAT
+(jamais une paire non sûre entre deux AUTRES cases en vol, hors de propos ici)
+reporte ce case : il n'est pas lancé cette fois, signalé explicitement — avec
+le ou les case_id qui bloquent et l'état lu de chacun — dans
 autofix_pipeline_runs/<case_id>/pipeline_run.json et dans le résumé imprimé,
 mais reste éligible à une invocation future (aucun codex_runs/ écrit pour un
 case reporté). Une erreur de lecture d'un context_selection.json (candidat ou
@@ -186,6 +199,7 @@ from typing import Any, Optional
 
 from Survey.confidence_score import (
     CONFIDENCE_HIGH,
+    CONFIDENCE_REJECT,
     ConfidenceScoreError,
     write_patch_confidence,
 )
@@ -195,6 +209,7 @@ from Survey.extractor_integrity_gate import (
 )
 from Survey.human_review import HumanReviewError, send_review_request
 from Survey.log_utils import log_debug, log_info
+from Survey.merge_executor import STATUS_ALREADY_MERGED, STATUS_MERGED
 from Survey.parallel_safety import ParallelSafetyError, check_pre_launch_safety
 from Survey.patch_replay import PatchReplayError, write_patch_replay
 from Survey.static_validator import StaticValidationError, write_static_validation
@@ -333,21 +348,104 @@ class SafetyOutcome:
     reason: Optional[str]
 
 
+def _worktree_terminal_state(
+    case_id: str,
+    *,
+    merge_results_root: Path,
+    human_reviews_root: Path,
+    merge_reviews_root: Path,
+    confidence_scores_root: Path,
+    static_validations_root: Path,
+    codex_runs_root: Path,
+) -> "tuple[bool, str]":
+    """Détermine si le worktree case_id a atteint une issue définitive (donc
+    n'est plus "en vol") — cf. docstring du module (Point 1) pour la
+    définition exacte et sa justification. Retourne (definitif, état_lu) :
+    état_lu résume la valeur lue de chaque source (ou None si absente/
+    illisible), pour que l'appelant puisse exposer l'état exact d'un case
+    bloquant. Un artefact absent, illisible, malformé, ou dont le champ
+    attendu est absent, ne compte JAMAIS comme définitif — le worktree reste
+    "en vol" dans ce cas (jamais une hypothèse optimiste)."""
+    states: "dict[str, Any]" = {}
+
+    merge_result, _ = _load_json(merge_results_root / case_id / "merge_result.json")
+    merge_status = merge_result.get("status") if isinstance(merge_result, dict) else None
+    states["merge_result.status"] = merge_status
+    if merge_status in (STATUS_MERGED, STATUS_ALREADY_MERGED):
+        return True, f"merge_result.status={merge_status!r}"
+
+    human_decision_data, _ = _load_json(human_reviews_root / case_id / "decision.json")
+    human_decision = human_decision_data.get("decision") if isinstance(human_decision_data, dict) else None
+    states["human_review.decision"] = human_decision
+    if human_decision == "REJECTED":
+        return True, f"human_review.decision={human_decision!r}"
+
+    merge_review_data, _ = _load_json(merge_reviews_root / case_id / "decision.json")
+    merge_review_decision = merge_review_data.get("decision") if isinstance(merge_review_data, dict) else None
+    states["merge_review.decision"] = merge_review_decision
+    if merge_review_decision == "REJECTED":
+        return True, f"merge_review.decision={merge_review_decision!r}"
+
+    confidence_data, _ = _load_json(confidence_scores_root / case_id / "confidence_score.json")
+    confidence = confidence_data.get("confidence") if isinstance(confidence_data, dict) else None
+    states["confidence_score.confidence"] = confidence
+    if confidence == CONFIDENCE_REJECT:
+        return True, f"confidence_score.confidence={confidence!r}"
+
+    static_data, _ = _load_json(static_validations_root / case_id / "validation_static.json")
+    static_verdict = static_data.get("verdict") if isinstance(static_data, dict) else None
+    states["validation_static.verdict"] = static_verdict
+    if static_verdict == "REJECTED":
+        return True, f"validation_static.verdict={static_verdict!r}"
+
+    run_result_data, _ = _load_json(codex_runs_root / case_id / "run_result.json")
+    run_status = run_result_data.get("status") if isinstance(run_result_data, dict) else None
+    states["run_result.status"] = run_status
+    if run_status is not None and run_status != STATUS_SUCCESS:
+        return True, f"run_result.status={run_status!r}"
+
+    return False, "en vol (" + ", ".join(f"{k}={v!r}" for k, v in states.items()) + ")"
+
+
 def _check_case_parallel_safety(
     case_id: str,
     *,
     context_selections_root: Path,
     worktrees_root: Path,
+    merge_results_root: Path,
+    human_reviews_root: Path,
+    merge_reviews_root: Path,
+    confidence_scores_root: Path,
+    static_validations_root: Path,
+    codex_runs_root: Path,
 ) -> SafetyOutcome:
     """cf. docstring du module (Point 1) pour la définition retenue de "en
     vol" et sa justification. N'écrit rien : lecture seule, jamais de
     décision automatique au-delà du report du seul case candidat."""
-    in_flight_ids = []
+    all_other_ids = []
     if worktrees_root.is_dir():
-        in_flight_ids = sorted(
+        all_other_ids = sorted(
             p.name for p in worktrees_root.iterdir()
             if p.is_dir() and p.name != case_id and (p / "worktree.json").is_file()
         )
+
+    in_flight_states: "dict[str, str]" = {}
+    for other_id in all_other_ids:
+        is_terminal, state_label = _worktree_terminal_state(
+            other_id,
+            merge_results_root=merge_results_root,
+            human_reviews_root=human_reviews_root,
+            merge_reviews_root=merge_reviews_root,
+            confidence_scores_root=confidence_scores_root,
+            static_validations_root=static_validations_root,
+            codex_runs_root=codex_runs_root,
+        )
+        if is_terminal:
+            log_debug(_TAG, f"case={other_id} : worktree exclu du contrôle (issue définitive — {state_label})")
+            continue
+        in_flight_states[other_id] = state_label
+
+    in_flight_ids = sorted(in_flight_states)
 
     if not in_flight_ids:
         log_debug(_TAG, f"case={case_id} : aucun autre worktree en vol — contrôle trivialement sûr")
@@ -374,9 +472,17 @@ def _check_case_parallel_safety(
             f"{p.case_id_a}<->{p.case_id_b} fichier(s) partagé(s)={p.shared_files}"
             for p in unsafe_for_candidate
         )
+        blocker_ids = sorted({
+            (pair.case_id_b if pair.case_id_a == case_id else pair.case_id_a)
+            for pair in unsafe_for_candidate
+        })
+        blockers = "; ".join(f"{bid} [{in_flight_states[bid]}]" for bid in blocker_ids)
         return SafetyOutcome(
             checked=True, safe=False,
-            reason=f"fichier(s) candidat(s) partagé(s) avec au moins un case en vol : {detail}",
+            reason=(
+                f"fichier(s) candidat(s) partagé(s) avec au moins un case en vol : {detail} "
+                f"— bloqué par : {blockers}"
+            ),
         )
 
     return SafetyOutcome(checked=True, safe=True, reason=None)
@@ -638,6 +744,8 @@ def process_case(
     extractor_integrity_checks_root: Path,
     confidence_scores_root: Path,
     human_reviews_root: Path,
+    merge_results_root: Path,
+    merge_reviews_root: Path,
     claude_timeout_s: float,
     allowed_tools: str,
     permission_mode: str,
@@ -673,7 +781,15 @@ def process_case(
 
     # ── Point 1 ────────────────────────────────────────────────────────────
     safety = _check_case_parallel_safety(
-        case_id, context_selections_root=context_selections_root, worktrees_root=worktrees_root,
+        case_id,
+        context_selections_root=context_selections_root,
+        worktrees_root=worktrees_root,
+        merge_results_root=merge_results_root,
+        human_reviews_root=human_reviews_root,
+        merge_reviews_root=merge_reviews_root,
+        confidence_scores_root=confidence_scores_root,
+        static_validations_root=static_validations_root,
+        codex_runs_root=codex_runs_root,
     )
     if not safety.safe:
         return CaseRunSummary(
@@ -812,6 +928,8 @@ def run_autofix_pipeline(
     extractor_integrity_checks_root: "str | Path" = "extractor_integrity_checks",
     confidence_scores_root: "str | Path" = "confidence_scores",
     human_reviews_root: "str | Path" = "human_reviews",
+    merge_results_root: "str | Path" = "merge_results",
+    merge_reviews_root: "str | Path" = "merge_reviews",
     pipeline_runs_root: "str | Path" = "autofix_pipeline_runs",
     max_cases: int = DEFAULT_MAX_CASES,
     claude_timeout_s: float = DEFAULT_CLAUDE_TIMEOUT_S,
@@ -836,6 +954,8 @@ def run_autofix_pipeline(
     extractor_integrity_checks_root = Path(extractor_integrity_checks_root)
     confidence_scores_root = Path(confidence_scores_root)
     human_reviews_root = Path(human_reviews_root)
+    merge_results_root = Path(merge_results_root)
+    merge_reviews_root = Path(merge_reviews_root)
     pipeline_runs_root = Path(pipeline_runs_root)
 
     eligible = discover_eligible_cases(
@@ -862,6 +982,8 @@ def run_autofix_pipeline(
             extractor_integrity_checks_root=extractor_integrity_checks_root,
             confidence_scores_root=confidence_scores_root,
             human_reviews_root=human_reviews_root,
+            merge_results_root=merge_results_root,
+            merge_reviews_root=merge_reviews_root,
             claude_timeout_s=claude_timeout_s,
             allowed_tools=allowed_tools,
             permission_mode=permission_mode,
