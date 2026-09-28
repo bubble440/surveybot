@@ -1636,6 +1636,34 @@ niveau tant que le niveau précédent n'est pas fiable.
 > cas d'un patch hors de Survey/, et la complétude de requirements.txt avec le
 > venv du clone.
 
+> Mise à jour 2026-09-28 (suite 41) : PREMIÈRE EXÉCUTION RÉELLE d'un script
+> PowerShell de ce chantier, sur la machine de l'opérateur (Windows PowerShell
+> 5.1), et premier défaut qu'aucune relecture n'avait vu.
+> Défaut : la fonction Invoke-GitTimed, dupliquée à l'identique dans
+> setup_autofix_clone.ps1, preflight_autofix_clone.ps1 et sync_autofix_clone.ps1,
+> lisait `$p.ExitCode` après `Start-Process -PassThru` + `WaitForExit(délai)`.
+> Sous Windows PowerShell 5.1, ExitCode reste vide ($null) sans lecture préalable
+> de `$p.Handle` : un `git` réussi était rapporté comme un échec, avec un message
+> d'erreur vide (le setup s'arrêtait dès la résolution du dépôt). Confirmé sur la
+> machine par un test direct : `ExitCode = []` alors que la sortie de git était
+> correcte. Corrigé dans les trois scripts : lecture de `$p.Handle` juste après le
+> démarrage, `WaitForExit()` sans délai une fois le processus terminé, et un code
+> de sortie illisible produit désormais un message explicite au lieu d'un échec
+> silencieux. Correction non testée par moi (pas de PowerShell 5.1 ici) : elle est
+> validée par le fait que le setup corrigé s'est ensuite exécuté jusqu'au bout.
+> Résultat du setup, exécuté sur la machine : clone créé (C:\projects\Surveys-
+> autofix-clone), branche `autofix-integration` créée depuis
+> origin/feature/phase-1a-observability, venv créé, requirements.txt installé
+> sans erreur, ruff 0.16.9 et Chromium (Playwright) installés, métadonnées de
+> synchronisation écrites hors de l'arbre du clone. Avertissement : binaire
+> `claude` introuvable sur le PATH de la session.
+> Toujours non exécutés sur la machine : preflight_autofix_clone.ps1,
+> sync_autofix_clone.ps1 et schedule_autofix_pipeline_task.ps1. Le clone contient
+> les scripts tels que commités AU MOMENT du clone : la version corrigée n'y figure
+> que si elle avait été commitée avant. requirements.txt s'installe sans erreur,
+> mais l'import de chaque module avec l'interpréteur du venv du clone reste à
+> faire. Aucune invocation de l'orchestrateur n'a encore eu lieu sur un vrai case.
+
 ## Contexte de travail actuel
 
 Nous développons le module d'observabilité, de diagnostic et d'auto-correction supervisée de SurveyBot.
