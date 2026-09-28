@@ -121,17 +121,31 @@ function Invoke-GitTimed {
         $p = Start-Process -FilePath "git" -ArgumentList $GitArgs -WorkingDirectory $WorkDir `
             -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile `
             -PassThru -NoNewWindow
+        # Windows PowerShell 5.1 : sans lecture de .Handle juste apres Start-Process,
+        # ExitCode peut valoir $null une fois le processus termine (handle non mis en
+        # cache) -- un git reussi etait alors pris pour un echec, sans aucun message.
+        $null = $p.Handle
         $finished = $p.WaitForExit([int]($TimeoutS * 1000))
         if (-not $finished) {
             try { Stop-Process -Id $p.Id -Force -ErrorAction Stop } catch {}
             return [PSCustomObject]@{ Ok = $false; TimedOut = $true; ExitCode = $null; StdOut = ""; StdErr = "budget ${TimeoutS}s depasse" }
         }
+        # Le processus a termine dans le budget : cet appel sans delai finalise la
+        # lecture des flux rediriges et l'etat du code de sortie.
+        $p.WaitForExit()
+        $exitCode = $p.ExitCode
         $stdout = Get-Content -Path $stdoutFile -Raw -ErrorAction SilentlyContinue
         $stderr = Get-Content -Path $stderrFile -Raw -ErrorAction SilentlyContinue
+        $stdoutText = $(if ($stdout) { $stdout.Trim() } else { "" })
+        $stderrText = $(if ($stderr) { $stderr.Trim() } else { "" })
+        if ($null -eq $exitCode) {
+            # Jamais un echec sans message : un code de sortie illisible doit se voir.
+            return [PSCustomObject]@{ Ok = $false; TimedOut = $false; ExitCode = $null; StdOut = $stdoutText; StdErr = ("code de sortie de git illisible (ExitCode null) " + $stderrText).Trim() }
+        }
         return [PSCustomObject]@{
-            Ok = ($p.ExitCode -eq 0); TimedOut = $false; ExitCode = $p.ExitCode
-            StdOut = $(if ($stdout) { $stdout.Trim() } else { "" })
-            StdErr = $(if ($stderr) { $stderr.Trim() } else { "" })
+            Ok = ($exitCode -eq 0); TimedOut = $false; ExitCode = $exitCode
+            StdOut = $stdoutText
+            StdErr = $stderrText
         }
     } finally {
         Remove-Item -Path $stdoutFile, $stderrFile -Force -ErrorAction SilentlyContinue
