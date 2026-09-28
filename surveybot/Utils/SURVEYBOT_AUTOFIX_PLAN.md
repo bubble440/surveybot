@@ -1521,6 +1521,70 @@ niveau tant que le niveau précédent n'est pas fiable.
 > sans être ignorés par Git, chaque merge sera refusé. À vérifier par
 > git status après une invocation.
 
+> Mise à jour 2026-09-28 (suite 38) : clone dédié à l'orchestrateur livré, avec
+> DEUX points ouverts constatés à la relecture (voir plus bas).
+> Livrables (`surveybot/tools/`) : `setup_autofix_clone.ps1` (clone local depuis
+> le dépôt de l'opérateur, branche d'intégration `autofix-integration`, venv,
+> dépendances, ruff, Chromium ; idempotent, ne réinitialise jamais une branche
+> d'intégration existante), `preflight_autofix_clone.ps1` (lecture seule :
+> clone propre selon EXACTEMENT le critère de merge_executor, branche non
+> protégée, racines d'artefacts ignorées, variables d'environnement présentes
+> sans jamais afficher leur valeur, claude authentifié, dépendances, verrou),
+> `sync_autofix_clone.ps1` (amène la branche de développement dans la branche
+> d'intégration ; refuse si verrou récent, clone sale ou mauvaise branche ;
+> conflit -> merge --abort, jamais de résolution automatique),
+> `schedule_autofix_pipeline_task.ps1` (enregistre une tâche planifiée, toutes
+> les 60 min par défaut ; n'exécute jamais le pipeline lui-même),
+> `introspect_autofix_pipeline.py` (sonde en lecture seule : branches
+> protégées, verrou et racines d'artefacts DÉRIVÉES du code par analyse
+> syntaxique, jamais recopiées à la main) et `Utils/AUTOFIX_CLONE_
+> ORCHESTRATEUR.md`. Le `.gitignore` a été complété (20 racines d'artefacts
+> ajoutées ; seules failure_cases/, diagnoses/, diag_test_cases/ et
+> replayability/ l'étaient) et testé dans un dépôt jetable reproduisant la
+> disposition surveybot/.
+> Décisions retenues et vérifiées : clone HORS de l'arbre de l'opérateur, cloné
+> en local (pas depuis l'URL distante) ; les correctifs mergés restent dans
+> `autofix-integration`, jamais poussés ni mergés dans la branche de
+> développement, que l'opérateur récupère à son rythme (fetch + merge) ; un
+> seul poller Telegram, celui du clone. Correction d'un motif : la garde
+> PROTECTED_BRANCHES (main, prod, playwright-migration) n'est pas ce qui
+> bloquait ici, la branche de développement réelle
+> (feature/phase-1a-observability) n'étant pas protégée ; le motif décisif est
+> l'exigence d'un dépôt entièrement propre.
+> Constat ouvert n°1 — le lanceur généré rend le clone "sale". Le script de
+> planification écrit `run_autofix_pipeline_task_launcher.ps1` DANS l'arbre du
+> clone (surveybot/), sans qu'aucune règle du .gitignore ne le couvre. Vérifié
+> sur un dépôt jetable : `git status --untracked-files=all` le liste. Or c'est
+> exactement le critère qui fait refuser le merge (merge_executor), le
+> pré-vol ("dépôt propre", bloquant) et la synchronisation. Autrement dit,
+> planifier la tâche désactive le merge automatique. La mise en place, elle,
+> avait écrit son propre fichier annexe hors de l'arbre pour cette raison. À
+> corriger : écrire le lanceur hors de l'arbre du clone (même mécanisme que la
+> Partie A), plutôt que d'ajouter une règle .gitignore dont dépendrait chaque
+> clone.
+> Constat ouvert n°2 — fichiers locaux ignorés non traités. La consigne
+> demandait de déterminer, en exécutant le code, si des fichiers ignorés par
+> Git (global_config.py, accounts.json, receiver_config.json, les
+> _license_config.py, Utils/config) sont requis par les chemins exécutés dans
+> le clone et dans chaque worktree (créé depuis HEAD, donc sans eux), et de
+> fournir soit un mécanisme de copie, soit la preuve qu'aucun n'est requis.
+> Ni les scripts ni la documentation livrés ne contiennent l'une ou l'autre.
+> Le pré-vol ne teste que l'import de Survey.autofix_orchestrator et
+> Survey.autofix_worktree ; il n'exerce ni le rejeu de la Phase 4 ni la
+> compilation/import/rejeu des Phases 8 et 9. Risque : rejet à tort d'un patch
+> par la Phase 8 pour un fichier manquant, ou échec du rejeu. Non tranché.
+> Limites déjà connues, reprises : chaque patch est validé contre l'état
+> d'origine et non contre les patchs déjà mergés ; BOT_EVOLUTION_MEMORY.md,
+> append-only, produit un conflit textuel à la récupération des correctifs ; le
+> dossier des worktrees grossit et n'est nettoyé par aucun script ; lancer
+> `venv\Scripts\python.exe` sans activer le venv ne place pas ruff dans le PATH
+> (le lanceur de la tâche planifiée le fait, un lancement manuel doit le faire).
+> Nature du contrôle de cette suite : relecture du code livré et test du
+> .gitignore et du critère de propreté sur un dépôt jetable ; les scripts
+> PowerShell n'ont pas pu être exécutés ici (pas de Windows), aucun test de
+> bout en bout (Telegram, claude authentifié, Register-ScheduledTask) n'a eu
+> lieu.
+
 ## Contexte de travail actuel
 
 Nous développons le module d'observabilité, de diagnostic et d'auto-correction supervisée de SurveyBot.
