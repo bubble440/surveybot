@@ -23,6 +23,9 @@ Remove-Item -Recurse -Force "$env:TEMP\sb_chrome_profiles\chrome_9009"
 # Pour activer l'environnement virtuel
 & C:/projects/Surveys/.venv/Scripts/Activate.ps1
 
+activer le venv du clone Surveys-autofix-clone
+& C:\projects\Surveys-autofix-clone\surveybot\venv\Scripts\Activate.ps1
+
 Terminal 1 — ouvre le tunnel :
 flyctl proxy 5432 -a surveybot-db
 Terminal 2 — lance Adminer :
