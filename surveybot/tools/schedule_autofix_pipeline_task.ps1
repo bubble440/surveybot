@@ -179,9 +179,12 @@ $action = New-ScheduledTaskAction -Execute "powershell.exe" `
 # "hourly starting now" -- Once + RepetitionInterval/RepetitionDuration est la
 # forme documentee par Microsoft pour un declenchement recurrent qui ne
 # necessite pas un declencheur "AtStartup"/"Daily" separe.
+# 3650 jours (10 ans de 365 jours) couvrent l'horizon de vie attendu du clone ;
+# cette duree finie est acceptee par le Planificateur (P3650D), contrairement
+# a [TimeSpan]::MaxValue (P99999999DT23H59M59S, rejete a l'enregistrement).
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
     -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) `
-    -RepetitionDuration ([TimeSpan]::MaxValue)
+    -RepetitionDuration (New-TimeSpan -Days 3650)
 
 $settings = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit (New-TimeSpan -Hours $ExecutionTimeLimitHours) `
@@ -195,7 +198,19 @@ $settings = New-ScheduledTaskSettingsSet `
 # (jamais SYSTEM), meme convention que wake_scheduler.ps1/check_zombie_bots.ps1
 # -- necessaire si jamais le pipeline devait un jour piloter un navigateur non
 # headless (non le cas aujourd'hui, Survey/replay_browser.py tourne headless).
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
+try {
+    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Force -ErrorAction Stop | Out-Null
+} catch {
+    $registrationError = $_.Exception.Message
+    $taskAfterFailure = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($taskAfterFailure) {
+        $taskState = "Une tache '$TaskName' est visible apres l'echec ; verifier sa configuration (ancienne tache ou enregistrement partiel)."
+    } else {
+        $taskState = "Aucune tache '$TaskName' n'est visible apres l'echec."
+    }
+    Write-Error "Echec de Register-ScheduledTask pour '$TaskName' : $registrationError $taskState" -ErrorAction Continue
+    exit 1
+}
 Remove-LegacyGeneratedLauncher
 
 Write-Output ""
