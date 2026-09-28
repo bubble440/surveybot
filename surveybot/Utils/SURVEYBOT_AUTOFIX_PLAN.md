@@ -1605,6 +1605,37 @@ niveau tant que le niveau précédent n'est pas fiable.
 > Constat ouvert n°1 (lanceur de la tâche planifiée écrit dans l'arbre du
 > clone) : inchangé, prompt de correction rédigé, en attente d'exécution.
 
+> Mise à jour 2026-09-28 (suite 40) : constat ouvert n°1 de la suite 38 (lanceur
+> de la tâche planifiée écrit dans l'arbre du clone) — CORRIGÉ, vérifié à la
+> relecture du script livré, non exécuté (pas de Windows ici).
+> `schedule_autofix_pipeline_task.ps1` écrit désormais le lanceur HORS de
+> l'arbre Git du clone : à côté du dossier du clone, sous le nom
+> `<nom-du-clone>.run_autofix_pipeline_task_launcher.ps1` (même approche que le
+> fichier annexe de setup_autofix_clone.ps1). Un ancien lanceur laissé dans le
+> paquet du clone est supprimé UNIQUEMENT si sa première ligne correspond à
+> l'en-tête exact de génération automatique ; un fichier homonyme non reconnu
+> est conservé, et un homonyme non reconnu à l'emplacement neuf fait refuser
+> l'écriture plutôt que de l'écraser. -Unregister retire aussi le lanceur du
+> nouvel emplacement. Le contenu du lanceur (PATH du venv, positionnement dans
+> le paquet, propagation du code de sortie) est inchangé. Conséquence : planifier
+> la tâche ne laisse plus de fichier non suivi dans le clone, donc ne bloque plus
+> le merge automatique, le pré-vol ni la synchronisation.
+> Non levé : RepetitionDuration reste [TimeSpan]::MaxValue, valeur que certaines
+> versions de Windows refusent à l'enregistrement ; si Register-ScheduledTask
+> échoue avec une erreur de plage, remplacer par une durée finie très longue.
+> Documentation Utils/AUTOFIX_CLONE_ORCHESTRATEUR.md corrigée sur deux points
+> qui provenaient de la description initiale et non du code : (a) le clone se
+> nomme `<nom-du-dépôt>-autofix-clone` (soit `C:\projects\Surveys-autofix-clone`
+> ici) et non `surveybot-autofix-clone`, et les commandes `cd` et `git remote
+> add` de la doc pointaient donc vers un chemin inexistant ; (b) la garde
+> PROTECTED_BRANCHES n'est plus présentée comme ce qui empêche de merger sur la
+> branche de développement (feature/phase-1a-observability n'est pas protégée) :
+> le motif décisif est l'exigence d'un dépôt entièrement propre.
+> État des constats de la suite 38 : n°1 corrigé ; n°2 partiellement clos
+> (suite 39) — restent l'exécution d'un vrai rejeu dans une copie propre, le
+> cas d'un patch hors de Survey/, et la complétude de requirements.txt avec le
+> venv du clone.
+
 ## Contexte de travail actuel
 
 Nous développons le module d'observabilité, de diagnostic et d'auto-correction supervisée de SurveyBot.

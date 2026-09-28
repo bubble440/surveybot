@@ -13,9 +13,10 @@ où il s'exécute soit **entièrement propre** (`git status --porcelain
 correctif, et refuse toute branche cible protégée (`main`, `prod`,
 `playwright-migration`, cf. `Survey/autofix_worktree.py::PROTECTED_BRANCHES`).
 Faire tourner l'orchestrateur dans le dépôt où l'opérateur code le bloque dès
-qu'un développement est en cours, et l'empêcherait de toute façon de merger sur
-sa branche de développement. D'où un **clone dédié**, en permanence sur sa
-propre branche d'intégration non protégée.
+qu'un développement est en cours (fichiers modifiés ou non suivis) ; et si la
+branche de développement est l'une des branches protégées, le merge y serait
+refusé de toute façon. D'où un **clone dédié**, en permanence sur sa propre
+branche d'intégration non protégée.
 
 ## Schéma du flux
 
@@ -66,7 +67,8 @@ l'opérateur en parallèle du clone.**
    cd C:\chemin\vers\surveybot\tools
    .\setup_autofix_clone.ps1
    ```
-   Crée `..\..\surveybot-autofix-clone` (frère du dépôt opérateur, hors de son
+   Crée `<nom-du-dépôt>-autofix-clone` (par exemple `C:\projects\Surveys-autofix-clone`
+   pour un dépôt situé dans `C:\projects\Surveys` ; frère du dépôt opérateur, hors de son
    arbre suivi), sa branche `autofix-integration`, son venv, ses dépendances,
    `ruff` et Chromium (Playwright).
 3. Configurer les variables d'environnement requises pour le compte Windows qui
@@ -76,7 +78,7 @@ l'opérateur en parallèle du clone.**
    si `--import-fleet` est utilisé.
 4. Vérifier avant tout lancement :
    ```powershell
-   cd ..\..\surveybot-autofix-clone\surveybot\tools
+   cd <chemin-du-clone>\surveybot\tools   # ex. cd C:\projects\Surveys-autofix-clone\surveybot\tools
    .\preflight_autofix_clone.ps1
    ```
 5. (Optionnel) Planifier :
@@ -85,7 +87,7 @@ l'opérateur en parallèle du clone.**
    ```
    Le lanceur généré est un frère du dossier du clone, nommé
    `<nom-du-clone>.run_autofix_pipeline_task_launcher.ps1` (par exemple à côté
-   de `surveybot-autofix-clone/`). Il reste hors du dépôt Git ; `-Unregister`
+   de `Surveys-autofix-clone/` dans l'exemple ci-dessus). Il reste hors du dépôt Git ; `-Unregister`
    retire aussi ce lanceur. Un ancien lanceur dans le paquet du clone est retiré
    lors d'une nouvelle planification ou désinstallation seulement si son en-tête
    de génération est reconnu.
@@ -102,7 +104,7 @@ soit vers un dépôt distant, ni ne merge dans une branche protégée.
 - **Récupération des correctifs par l'opérateur** — hors du périmètre de
   l'orchestrateur, à son rythme, depuis son propre dépôt :
   ```powershell
-  git remote add autofix-clone ..\surveybot-autofix-clone   # une seule fois
+  git remote add autofix-clone <chemin-du-clone>   # une seule fois, ex. ..\Surveys-autofix-clone
   git fetch autofix-clone autofix-integration
   git merge autofix-clone/autofix-integration
   ```
