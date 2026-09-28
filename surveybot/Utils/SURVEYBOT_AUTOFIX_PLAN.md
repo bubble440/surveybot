@@ -1585,6 +1585,26 @@ niveau tant que le niveau précédent n'est pas fiable.
 > bout en bout (Telegram, claude authentifié, Register-ScheduledTask) n'a eu
 > lieu.
 
+> Mise à jour 2026-09-28 (suite 39) : constat ouvert n°2 de la suite 38 (fichiers
+> locaux ignorés) — PARTIELLEMENT CLOS, sur mesure réelle. Test exécuté par
+> l'opérateur sur une copie propre du dépôt (git clone local, donc uniquement
+> les fichiers suivis) : Survey.dom_analyzer est bien importé depuis la copie
+> (chemin vérifié), global_config.py, accounts.json, receiver_config.json et
+> _license_config.py y sont absents, et l'import de CHAQUE module de Survey/,
+> un par un, réussit sans erreur. Conclusion établie : aucun module de Survey/
+> ne requiert ces fichiers à l'import, donc la compilation/import isolé de la
+> Phase 8 ne peut pas échouer pour ce motif sur un fichier de Survey/.
+> Ce qui n'est PAS établi : (a) qu'aucun de ces fichiers ne soit lu à
+> l'EXÉCUTION (rejeu d'un vrai case : tools/replay_failure.py sur un case de
+> stage extraction dans la copie propre) ; (b) le cas d'un patch touchant un
+> fichier hors de Survey/ (par exemple preselection/, dont des fonctions sont
+> gelées dans extractor_integrity.json) ; (c) que requirements.txt soit
+> complet — le test a utilisé le venv de l'opérateur, pas celui que
+> setup_autofix_clone.ps1 construira : refaire la boucle d'import avec
+> l'interpréteur du venv du clone une fois créé.
+> Constat ouvert n°1 (lanceur de la tâche planifiée écrit dans l'arbre du
+> clone) : inchangé, prompt de correction rédigé, en attente d'exécution.
+
 ## Contexte de travail actuel
 
 Nous développons le module d'observabilité, de diagnostic et d'auto-correction supervisée de SurveyBot.
