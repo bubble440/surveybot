@@ -60,6 +60,15 @@ préfixe de callback_data, vers human_reviews/ OU merge_reviews/ avec le même
 offset persisté — jamais deux invocations séparées de getUpdates. Un préfixe
 de callback_data non reconnu (ni Phase 13 ni Phase 16) est ignoré avec un
 avertissement, comme avant ce patch.
+
+── Notification simple, sans bouton (send_status_notification) ────────────
+Ajoutée pour un appelant qui n'a besoin que de signaler un changement d'état
+(ex. étape aval de Survey/autofix_orchestrator.py — merge réussi/conflit/
+blocage), sans attendre de décision en retour : réutilise _telegram_api_call
+et les mêmes variables d'environnement que _send_two_button_review, jamais un
+second client ni une résolution dupliquée. N'écrit ni pending.json ni
+decision.json — un simple envoi, la persistance d'un éventuel garde-fou
+anti-doublon reste de la responsabilité de l'appelant.
 """
 
 import hashlib
@@ -205,6 +214,27 @@ def _telegram_api_call(method: str, token: str, payload: dict) -> Any:
     if not parsed.get("ok"):
         raise HumanReviewError(f"Telegram {method} a répondu ok=false : {parsed.get('description')}")
     return parsed.get("result")
+
+
+def send_status_notification(text: str) -> None:
+    """Envoi d'un message Telegram SIMPLE (sans bouton, sans persistance de
+    pending.json/decision.json) — additif, pour un appelant qui n'a besoin que
+    de signaler un changement d'état (ex. étape aval de
+    Survey/autofix_orchestrator.py : merge réussi/conflit/blocage). Réutilise
+    le client HTTP minimal (_telegram_api_call) et la résolution des mêmes
+    variables d'environnement (telegram_bot_token/telegram_chat_id) que
+    _send_two_button_review, sans les dupliquer. Lève HumanReviewError si la
+    configuration Telegram est absente ou si l'appel échoue — à l'appelant de
+    décider comment traiter un échec de notification (jamais bloquant par
+    nature ici)."""
+    tg_token = os.getenv("telegram_bot_token", "").strip()
+    tg_chat = os.getenv("telegram_chat_id", "").strip()
+    if not tg_token or not tg_chat:
+        raise HumanReviewError(
+            "Telegram non configuré (telegram_bot_token/telegram_chat_id absents) — "
+            "notification impossible"
+        )
+    _telegram_api_call("sendMessage", tg_token, {"chat_id": tg_chat, "text": text})
 
 
 # ─────────────────────────────────────────────────────────────────────────

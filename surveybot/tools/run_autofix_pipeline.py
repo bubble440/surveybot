@@ -1,14 +1,27 @@
 """
-run_autofix_pipeline.py — orchestrateur autofix. Par défaut, lance d'abord une
-étape amont (failure_cases/ -> worktree prêt : Phases 4/5/6/7 enchaînées
-automatiquement, déduplication incluse — cf. Survey/autofix_orchestrator.py,
-section "Étape amont" de son docstring) puis, dans la même invocation, lance
-automatiquement Claude Code (mode headless) sur jusqu'à --max-cases cases
-ainsi préparés (ou déjà préparés manuellement auparavant), UN À LA FOIS, et
-enchaîne les phases existantes (8, 9, 11-A, 12, 13) jusqu'à la notification
-humaine si confidence="HIGH". --no-upstream restaure le comportement
-antérieur à cette étape amont (worktree.json/prompt.txt déjà présents restent
-alors une précondition satisfaite manuellement en amont).
+run_autofix_pipeline.py — orchestrateur autofix. Une invocation, dans l'ordre
+(cf. Survey/autofix_orchestrator.py, docstring, "Point 0") : (0) verrou
+d'exclusion (jamais deux invocations en même temps — toujours actif) ; (1)
+étape AVAL (décision Telegram Phase 13 -> commit -> merge local automatique,
+sauf --no-downstream) ; (2) étape AMONT (failure_cases/ -> worktree prêt :
+Phases 4/5/6/7 enchaînées automatiquement, déduplication incluse, sauf
+--no-upstream) ; (3) étape EXISTANTE : Claude Code (mode headless) sur jusqu'à
+--max-cases cases préparés, UN À LA FOIS, puis Phases 8/9/11-A/12/13 jusqu'à la
+notification humaine si confidence="HIGH". --no-upstream/--no-downstream
+restaurent chacun le comportement d'avant leur étape respective ; le verrou,
+lui, n'a pas d'option de désactivation.
+
+Étape AVAL (nouvelle) : un seul "Approuver" Telegram (Phase 13) suffit
+désormais — la Phase 16 (seconde confirmation avant merge) SORT de la chaîne
+orchestrée ; ses modules et tools/propose_merge.py restent utilisables à la
+main, mais ce script ne les appelle jamais. Cases éligibles :
+--human-reviews-root/<case_id>/decision.json avec decision="APPROVED", sans
+--merge-results-root/<case_id>/merge_result.json déjà écrit. MERGED/
+ALREADY_MERGED et CONFLICT sont des issues TERMINALES (jamais de retry
+automatique — un conflit exige une résolution manuelle) ; un refus
+opérationnel (dépôt principal non propre, commit refusé, échec Git) est
+retenté à l'invocation suivante. Une notification Telegram concise est
+envoyée une fois par changement d'état (mergé/conflit/bloqué).
 
 Éligibilité d'un case pour l'étape EXISTANTE (toutes les conditions
 ensemble) : worktree.json (--worktrees-root/<case_id>/worktree.json) présent ;
@@ -43,13 +56,18 @@ Survey/confidence_score.py, Survey/human_review.py,
 Survey/parallel_safety.py, et pour l'étape amont : Survey/fleet_case_import.py,
 Survey/failure_diagnosis.py, Survey/case_grouping.py,
 Survey/context_selector.py, Survey/prompt_generator.py,
-Survey/autofix_worktree.py).
+Survey/autofix_worktree.py, et pour l'étape aval : Survey/patch_commit.py,
+Survey/merge_executor.py).
+
+Codes de sortie : 0 (succès, aucune erreur), 1 (au moins un case en erreur, ou
+--max-cases/--max-upstream-cases/--lock-stale-after-s invalide), 3 (verrou
+d'exclusion déjà détenu par une autre invocation — pas une erreur d'usage).
 
 Usage :
     python tools\\run_autofix_pipeline.py
     python tools\\run_autofix_pipeline.py --max-cases 3
     python tools\\run_autofix_pipeline.py --claude-timeout-s 900 --force
-    python tools\\run_autofix_pipeline.py --no-upstream
+    python tools\\run_autofix_pipeline.py --no-upstream --no-downstream
     python tools\\run_autofix_pipeline.py --import-fleet --max-upstream-cases 5
 """
 
@@ -64,10 +82,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from Survey.autofix_orchestrator import (  # noqa: E402
     DEFAULT_ALLOWED_TOOLS,
     DEFAULT_CLAUDE_TIMEOUT_S,
+    DEFAULT_LOCK_STALE_AFTER_S,
     DEFAULT_MAX_CASES,
     DEFAULT_MAX_UPSTREAM_CASES,
     DEFAULT_PERMISSION_MODE,
     AutofixOrchestratorError,
+    OrchestratorLockedError,
     run_autofix_pipeline,
 )
 
@@ -91,7 +111,8 @@ def main(argv: "list[str] | None" = None) -> int:
     parser.add_argument("--confidence-scores-root", default="confidence_scores", help="Racine des scores de confiance (Phase 12, défaut : confidence_scores)")
     parser.add_argument("--human-reviews-root", default="human_reviews", help="Racine des revues humaines (Phase 13, défaut : human_reviews)")
     parser.add_argument("--merge-results-root", default="merge_results", help="Racine des résultats de merge (Survey/merge_executor.py, défaut : merge_results)")
-    parser.add_argument("--merge-reviews-root", default="merge_reviews", help="Racine des revues de merge (Phase 16, défaut : merge_reviews)")
+    parser.add_argument("--merge-reviews-root", default="merge_reviews", help="Racine des revues de merge (Phase 16, défaut : merge_reviews) — plus jamais écrite par ce script (Phase 16 sortie de la chaîne orchestrée), seulement lue par check_pending_reviews pour ne pas voler ses mises à jour Telegram à un usage manuel")
+    parser.add_argument("--commit-results-root", default="commit_results", help="Racine des résultats de commit (Phase 15, défaut : commit_results)")
     parser.add_argument("--pipeline-runs-root", default="autofix_pipeline_runs", help="Racine des résumés de chaîne de cet orchestrateur (défaut : autofix_pipeline_runs)")
     parser.add_argument("--max-cases", type=int, default=DEFAULT_MAX_CASES, help=f"Nombre maximum de cases éligibles traités par invocation (défaut : {DEFAULT_MAX_CASES})")
     parser.add_argument("--claude-timeout-s", type=float, default=DEFAULT_CLAUDE_TIMEOUT_S, help=f"Budget de temps (s) de l'invocation Claude Code, défaut={DEFAULT_CLAUDE_TIMEOUT_S}")
@@ -101,10 +122,12 @@ def main(argv: "list[str] | None" = None) -> int:
     parser.add_argument("--no-upstream", dest="upstream", action="store_false", default=True, help="Désactive l'étape amont (failure_cases -> worktree) — restaure le comportement d'avant cette étape (worktree.json/prompt.txt déjà présents restent une précondition manuelle)")
     parser.add_argument("--import-fleet", action="store_true", help="Avant l'étape amont, importe les failure_cases disponibles côté stockage fleet (Survey/fleet_case_import.py) — désactivé par défaut, exige FLEET_R2_* dans l'environnement ; un échec est un avertissement, jamais un arrêt")
     parser.add_argument("--max-upstream-cases", type=int, default=DEFAULT_MAX_UPSTREAM_CASES, help=f"Nombre maximum de DIAGNOSTICS (Phase 4) réellement nouveaux tentés par invocation — un case déjà diagnostiqué n'est pas compté (défaut : {DEFAULT_MAX_UPSTREAM_CASES}, conservateur car la Phase 4 lance un vrai Chromium isolé pour un case stage=\"action\")")
+    parser.add_argument("--no-downstream", dest="downstream", action="store_false", default=True, help="Désactive l'étape aval (décision Telegram -> commit -> merge local) — restaure le comportement d'avant cette étape")
+    parser.add_argument("--lock-stale-after-s", type=float, default=DEFAULT_LOCK_STALE_AFTER_S, help=f"Âge (s) au-delà duquel un verrou d'exclusion (point 0) déjà présent est considéré abandonné et repris avec un avertissement (défaut : {DEFAULT_LOCK_STALE_AFTER_S}, généreux — doit rester supérieur au temps maximal théorique d'une invocation)")
     args = parser.parse_args(argv)
 
     try:
-        upstream_summaries, summaries = run_autofix_pipeline(
+        downstream_summaries, upstream_summaries, summaries = run_autofix_pipeline(
             failure_cases_root=args.failure_cases_root,
             diagnoses_root=args.diagnoses_root,
             context_selections_root=args.context_selections_root,
@@ -118,6 +141,7 @@ def main(argv: "list[str] | None" = None) -> int:
             human_reviews_root=args.human_reviews_root,
             merge_results_root=args.merge_results_root,
             merge_reviews_root=args.merge_reviews_root,
+            commit_results_root=args.commit_results_root,
             pipeline_runs_root=args.pipeline_runs_root,
             max_cases=args.max_cases,
             claude_timeout_s=args.claude_timeout_s,
@@ -127,12 +151,33 @@ def main(argv: "list[str] | None" = None) -> int:
             run_upstream=args.upstream,
             import_fleet=args.import_fleet,
             max_upstream_cases=args.max_upstream_cases,
+            run_downstream=args.downstream,
+            lock_stale_after_s=args.lock_stale_after_s,
         )
+    except OrchestratorLockedError as exc:
+        print(f"[VERROU] {exc}", file=sys.stderr)
+        return 3
     except AutofixOrchestratorError as exc:
         print(f"[ERREUR] {exc}", file=sys.stderr)
         return 1
 
     any_error = False
+
+    if downstream_summaries:
+        print("== Étape aval (décision Telegram -> merge local) ==")
+        for d in downstream_summaries:
+            print(f"case          : {d.case_id}")
+            print(f"  arrêté à    : {d.stopped_at}")
+            if d.stop_reason:
+                print(f"  raison      : {d.stop_reason}")
+            print(f"  terminal    : {d.terminal}")
+            print(f"  notifié     : {d.notified}")
+            for stage, path in d.artifacts.items():
+                print(f"    - {stage} -> {path}")
+            for w in d.warnings:
+                print(f"  ! {w}")
+            any_error = any_error or d.is_error
+        print()
 
     if upstream_summaries:
         print("== Étape amont (failure_cases -> worktree) ==")

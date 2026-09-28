@@ -11,9 +11,12 @@ Survey/extractor_integrity_gate.py, Survey/confidence_score.py,
 Survey/human_review.py, Survey/parallel_safety.py, et — pour l'étape amont
 ci-dessous — Survey/fleet_case_import.py, Survey/failure_diagnosis.py,
 Survey/case_grouping.py, Survey/context_selector.py,
-Survey/prompt_generator.py, Survey/autofix_worktree.py) — importées et
-appelées TELLES QUELLES, jamais réimplémentées ni modifiées. Ne touche à
-aucun extracteur ni stratégie de dispatch.
+Survey/prompt_generator.py, Survey/autofix_worktree.py, et — pour l'étape
+aval — Survey/patch_commit.py, Survey/merge_executor.py) — importées et
+appelées TELLES QUELLES, jamais réimplémentées ni modifiées (Survey/
+human_review.py excepté : une petite fonction ADDITIVE, send_status_notification,
+y a été ajoutée pour l'étape aval — cf. section dédiée). Ne touche à aucun
+extracteur ni stratégie de dispatch.
 
 Depuis l'introduction de l'étape amont (cf. section dédiée ci-dessous), la
 Phase 7 (préparation du worktree, Survey/autofix_worktree.py) EST déclenchée
@@ -21,9 +24,18 @@ par ce module, par défaut, avant l'étape ci-dessous — sauf --no-upstream, qu
 restaure exactement le comportement antérieur (worktree.json/prompt.txt déjà
 présents restent une précondition satisfaite manuellement en amont). La
 section "Éligibilité d'un case" ci-dessous décrit l'étape EXISTANTE
-(inchangée) qui part de worktree.json déjà présent ; elle s'exécute, dans la
-même invocation, juste après l'étape amont, et découvre donc naturellement
-les worktrees que celle-ci vient de créer.
+(inchangée) qui part de worktree.json déjà présent.
+
+Depuis l'introduction de l'étape aval (cf. section dédiée ci-dessous), l'ordre
+réel d'une invocation est : (0) verrou d'exclusion, (1) étape AVAL (décision
+Telegram Phase 13 -> commit -> merge local, sauf --no-downstream), (2) étape
+AMONT (sauf --no-upstream), (3) étape EXISTANTE ci-dessous. L'aval passe avant
+l'amont pour que les correctifs déjà mergés soient présents dans le dépôt
+quand l'amont diagnostique de nouveaux cases. Chaque étape découvre donc
+naturellement les artefacts que la précédente vient de produire dans la même
+invocation (l'amont trouve les worktrees fraîchement créés par une Phase 7
+manuelle ou par une invocation antérieure ; l'existante trouve les worktrees
+que l'amont vient de créer).
 
 ── Éligibilité d'un case (toutes les conditions ensemble) ────────────────────
 autofix_worktrees/<case_id>/worktree.json existe (Phase 7 déjà faite) ; ET
@@ -196,6 +208,170 @@ parallélisation future, hors périmètre de ce patch. Aucune logique de phase
 existante réimplémentée : chaque étape n'est qu'un appel direct à la fonction
 déjà écrite et déjà testée de la phase correspondante.
 
+── Point 0 : verrou d'exclusion (acquire_lock/release_lock) ───────────────────
+Deux invocations ne doivent jamais s'exécuter en même temps (une session
+Claude Code, étape existante, peut durer jusqu'à --claude-timeout-s par case —
+des invocations planifiées qui se chevauchent verraient sinon deux Phases 7
+préparer le même worktree, ou deux merges tenter la même branche en même
+temps). Fichier orchestrator.lock sous --pipeline-runs-root, créé par
+os.O_CREAT | os.O_EXCL (exclusion atomique niveau OS, une seule stratégie,
+jamais un verrou en mémoire — doit tenir entre deux invocations séparées du
+process), contenant horodatage + PID. Verrou déjà présent et non périmé :
+OrchestratorLockedError (sous-classe distincte d'AutofixOrchestratorError,
+jamais confondue avec une erreur d'usage — code de sortie distinct côté CLI),
+jamais une attente bloquante ni un retry. Âge dépassant --lock-stale-after-s
+(DEFAULT_LOCK_STALE_AFTER_S, généreux — cf. sa propre justification en tête de
+fichier) : repris avec un avertissement (process mort sans nettoyage : kill
+-9, crash, coupure). Toujours actif, pour LES TROIS étapes (aval/amont/
+existante) — aucune option ne le désactive, contrairement à --no-downstream/
+--no-upstream qui ne désactivent que leur étape propre. Toujours libéré en fin
+d'invocation, y compris sur exception (try/finally autour du corps de
+run_autofix_pipeline).
+
+── Étape aval : de la décision Telegram jusqu'au merge local (run_downstream_stage) ─
+Active par défaut, EN PREMIER (avant l'étape amont et l'étape existante), dans
+la MÊME invocation. Désactivée entièrement par --no-downstream. La Phase 16
+(Survey/merge_review.py::send_merge_confirmation_request, seconde
+confirmation Telegram avant merge) SORT de la chaîne orchestrée : ses modules
+et outils (tools/propose_merge.py) restent en place et utilisables à la main,
+mais ce module ne les appelle jamais, et aucune option ne rétablit la double
+confirmation — un seul "Approuver" (Phase 13) suffit désormais à déclencher
+commit puis merge.
+
+1. Relevé des décisions : Survey/human_review.py::check_pending_reviews
+   appelée UNE fois, exactement comme tools/check_human_review.py (mêmes
+   arguments — out_root=human_reviews_root, merge_out_root=merge_reviews_root
+   — donc même fichier d'offset persisté partagé : _telegram_offset.json sous
+   human_reviews_root) : jamais un second poller Telegram (Telegram ne
+   fournit qu'UN SEUL flux getUpdates par bot, cf. docstring de
+   Survey/human_review.py). Un HumanReviewError (réseau, credentials Telegram
+   absentes) est un avertissement journalisé, jamais un arrêt : les décisions
+   déjà écrites sur disque (par une invocation précédente, ou par un humain
+   ayant lancé tools/check_human_review.py entre-temps) restent traitées
+   normalement ci-dessous.
+
+2. Cases aval éligibles (discover_downstream_candidates, triés par case_id) :
+   human_reviews/<case_id>/decision.json (Phase 13) avec decision="APPROVED"
+   exactement, ET merge_results/<case_id>/merge_result.json ABSENT — cet
+   artefact n'existe que pour une issue terminale (write_merge_result ne
+   l'écrit jamais pour un refus opérationnel, vérifié dans le code avant
+   d'écrire ce module), sa seule présence suffit donc comme filtre de
+   non-retraitement. Un REJECTED, ou l'absence de decision.json (revue encore
+   en attente), n'appelle AUCUNE action : ni artefact, ni tentative, ni
+   notification.
+
+3. Pour chaque case retenu, séquentiellement (le merge modifie le dépôt
+   principal, jamais en parallèle) :
+   a. Commit (Phase 15, Survey/patch_commit.py::commit_patch, réutilisée
+      telle quelle) — sauté si commit_results/<case_id>/commit_result.json
+      existe déjà (reprise après interruption). diagnosis_dir/
+      context_selection_dir TOUJOURS fournis (filet de sécurité BEM actif,
+      cf. Survey/patch_commit.py). Éligibilité (confidence="HIGH",
+      decision="APPROVED", cohérence case_id, worktree Git réel) déjà vérifiée
+      par commit_patch lui-même via check_commit_eligibility — jamais
+      revérifiée séparément ici (contrairement à la Phase 7 côté amont, où
+      check_eligibility devait être appelée séparément pour distinguer
+      inéligibilité et échec git ; ici PatchCommitError couvre les deux, sans
+      distinction nécessaire — cf. point 4).
+   b. Merge (Survey/merge_executor.py::write_merge_result, réutilisée telle
+      quelle, AUCUNE modification de ce module). La décision qui l'autorise
+      est celle de la Phase 13 (human_reviews/<case_id>/decision.json), PAS
+      une decision.json de merge_reviews/ (Phase 16) : vérifié dans le code de
+      check_merge_execution_eligibility avant d'écrire ce module — elle ne
+      lit que merge_review_dir/decision.json (schema_version/case_id/
+      decision/decided_at/telegram_user_id/telegram_username, AUCUN champ
+      "kind" qui distinguerait sa provenance) et compare des case_id entre
+      artefacts/noms de dossiers, sans jamais supposer que ce dossier
+      s'appelle "merge_reviews" — la seule chose qui distingue une décision
+      Phase 13 d'une décision Phase 16 est le NOM DU DOSSIER appelant, jamais
+      un champ interne. write_merge_result(merge_review_dir=human_reviews_root
+      / case_id, ...) est donc appelée directement, sans le moindre changement
+      de Survey/merge_executor.py. Toutes ses gardes restent actives telles
+      quelles : source_branch hors PROTECTED_BRANCHES, dépôt principal
+      entièrement propre avant tout basculement, branche cible réelle, jamais
+      de push, conflit réel -> git merge --abort puis signalement, jamais de
+      résolution automatique.
+   c. Idempotence (vérifiée dans le code de Survey/patch_commit.py avant
+      d'écrire ce point, cf. consigne) : un worktree entièrement propre au
+      moment de commit_patch (rien en attente) est traité comme DÉJÀ
+      committé — le sha HEAD courant est rapporté tel quel, jamais un commit
+      vide, jamais une erreur — donc une invocation interrompue APRÈS un
+      commit Git réel mais AVANT l'écriture de commit_result.json ne produit
+      jamais de second commit à la reprise : commit_patch retombe sur ce même
+      chemin "déjà committé" et se contente d'écrire (pour la première fois)
+      commit_result.json. Le duplicate-check de commit_patch
+      (_find_existing_case_commit, PatchCommitDuplicateError) ne s'applique
+      qu'à une tentative avec le worktree ENCORE modifié (dirty) — un cas qui
+      ne devrait pas survenir dans ce flux (rien ne touche le worktree entre
+      la Phase 7 et ce commit) mais reste un garde-fou de
+      Survey/patch_commit.py, non contourné. Côté merge,
+      write_merge_result::execute_confirmed_merge cherche lui-même un commit
+      déjà marqué "case_id=<id>" sur la branche CIBLE avant de tenter quoi que
+      ce soit -> ALREADY_MERGED, jamais un second merge : ce module n'ajoute
+      aucune logique d'idempotence supplémentaire ici, la sienne suffit.
+
+4. Issues et reprise (classification faite par ce module, à partir du
+   vocabulaire RÉEL vérifié dans Survey/merge_executor.py :
+   status="MERGED"|"ALREADY_MERGED"|"CONFLICT", aucune autre valeur) :
+   - MERGED / ALREADY_MERGED : terminal=true, is_error=false (issue conclusive,
+     pas un défaut de l'automatisme).
+   - CONFLICT : terminal=true POUR CET AUTOMATISME (merge_result.json déjà
+     écrit par write_merge_result, qui a déjà exécuté `git merge --abort` —
+     jamais de retry automatique, jamais de résolution automatique),
+     is_error=false (même raisonnement que MANUAL_REVIEW_REQUIRED côté amont :
+     un arrêt légitime nécessitant un humain, pas un bug de ce module) —
+     résolution manuelle requise (cf. tools/execute_confirmed_merge.py,
+     utilisable à la main sur le conflit une fois résolu autrement).
+   - Refus NON terminal (PatchCommitError au commit : dépôt/worktree dans un
+     état imprévu ; MergeExecutionError au merge : dépôt principal non propre,
+     échec Git, source_branch invalide) : is_error=true, terminal=false —
+     retenté à l'invocation SUIVANTE (aucune exclusion dans
+     discover_downstream_candidates au-delà de decision.json/merge_result.json,
+     cf. point 2), jamais de retry dans la MÊME invocation.
+   Chaque case aval écrit autofix_pipeline_runs/<case_id>/downstream_run.json
+   (même convention JSON que pipeline_run.json/upstream_run.json —
+   schema_version/case_id/created_at/stopped_at/stop_reason/terminal/is_error/
+   artifacts, PLUS notified/notified_state, cf. point 5), TOUJOURS écrasé sans
+   garde --force (même raisonnement que pipeline_run.json : instantané de la
+   dernière tentative, jamais une précondition consommée ailleurs).
+
+5. Notification des issues (Survey/human_review.py::send_status_notification,
+   petite fonction ADDITIVE — vérifié dans le code avant d'écrire ce module
+   qu'aucune fonction d'envoi simple sans bouton n'existait déjà ; réutilise
+   _telegram_api_call et la résolution telegram_bot_token/telegram_chat_id
+   existantes, jamais un second client). UN message concis par CHANGEMENT
+   D'ÉTAT parmi trois catégories seulement — merged (MERGED ou ALREADY_MERGED :
+   identiques du point de vue de l'opérateur, pour ne jamais perdre la
+   notification si une invocation précédente a mergé avec succès mais s'est
+   arrêtée avant de notifier), conflict, blocked (tout refus non terminal,
+   quelle que soit sa raison précise) — jamais le diff, jamais deux fois pour
+   le même état d'un même case : notified_state (downstream_run.json) est relu
+   au début du traitement de CE case et comparé à l'état qui vient d'être
+   atteint ; identique -> pas de renvoi. Un échec d'envoi
+   (send_status_notification lève HumanReviewError) est un avertissement,
+   JAMAIS un arrêt — et notified_state N'EST PAS mis à jour dans ce cas
+   précis, pour qu'une invocation future retente plutôt que de perdre
+   silencieusement la notification. Limite assumée et documentée (jamais
+   masquée) : la granularité est le case entier, pas la raison précise d'un
+   blocage — un premier blocage (ex. dépôt non propre) puis un second d'une
+   autre nature (ex. commit refusé) partagent la même clé "blocked" et ne
+   déclenchent donc qu'une seule notification tant que le case reste bloqué,
+   quelle que soit l'évolution de la raison exacte.
+
+Limites de l'étape aval à connaître (documentées, pas masquées) :
+- Chaque patch a été validé (Phases 8/9/11-A/12) contre l'état D'ORIGINE du
+  dépôt, jamais contre les patchs déjà mergés avant lui par cette même étape :
+  Git (conflits de lignes au merge) ne détecte aucune incompatibilité de
+  LOGIQUE entre deux correctifs qui touchent des zones disjointes.
+- Le merge exige un dépôt principal entièrement propre (cf. point 3b) : si
+  l'orchestrateur tourne dans le dépôt où l'opérateur travaille, un travail
+  local non committé bloque tout merge de cette étape (refus non terminal,
+  retenté à l'invocation suivante — jamais un stash automatique).
+- tools/report_autofix_metrics.py (Phase 17, lecture seule) ne compte PAS ces
+  merges : il lit les décisions de merge_reviews/ (Phase 16), désormais
+  contournées par cette étape — hors périmètre de ce patch, à corriger
+  séparément si ces statistiques doivent un jour refléter les merges aval.
+
 ── Étape amont : de failure_cases/ jusqu'au worktree prêt (run_upstream_stage) ─
 Active par défaut, avant l'étape existante ci-dessus, dans la MÊME invocation
 (même simple boucle for séquentielle — jamais de thread/process concurrent,
@@ -296,13 +472,16 @@ extension.
 7. --no-upstream désactive entièrement cette étape (comportement exact
    d'avant ce chantier) ; l'étape amont est active PAR DÉFAUT.
 
-Sortie : run_autofix_pipeline() retourne désormais (upstream_summaries,
-case_summaries) — les deux imprimés par tools/run_autofix_pipeline.py, la
-liste amont en premier, avec pour chaque case son point d'arrêt et sa raison
-(dont les cases fusionnés dans un groupe, point 4 ci-dessus).
+Sortie : run_autofix_pipeline() retourne désormais (downstream_summaries,
+upstream_summaries, case_summaries) — dans cet ordre, celui de l'exécution
+(cf. Point 0) — les trois imprimés par tools/run_autofix_pipeline.py, avec
+pour chaque case son point d'arrêt et sa raison (dont les cases aval mergés/en
+conflit/bloqués, et les cases amont fusionnés dans un groupe, point 4 de la
+section amont).
 """
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -325,10 +504,22 @@ from Survey.extractor_integrity_gate import (
     write_extractor_integrity_check,
 )
 from Survey.failure_diagnosis import DiagnosisError, write_diagnosis
-from Survey.human_review import HumanReviewError, send_review_request
+from Survey.human_review import (
+    HumanReviewError,
+    check_pending_reviews,
+    send_review_request,
+    send_status_notification,
+)
 from Survey.log_utils import log_debug, log_info
-from Survey.merge_executor import STATUS_ALREADY_MERGED, STATUS_MERGED
+from Survey.merge_executor import (
+    STATUS_ALREADY_MERGED,
+    STATUS_CONFLICT,
+    STATUS_MERGED,
+    MergeExecutionError,
+    write_merge_result,
+)
 from Survey.parallel_safety import ParallelSafetyError, check_pre_launch_safety
+from Survey.patch_commit import PatchCommitError, commit_patch
 from Survey.patch_replay import PatchReplayError, write_patch_replay
 from Survey.prompt_generator import (
     MANUAL_REVIEW_FILENAME,
@@ -354,6 +545,16 @@ DEFAULT_PERMISSION_MODE = "acceptEdits"
 # run_upstream_stage) : un case déjà diagnostiqué lors d'une invocation
 # précédente continue d'avancer (Phases 5/6/7) sans être compté ici.
 DEFAULT_MAX_UPSTREAM_CASES = 3
+
+# Âge de péremption du verrou d'exclusion (point 0) : généreux, délibérément
+# très supérieur au temps maximal théorique d'une invocation avec les valeurs
+# par défaut (--max-cases=5 * --claude-timeout-s=600s = 3000s pour les seules
+# invocations Claude Code, plus l'étape amont — Chromium isolé, --max-upstream
+# -cases diagnostics — et l'étape aval — commit/merge Git locaux, rapides).
+# Passé ce délai, un verrou est considéré abandonné (process mort sans
+# nettoyage : kill -9, crash, coupure) et repris avec un avertissement plutôt
+# que de bloquer indéfiniment les invocations suivantes.
+DEFAULT_LOCK_STALE_AFTER_S = 7200.0
 
 # Bornes de stockage pour la sortie brute de l'invocation Claude Code —
 # --output-format json produit normalement une sortie compacte, mais jamais
@@ -383,6 +584,24 @@ STAGE_UPSTREAM_PROMPT = "prompt_generation"
 STAGE_UPSTREAM_WORKTREE_ELIGIBILITY = "worktree_eligibility"
 STAGE_UPSTREAM_WORKTREE = "worktree"
 
+# Étapes de l'étape aval (décision Telegram Phase 13 -> merge local).
+STAGE_DOWNSTREAM_COMMIT = "commit"
+STAGE_DOWNSTREAM_MERGE = "merge"
+
+# Clés d'état pour la garde anti-doublon de notification (point 5) — trois
+# catégories seulement, au niveau du CASE entier, pas par raison précise de
+# blocage : un premier blocage (ex. dépôt non propre) puis un second blocage
+# d'une autre nature (ex. commit refusé) partagent la même clé "blocked" et ne
+# génèrent donc qu'une seule notification tant que le case reste bloqué —
+# simplification assumée et documentée (cf. docstring de _maybe_notify),
+# jamais masquée. "merged" couvre à la fois MERGED et ALREADY_MERGED
+# (identique du point de vue de l'opérateur : le patch est mergé), pour ne
+# jamais perdre la notification si une invocation précédente a réussi le
+# merge mais s'est arrêtée avant de notifier.
+NOTIFY_STATE_MERGED = "merged"
+NOTIFY_STATE_CONFLICT = "conflict"
+NOTIFY_STATE_BLOCKED = "blocked"
+
 # Composant de chemin unique, allowlist conservatrice — même garde-fou que
 # Survey/autofix_worktree.py::_CASE_ID_RE, dupliqué volontairement (modules
 # indépendants, cf. convention déjà en place ailleurs dans ce chantier pour
@@ -404,6 +623,13 @@ class AutofixOrchestratorExistsError(AutofixOrchestratorError):
     """codex_runs/<case_id>/run_result.json existe déjà et force=False."""
 
 
+class OrchestratorLockedError(AutofixOrchestratorError):
+    """Refus NON lié à un usage incorrect : une autre invocation détient déjà
+    le verrou d'exclusion (point 0) et il n'est pas encore périmé. Sous-classe
+    distincte (jamais confondue avec AutofixOrchestratorError générique) pour
+    que la façade CLI puisse lui affecter un code de sortie distinct."""
+
+
 def _is_safe_case_id(case_id: str) -> bool:
     if not case_id or not _CASE_ID_RE.match(case_id):
         return False
@@ -423,6 +649,411 @@ def _load_json(path: Path) -> "tuple[Any, Optional[str]]":
         return None, f"{path} illisible ({exc})"
     except ValueError as exc:  # json.JSONDecodeError est une sous-classe de ValueError
         return None, f"{path} JSON invalide ({exc})"
+
+
+# ═══════════════════════ Point 0 — verrou d'exclusion ═════════════════════════
+
+
+LOCK_FILENAME = "orchestrator.lock"
+
+
+@dataclass
+class LockHandle:
+    path: Path
+    acquired: bool
+    stale_reclaimed: bool = False
+
+
+def _lock_path(pipeline_runs_root: Path) -> Path:
+    return pipeline_runs_root / LOCK_FILENAME
+
+
+def _lock_age_s(created_at: Optional[str]) -> Optional[float]:
+    """None si created_at absent/illisible — jamais une hypothèse optimiste
+    d'âge (traité comme non périmé par l'appelant dans ce cas, cf.
+    acquire_lock)."""
+    if not created_at:
+        return None
+    try:
+        created_dt = datetime.fromisoformat(created_at)
+    except ValueError:
+        return None
+    if created_dt.tzinfo is None:
+        created_dt = created_dt.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - created_dt).total_seconds()
+
+
+def acquire_lock(pipeline_runs_root: "str | Path", *, stale_after_s: float) -> LockHandle:
+    """Création exclusive atomique (os.O_CREAT | os.O_EXCL) d'un fichier de
+    verrou sous pipeline_runs_root — jamais un verrou en mémoire (doit tenir
+    entre deux invocations séparées du process). Un verrou déjà présent et
+    dont l'âge dépasse stale_after_s est repris avec un avertissement (process
+    mort sans nettoyage) ; sinon, refus explicite via OrchestratorLockedError,
+    jamais une attente bloquante ni un retry. Âge illisible/malformé : jamais
+    considéré périmé (cohérent avec la convention du reste de ce chantier)."""
+    pipeline_runs_root = Path(pipeline_runs_root)
+    pipeline_runs_root.mkdir(parents=True, exist_ok=True)
+    lock_path = _lock_path(pipeline_runs_root)
+    payload = json.dumps({
+        "pid": os.getpid(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }).encode("utf-8")
+
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        data, _err = _load_json(lock_path)
+        created_at = data.get("created_at") if isinstance(data, dict) else None
+        pid = data.get("pid") if isinstance(data, dict) else None
+        age_s = _lock_age_s(created_at)
+        if age_s is None or age_s < stale_after_s:
+            raise OrchestratorLockedError(
+                f"verrou déjà détenu ({lock_path}, pid={pid!r}), âge="
+                f"{'?' if age_s is None else f'{age_s:.0f}s'} (péremption à {stale_after_s:.0f}s) — "
+                "une autre invocation est probablement en cours"
+            )
+        log_info(
+            _TAG,
+            f"avertissement : verrou périmé repris (âge={age_s:.0f}s > {stale_after_s:.0f}s, "
+            f"pid précédent={pid!r}) : {lock_path}",
+        )
+        try:
+            lock_path.unlink()
+        except OSError as exc:
+            raise OrchestratorLockedError(
+                f"verrou périmé mais suppression échouée ({lock_path}) : {exc}"
+            ) from exc
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError as exc:
+            raise OrchestratorLockedError(
+                f"verrou repris par une autre invocation entre-temps ({lock_path})"
+            ) from exc
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(payload)
+        return LockHandle(path=lock_path, acquired=True, stale_reclaimed=True)
+
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(payload)
+    return LockHandle(path=lock_path, acquired=True)
+
+
+def release_lock(handle: LockHandle) -> None:
+    """Toujours appelée en fin d'invocation, y compris sur exception (cf.
+    run_autofix_pipeline, try/finally). Best-effort : un échec de suppression
+    est un avertissement, jamais une exception supplémentaire qui masquerait
+    l'erreur d'origine."""
+    if not handle.acquired:
+        return
+    try:
+        handle.path.unlink()
+    except OSError as exc:
+        log_info(_TAG, f"avertissement : suppression du verrou a échoué ({handle.path}) : {exc}")
+
+
+# ═══════════════════════ Étape aval : décision Telegram -> merge local ═══════
+
+
+@dataclass
+class DownstreamCaseSummary:
+    case_id: str
+    stopped_at: str
+    stop_reason: Optional[str]
+    terminal: bool
+    is_error: bool
+    notified: bool = False
+    notified_state: Optional[str] = None
+    artifacts: "dict[str, str]" = field(default_factory=dict)
+    warnings: "list[str]" = field(default_factory=list)
+
+    def as_dict(self) -> dict:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "case_id": self.case_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "stopped_at": self.stopped_at,
+            "stop_reason": self.stop_reason,
+            "terminal": self.terminal,
+            "is_error": self.is_error,
+            "notified": self.notified,
+            "notified_state": self.notified_state,
+            "artifacts": self.artifacts,
+            "warnings": self.warnings,
+        }
+
+
+def _downstream_run_paths(out_root: Path, case_id: str) -> "tuple[Path, Path]":
+    out_dir = out_root / case_id
+    return out_dir, out_dir / "downstream_run.json"
+
+
+def write_downstream_run_result(
+    summary: DownstreamCaseSummary,
+    *,
+    out_root: "str | Path" = "autofix_pipeline_runs",
+) -> Path:
+    """TOUJOURS écrasé, sans garde --force — même raisonnement que
+    write_pipeline_run_summary/write_upstream_run_result (instantané de la
+    dernière tentative de l'étape aval pour ce case). Vit dans le même dossier
+    que pipeline_run.json/upstream_run.json (nom de fichier distinct :
+    downstream_run.json), sans conflit."""
+    out_root = Path(out_root)
+    out_dir, out_file = _downstream_run_paths(out_root, summary.case_id)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_file.write_text(json.dumps(summary.as_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+
+    log_info(
+        _TAG,
+        f"case={summary.case_id} [aval] stopped_at={summary.stopped_at!r} "
+        f"terminal={summary.terminal} is_error={summary.is_error} notifié={summary.notified} -> {out_file}",
+    )
+    return out_file
+
+
+def discover_downstream_candidates(
+    *,
+    human_reviews_root: Path,
+    merge_results_root: Path,
+) -> "list[str]":
+    """cf. docstring du module ("Étape aval", point 2) : dossiers de
+    human_reviews/<case_id>/decision.json avec decision="APPROVED" exactement
+    et sans merge_results/<case_id>/merge_result.json déjà écrit (cet artefact
+    n'existe QUE pour une issue terminale — MERGED/ALREADY_MERGED/CONFLICT,
+    write_merge_result ne l'écrit jamais pour un refus opérationnel, cf.
+    Survey/merge_executor.py — sa seule présence suffit donc comme filtre).
+    Un REJECTED, ou l'absence de decision.json, n'est jamais un candidat :
+    "n'appelle aucune action" (point 2), ni artefact ni tentative. Triés par
+    case_id (ordre déterministe). Lecture seule."""
+    if not human_reviews_root.is_dir():
+        return []
+    out: "list[str]" = []
+    for entry in sorted(human_reviews_root.iterdir()):
+        if not entry.is_dir():
+            continue
+        case_id = entry.name
+        if not _is_safe_case_id(case_id):
+            continue
+        decision, _err = _load_json(entry / "decision.json")
+        if not isinstance(decision, dict):
+            continue
+        if str(decision.get("decision") or "") != "APPROVED":
+            continue
+        if (merge_results_root / case_id / "merge_result.json").is_file():
+            continue
+        out.append(case_id)
+    return out
+
+
+def _maybe_notify(
+    case_id: str,
+    *,
+    notify_state: str,
+    message: str,
+    previous_notified_state: Optional[str],
+) -> "tuple[bool, list[str]]":
+    """N'envoie que si notify_state diffère de previous_notified_state —
+    jamais deux fois pour le même état, y compris entre invocations (l'état
+    précédent est relu depuis downstream_run.json par l'appelant). Un échec
+    d'envoi (HumanReviewError : credentials absentes, réseau) est un
+    avertissement retourné à l'appelant, JAMAIS une exception : l'état n'est
+    alors PAS marqué notifié (cf. appelant), pour qu'une invocation future
+    retente plutôt que de perdre silencieusement la notification. Limite
+    assumée et documentée plutôt que masquée (cf. NOTIFY_STATE_*, docstring
+    du module) : trois états seulement, au niveau du case entier — un
+    changement de RAISON précise à l'intérieur du même état (ex. deux
+    blocages non terminaux successifs pour des raisons différentes) ne
+    déclenche pas une seconde notification tant que l'état lui-même
+    (merged/conflict/blocked) ne change pas."""
+    if notify_state == previous_notified_state:
+        return False, []
+    try:
+        send_status_notification(message)
+    except HumanReviewError as exc:
+        return False, [f"notification Telegram échouée (avertissement, jamais un arrêt) : {exc}"]
+    return True, []
+
+
+def _process_downstream_case(
+    case_id: str,
+    *,
+    confidence_scores_root: Path,
+    human_reviews_root: Path,
+    worktrees_root: Path,
+    diagnoses_root: Path,
+    context_selections_root: Path,
+    commit_results_root: Path,
+    merge_results_root: Path,
+    pipeline_runs_root: Path,
+) -> DownstreamCaseSummary:
+    """Phases 15 (commit) puis merge (Survey/merge_executor.py) pour UN case
+    déjà APPROVED (Phase 13) — garanti par l'appelant. Chaque étape est
+    sautée si son artefact de sortie existe déjà (reprise après interruption,
+    cf. docstring du module, point 3c pour l'idempotence exacte)."""
+    artifacts: "dict[str, str]" = {}
+
+    previous, _err = _load_json(pipeline_runs_root / case_id / "downstream_run.json")
+    previous_notified_state = previous.get("notified_state") if isinstance(previous, dict) else None
+
+    # ── (a) Commit (Phase 15) ──────────────────────────────────────────────
+    commit_result_path = commit_results_root / case_id / "commit_result.json"
+    if commit_result_path.is_file():
+        artifacts[STAGE_DOWNSTREAM_COMMIT] = str(commit_result_path)
+    else:
+        try:
+            commit_patch(
+                confidence_score_dir=confidence_scores_root / case_id,
+                human_review_dir=human_reviews_root / case_id,
+                worktree_dir=worktrees_root / case_id,
+                diagnosis_dir=diagnoses_root / case_id,
+                context_selection_dir=context_selections_root / case_id,
+                out_root=commit_results_root,
+            )
+        except PatchCommitError as exc:
+            notified, warns = _maybe_notify(
+                case_id, notify_state=NOTIFY_STATE_BLOCKED,
+                message=f"⚠️ autofix case={case_id} : bloqué au commit (Phase 15) — {exc}",
+                previous_notified_state=previous_notified_state,
+            )
+            return DownstreamCaseSummary(
+                case_id=case_id, stopped_at=STAGE_DOWNSTREAM_COMMIT, stop_reason=str(exc),
+                terminal=False, is_error=True, notified=notified,
+                notified_state=(NOTIFY_STATE_BLOCKED if notified else previous_notified_state),
+                artifacts=artifacts, warnings=warns,
+            )
+        artifacts[STAGE_DOWNSTREAM_COMMIT] = str(commit_result_path)
+
+    # ── (b) Merge (Survey/merge_executor.py) ───────────────────────────────
+    merge_result_path = merge_results_root / case_id / "merge_result.json"
+    if not merge_result_path.is_file():
+        # La décision qui autorise ce merge est celle de la Phase 13
+        # (human_reviews/<case_id>/decision.json) — jamais merge_reviews/ (Phase
+        # 16, sortie de la chaîne orchestrée). Le schéma de decision.json est
+        # identique dans les deux dossiers (schema_version/case_id/decision/
+        # decided_at/telegram_user_id/telegram_username, aucun champ "kind" —
+        # cf. Survey/merge_executor.py, docstring, et Survey/human_review.py,
+        # write_pending/decision commun aux deux points d'entrée) : vérifié
+        # dans le code de check_merge_execution_eligibility avant d'écrire ce
+        # module, elle ne lit que decision.json et compare des case_id, sans
+        # jamais supposer qu'elle vit sous merge_reviews/ — appelée ici
+        # directement sur human_reviews/<case_id>, sans aucune modification de
+        # Survey/merge_executor.py.
+        try:
+            write_merge_result(
+                merge_review_dir=human_reviews_root / case_id,
+                worktree_dir=worktrees_root / case_id,
+                commit_result_dir=commit_results_root / case_id,
+                out_root=merge_results_root,
+            )
+        except MergeExecutionError as exc:
+            notified, warns = _maybe_notify(
+                case_id, notify_state=NOTIFY_STATE_BLOCKED,
+                message=f"⚠️ autofix case={case_id} : bloqué au merge — {exc}",
+                previous_notified_state=previous_notified_state,
+            )
+            return DownstreamCaseSummary(
+                case_id=case_id, stopped_at=STAGE_DOWNSTREAM_MERGE, stop_reason=str(exc),
+                terminal=False, is_error=True, notified=notified,
+                notified_state=(NOTIFY_STATE_BLOCKED if notified else previous_notified_state),
+                artifacts=artifacts, warnings=warns,
+            )
+    artifacts[STAGE_DOWNSTREAM_MERGE] = str(merge_result_path)
+
+    merge_data, _err2 = _load_json(merge_result_path)
+    status = merge_data.get("status") if isinstance(merge_data, dict) else None
+
+    if status == STATUS_CONFLICT:
+        notified, warns = _maybe_notify(
+            case_id, notify_state=NOTIFY_STATE_CONFLICT,
+            message=f"🔴 autofix case={case_id} : CONFLIT de merge — résolution manuelle requise.",
+            previous_notified_state=previous_notified_state,
+        )
+        return DownstreamCaseSummary(
+            case_id=case_id, stopped_at=STAGE_DOWNSTREAM_MERGE, stop_reason="merge_result.json : CONFLICT",
+            terminal=True, is_error=False, notified=notified,
+            notified_state=(NOTIFY_STATE_CONFLICT if notified else previous_notified_state),
+            artifacts=artifacts, warnings=warns,
+        )
+
+    if status in (STATUS_MERGED, STATUS_ALREADY_MERGED):
+        notified, warns = _maybe_notify(
+            case_id, notify_state=NOTIFY_STATE_MERGED,
+            message=f"✅ autofix case={case_id} : mergé avec succès.",
+            previous_notified_state=previous_notified_state,
+        )
+        return DownstreamCaseSummary(
+            case_id=case_id, stopped_at=STAGE_DOWNSTREAM_MERGE, stop_reason=f"merge_result.json : {status}",
+            terminal=True, is_error=False, notified=notified,
+            notified_state=(NOTIFY_STATE_MERGED if notified else previous_notified_state),
+            artifacts=artifacts, warnings=warns,
+        )
+
+    # Statut inattendu — jamais deviné (vocabulaire vérifié dans le code avant
+    # d'écrire ce module : seuls MERGED/ALREADY_MERGED/CONFLICT existent).
+    return DownstreamCaseSummary(
+        case_id=case_id, stopped_at=STAGE_DOWNSTREAM_MERGE,
+        stop_reason=f"merge_result.json.status={status!r} inattendu",
+        terminal=False, is_error=True, notified=False,
+        notified_state=previous_notified_state, artifacts=artifacts,
+    )
+
+
+def run_downstream_stage(
+    *,
+    human_reviews_root: "str | Path" = "human_reviews",
+    merge_reviews_root: "str | Path" = "merge_reviews",
+    confidence_scores_root: "str | Path" = "confidence_scores",
+    worktrees_root: "str | Path" = "autofix_worktrees",
+    diagnoses_root: "str | Path" = "diagnoses",
+    context_selections_root: "str | Path" = "context_selections",
+    commit_results_root: "str | Path" = "commit_results",
+    merge_results_root: "str | Path" = "merge_results",
+    pipeline_runs_root: "str | Path" = "autofix_pipeline_runs",
+) -> "list[DownstreamCaseSummary]":
+    """Point d'entrée de l'étape aval — cf. docstring du module pour le détail
+    point par point. Désactivée par --no-downstream côté run_autofix_pipeline
+    (cette fonction n'est alors jamais appelée)."""
+    human_reviews_root = Path(human_reviews_root)
+    merge_reviews_root = Path(merge_reviews_root)
+    confidence_scores_root = Path(confidence_scores_root)
+    worktrees_root = Path(worktrees_root)
+    diagnoses_root = Path(diagnoses_root)
+    context_selections_root = Path(context_selections_root)
+    commit_results_root = Path(commit_results_root)
+    merge_results_root = Path(merge_results_root)
+    pipeline_runs_root = Path(pipeline_runs_root)
+
+    # ── Point 1 ──────────────────────────────────────────────────────────────
+    try:
+        result = check_pending_reviews(out_root=human_reviews_root, merge_out_root=merge_reviews_root)
+        log_debug(
+            _TAG,
+            f"[aval] relevé Telegram : {result.updates_fetched} update(s), "
+            f"{len(result.processed)} décision(s) traitée(s)",
+        )
+    except HumanReviewError as exc:
+        log_info(_TAG, f"avertissement : relevé des décisions Telegram (étape aval) échoué : {exc}")
+
+    # ── Points 2/3/4/5 ───────────────────────────────────────────────────────
+    candidates = discover_downstream_candidates(
+        human_reviews_root=human_reviews_root, merge_results_root=merge_results_root,
+    )
+    summaries: "list[DownstreamCaseSummary]" = []
+    for case_id in candidates:
+        summary = _process_downstream_case(
+            case_id,
+            confidence_scores_root=confidence_scores_root,
+            human_reviews_root=human_reviews_root,
+            worktrees_root=worktrees_root,
+            diagnoses_root=diagnoses_root,
+            context_selections_root=context_selections_root,
+            commit_results_root=commit_results_root,
+            merge_results_root=merge_results_root,
+            pipeline_runs_root=pipeline_runs_root,
+        )
+        write_downstream_run_result(summary, out_root=pipeline_runs_root)
+        summaries.append(summary)
+
+    return summaries
 
 
 # ═══════════════════════ Étape amont : failure_cases/ -> worktree prêt ═══════
@@ -1423,6 +2054,7 @@ def run_autofix_pipeline(
     human_reviews_root: "str | Path" = "human_reviews",
     merge_results_root: "str | Path" = "merge_results",
     merge_reviews_root: "str | Path" = "merge_reviews",
+    commit_results_root: "str | Path" = "commit_results",
     pipeline_runs_root: "str | Path" = "autofix_pipeline_runs",
     max_cases: int = DEFAULT_MAX_CASES,
     claude_timeout_s: float = DEFAULT_CLAUDE_TIMEOUT_S,
@@ -1432,17 +2064,26 @@ def run_autofix_pipeline(
     run_upstream: bool = True,
     import_fleet: bool = False,
     max_upstream_cases: int = DEFAULT_MAX_UPSTREAM_CASES,
-) -> "tuple[list[UpstreamCaseSummary], list[CaseRunSummary]]":
-    """Point d'entrée unique. Lance d'abord l'étape amont (failure_cases/ ->
-    worktree prêt, cf. docstring du module) sauf run_upstream=False
-    (--no-upstream), PUIS découvre jusqu'à max_cases cases éligibles pour
-    l'étape existante (triés par case_id, worktrees fraîchement créés par
-    l'étape amont inclus) et les traite un à la fois, strictement
-    séquentiellement (aucun thread/process concurrent lancé par ce module)."""
+    run_downstream: bool = True,
+    lock_stale_after_s: float = DEFAULT_LOCK_STALE_AFTER_S,
+) -> "tuple[list[DownstreamCaseSummary], list[UpstreamCaseSummary], list[CaseRunSummary]]":
+    """Point d'entrée unique. Ordre d'exécution (cf. docstring du module, point
+    0) : (0) verrou d'exclusion (toujours actif, aucune option pour le
+    désactiver — protège aussi l'étape existante, dont une session Claude Code
+    peut durer jusqu'à --claude-timeout-s par case) ; (1) étape AVAL (décision
+    Telegram Phase 13 -> commit -> merge local), sauf run_downstream=False
+    (--no-downstream) ; (2) étape AMONT (failure_cases/ -> worktree prêt), sauf
+    run_upstream=False (--no-upstream) — après l'aval, pour que les correctifs
+    déjà mergés soient présents dans le dépôt quand l'amont diagnostique de
+    nouveaux cases ; (3) étape EXISTANTE (jusqu'à max_cases cases éligibles,
+    triés par case_id, un à la fois). Le verrou est toujours libéré en fin
+    d'invocation, y compris sur exception."""
     if max_cases < 1:
         raise AutofixOrchestratorError(f"--max-cases doit être >= 1 ({max_cases} fourni)")
     if max_upstream_cases < 1:
         raise AutofixOrchestratorError(f"--max-upstream-cases doit être >= 1 ({max_upstream_cases} fourni)")
+    if lock_stale_after_s <= 0:
+        raise AutofixOrchestratorError(f"--lock-stale-after-s doit être > 0 ({lock_stale_after_s} fourni)")
 
     failure_cases_root = Path(failure_cases_root)
     diagnoses_root = Path(diagnoses_root)
@@ -1457,53 +2098,73 @@ def run_autofix_pipeline(
     human_reviews_root = Path(human_reviews_root)
     merge_results_root = Path(merge_results_root)
     merge_reviews_root = Path(merge_reviews_root)
+    commit_results_root = Path(commit_results_root)
     pipeline_runs_root = Path(pipeline_runs_root)
 
-    upstream_summaries: "list[UpstreamCaseSummary]" = []
-    if run_upstream:
-        upstream_summaries = run_upstream_stage(
-            failure_cases_root=failure_cases_root,
-            diagnoses_root=diagnoses_root,
-            context_selections_root=context_selections_root,
-            prompts_root=prompts_root,
-            worktrees_root=worktrees_root,
-            pipeline_runs_root=pipeline_runs_root,
-            import_fleet=import_fleet,
-            max_upstream_cases=max_upstream_cases,
+    # ── Point 0 : verrou d'exclusion (jamais deux invocations en même temps) ─
+    lock = acquire_lock(pipeline_runs_root, stale_after_s=lock_stale_after_s)
+    try:
+        downstream_summaries: "list[DownstreamCaseSummary]" = []
+        if run_downstream:
+            downstream_summaries = run_downstream_stage(
+                human_reviews_root=human_reviews_root,
+                merge_reviews_root=merge_reviews_root,
+                confidence_scores_root=confidence_scores_root,
+                worktrees_root=worktrees_root,
+                diagnoses_root=diagnoses_root,
+                context_selections_root=context_selections_root,
+                commit_results_root=commit_results_root,
+                merge_results_root=merge_results_root,
+                pipeline_runs_root=pipeline_runs_root,
+            )
+
+        upstream_summaries: "list[UpstreamCaseSummary]" = []
+        if run_upstream:
+            upstream_summaries = run_upstream_stage(
+                failure_cases_root=failure_cases_root,
+                diagnoses_root=diagnoses_root,
+                context_selections_root=context_selections_root,
+                prompts_root=prompts_root,
+                worktrees_root=worktrees_root,
+                pipeline_runs_root=pipeline_runs_root,
+                import_fleet=import_fleet,
+                max_upstream_cases=max_upstream_cases,
+            )
+
+        eligible = discover_eligible_cases(
+            worktrees_root=worktrees_root, prompts_root=prompts_root, codex_runs_root=codex_runs_root,
+        )
+        batch = eligible[:max_cases]
+        log_info(
+            _TAG,
+            f"{len(eligible)} case(s) éligible(s), {len(batch)} retenu(s) pour cette invocation "
+            f"(--max-cases={max_cases})",
         )
 
-    eligible = discover_eligible_cases(
-        worktrees_root=worktrees_root, prompts_root=prompts_root, codex_runs_root=codex_runs_root,
-    )
-    batch = eligible[:max_cases]
-    log_info(
-        _TAG,
-        f"{len(eligible)} case(s) éligible(s), {len(batch)} retenu(s) pour cette invocation "
-        f"(--max-cases={max_cases})",
-    )
+        summaries: "list[CaseRunSummary]" = []
+        for case in batch:
+            summary = process_case(
+                case,
+                failure_cases_root=failure_cases_root,
+                diagnoses_root=diagnoses_root,
+                context_selections_root=context_selections_root,
+                worktrees_root=worktrees_root,
+                codex_runs_root=codex_runs_root,
+                static_validations_root=static_validations_root,
+                patch_replays_root=patch_replays_root,
+                extractor_integrity_checks_root=extractor_integrity_checks_root,
+                confidence_scores_root=confidence_scores_root,
+                human_reviews_root=human_reviews_root,
+                merge_results_root=merge_results_root,
+                merge_reviews_root=merge_reviews_root,
+                claude_timeout_s=claude_timeout_s,
+                allowed_tools=allowed_tools,
+                permission_mode=permission_mode,
+                force=force,
+            )
+            write_pipeline_run_summary(summary, out_root=pipeline_runs_root)
+            summaries.append(summary)
 
-    summaries: "list[CaseRunSummary]" = []
-    for case in batch:
-        summary = process_case(
-            case,
-            failure_cases_root=failure_cases_root,
-            diagnoses_root=diagnoses_root,
-            context_selections_root=context_selections_root,
-            worktrees_root=worktrees_root,
-            codex_runs_root=codex_runs_root,
-            static_validations_root=static_validations_root,
-            patch_replays_root=patch_replays_root,
-            extractor_integrity_checks_root=extractor_integrity_checks_root,
-            confidence_scores_root=confidence_scores_root,
-            human_reviews_root=human_reviews_root,
-            merge_results_root=merge_results_root,
-            merge_reviews_root=merge_reviews_root,
-            claude_timeout_s=claude_timeout_s,
-            allowed_tools=allowed_tools,
-            permission_mode=permission_mode,
-            force=force,
-        )
-        write_pipeline_run_summary(summary, out_root=pipeline_runs_root)
-        summaries.append(summary)
-
-    return upstream_summaries, summaries
+        return downstream_summaries, upstream_summaries, summaries
+    finally:
+        release_lock(lock)
