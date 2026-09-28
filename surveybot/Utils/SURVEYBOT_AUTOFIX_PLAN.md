@@ -1664,6 +1664,44 @@ niveau tant que le niveau précédent n'est pas fiable.
 > mais l'import de chaque module avec l'interpréteur du venv du clone reste à
 > faire. Aucune invocation de l'orchestrateur n'a encore eu lieu sur un vrai case.
 
+> Mise à jour 2026-09-29 (suite 42) : mise en place du clone menée jusqu'au bout
+> sur la machine de l'opérateur, avec DEUX défauts réels rencontrés en cours de
+> route et corrigés, chacun d'abord reproduit puis vérifié après correction.
+> (1) Invoke-GitTimed (setup/preflight/sync, suite 41) : ExitCode lu vide sous
+> Windows PowerShell 5.1 sans lecture préalable de $p.Handle -- confirmé sur la
+> machine (git réussi rapporté comme un échec), corrigé, setup exécuté avec
+> succès jusqu'au bout après correction (clone créé, branche
+> autofix-integration, venv, dépendances, ruff, Chromium).
+> (2) schedule_autofix_pipeline_task.ps1 : RepetitionDuration
+> ([TimeSpan]::MaxValue -> P99999999DT23H59M59S) rejetée par
+> Register-ScheduledTask -- confirmé mot pour mot sur la machine. Corrigé :
+> New-TimeSpan -Days 3650 (P3650D, dans la plage acceptée), et
+> Register-ScheduledTask encadrée d'un try/catch -ErrorAction Stop -- un échec
+> sort désormais en erreur explicite (interrogeant Get-ScheduledTask pour
+> distinguer un enregistrement partiel d'un état propre) au lieu d'afficher le
+> même résumé qu'un succès, défaut qui avait laissé croire à une tâche créée
+> alors qu'elle ne l'était pas.
+> claude 2.1.283 installé et authentifié sur la machine (installeur natif
+> PowerShell) ; --allowedTools/--output-format/--permission-mode confirmés
+> présents dans cette version. telegram_bot_token/telegram_chat_id positionnées
+> -- avec, en cours de route, une exposition réelle de secrets (clé OpenAI, clé
+> 2Captcha, token Telegram) collés en clair dans la conversation depuis
+> receiver_config.json : rotation recommandée à l'opérateur, jamais répétés
+> dans les réponses suivantes, fichier copié localement supprimé une fois les
+> variables extraites.
+> preflight_autofix_clone.ps1 : TOUS les points bloquants OK (dépôt Git, dépôt
+> propre, branche non protégée, racines d'artefacts ignorées, variables
+> Telegram, claude authentifié, dépendances Python, worktrees hors de l'arbre
+> suivi, aucun verrou actif).
+> État à ce jour : schedule_autofix_pipeline_task.ps1 relancé après le
+> correctif (2), résultat non encore rapporté. Toujours non fait avant toute
+> planification : passage supervisé sur un seul cas
+> (--max-cases 1 --max-upstream-cases 1, lancé à la main) -- recommandé à
+> plusieurs reprises, pas encore exécuté à ce jour. Constat n°2 de la suite 38
+> (fichiers locaux hors de Survey/, complétude requirements.txt avec le venv du
+> clone, rejeu réel dans une copie propre) : toujours ouvert, non traité par
+> cette suite.
+
 ## Contexte de travail actuel
 
 Nous développons le module d'observabilité, de diagnostic et d'auto-correction supervisée de SurveyBot.
