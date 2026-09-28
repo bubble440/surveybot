@@ -1463,6 +1463,64 @@ niveau tant que le niveau précédent n'est pas fiable.
 > git equivalent. Groupes de doublons gelés une fois formés : un case de même
 > signature diagnostiqué lors d'une invocation ultérieure ne les rejoint pas.
 
+> Mise à jour 2026-09-27 (suite 37) : étape AVAL de l'orchestrateur — corrige les
+> deux limites de la suite 36. `Survey/autofix_orchestrator.py`, `tools/
+> run_autofix_pipeline.py`, et une fonction ADDITIVE dans `Survey/human_review.py`
+> (`send_status_notification`). Ordre d'une invocation : (0) verrou, (1) aval,
+> (2) amont, (3) Claude Code + Phases 8 à 13 ; l'aval passe en premier pour que
+> les correctifs déjà mergés soient dans le dépôt quand l'amont diagnostique de
+> nouveaux cases. --no-downstream restaure l'ancien comportement.
+> Un seul "Approuver" Telegram (Phase 13) déclenche désormais commit puis merge
+> local : la Phase 16 (seconde confirmation) SORT de la chaîne orchestrée
+> (modules et tools/propose_merge.py intacts, utilisables à la main, jamais
+> appelés par l'orchestrateur, aucune option pour rétablir la double
+> confirmation). Elle ne s'appelle donc plus "confirmation avant merge" que
+> pour un usage manuel ; les métriques (Phase 17) qui lisent merge_reviews/ ne
+> voient plus ces merges — non traité, à signaler.
+> Verrou d'exclusion (toujours actif, aucune option pour le couper) :
+> orchestrator.lock sous --pipeline-runs-root, créé par O_CREAT|O_EXCL, avec
+> horodatage et PID ; verrou présent et non périmé = refus explicite (code de
+> sortie 3, distinct d'une erreur d'usage), jamais une attente ni un retry ;
+> repris avec avertissement au-delà de --lock-stale-after-s ; libéré en
+> try/finally. Sans lui, deux invocations planifiées qui se chevauchent
+> (une session Claude Code peut durer --claude-timeout-s par case) préparaient
+> le même worktree ou tentaient deux merges à la fois.
+> Aval : check_pending_reviews appelée UNE fois, comme tools/check_human_review.py
+> (même offset, un seul poller Telegram) ; un échec réseau est un avertissement.
+> Cases éligibles : human_reviews/<id>/decision.json APPROVED sans
+> merge_result.json (celui-ci n'est écrit que pour une issue terminale). Puis
+> commit_patch (filet BEM activé) et write_merge_result, réutilisés tels quels.
+> Vérifié dans le code plutôt que supposé : check_merge_execution_eligibility ne
+> lit que decision.json et ne suppose jamais que le dossier s'appelle
+> merge_reviews — seul le nom du dossier appelant distingue une décision
+> Phase 13 d'une décision Phase 16 — donc write_merge_result est appelée avec
+> le dossier human_reviews/<id>, sans aucune modification de merge_executor.py.
+> Idempotence : un worktree propre au moment du commit est traité comme déjà
+> committé (jamais un commit vide, jamais un doublon après interruption) ;
+> le merge cherche lui-même un "case_id=<id>" sur la branche cible.
+> Issues : MERGED/ALREADY_MERGED terminal ; CONFLICT terminal pour
+> l'automatisme (merge --abort déjà fait, résolution manuelle), non une erreur ;
+> refus opérationnel (dépôt non propre, commit refusé) non terminal, retenté à
+> l'invocation SUIVANTE, jamais dans la même. Chaque case écrit
+> downstream_run.json.
+> Notification Telegram d'issue, non demandée à l'origine : une issue
+> silencieuse est un défaut quand l'opérateur est dehors. Un message concis par
+> changement d'état (merged, conflict, blocked), jamais le diff ; notified_state
+> relu entre invocations pour ne jamais renvoyer le même état ; un échec
+> d'envoi ne met PAS à jour notified_state, pour qu'une invocation future
+> retente. Limite assumée : la clé "blocked" est unique, un second blocage d'une
+> autre nature sur le même case ne renotifie pas.
+> Limites : (a) chaque patch a été validé contre l'état d'origine, jamais contre
+> les patchs déjà mergés avant lui — Git détecte les conflits de lignes, pas
+> les incompatibilités de logique ; (b) le merge exige un dépôt principal
+> entièrement propre, fichiers non suivis inclus (git status --porcelain
+> --untracked-files=all). Conséquence à vérifier : les dossiers d'artefacts de
+> ce pipeline (failure_cases, diagnoses, autofix_pipeline_runs — dont le verrou
+> lui-même, présent pendant l'aval —, human_reviews, commit_results, etc.) sont
+> relatifs au répertoire courant ; s'ils sont dans l'arbre du dépôt principal
+> sans être ignorés par Git, chaque merge sera refusé. À vérifier par
+> git status après une invocation.
+
 ## Contexte de travail actuel
 
 Nous développons le module d'observabilité, de diagnostic et d'auto-correction supervisée de SurveyBot.
@@ -4042,10 +4100,10 @@ Je suivrais exactement cet ordre :
     outil de statistiques en lecture seule uniquement ; mécanisme de merge
     automatique par catégorie explicitement différé, en attente de
     plusieurs semaines de données réelles)
-18  Boucle autonome attach — PREMIÈRE BRIQUE SEULEMENT (autofix_orchestrator.py :
-    import -> Phases 4-7 -> Claude Code headless -> Phases 8-13, sans attach
-    live ; ce qui suit la décision Telegram reste manuel ; la boucle complète
-    en attach reste hors périmètre)
+18  Boucle autonome attach — BRIQUES EN PLACE, SANS ATTACH LIVE (autofix_orchestrator.py :
+    verrou -> décision Telegram -> commit -> merge local -> import -> Phases 4-7
+    -> Claude Code headless -> Phases 8-13 ; un seul "Approuver" ; la boucle
+    complète en attach live reste hors périmètre)
 19  Fleet learning / métriques — CONTRIBUTION PARTIELLE, hors numérotation
     (déduplication stricte de cases, case_grouping.py — résout "Bot A → Bot
     B déjà supporté" sans infrastructure fleet ; le tableau de taux de
