@@ -1,6 +1,6 @@
 # SurveyBot — fonctions critiques protégées et cycle de vie des correctifs
 
-> Décisions d'architecture, 29 septembre 2026. Ce document complète `SURVEYBOT_AUTOFIX_PLAN.md` (SAP) sans en modifier le suivi des phases. La cible s'intègre progressivement au pipeline ; les tâches 1 à 4 ci-dessous sont implémentées dans le code.
+> Décisions d'architecture, 29 septembre 2026. Ce document complète `SURVEYBOT_AUTOFIX_PLAN.md` (SAP) sans en modifier le suivi des phases. La cible s'intègre progressivement au pipeline ; les tâches 1 à 5 ci-dessous sont implémentées dans le code.
 
 ## 1. Portée et principe
 
@@ -111,7 +111,7 @@ Ce document fixe les responsabilités et les critères de décision. Il ne presc
 2. **Implémentée — registre des correctifs externes pour l'extraction.** Conditions DOM structurelles, correctifs indépendants et positions logiques `before`/`after`, sans branchement dans la cascade.
 3. **Implémentée — premier point d'extension extraction.** Positions `before` et `after` autour d'une stratégie de la cascade, sans correctif métier.
 4. **Implémentée dans le code — point d'extension action unique.** Modification volontaire et contrôlée de `execute_action`, avant tout effet de l'action.
-5. Adapter le prompt d'autofix pour produire des correctifs selon ces points d'extension et leurs garde-fous.
+5. **Implémentée — adaptation du prompt d'autofix.** Consignes de correctifs externes et de points d'extension conformes aux tâches 2 à 4.
 6. Adapter la Phase 11-A aux états `UNCHANGED`, `EXPECTED_CHANGE`, `UNEXPECTED_CHANGE` et `BASELINE_MISMATCH`, avec les décisions de la section 7.
 7. Ajouter le cycle de vie des correctifs et la consolidation `EVOLUTION_CANDIDATE` décrits aux sections 5 et 6.
 
@@ -132,3 +132,5 @@ Le registre de production reste vide : aucun comportement métier nouveau n'est 
 **Tâche 4 — état livré dans le code.** `Survey/action_fix_hook.py` consulte le même registre pour `stage="action"`, `position="before"`, sur l'ancrage `action_dispatcher.py::execute_action`. Le branchement unique dans `Survey/action_dispatcher.py` se situe après le parsing de chaque instruction et avant les branches matrice, `target_id` et fallback ; `execute_actions_plan` délègue déjà chaque action à cette fonction. Le registre rejette désormais `action/after`. Le handler reçoit le driver, le contexte DOM courant (y compris l'iframe de la cible) et une copie en lecture seule de l'action. Il retourne explicitement `DECLINED` sans effet, `HANDLED_SUCCESS` ou `HANDLED_FAILURE`. Après une exception, un résultat invalide ou un échec incertain du handler, l'action s'arrête sans rejouer le chemin historique. Les gardes échouées ou ambiguës laissent ce chemin fonctionner. Huit candidats et quatre niveaux de frame au maximum sont évalués ; le budget coopératif de 250 ms ne peut interrompre un appel DOM ou un handler bloquant. En mode `CTA_INTERCEPT_ONLY`, le hook laisse le dispatcher historique gérer l'action.
 
 Le registre reste vide en production et aucun correctif métier n'est chargé. `tests/test_action_fix_hook.py` couvre le contrat, l'absence de double action et le branchement réel. La seule fonction protégée modifiée est `action_dispatcher.py::execute_action` : son hash diffère volontairement de la baseline, qui n'a pas été réenregistrée. La Phase 11-A actuelle rejette donc encore ce patch ; l'adoption de la nouvelle baseline et la future classification `EXPECTED_CHANGE` restent des décisions séparées. Aucun failure case, compteur d'activation ni point d'extension supplémentaire n'est ajouté ici. Un handler qui déclare `DECLINED` doit garantir qu'il n'a produit aucun effet ; ce contrat ne peut pas être prouvé automatiquement par le hook.
+
+**Tâche 5 — état livré.** `Survey/autofix/prompt_generator.py` remplace les anciennes consignes « toujours après » et validation interactive par des voies distinctes : extraction `before` pour un faux positif ou `after` pour un DOM non couvert, action `before` avec les trois issues du hook et sans second clic. Le prompt demande de vérifier l'ancrage et le chargement réel du fix, de conserver la baseline et de distinguer un écart préexistant du patch ; il ne promet pas l'acceptation par la Phase 11-A actuelle. Un `case_id` validé apparaît dans des métadonnées techniques séparées du récit `BUG IDENTIFIÉ`. L'éligibilité Phase 6 et les sorties `prompt.txt` / `MANUAL_REVIEW_REQUIRED.txt` restent inchangées ; `tests/test_prompt_generator_spca.py` les couvre avec des cas synthétiques. Aucun correctif métier ni changement du gate n'est introduit.

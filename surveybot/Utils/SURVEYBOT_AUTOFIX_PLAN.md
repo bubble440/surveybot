@@ -3483,6 +3483,13 @@ dynamiquement. Les fichiers probablement concernés (Phase 5) s'intègrent dans
 cette section, comme déjà prévu par la règle existante de rédaction des
 BUG IDENTIFIÉ — pas dans une section séparée inventée pour l'occasion.
 
+> Mise à jour SPCA, tâche 5 (29 septembre 2026) : la fidélité verbatim et la
+> « RÈGLE DURE » ci-dessus décrivent le gabarit historique. Le générateur actuel
+> garde l'éligibilité et le récit factuel `BUG IDENTIFIÉ`, mais guide désormais
+> les correctifs externes selon les points d'extension extraction/action de
+> SPCA. Le `case_id` nécessaire au registre figure dans des métadonnées
+> techniques distinctes ; la Phase 11-A n'est pas modifiée par cette tâche.
+
 ### Garde-fou d'éligibilité
 
 Un prompt exploitable (`prompt.txt`) n'est produit que si `context_selection.json`
