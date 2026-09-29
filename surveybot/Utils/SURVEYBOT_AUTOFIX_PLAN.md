@@ -1702,6 +1702,23 @@ niveau tant que le niveau précédent n'est pas fiable.
 > clone, rejeu réel dans une copie propre) : toujours ouvert, non traité par
 > cette suite.
 
+> Mise à jour 2026-09-29 (suite 43) : replay passif fidèle ajouté à la Phase 3,
+> sur option `tools/replay_failure.py --faithful` uniquement. Le mode statique
+> par défaut et son shim restent inchangés. Le DOM figé est servi en mémoire
+> par le Chromium isolé existant, sous le `provider_domain` du manifest ; les
+> scripts du document sont interdits par CSP et toutes les autres requêtes sont
+> refusées. Le pipeline d'extraction et les validators sont appelés tels quels,
+> sans clic ni dispatch. Les compteurs du shim sont absents (`None`) dans ce mode.
+> Cause corrigée : les `evaluate()` de layout et de hostname, déclinés par le
+> shim statique, peuvent maintenant être évalués par le navigateur. Sur
+> `20260911_160609_extraction_validation_failure`, le signal Focaldata voit 7
+> cartes, mais l'extracteur actuel produit aussi 1 bloc radio de 7 options :
+> verdict fidèle `NON_REPRODUIT`, cohérent avec la correction antérieure déjà
+> documentée ci-dessus. Sur `20260923_201701_extraction_validation_failure`,
+> verdict fidèle `NON_REPRODUIT` (11 blocs). Le mode statique reste exactement
+> `NON_REPRODUIT` sur ces deux cases (respectivement 0 bloc, 12/71 evaluate ;
+> 9 blocs, 409/470 evaluate honorés/déclinés).
+
 ## Contexte de travail actuel
 
 Nous développons le module d'observabilité, de diagnostic et d'auto-correction supervisée de SurveyBot.

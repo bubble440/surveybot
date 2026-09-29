@@ -2,12 +2,14 @@ from __future__ import annotations
 
 """Rejeu local et déterministe d'un failure_case (Survey/failure_case_builder.py)
 contre dom_analyzer.analyze_dom() et le validator concerné, sur le HTML figé du
-case — sans navigateur réel, sans dispatch/interaction, sans réseau.
+case. Le mode statique historique reste le défaut ; le mode fidèle explicite
+utilise Chromium isolé (layout et hostname du provider), sans scripts de la
+page, dispatch/interaction ni réseau.
 
 Lecture seule sur le pipeline bot : ce module appelle dom_analyzer.analyze_dom(),
 question_block_validator.validate_question_blocks() et
 action_validator.validate_actions() strictement tels quels (aucune modification),
-sur un driver statique fourni par Survey/dom_replay_shim.py. Il ne lit et ne copie
+sur le driver choisi. Il ne lit et ne copie
 jamais rien dans failure_cases/, et ne modifie jamais le case source.
 
 Stratégie de chargement — une seule par case, jamais de cascade essai/erreur sur
@@ -32,14 +34,15 @@ replay sont comparés à ceux du case d'origine :
   - NON_REJOUABLE     : DOM requis absent, artefact illisible, ou erreur non
     recouvrable pendant l'extraction/la validation — jamais une conclusion forcée.
 
-Honnêteté sur la fidélité (cf. Survey/dom_replay_shim.py) : un DOM statique n'a
+Honnêteté sur la fidélité du mode par défaut (cf. Survey/dom_replay_shim.py) : un DOM statique n'a
 ni JavaScript exécuté, ni layout, ni état runtime — certains signaux que
 dom_analyzer.py ou les validators calculent via evaluate() (getComputedStyle,
 getBoundingClientRect, lecture d'état live d'un widget) ne peuvent pas être
 honorés et sont donc absents du replay, dégradant vers les chemins de repli déjà
 existants dans ce code (comportement non modifié). evaluate_handled/
 evaluate_declined (compteurs du shim) sont reportés pour rendre cette limite
-visible plutôt que de la masquer.
+visible plutôt que de la masquer. En mode fidèle, ces compteurs sont absents
+(None) : Playwright exécute les evaluate() sans compteur de shim.
 """
 
 import json
@@ -131,7 +134,9 @@ def _pick_dom_file(stage: str, artifacts_dir: Path, artifacts_flags: dict) -> "t
     return None, f"stage={stage!r} inconnu — impossible de déterminer quel DOM/validator utiliser"
 
 
-def replay_failure_case(case_dir: "str | Path") -> ReplayResult:
+def replay_failure_case(case_dir: "str | Path", *, mode: str = "static") -> ReplayResult:
+    if mode not in ("static", "faithful"):
+        raise ValueError(f"mode de replay inconnu: {mode!r}")
     case_dir = Path(case_dir)
     case_id = case_dir.name
 
@@ -168,6 +173,25 @@ def replay_failure_case(case_dir: "str | Path") -> ReplayResult:
             dom_file_used=dom_name, original_failure_types=original_types,
         )
 
+    if mode == "faithful":
+        # Import local : le chemin statique historique ne charge pas Chromium.
+        from Survey.replay_browser import IsolatedReplayBrowser
+
+        try:
+            with IsolatedReplayBrowser() as browser:
+                driver = browser.load_frozen_html(html_text, manifest.get("provider_domain"))
+                from Survey.dom_registry import _STABLE_TEXT_FIELD_LOCATOR, clear_registry
+
+                clear_registry()
+                _STABLE_TEXT_FIELD_LOCATOR.clear()
+                return _run_pipeline(driver, case_id, stage, dom_name, artifacts_dir, original_report, original_types)
+        except Exception as exc:
+            log_debug(_TAG, f"replay fidèle échoué case={case_id}: {type(exc).__name__}: {exc}")
+            return _not_replayable(
+                case_id, stage, f"replay fidèle impossible : {type(exc).__name__}: {exc}",
+                dom_file_used=dom_name, original_failure_types=original_types,
+            )
+
     try:
         driver = load_static_driver(html_text)
     except ReplayLoadError as exc:
@@ -175,6 +199,11 @@ def replay_failure_case(case_dir: "str | Path") -> ReplayResult:
             case_id, stage, str(exc),
             dom_file_used=dom_name, original_failure_types=original_types,
         )
+    return _run_pipeline(driver, case_id, stage, dom_name, artifacts_dir, original_report, original_types)
+
+
+def _run_pipeline(driver: Any, case_id: str, stage: str, dom_name: str,
+                  artifacts_dir: Path, original_report: Any, original_types: list) -> ReplayResult:
 
     try:
         import Survey.dom_analyzer as dom_analyzer
@@ -241,9 +270,10 @@ def replay_failure_case(case_dir: "str | Path") -> ReplayResult:
 
     replayed_types = _report_failure_types(replayed_report)
 
-    if driver.stats.declined:
+    stats = getattr(driver, "stats", None)
+    if stats is not None and stats.declined:
         warnings.append(
-            f"{driver.stats.declined} appel(s) evaluate() n'ont pas pu être honorés "
+            f"{stats.declined} appel(s) evaluate() n'ont pas pu être honorés "
             "statiquement (JS/layout requis, cf. Survey/dom_replay_shim.py) — le "
             "replay peut sous-détecter des signaux qu'une page live aurait révélés"
         )
@@ -263,7 +293,7 @@ def replay_failure_case(case_dir: "str | Path") -> ReplayResult:
         original_failure_types=original_types,
         replayed_failure_types=replayed_types,
         replayed_blocks_count=len(blocks or []),
-        evaluate_handled=driver.stats.handled,
-        evaluate_declined=driver.stats.declined,
+        evaluate_handled=stats.handled if stats is not None else None,
+        evaluate_declined=stats.declined if stats is not None else None,
         warnings=warnings,
     )

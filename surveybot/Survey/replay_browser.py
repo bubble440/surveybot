@@ -333,6 +333,23 @@ class IsolatedReplayBrowser:
             raise ReplayBrowserError("non démarré")
         return self._context.new_page()
 
+    def load_frozen_html(self, html: str, provider_domain: str) -> Any:
+        """Charge un DOM figé sous le hostname du case, sans scripts ni ressources.
+
+        Seul le document en mémoire est servi ; le routage du contexte refuse
+        toutes les autres requêtes. La CSP empêche l'exécution des scripts du
+        HTML, tandis que page.evaluate() reste disponible pour le pipeline.
+        """
+        import re
+
+        if not isinstance(provider_domain, str) or not re.fullmatch(
+            r"(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*",
+            provider_domain,
+        ):
+            raise ReplayBrowserError("provider_domain absent ou invalide dans le manifest")
+        self._served_resources = {}
+        return self._load_html(html, f"https://{provider_domain}/__surveybot_frozen_replay__.html")
+
     def load_case_document(self, case_dir: Union[str, Path], *, pre_action: bool = False) -> Any:
         """Charge le HTML principal figé d'un failure case dans une nouvelle page
         et la retourne. Lève ReplayBrowserError si le document n'est pas
