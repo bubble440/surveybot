@@ -26,6 +26,8 @@ Remove-Item -Recurse -Force "$env:TEMP\sb_chrome_profiles\chrome_9009"
 activer le venv du clone Surveys-autofix-clone
 & C:\projects\Surveys-autofix-clone\surveybot\venv\Scripts\Activate.ps1
 
+python tools\diagnose_failure.py failure_cases\<case_id>
+
 Terminal 1 — ouvre le tunnel :
 flyctl proxy 5432 -a surveybot-db
 Terminal 2 — lance Adminer :

@@ -1815,6 +1815,53 @@ niveau tant que le niveau précédent n'est pas fiable.
 > séparément : corriger l'extraction elle-même (le bot doit extraire la
 > question visible tant que la modale n'est pas affichée) — cas de référence
 > disponible.
+> Mise à jour 2026-09-29 (suite 46) : PREMIER PASSAGE SUPERVISÉ COMPLET de
+> l'orchestrateur (`--max-cases 1 --max-upstream-cases 1`), sur le clone
+> dédié, sur le cas MetrixLab de la suite 45
+> (`20260929_033834_extraction_validation_failure`, confirmé REPRODUIT/
+> confiance=certain par diagnose_failure.py ET replay_failure.py en isolation
+> avant le lancement).
+> Chemin parcouru dans cette seule invocation, en une fois : diagnostic
+> (confiance=certain) -> déduplication (solo) -> sélection de contexte ->
+> prompt généré (éligible) -> worktree préparé -> Claude Code invoqué en
+> headless (status=SUCCESS) -> validation statique (ACCEPTED) -> rejeu du
+> patch (outcome=BUG_PERSISTANT, patch_validated=False) -> intégrité des
+> fonctions gelées (REJECTED, 18/57 mésappariements) -> confiance=REJECT ->
+> aucune notification envoyée (HIGH requis). Comportement attendu du
+> pipeline : conforme — un patch qui ne corrige pas le bug n'atteint jamais
+> l'opérateur, sans qu'aucune action manuelle n'ait été nécessaire entre le
+> lancement et ce verdict.
+> Anomalie constatée, EN COURS D'INVESTIGATION, non résolue à ce stade :
+> validation_static.json rapporte 0 fichier modifié par rapport à base_sha,
+> alors que extractor_integrity_check.json trouve 18 fonctions protégées sur
+> 57 dont le hash ne correspond plus au registre. Si 0 fichier a réellement
+> changé, ces 18 mésappariements ne peuvent pas provenir du patch de Claude
+> Code — ils existeraient déjà sur `autofix-integration` elle-même,
+> indépendamment de ce chantier, et rejetteraient alors N'IMPORTE QUEL futur
+> patch de la même façon, rendant la Phase 11-A inopérante tant que non
+> corrigé. Trois vérifications demandées à l'opérateur pour trancher (git
+> status/diff réels du worktree ; `python extractor_integrity.py check` lancé
+> directement sur l'état actuel de la branche, sans aucun patch ; contenu
+> réel de run_result.json) — résultats non encore rapportés à la clôture de
+> cette suite.
+> Saga de mise en place du clone entre la suite 42 et ce premier passage,
+> résumée ici plutôt que détaillée pas à pas : un fichier
+> schedule_autofix_pipeline_task.ps1 retouché directement dans le clone
+> (plutôt que dans le dépôt de travail puis synchronisé) y a réintroduit un
+> doublon de paramètre PowerShell cassé — corrigé par `git checkout --`
+> depuis l'état déjà propre du dépôt de travail ; deux fichiers parasites,
+> sans rapport avec le pipeline ("git", un fragment de ligne de commande
+> PowerShell mal collée), retrouvés à la RACINE du clone plutôt que sous
+> surveybot/tools/ — nettoyés par `git clean`. `sync_autofix_clone.ps1`
+> exécuté avec succès une fois ces deux points réglés (fast-forward propre,
+> 8 fichiers ramenés dont le correctif de détection de la suite 45 et le
+> replay fidèle des suites 43-44). `receiver_config.json` (copié
+> temporairement dans le clone pour en extraire telegram_bot_token/
+> telegram_chat_id, cf. suite 42) confirmé supprimé.
+> Rappel de méthode qui a servi plusieurs fois dans cette saga : distinguer
+> systématiquement quel dépôt/environnement (dépôt de travail vs clone,
+> lequel des deux venv) exécute réellement une commande avant d'interpréter
+> un résultat contradictoire entre deux tests apparemment identiques.
 
 ## Contexte de travail actuel
 
