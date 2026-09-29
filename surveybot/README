@@ -69,7 +69,7 @@ if (Test-Path $profileDir) {
 
 # Commandes pour lancer le replay (phase 3)
 python tools\create_failure_case.py <snapshot_dir>
-python tools\replay_failure.py failure_cases\<id>
+$env:LOG_LEVEL="debug"; python tools\replay_failure.py failure_cases\<id>
 
 Pour voir les logs debug du shim/replay (log_debug, conditionné par LOG_LEVEL) :
 $env:LOG_LEVEL = "DEBUG"
