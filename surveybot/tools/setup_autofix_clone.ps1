@@ -14,13 +14,13 @@
 #
 # Pourquoi un clone SEPARE, HORS de l'arbre du depot de l'operateur (decision deja
 # actee, documentee ici, pas rediscutee) :
-#   Survey/merge_executor.py (etape aval de l'orchestrateur) exige que le depot
+#   Survey/autofix/merge_executor.py (etape aval de l'orchestrateur) exige que le depot
 #   PRINCIPAL soit ENTIEREMENT propre (git status --porcelain --untracked-files=all
 #   vide) avant de basculer de branche pour y merger un correctif -- il refuse tant
 #   qu'un fichier de travail de l'operateur traine. Faire tourner l'orchestrateur
 #   dans le depot de l'operateur le bloquerait des qu'un developpement est en
 #   cours, ET l'empecherait de merger sur une branche de developpement (jamais une
-#   branche protegee, cf. Survey/autofix_worktree.py::PROTECTED_BRANCHES). D'ou un
+#   branche protegee, cf. Survey/autofix/autofix_worktree.py::PROTECTED_BRANCHES). D'ou un
 #   clone dedie, en permanence sur sa propre branche d'integration NON protegee.
 #
 # Source du clone -- CHOIX DOCUMENTE (verifie, pas suppose) : ce script est lui-meme
@@ -49,7 +49,7 @@
 #   - .gitignore du depot operateur DEJA a jour avec les racines d'artefacts du
 #     pipeline autofix AVANT de creer le clone (ordre documente dans
 #     Utils/AUTOFIX_CLONE_ORCHESTRATEUR.md) -- sinon le premier merge automatique
-#     (Survey/merge_executor.py) echouera pour cause de depot non propre. Ce
+#     (Survey/autofix/merge_executor.py) echouera pour cause de depot non propre. Ce
 #     script ne verifie PAS cette condition lui-meme (lecture seule sur ce point,
 #     cf. preflight_autofix_clone.ps1 -- Partie B -- qui la verifie explicitement).
 
@@ -317,19 +317,19 @@ if ($LASTEXITCODE -ne 0) { Write-Error "echec 'pip install -r requirements.txt'"
 Write-Log "Dependances du projet OK."
 
 # ruff : DELIBEREMENT absent de requirements.txt (investigation deja menee et
-# documentee dans Survey/static_validator.py -- Phase 8 le resout via
+# documentee dans Survey/autofix/static_validator.py -- Phase 8 le resout via
 # shutil.which("ruff"), jamais via une dependance pip declaree). Installe ici a
 # part, dans le meme venv.
 if ($SkipRuffInstall) {
     Write-Log "Installation de ruff sautee (-SkipRuffInstall)."
 } else {
-    Write-Log "Installation/mise a jour de ruff (utilise par la Phase 8, Survey/static_validator.py) ..."
+    Write-Log "Installation/mise a jour de ruff (utilise par la Phase 8, Survey/autofix/static_validator.py) ..."
     & $venvPython -m pip install --upgrade ruff
     if ($LASTEXITCODE -ne 0) { Write-Error "echec 'pip install ruff'"; exit 1 }
     Write-Log "ruff installe dans le venv."
 }
 
-# Playwright : navigateurs (Chromium seul necessaire -- cf. Survey/replay_browser.py
+# Playwright : navigateurs (Chromium seul necessaire -- cf. Survey/autofix/replay_browser.py
 # ::IsolatedReplayBrowser, seul module de ce pipeline a lancer un navigateur reel).
 if ($SkipPlaywrightInstall) {
     Write-Log "Installation des navigateurs Playwright sautee (-SkipPlaywrightInstall)."
@@ -368,7 +368,7 @@ if ($SkipClaudeCheck) {
 
 # ---------------------------------------------------------------------------
 # 5) Resume -- rappel du piege PATH/ruff verifie empiriquement (Partie A du
-#    chantier) : shutil.which("ruff"), utilise par Survey/static_validator.py
+#    chantier) : shutil.which("ruff"), utilise par Survey/autofix/static_validator.py
 #    (Phase 8), resout par rapport au PATH du PROCESSUS qui execute
 #    tools\run_autofix_pipeline.py -- appeler directement venv\Scripts\python.exe
 #    (sans "activer" le venv) ne prefixe PAS automatiquement venv\Scripts au
@@ -389,7 +389,7 @@ Write-Output "  venv Python          : $venvPython"
 Write-Output ""
 Write-Output "IMPORTANT (verifie empiriquement) avant tout lancement, manuel ou planifie, de"
 Write-Output "tools\run_autofix_pipeline.py depuis ce clone : prefixer le dossier Scripts du"
-Write-Output "venv au PATH de la session, sinon Survey/static_validator.py (Phase 8) ne"
+Write-Output "venv au PATH de la session, sinon Survey/autofix/static_validator.py (Phase 8) ne"
 Write-Output "trouvera pas ruff (shutil.which echoue silencieusement, cote Python, a une"
 Write-Output "verification -- jamais a une hypothese optimiste) :"
 $venvScriptsDir = Split-Path -Parent $venvPython
@@ -401,7 +401,7 @@ Write-Output "reelle du pipeline, et avant chaque planification."
 # ---------------------------------------------------------------------------
 # 6) Fichier sidecar (jamais dans l'arbre suivi par Git du clone -- un frere du
 #    dossier du clone, jamais un fichier a l'interieur, pour ne jamais fausser
-#    le critere de proprete de Survey/merge_executor.py) : memorise quelle
+#    le critere de proprete de Survey/autofix/merge_executor.py) : memorise quelle
 #    branche de developpement ce clone suit, pour que sync_autofix_clone.ps1
 #    (Partie C) n'ait pas a la redeviner -- jamais une hypothese fragile sur
 #    "quelle que soit la branche courante du depot operateur au moment du sync"

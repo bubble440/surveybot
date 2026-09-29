@@ -1,6 +1,6 @@
 """
 run_autofix_pipeline.py — orchestrateur autofix. Une invocation, dans l'ordre
-(cf. Survey/autofix_orchestrator.py, docstring, "Point 0") : (0) verrou
+(cf. Survey/autofix/autofix_orchestrator.py, docstring, "Point 0") : (0) verrou
 d'exclusion (jamais deux invocations en même temps — toujours actif) ; (1)
 étape AVAL (décision Telegram Phase 13 -> commit -> merge local automatique,
 sauf --no-downstream) ; (2) étape AMONT (failure_cases/ -> worktree prêt :
@@ -28,7 +28,7 @@ ensemble) : worktree.json (--worktrees-root/<case_id>/worktree.json) présent ;
 prompt.txt présent dans --prompts-root/<case_id>/ (jamais
 MANUAL_REVIEW_REQUIRED.txt à sa place) ; aucun run_result.json déjà écrit sous
 --codex-runs-root/<case_id>/. Avant chaque lancement, un contrôle de sécurité
-du parallélisme (Survey/parallel_safety.py::check_pre_launch_safety,
+du parallélisme (Survey/autofix/parallel_safety.py::check_pre_launch_safety,
 réutilisée telle quelle) compare le case candidat à tout autre worktree encore
 "en vol" (issue non définitive — merge/décision/confiance/validation/
 invocation) ; une paire non sûre reporte le case (jamais lancé quand même),
@@ -37,7 +37,7 @@ sans consommer son éligibilité future.
 Éligibilité d'un case pour l'étape AMONT (sauf --no-upstream) : dossier
 --failure-cases-root/<case_id>/ (manifest.json présent) sans worktree.json ni
 upstream_run.json terminal, et qui n'est membre d'aucun groupe de doublons
-déjà formé (Survey/case_grouping.py). Le nombre de DIAGNOSTICS (Phase 4)
+déjà formé (Survey/autofix/case_grouping.py). Le nombre de DIAGNOSTICS (Phase 4)
 réellement NOUVEAUX par invocation est borné par --max-upstream-cases (la
 Phase 4 lance un vrai Chromium isolé pour un case stage="action") ; un case
 déjà diagnostiqué continue d'avancer sans consommer ce budget. Pour retenter
@@ -48,16 +48,16 @@ groupe) : supprimer manuellement
 terminal (ex. échec Git de la Phase 7) est, lui, retenté automatiquement à
 l'invocation suivante, sans action manuelle.
 
-Toute la logique vit dans Survey/autofix_orchestrator.py ; ce script n'est
+Toute la logique vit dans Survey/autofix/autofix_orchestrator.py ; ce script n'est
 qu'une façade CLI. Aucune phase existante n'est réimplémentée : chacune est
-importée et appelée telle quelle par ce module (Survey/static_validator.py,
-Survey/patch_replay.py, Survey/extractor_integrity_gate.py,
-Survey/confidence_score.py, Survey/human_review.py,
-Survey/parallel_safety.py, et pour l'étape amont : Survey/fleet_case_import.py,
-Survey/failure_diagnosis.py, Survey/case_grouping.py,
-Survey/context_selector.py, Survey/prompt_generator.py,
-Survey/autofix_worktree.py, et pour l'étape aval : Survey/patch_commit.py,
-Survey/merge_executor.py).
+importée et appelée telle quelle par ce module (Survey/autofix/static_validator.py,
+Survey/autofix/patch_replay.py, Survey/autofix/extractor_integrity_gate.py,
+Survey/autofix/confidence_score.py, Survey/autofix/human_review.py,
+Survey/autofix/parallel_safety.py, et pour l'étape amont : Survey/autofix/fleet_case_import.py,
+Survey/autofix/failure_diagnosis.py, Survey/autofix/case_grouping.py,
+Survey/autofix/context_selector.py, Survey/autofix/prompt_generator.py,
+Survey/autofix/autofix_worktree.py, et pour l'étape aval : Survey/autofix/patch_commit.py,
+Survey/autofix/merge_executor.py).
 
 Codes de sortie : 0 (succès, aucune erreur), 1 (au moins un case en erreur, ou
 --max-cases/--max-upstream-cases/--lock-stale-after-s invalide), 3 (verrou
@@ -79,7 +79,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.autofix_orchestrator import (  # noqa: E402
+from Survey.autofix.autofix_orchestrator import (  # noqa: E402
     DEFAULT_ALLOWED_TOOLS,
     DEFAULT_CLAUDE_TIMEOUT_S,
     DEFAULT_LOCK_STALE_AFTER_S,
@@ -110,7 +110,7 @@ def main(argv: "list[str] | None" = None) -> int:
     parser.add_argument("--extractor-integrity-checks-root", default="extractor_integrity_checks", help="Racine des vérifications d'intégrité (Phase 11-A, défaut : extractor_integrity_checks)")
     parser.add_argument("--confidence-scores-root", default="confidence_scores", help="Racine des scores de confiance (Phase 12, défaut : confidence_scores)")
     parser.add_argument("--human-reviews-root", default="human_reviews", help="Racine des revues humaines (Phase 13, défaut : human_reviews)")
-    parser.add_argument("--merge-results-root", default="merge_results", help="Racine des résultats de merge (Survey/merge_executor.py, défaut : merge_results)")
+    parser.add_argument("--merge-results-root", default="merge_results", help="Racine des résultats de merge (Survey/autofix/merge_executor.py, défaut : merge_results)")
     parser.add_argument("--merge-reviews-root", default="merge_reviews", help="Racine des revues de merge (Phase 16, défaut : merge_reviews) — plus jamais écrite par ce script (Phase 16 sortie de la chaîne orchestrée), seulement lue par check_pending_reviews pour ne pas voler ses mises à jour Telegram à un usage manuel")
     parser.add_argument("--commit-results-root", default="commit_results", help="Racine des résultats de commit (Phase 15, défaut : commit_results)")
     parser.add_argument("--pipeline-runs-root", default="autofix_pipeline_runs", help="Racine des résumés de chaîne de cet orchestrateur (défaut : autofix_pipeline_runs)")
@@ -120,7 +120,7 @@ def main(argv: "list[str] | None" = None) -> int:
     parser.add_argument("--permission-mode", default=DEFAULT_PERMISSION_MODE, help=f"Mode de permission Claude Code (--permission-mode), défaut={DEFAULT_PERMISSION_MODE!r}")
     parser.add_argument("--force", action="store_true", help="Régénère un artefact déjà existant pour un case traité dans cette invocation (jamais un écrasement silencieux)")
     parser.add_argument("--no-upstream", dest="upstream", action="store_false", default=True, help="Désactive l'étape amont (failure_cases -> worktree) — restaure le comportement d'avant cette étape (worktree.json/prompt.txt déjà présents restent une précondition manuelle)")
-    parser.add_argument("--import-fleet", action="store_true", help="Avant l'étape amont, importe les failure_cases disponibles côté stockage fleet (Survey/fleet_case_import.py) — désactivé par défaut, exige FLEET_R2_* dans l'environnement ; un échec est un avertissement, jamais un arrêt")
+    parser.add_argument("--import-fleet", action="store_true", help="Avant l'étape amont, importe les failure_cases disponibles côté stockage fleet (Survey/autofix/fleet_case_import.py) — désactivé par défaut, exige FLEET_R2_* dans l'environnement ; un échec est un avertissement, jamais un arrêt")
     parser.add_argument("--max-upstream-cases", type=int, default=DEFAULT_MAX_UPSTREAM_CASES, help=f"Nombre maximum de DIAGNOSTICS (Phase 4) réellement nouveaux tentés par invocation — un case déjà diagnostiqué n'est pas compté (défaut : {DEFAULT_MAX_UPSTREAM_CASES}, conservateur car la Phase 4 lance un vrai Chromium isolé pour un case stage=\"action\")")
     parser.add_argument("--no-downstream", dest="downstream", action="store_false", default=True, help="Désactive l'étape aval (décision Telegram -> commit -> merge local) — restaure le comportement d'avant cette étape")
     parser.add_argument("--lock-stale-after-s", type=float, default=DEFAULT_LOCK_STALE_AFTER_S, help=f"Âge (s) au-delà duquel un verrou d'exclusion (point 0) déjà présent est considéré abandonné et repris avec un avertissement (défaut : {DEFAULT_LOCK_STALE_AFTER_S}, généreux — doit rester supérieur au temps maximal théorique d'une invocation)")

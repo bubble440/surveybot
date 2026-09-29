@@ -30,7 +30,7 @@ chemins de repli déjà prévus au lieu de planter. Choix délibéré : plutôt 
 deviner un résultat, ce shim décline honnêtement et laisse le code existant
 absorber le manque, comme il le fait déjà en production face à une évaluation JS
 qui échoue (erreur réseau, contexte de sécurité, etc.) — cf. le module docstring
-de Survey/failure_replay.py pour comment cette limite est ensuite disclosée.
+de Survey/autofix/failure_replay.py pour comment cette limite est ensuite disclosée.
 
 query_selector_all()/query_selector() supportent le CSS standard (via
 lxml.cssselect) et la syntaxe Playwright "xpath=<expr>" (via lxml.xpath, moteur

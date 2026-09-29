@@ -8,7 +8,7 @@ fois le même bug déjà identifié.
 Outil additif, hors des Phases 1A-17 numérotées : ne modifie jamais
 failure_cases/ ni diagnoses/ des cases existants, ne touche à aucun
 extracteur/validator/dispatcher. Toute la logique vit dans
-Survey/case_grouping.py ; ce script n'est qu'une façade CLI.
+Survey/autofix/case_grouping.py ; ce script n'est qu'une façade CLI.
 
 Écrit, pour chaque groupe de taille >= 2 formé :
   - failure_cases/<group_id>/ (manifest.json + artifacts/, copie du case
@@ -37,7 +37,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.case_grouping import (  # noqa: E402
+from Survey.autofix.case_grouping import (  # noqa: E402
     CaseGroupingError,
     write_case_groups,
 )

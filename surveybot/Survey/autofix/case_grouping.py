@@ -5,8 +5,8 @@ signal de diagnostic IDENTIQUE, mais ne sont pas encore engagés en Phase 5 —
 nouveau mécanisme ADDITIF, hors du chantier 1A-17 numéroté par
 Utils/SURVEYBOT_AUTOFIX_PLAN.md.
 
-Ne touche à AUCUN fichier existant du pipeline (Survey/failure_case_builder.py,
-Survey/failure_diagnosis.py, Survey/context_selector.py, etc.) : ce module lit
+Ne touche à AUCUN fichier existant du pipeline (Survey/autofix/failure_case_builder.py,
+Survey/autofix/failure_diagnosis.py, Survey/autofix/context_selector.py, etc.) : ce module lit
 uniquement des artefacts déjà produits par les Phases 2 et 4
 (failure_cases/<id>/manifest.json, diagnoses/<id>/diagnosis.json) et
 context_selections/ (Phase 5, pour savoir quels cases sont déjà engagés), puis
@@ -21,17 +21,17 @@ remontés séparément SONT le même bug déjà identifié, au sens le plus stri
 possible (voir critère ci-dessous), pour éviter de le corriger N fois.
 
 ── Format vérifié avant d'écrire la logique de signature (consigne) ──────────
-diagnosis.json (Phase 4, Survey/failure_diagnosis.py::DiagnosisResult.as_dict) :
+diagnosis.json (Phase 4, Survey/autofix/failure_diagnosis.py::DiagnosisResult.as_dict) :
   - "modules_likely_involved" : liste de {"module": <chemin fichier str>,
     "matched_signals": [<str>, ...], "memory_entries": [...]} — UN ÉLÉMENT PAR
-    MODULE trouvé (Survey/failure_diagnosis.py::_modules_likely_involved,
+    MODULE trouvé (Survey/autofix/failure_diagnosis.py::_modules_likely_involved,
     dict "by_module"), jamais un élément par paire module/signal.
   - "cause": {"level": "certain"|"probable"|"plausible", "justification": str}
-    (Survey.failure_diagnosis.LEVEL_CERTAIN/LEVEL_PROBABLE/LEVEL_PLAUSIBLE).
-  - "case_id" == le nom du dossier diagnoses/<case_id>/ (Survey/
+    (Survey.autofix.failure_diagnosis.LEVEL_CERTAIN/LEVEL_PROBABLE/LEVEL_PLAUSIBLE).
+  - "case_id" == le nom du dossier diagnoses/<case_id>/ (Survey/autofix/
     failure_diagnosis.py::write_diagnosis, out_dir = out_root / case_dir.name
     — jamais un second préfixe "case_").
-manifest.json (Phase 2, Survey/failure_case_builder.py::build_failure_case) :
+manifest.json (Phase 2, Survey/autofix/failure_case_builder.py::build_failure_case) :
   "case_id" == snapshot_dir.name == le nom du dossier failure_cases/<case_id>/
   (case_dir = out_root / f"{case_id}", jamais préfixé non plus).
 
@@ -45,7 +45,7 @@ serait donc, en théorie, sans risque pour tout consommateur existant. Décision
 retenue malgré cela : AUCUN champ n'est ajouté aux copies manifest.json/
 diagnosis.json au-delà du remplacement de "case_id" par group_id — remplacement
 qui n'est PAS une extension mais une correction de cohérence déjà EXIGÉE par un
-consommateur existant (Survey/autofix_worktree.py::check_eligibility, Phase 7,
+consommateur existant (Survey/autofix/autofix_worktree.py::check_eligibility, Phase 7,
 compare "case_id" entre manifest.json, diagnosis.json et les noms de dossiers
 et refuse toute incohérence). La seule source de traçabilité du regroupement
 (membres, représentant, signature) est le sidecar group_members.json, jamais
@@ -78,10 +78,10 @@ différents, ni contaminer un groupe dont il a été retiré.
 ── Représentant (déterministe) ────────────────────────────────────────────────
 cause.level="certain" préféré à "probable"/"plausible" ; à égalité, le case_id
 le plus ancien. Les case_id de ce pipeline sont des horodatages
-"YYYYMMDD_HHMMSS_..." (cf. Survey/failure_case_builder.py::build_failure_case,
+"YYYYMMDD_HHMMSS_..." (cf. Survey/autofix/failure_case_builder.py::build_failure_case,
 case_id = snapshot_dir.name) : l'ordre lexicographique croissant est donc déjà
 l'ordre chronologique, comme déjà exploité tel quel par
-Survey/autofix_metrics.py::list_case_ids (sorted(...iterdir())) — pas de
+Survey/autofix/autofix_metrics.py::list_case_ids (sorted(...iterdir())) — pas de
 parsing de date séparé ici non plus.
 
 ── group_id ───────────────────────────────────────────────────────────────────
@@ -89,10 +89,10 @@ Dérivé UNIQUEMENT de la signature partagée (module + matched_signals triés),
 JAMAIS du case_id du représentant, pour que le même bug reconnu plus tard
 (nouveaux cases, même signature) reproduise le même group_id : sha256 tronqué
 à 16 caractères hex (même longueur d'encodage que le callback_data de la
-Phase 13, Survey/human_review.py) préfixé "dupgroup_" — jamais confondu avec
+Phase 13, Survey/autofix/human_review.py) préfixé "dupgroup_" — jamais confondu avec
 un vrai case_id (toujours "YYYYMMDD_HHMMSS_..."), et déjà conforme sans
 transformation supplémentaire à l'allowlist de composant de chemin/ref Git de
-la Phase 7 (Survey/autofix_worktree.py::_CASE_ID_RE, alphanumérique + . _ -).
+la Phase 7 (Survey/autofix/autofix_worktree.py::_CASE_ID_RE, alphanumérique + . _ -).
 
 ── Un seul passage (RÈGLES STRICTES) ─────────────────────────────────────────
 Un groupe déjà entièrement formé sur disque (failure_cases/<group_id>/
@@ -189,7 +189,7 @@ def _group_id_for_signature(signature) -> str:
 
 def _timestamped_output_dir(out_root: Path) -> Path:
     """Un instantané par run, jamais un fichier unique écrasé — même politique
-    que Survey/autofix_metrics.py::_timestamped_output_dir (dupliquée ici à
+    que Survey/autofix/autofix_metrics.py::_timestamped_output_dir (dupliquée ici à
     dessein, module indépendant, plutôt que de dépendre d'un détail interne
     d'un autre module)."""
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -401,7 +401,7 @@ def _build_group_artifacts(
     état partiel complété silencieusement. Retourne None si ok, sinon la
     raison de l'échec ; nettoie tout ce qu'elle a créé avant de retourner un
     échec (un groupe partiellement écrit est pire qu'aucun groupe, même
-    principe que Survey/failure_case_builder.py::build_failure_case)."""
+    principe que Survey/autofix/failure_case_builder.py::build_failure_case)."""
     fc_src_dir = failure_cases_root / group.representative_case_id
     manifest, err = _load_json(fc_src_dir / "manifest.json")
     if err or not isinstance(manifest, dict):
@@ -464,7 +464,7 @@ def write_case_groups(
     groupe de taille >= 2 sous failure_cases/<group_id>/ + diagnoses/<group_id>/
     + group_members.json, avant d'écrire un instantané horodaté du rapport
     sous report_root/<horodatage>/grouping_report.json (même convention que
-    Survey/autofix_metrics.py : jamais un fichier unique écrasé).
+    Survey/autofix/autofix_metrics.py : jamais un fichier unique écrasé).
 
     Un groupe déjà complet sur disque (les trois artefacts présents) n'est
     jamais régénéré — gelé, cf. docstring du module ("Un seul passage"). Un

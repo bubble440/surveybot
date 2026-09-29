@@ -1,24 +1,24 @@
 from __future__ import annotations
 
 """Phase 3D — classification automatique de rejouabilité d'un failure case déjà
-diagnostiqué (Phase 4, Survey/failure_diagnosis.py).
+diagnostiqué (Phase 4, Survey/autofix/failure_diagnosis.py).
 
 Lecture seule : ce module ne recalcule ni ne réexécute rien (aucun replay, aucun
 dispatcher, aucun navigateur). Il lit exclusivement diagnosis.json, déjà produit par
-Survey/failure_diagnosis.py, et classe le case dans l'un des quatre modes déjà nommés
+Survey/autofix/failure_diagnosis.py, et classe le case dans l'un des quatre modes déjà nommés
 par Utils/SURVEYBOT_AUTOFIX_PLAN.md (Phase 3D) :
 
-  STATIC_DOM               structure DOM pure suffisante (Survey/failure_replay.py,
+  STATIC_DOM               structure DOM pure suffisante (Survey/autofix/failure_replay.py,
                             rejeu statique 3A, réellement réexécuté pour stage=
                             "extraction" — jamais un booléen réutilisé).
   BROWSER_CAPSULE           HTML statique insuffisant, mais le Chromium isolé
-                            (Survey/replay_browser.py, Phase 3C.4, exposé dans
+                            (Survey/autofix/replay_browser.py, Phase 3C.4, exposé dans
                             diagnosis.json::real_dispatch_replay) a réellement pu
                             rejouer l'interaction jusqu'à un verdict exploitable.
   TRACE_REPLAY              l'interaction elle-même n'a pas pu être réexécutée
                             fidèlement (budget dépassé), mais l'état avant/après déjà
                             capturé (runtime_state.json) a suffi, via le repli déjà
-                            existant (Survey/replay_browser.py::_trace_replay_fallback,
+                            existant (Survey/autofix/replay_browser.py::_trace_replay_fallback,
                             exposé dans real_dispatch_replay.trace_replay).
   EXTERNAL_NON_REPLAYABLE   dépendance intrinsèque à une donnée externe non capturable
                             de façon fiable. Aucun signal de ce type n'existe encore
@@ -34,22 +34,22 @@ par Utils/SURVEYBOT_AUTOFIX_PLAN.md (Phase 3D) :
                             classement par défaut dans l'une des quatre ci-dessus.
 
 Signaux réutilisés tels quels (jamais recalculés, jamais réinterprétés) :
-  - diagnosis["replay"]["verdict"] / ["evaluate_declined"] — Survey/failure_replay.py,
+  - diagnosis["replay"]["verdict"] / ["evaluate_declined"] — Survey/autofix/failure_replay.py,
     rejeu statique passif (3A), non modifié.
-  - diagnosis["real_dispatch_replay"]["status"] / ["trace_replay"] — Survey/
+  - diagnosis["real_dispatch_replay"]["status"] / ["trace_replay"] — Survey/autofix/
     failure_diagnosis.py (réexécution réelle du dispatcher, stage="action") /
-    Survey/replay_browser.py (execute_case_action, _trace_replay_fallback), non
+    Survey/autofix/replay_browser.py (execute_case_action, _trace_replay_fallback), non
     modifiés.
 
 Pourquoi stage="action" ne peut jamais atteindre STATIC_DOM ici : le rejeu passif
-(Survey/failure_replay.py) réutilise dispatcher_success du case d'origine tel quel
+(Survey/autofix/failure_replay.py) réutilise dispatcher_success du case d'origine tel quel
 pour ce stage (jamais de dispatcher réellement réexécuté) — un verdict REPRODUIT y
 est donc attendu par construction et ne prouve rien sur la structure DOM seule (cf.
-Survey/failure_diagnosis.py). Seul le signal real_dispatch_replay, qui fait tourner
+Survey/autofix/failure_diagnosis.py). Seul le signal real_dispatch_replay, qui fait tourner
 un Chromium réel, peut établir BROWSER_CAPSULE/TRACE_REPLAY pour ce stage.
 Symétriquement, stage="extraction" n'a aujourd'hui aucun signal de vérification par
-navigateur réel exposé dans diagnosis.json (Survey/replay_browser.py sait déjà
-réexécuter l'extraction sur une page réelle, Phase 3C.3, mais Survey/
+navigateur réel exposé dans diagnosis.json (Survey/autofix/replay_browser.py sait déjà
+réexécuter l'extraction sur une page réelle, Phase 3C.3, mais Survey/autofix/
 failure_diagnosis.py ne l'invoque que pour stage="action" à ce jour) : un case
 extraction qui ne relève pas de STATIC_DOM reste donc UNDETERMINED plutôt que
 BROWSER_CAPSULE deviné.
@@ -74,7 +74,7 @@ MODE_EXTERNAL_NON_REPLAYABLE = "EXTERNAL_NON_REPLAYABLE"
 MODE_UNDETERMINED = "UNDETERMINED"
 
 # Statuts de real_dispatch_replay.status pour lesquels le dispatcher réel a rendu un
-# verdict exploitable (booléen) dans le Chromium isolé — cf. Survey/replay_browser.py.
+# verdict exploitable (booléen) dans le Chromium isolé — cf. Survey/autofix/replay_browser.py.
 _REAL_DISPATCH_CONCLUSIVE_STATUSES = ("SUCCESS", "FAILURE")
 
 
@@ -111,7 +111,7 @@ def _classify_extraction(replay: dict) -> tuple[str, str]:
     declined = replay.get("evaluate_declined")
     if verdict == "REPRODUIT" and declined in (0, None):
         return MODE_STATIC_DOM, (
-            "stage=\"extraction\" : replay passif (Survey/failure_replay.py) verdict="
+            "stage=\"extraction\" : replay passif (Survey/autofix/failure_replay.py) verdict="
             f"REPRODUIT sans aucun evaluate() décliné (evaluate_declined={declined!r}) — "
             "la structure DOM seule a suffi à réexécuter l'extraction et le validator."
         )
@@ -121,8 +121,8 @@ def _classify_extraction(replay: dict) -> tuple[str, str]:
         "la structure DOM seule suffit (verdict différent de REPRODUIT, ou impact des "
         "evaluate() déclinés sur ce verdict non établi), et aucune vérification par "
         "navigateur réel n'est aujourd'hui exposée dans diagnosis.json pour ce stage "
-        "(Survey/replay_browser.py::extract_case_blocks existe mais n'est invoqué par "
-        "Survey/failure_diagnosis.py que pour stage=\"action\")."
+        "(Survey/autofix/replay_browser.py::extract_case_blocks existe mais n'est invoqué par "
+        "Survey/autofix/failure_diagnosis.py que pour stage=\"action\")."
     )
 
 
@@ -140,8 +140,8 @@ def _classify_action(real_dispatch: Optional[dict]) -> tuple[str, str]:
         return MODE_BROWSER_CAPSULE, (
             f"stage=\"action\" : real_dispatch_replay.status={status!r} — le dispatcher "
             "réel a été réexécuté jusqu'à un verdict exploitable dans le Chromium isolé "
-            "(Survey/replay_browser.py::execute_case_action) ; le HTML statique seul "
-            "aurait été insuffisant pour ce stage (Survey/failure_replay.py réutilise "
+            "(Survey/autofix/replay_browser.py::execute_case_action) ; le HTML statique seul "
+            "aurait été insuffisant pour ce stage (Survey/autofix/failure_replay.py réutilise "
             "dispatcher_success d'origine, jamais un dispatcher réellement réexécuté)."
         )
 
@@ -152,7 +152,7 @@ def _classify_action(real_dispatch: Optional[dict]) -> tuple[str, str]:
                 "stage=\"action\" : real_dispatch_replay.status=\"TIMEOUT\" (budget "
                 "dépassé, interaction non réexécutée fidèlement), mais le repli sur les "
                 "faits déjà capturés (real_dispatch_replay.trace_replay.available=true, "
-                "Survey/replay_browser.py::_trace_replay_fallback) a produit une "
+                "Survey/autofix/replay_browser.py::_trace_replay_fallback) a produit une "
                 "comparaison exploitable sans nouvelle exécution."
             )
         return MODE_UNDETERMINED, (

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 """Exécution automatique du merge local dès confirmation Telegram (Phase 16,
-Survey/merge_review.py — non modifiée, réutilisée telle quelle pour la
+Survey/autofix/merge_review.py — non modifiée, réutilisée telle quelle pour la
 confirmation elle-même ; ce module ne fait qu'agir une fois decision.json déjà
 écrit). Nouveau module, additif. Ne touche à aucun extracteur, ni à
-Survey/merge_review.py/Survey/human_review.py existants. Ne recalcule, ne
+Survey/autofix/merge_review.py/Survey/autofix/human_review.py existants. Ne recalcule, ne
 relance et ne réexécute jamais rien des phases précédentes — lecture seule sur
 leurs artefacts déjà produits (decision.json Phase 16, worktree.json Phase 7,
 commit_result.json Phase 15).
@@ -23,8 +23,8 @@ branche, jamais un stash automatique, jamais un `git checkout` si le dépôt
 n'est pas déjà sûr, cf. check_repo_ready_for_merge ci-dessous).
 
 ── Précondition (check_merge_execution_eligibility) : toutes ensemble ───────
-- merge_reviews/<case_id>/decision.json (Phase 16, Survey/merge_review.py +
-  Survey/human_review.py::check_pending_reviews — schéma vérifié dans le code
+- merge_reviews/<case_id>/decision.json (Phase 16, Survey/autofix/merge_review.py +
+  Survey/autofix/human_review.py::check_pending_reviews — schéma vérifié dans le code
   avant d'écrire ce module : {schema_version, case_id, decision,
   decided_at, telegram_user_id, telegram_username}, AUCUN champ "kind" —
   c'est le dossier merge_reviews/ lui-même, jamais un champ interne, qui
@@ -33,17 +33,17 @@ n'est pas déjà sûr, cf. check_repo_ready_for_merge ci-dessous).
 - worktree.json (Phase 7) : désigne un worktree Git réel
   (`git rev-parse --is-inside-work-tree`, jamais une simple présence de
   dossier) et la branche effectivement checked-out à cet endroit correspond à
-  worktree.json.branch — même garde exacte que Survey/patch_commit.py::
+  worktree.json.branch — même garde exacte que Survey/autofix/patch_commit.py::
   check_commit_eligibility (dupliquée ici, modules indépendants, même
   convention que le reste de ce chantier — jamais un refactor de
-  Survey/patch_commit.py pour en extraire un helper partagé, cf. RÈGLES
+  Survey/autofix/patch_commit.py pour en extraire un helper partagé, cf. RÈGLES
   STRICTES "pas de refactor des phases existantes").
-- commit_result.json (Phase 15, Survey/patch_commit.py — schéma vérifié dans
+- commit_result.json (Phase 15, Survey/autofix/patch_commit.py — schéma vérifié dans
   le code : {schema_version, case_id, branch, already_committed, commit_sha,
   commit_subject, ...}) : commit_sha non vide.
 - case_id cohérent entre les trois artefacts et les trois dossiers fournis.
 - branch (worktree.json, la branche autofix) hors PROTECTED_BRANCHES
-  (Survey/autofix_worktree.py, réutilisée telle quelle) : défense en
+  (Survey/autofix/autofix_worktree.py, réutilisée telle quelle) : défense en
   profondeur symbolique reprise de la Phase 15, ne peut structurellement pas
   se déclencher (préfixe "autofix/" toujours présent).
 - source_branch (worktree.json, la VRAIE cible du merge) hors
@@ -57,21 +57,21 @@ n'est pas déjà sûr, cf. check_repo_ready_for_merge ci-dessous).
   — c'est la seule protection réelle contre "Ne touche jamais à
   main/prod/playwright-migration" pour LA CIBLE du merge.
 - source_branch non vide et différent du texte littéral "HEAD (detached)"
-  (placeholder de Survey/autofix_worktree.py::_current_branch_label quand le
+  (placeholder de Survey/autofix/autofix_worktree.py::_current_branch_label quand le
   dépôt était en detached HEAD à la création du worktree) — jamais une
   branche cible devinée.
 
 ── Comportement (execute_confirmed_merge) ────────────────────────────────────
 1. Dépôt principal résolu via `git rev-parse --show-toplevel` depuis le
    répertoire courant du process (Path.cwd()) — même stratégie exacte que
-   Survey/autofix_worktree.py::prepare_autofix_worktree pour son propre
+   Survey/autofix/autofix_worktree.py::prepare_autofix_worktree pour son propre
    repo_root, JAMAIS worktree_path (qui désigne le worktree isolé, hors de
    propos ici).
 2. source_branch vérifiée comme référence Git réelle dans CE dépôt
    (`git show-ref --verify --quiet refs/heads/<source_branch>`) — refus
    explicite sinon, jamais une branche créée à la volée.
 3. Recherche d'un merge déjà effectué pour ce case_id : réutilise TELLE
-   QUELLE Survey/patch_commit.py::_find_existing_case_commit (même fonction,
+   QUELLE Survey/autofix/patch_commit.py::_find_existing_case_commit (même fonction,
    même marqueur exact "case_id=<case_id>" en ligne de corps de commit —
    générique sur (cwd, branch, case_id), donc réutilisable sans modification
    pour chercher dans le dépôt principal/source_branch plutôt que dans le
@@ -92,7 +92,7 @@ n'est pas déjà sûr, cf. check_repo_ready_for_merge ci-dessous).
    marqueur que le point 3, pour qu'une future invocation le retrouve). Fichier
    temporaire plutôt qu'un argument -m direct : git merge n'a pas d'équivalent
    à `git commit -F -` (pas de lecture stdin) — même prudence que
-   Survey/patch_commit.py sur un message multi-lignes, adaptée à la
+   Survey/autofix/patch_commit.py sur un message multi-lignes, adaptée à la
    contrainte réelle de `git merge`.
 7. Code de sortie non nul (conflit réel ou tout autre échec du merge) :
    `git merge --abort` immédiatement (best-effort, journalisé si lui-même
@@ -110,7 +110,7 @@ Jamais de push, jamais de déclenchement de release/déploiement (aucune
 commande de ce type n'existe dans ce module). Jamais de résolution
 automatique d'un conflit réel. Budget de temps explicite (git_timeout_s,
 unique pour toutes les commandes git de ce module — même convention que
-Survey/patch_commit.py) sur chaque commande. Patch minimal : aucune des
+Survey/autofix/patch_commit.py) sur chaque commande. Patch minimal : aucune des
 Phases 7/15/16 n'est modifiée, seulement importée/réutilisée
 (PROTECTED_BRANCHES, _find_existing_case_commit).
 
@@ -130,16 +130,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from Survey.autofix_worktree import PROTECTED_BRANCHES
+from Survey.autofix.autofix_worktree import PROTECTED_BRANCHES
 from Survey.log_utils import log_debug, log_info
-from Survey.patch_commit import PatchCommitError, _find_existing_case_commit
+from Survey.autofix.patch_commit import PatchCommitError, _find_existing_case_commit
 
 _TAG = "[MERGE_EXECUTOR]"
 SCHEMA_VERSION = "1.0"
 
 DEFAULT_GIT_TIMEOUT_S = 15.0
 
-# Placeholder littéral de Survey/autofix_worktree.py::_current_branch_label
+# Placeholder littéral de Survey/autofix/autofix_worktree.py::_current_branch_label
 # quand le dépôt était en detached HEAD à la création du worktree — jamais
 # une branche cible réelle.
 _DETACHED_HEAD_PLACEHOLDER = "HEAD (detached)"
@@ -150,8 +150,8 @@ STATUS_CONFLICT = "CONFLICT"
 
 # Composant de chemin unique, allowlist conservatrice — même garde-fou dupliqué
 # volontairement dans plusieurs modules indépendants de ce pipeline (cf.
-# Survey/autofix_worktree.py, Survey/human_review.py, Survey/bem_proposal.py,
-# Survey/patch_commit.py).
+# Survey/autofix/autofix_worktree.py, Survey/autofix/human_review.py, Survey/autofix/bem_proposal.py,
+# Survey/autofix/patch_commit.py).
 _CASE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
 _WINDOWS_RESERVED_NAMES = {
     "con", "prn", "aux", "nul",
@@ -389,7 +389,7 @@ def execute_confirmed_merge(
     warnings: "list[str]" = []
 
     # 1) Dépôt principal réel, résolu depuis l'environnement (répertoire courant
-    # du process) — même stratégie exacte que Survey/autofix_worktree.py, jamais
+    # du process) — même stratégie exacte que Survey/autofix/autofix_worktree.py, jamais
     # worktree_path (le worktree isolé, hors de propos ici).
     ok_top, top_out, top_err, timed_out_top = _run_git(
         ["rev-parse", "--show-toplevel"], cwd=Path.cwd(), timeout=git_timeout_s,
@@ -414,13 +414,13 @@ def execute_confirmed_merge(
         )
 
     # 3) Idempotence : un merge pour ce case_id existe-t-il déjà sur target_branch ?
-    # Réutilise TELLE QUELLE Survey/patch_commit.py::_find_existing_case_commit
+    # Réutilise TELLE QUELLE Survey/autofix/patch_commit.py::_find_existing_case_commit
     # (générique sur cwd/branch/case_id — aucune modification nécessaire).
     try:
         existing_sha = _find_existing_case_commit(main_repo_root, target_branch, case_id, timeout=git_timeout_s)
     except PatchCommitError as exc:
         raise MergeExecutionError(
-            f"recherche d'un merge déjà existant (Survey/patch_commit.py::_find_existing_case_commit, "
+            f"recherche d'un merge déjà existant (Survey/autofix/patch_commit.py::_find_existing_case_commit, "
             f"réutilisée telle quelle) échouée : {exc}"
         ) from exc
 
@@ -542,7 +542,7 @@ def write_merge_result(
     out_root = Path(out_root)
 
     # Résolution du case_id AVANT tout effet de bord (même principe que
-    # Survey/autofix_worktree.py::write_worktree_manifest) : inutile de
+    # Survey/autofix/autofix_worktree.py::write_worktree_manifest) : inutile de
     # tenter un merge si l'écriture du résultat va de toute façon être refusée.
     decision, dec_err = _load_json(merge_review_dir / "decision.json")
     if dec_err or not isinstance(decision, dict):

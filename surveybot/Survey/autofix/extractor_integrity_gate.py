@@ -22,18 +22,18 @@ historiques voisins) et Phase 10 (garde-fou de fermeture de page CDP en
 stage="action").
 
 ── Préconditions, toutes ensemble, jamais la première seule ─────────────────
-- worktree.json (Phase 7, Survey/autofix_worktree.py::write_worktree_manifest) :
+- worktree.json (Phase 7, Survey/autofix/autofix_worktree.py::write_worktree_manifest) :
   case_id/branch/worktree_path/base_sha déjà produits, jamais recalculés.
   worktree_path doit exister et ressembler à un worktree Git (.git présent) —
-  même vérification que Phase 9/10 (Survey/patch_replay.py,
-  Survey/live_validator.py).
-- validation_static.json (Phase 8, Survey/static_validator.py) :
+  même vérification que Phase 9/10 (Survey/autofix/patch_replay.py,
+  Survey/autofix/live_validator.py).
+- validation_static.json (Phase 8, Survey/autofix/static_validator.py) :
   verdict="ACCEPTED" requis, jamais recalculé — un patch qui ne compile même
   pas n'a pas besoin d'être vérifié pour intégrité.
 - case_id cohérent entre les deux sources et les noms de dossiers fournis.
 - Survey/extractor_integrity.py ET Survey/extractor_integrity.json doivent
   exister réellement dans le worktree, à la racine de paquet résolue
-  (Survey.static_validator._resolve_package_root, Phase 8, réutilisée telle
+  (Survey.autofix.static_validator._resolve_package_root, Phase 8, réutilisée telle
   quelle — le worktree est un clone complet du dépôt, Survey/ et tools/ y
   vivent au même endroit relatif que dans le dépôt principal) — sinon refus
   explicite plutôt qu'une racine devinée.
@@ -43,7 +43,7 @@ Survey/extractor_integrity.py est chargé dynamiquement depuis le fichier du
 worktree (importlib.util.spec_from_file_location, sous un nom de module
 dédié — jamais "Survey.extractor_integrity" — pour ne jamais lire un module
 déjà en cache dans sys.modules provenant du dépôt principal ; même
-précaution que Phase 9/10 avec Survey.replay_browser/Survey.failure_replay,
+précaution que Phase 9/10 avec Survey.autofix.replay_browser/Survey.autofix.failure_replay,
 mais résolue ici SANS sous-processus : extractor_integrity.py n'a aucune
 dépendance de paquet (stdlib seulement — argparse/ast/hashlib/json/sys/
 pathlib), un chargement direct suffit et est exigé par cette phase (jamais
@@ -84,7 +84,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from Survey.log_utils import log_debug, log_info
-from Survey.static_validator import StaticValidationError, _resolve_package_root
+from Survey.autofix.static_validator import StaticValidationError, _resolve_package_root
 
 _TAG = "[EXTRACTOR_INTEGRITY_GATE]"
 SCHEMA_VERSION = "1.0"
@@ -129,8 +129,8 @@ def check_preconditions(
     validation_static_path: "str | Path",
 ) -> PreconditionResult:
     """Vérifie toutes les conditions ensemble ; ne s'arrête jamais à la
-    première raison rencontrée (même principe que Survey/autofix_worktree.py::
-    check_eligibility et Survey/patch_replay.py::check_preconditions). Lecture
+    première raison rencontrée (même principe que Survey/autofix/autofix_worktree.py::
+    check_eligibility et Survey/autofix/patch_replay.py::check_preconditions). Lecture
     seule : ne recalcule ni la Phase 7 ni la Phase 8.
 
     worktree_manifest_path/validation_static_path sont les CHEMINS COMPLETS

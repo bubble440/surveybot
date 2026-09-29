@@ -10,7 +10,7 @@ EFFET DE BORD (aucun Git, aucun navigateur, aucune page réelle) — il produit
 TOUJOURS un verdict, y compris dégradé (MEDIUM/REJECT) si une pièce manque ou
 qu'une phase n'a pas tourné pour ce case, sauf en cas de véritable erreur
 d'usage (case_id/branch incohérents entre les artefacts fournis). Toute la
-logique vit dans Survey/confidence_score.py ; ce script n'est qu'une façade
+logique vit dans Survey/autofix/confidence_score.py ; ce script n'est qu'une façade
 CLI.
 
 Convention reprise des façades des Phases 8/9/10/11 : chaque argument est le
@@ -34,7 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.confidence_score import (  # noqa: E402
+from Survey.autofix.confidence_score import (  # noqa: E402
     ConfidenceScoreError,
     write_patch_confidence,
 )

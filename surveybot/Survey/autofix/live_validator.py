@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """Phase 10 — test live attach contrôlé d'un patch NON_CONCLUANT après la Phase 9
-(Survey/patch_replay.py), sur une VRAIE page déjà ouverte par un opérateur humain —
+(Survey/autofix/patch_replay.py), sur une VRAIE page déjà ouverte par un opérateur humain —
 potentiellement une vraie session de répondant. Voie de validation pour les cas que
 le replay local (statique ou Chromium isolé, Phases 3A-3C) ne peut pas trancher.
 
@@ -23,7 +23,7 @@ tentative de connexion CDP n'est jamais atteignable sans elle.
 Ne recalcule et ne réexécute jamais rien de ces phases : lit uniquement les
 artefacts déjà produits (diagnosis.json, worktree.json, patch_replay.json).
 manifest.json n'est jamais rouvert directement par la logique propre à ce module
-(même discipline que Survey/patch_replay.py) : case_id/stage viennent de
+(même discipline que Survey/autofix/patch_replay.py) : case_id/stage viennent de
 diagnosis.json ; le scénario ciblé (target_id des actions, blocs attendus) vient
 indirectement des artefacts du case, lus par les mêmes fonctions déjà existantes
 qui en ont besoin (extract_case_blocks/execute_case_action). validation_static.json
@@ -32,17 +32,17 @@ l'existence même de patch_replay.json (Phase 9 refuse sans elle), revérifier s
 verdict ici serait redondant avec une chaîne déjà établie en amont.
 
 ── Précondition : toutes les conditions ensemble, jamais la première seule ───
-(même principe que Survey/patch_replay.py::check_preconditions)
+(même principe que Survey/autofix/patch_replay.py::check_preconditions)
   - AUTOFIX_LIVE_VALIDATE="1" (garde-fou ci-dessus).
   - patch_replay.json (Phase 9) : refused=False ET outcome="NON_CONCLUANT"
-    EXACTEMENT (Survey.replay_browser.OUTCOME_INCONCLUSIVE, non modifié, jamais
+    EXACTEMENT (Survey.autofix.replay_browser.OUTCOME_INCONCLUSIVE, non modifié, jamais
     une chaîne réécrite en dur) — ni CORRECTIF_CONFIRME (déjà validé, inutile de
     consommer une session live), ni BUG_PERSISTANT (patch déjà connu mauvais,
     retour Phase 6/7 attendu).
   - worktree.json (Phase 7) : mêmes champs déjà lus par la Phase 9
     (case_id/branch/worktree_path/base_sha), jamais recalculés ; worktree_path
     doit toujours exister sur disque et ressembler à un worktree Git (.git
-    présent) — même vérification que Survey/patch_replay.py::check_preconditions.
+    présent) — même vérification que Survey/autofix/patch_replay.py::check_preconditions.
   - diagnosis.json (Phase 4) : stage in {"extraction", "action"} ; stage doit
     être identique à celui déjà porté par patch_replay.json (cohérence entre
     artefacts, jamais supposée).
@@ -53,25 +53,25 @@ verdict ici serait redondant avec une chaîne déjà établie en amont.
   - case_id cohérent entre toutes les sources fournies (failure_case_dir,
     diagnosis_dir, dossiers parents de worktree.json/patch_replay.json,
     case_id porté par chaque JSON) et sûr comme composant de chemin — même
-    vérification inline que Survey/patch_replay.py (jamais l'import d'un
+    vérification inline que Survey/autofix/patch_replay.py (jamais l'import d'un
     validateur privé d'un module frère : chaque phase porte sa propre vérification
-    minimale, précédent déjà posé par Survey/patch_replay.py lui-même face à
-    Survey/autofix_worktree.py::_is_safe_case_id).
+    minimale, précédent déjà posé par Survey/autofix/patch_replay.py lui-même face à
+    Survey/autofix/autofix_worktree.py::_is_safe_case_id).
 
 ── Résolution de la racine de paquet du worktree ──────────────────────────────
-Réutilise TELLE QUELLE Survey.static_validator._resolve_package_root (Phase 8,
-non modifiée) — exactement comme le fait déjà Survey/patch_replay.py (Phase 9)
+Réutilise TELLE QUELLE Survey.autofix.static_validator._resolve_package_root (Phase 8,
+non modifiée) — exactement comme le fait déjà Survey/autofix/patch_replay.py (Phase 9)
 sur ce même worktree_path. Le code exécuté est celui du worktree patché, dans un
 SOUS-PROCESSUS Python neuf (sys.executable, jamais un "python" résolu au hasard) :
-même raison qu'en Phase 9, ce process-ci a déjà importé Survey.replay_browser/
-Survey.static_validator depuis le dépôt principal (sys.modules les garde en
+même raison qu'en Phase 9, ce process-ci a déjà importé Survey.autofix.replay_browser/
+Survey.autofix.static_validator depuis le dépôt principal (sys.modules les garde en
 cache) — un sous-processus neuf est la seule façon fiable de garantir que le code
 réellement exécuté est celui du worktree, sans deviner un mécanisme
 d'invalidation de cache fragile.
 
 ── Connexion CDP et scénario rejoué : une seule stratégie, jamais devinée ─────
 Vérifié avant d'écrire ce module (signatures lues, pas supposées) :
-`Survey.replay_browser.extract_case_blocks(page, case_dir)` et
+`Survey.autofix.replay_browser.extract_case_blocks(page, case_dir)` et
 `execute_case_action(page, case_dir, budget_s, question_blocks=...)` n'exigent
 de `page` qu'une API Playwright standard (`page.evaluate`, `page._impl_obj`,
 `page._loop` pour le budget d'`execute_case_action`) — attributs présents sur
@@ -81,14 +81,14 @@ navigateur lancé par `launch()`, ou page déjà ouverte d'un navigateur rejoint
 ni d'un changement de signature pour opérer sur une page CDP live — seule la
 façon d'OBTENIR `page` change (voir ci-dessous), jamais leur code.
 
-Divergence documentée avec le stage="extraction" de la Phase 9 : Survey/
+Divergence documentée avec le stage="extraction" de la Phase 9 : Survey/autofix/
 patch_replay.py réutilise pour ce stage le replay STATIQUE
-(Survey.failure_replay.replay_failure_case, driver lxml sur un DOM figé) —
+(Survey.autofix.failure_replay.replay_failure_case, driver lxml sur un DOM figé) —
 mécanisme fondamentalement incompatible avec une page CDP live (il n'y a pas de
 snapshot figé à charger, la page EST déjà l'état à observer). « L'équivalent déjà
 existant » pour l'extraction, au sens de la demande d'origine, est donc
 `extract_case_blocks` seul (sans `execute_case_action`) — exactement le mécanisme
-déjà utilisé par Survey/failure_diagnosis.py::_attempt_real_extraction_replay
+déjà utilisé par Survey/autofix/failure_diagnosis.py::_attempt_real_extraction_replay
 (qui l'exécute déjà sur une page de navigateur réelle, via IsolatedReplayBrowser).
 Ce module suit ce même appel, en substituant uniquement l'origine de `page`.
 
@@ -127,7 +127,7 @@ comportement inchangé pour tout appelant qui ne le fournit pas — Phases
 (voir `_ACTION_RUNNER_SCRIPT` ci-dessous), pour que ce TIMEOUT ne ferme jamais
 la page distante. Le dispatcher bloqué ne se débloque alors plus que par ses
 propres budgets internes, jamais par ce watchdog (cf. docstring de
-Survey/replay_browser.py, limite (1) d'`execute_case_action`) : c'est le budget
+Survey/autofix/replay_browser.py, limite (1) d'`execute_case_action`) : c'est le budget
 global du sous-processus (voir ci-dessous), pas ce watchdog, qui borne
 effectivement l'opération dans ce cas — même mécanisme de repli, déjà en place,
 que pour stage="extraction" ci-dessous. Aucun risque équivalent pour
@@ -149,7 +149,7 @@ jamais une deuxième tentative). Dépassement du budget global (sous-processus t
 traité comme un échec contrôlé (NON_CONCLUANT), jamais un processus qui pend.
 
 ── Une seule tentative, jamais de boucle ──────────────────────────────────────
-Un seul sous-processus, un seul essai, comme Survey/patch_replay.py::
+Un seul sous-processus, un seul essai, comme Survey/autofix/patch_replay.py::
 _run_replay_subprocess (stratégie reprise à l'identique, jamais réimplémentée en
 parallèle). Aucune boucle interne, aucun deuxième essai automatique : un
 opérateur qui veut retenter après une nouvelle correction relance manuellement le
@@ -157,14 +157,14 @@ cycle complet (nouvelle invocation de cet outil), ce n'est pas la responsabilit�
 de ce module.
 
 ── Vocabulaire de sortie : réutilisé, jamais une seconde échelle ─────────────
-`Survey.replay_browser.OUTCOME_FIX_CONFIRMED/OUTCOME_BUG_PERSISTS/
+`Survey.autofix.replay_browser.OUTCOME_FIX_CONFIRMED/OUTCOME_BUG_PERSISTS/
 OUTCOME_INCONCLUSIVE` (non modifiés). Pour stage="action", cet `outcome` est déjà
 calculé par `execute_case_action`/`_action_outcome` (non modifiés) — repris tel
-quel, exactement comme le fait déjà Survey/patch_replay.py. Pour stage=
+quel, exactement comme le fait déjà Survey/autofix/patch_replay.py. Pour stage=
 "extraction", `extract_case_blocks` ne calcule qu'un verdict de fidélité
-(REPRODUIT/NON_REPRODUIT/DIFFERENT, `Survey.failure_replay`, non modifié) : ce
+(REPRODUIT/NON_REPRODUIT/DIFFERENT, `Survey.autofix.failure_replay`, non modifié) : ce
 module ajoute la même traduction, strictement symétrique, que celle déjà écrite
-par Survey/patch_replay.py pour SON stage="extraction" (mécanisme différent —
+par Survey/autofix/patch_replay.py pour SON stage="extraction" (mécanisme différent —
 replay statique — mais traduction identique : NON_REPRODUIT -> CORRECTIF_CONFIRME,
 REPRODUIT -> BUG_PERSISTANT, tout le reste -> NON_CONCLUANT). Seul
 CORRECTIF_CONFIRME valide le patch (`patch_validated=True`) — jamais une absence
@@ -190,15 +190,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
-from Survey.failure_replay import VERDICT_NON_REPRODUIT, VERDICT_REPRODUIT
+from Survey.autofix.failure_replay import VERDICT_NON_REPRODUIT, VERDICT_REPRODUIT
 from Survey.log_utils import log_debug, log_info
-from Survey.replay_browser import (
+from Survey.autofix.replay_browser import (
     OUTCOME_BUG_PERSISTS,
     OUTCOME_FIX_CONFIRMED,
     OUTCOME_INCONCLUSIVE,
     _DEFAULT_DISPATCH_BUDGET_S,
 )
-from Survey.static_validator import StaticValidationError, _resolve_package_root
+from Survey.autofix.static_validator import StaticValidationError, _resolve_package_root
 
 _TAG = "[LIVE_VALIDATOR]"
 SCHEMA_VERSION = "1.0"
@@ -267,7 +267,7 @@ def check_preconditions(
     cdp_endpoint: Optional[str],
 ) -> PreconditionResult:
     """Vérifie toutes les conditions ensemble ; ne s'arrête jamais à la première
-    raison rencontrée — liste complète retournée, comme Survey/patch_replay.py::
+    raison rencontrée — liste complète retournée, comme Survey/autofix/patch_replay.py::
     check_preconditions (Phase 9), jamais un résultat partiel. Lecture seule : ne
     recalcule ni la Phase 4, ni la Phase 7, ni la Phase 9."""
     failure_case_dir = Path(failure_case_dir)
@@ -368,10 +368,10 @@ def check_preconditions(
 
 
 def _resolve_worktree_package_root(worktree_path: Path) -> Tuple[Optional[Path], Optional[str]]:
-    """Réutilise TELLE QUELLE Survey.static_validator._resolve_package_root
+    """Réutilise TELLE QUELLE Survey.autofix.static_validator._resolve_package_root
     (Phase 8, non modifiée) — jamais une seconde implémentation. Seule la
     conversion exception -> (None, raison) est propre à ce module (même
-    convention locale que Survey/patch_replay.py::_resolve_worktree_package_root,
+    convention locale que Survey/autofix/patch_replay.py::_resolve_worktree_package_root,
     chaque phase porte son propre petit adaptateur plutôt que de chaîner un
     import d'un symbole privé d'un module de phase frère)."""
     try:
@@ -445,7 +445,7 @@ sys.path.insert(0, worktree_root)
 
 try:
     from playwright.sync_api import sync_playwright
-    from Survey.replay_browser import extract_case_blocks
+    from Survey.autofix.replay_browser import extract_case_blocks
 
     pw, page = _connect_and_get_page(sync_playwright, cdp_endpoint, case_dir)
     try:
@@ -476,7 +476,7 @@ sys.path.insert(0, worktree_root)
 
 try:
     from playwright.sync_api import sync_playwright
-    from Survey.replay_browser import execute_case_action, extract_case_blocks
+    from Survey.autofix.replay_browser import execute_case_action, extract_case_blocks
 
     pw, page = _connect_and_get_page(sync_playwright, cdp_endpoint, case_dir)
     try:
@@ -509,7 +509,7 @@ print(json.dumps(result))
 
 
 def _run_live_subprocess(script: str, args: List[str], timeout_s: float) -> Tuple[Optional[dict], Optional[str]]:
-    """Stratégie d'exécution UNIQUE, reprise à l'identique de Survey/patch_replay.py::
+    """Stratégie d'exécution UNIQUE, reprise à l'identique de Survey/autofix/patch_replay.py::
     _run_replay_subprocess (jamais réimplémentée en parallèle) : un seul
     sous-processus Python (sys.executable), un seul essai, un budget de temps
     explicite. (résultat JSON, None) en cas de succès, (None, raison) sinon —
@@ -549,12 +549,12 @@ def _run_live_subprocess(script: str, args: List[str], timeout_s: float) -> Tupl
 
 
 def _extraction_outcome(after: dict) -> str:
-    """Traduction stage=\"extraction\" propre à ce module — Survey/patch_replay.py
+    """Traduction stage=\"extraction\" propre à ce module — Survey/autofix/patch_replay.py
     (Phase 9) traduit ce même verdict de fidélité pour SON stage=\"extraction\",
-    mais depuis le replay STATIQUE (Survey.failure_replay), incompatible avec une
+    mais depuis le replay STATIQUE (Survey.autofix.failure_replay), incompatible avec une
     page CDP live (cf. docstring du module) : ce module réutilise la même table de
     traduction, appliquée au verdict déjà calculé par extract_case_blocks
-    (Survey.replay_browser, non modifié) sur la page live — strictement
+    (Survey.autofix.replay_browser, non modifié) sur la page live — strictement
     symétrique, jamais une seconde échelle de confiance."""
     if not after.get("error"):
         verdict = (after.get("validation_comparison") or {}).get("verdict")
@@ -618,7 +618,7 @@ def validate_patch_live(
 ) -> LiveValidationResult:
     """Rejoue, sur la page CDP live fournie, EXACTEMENT le scénario ciblé par le
     case (extraction seule, ou extraction + dispatcher réel pour stage="action"),
-    et compare au vocabulaire outcome déjà établi par Phase 9/Survey.replay_browser.
+    et compare au vocabulaire outcome déjà établi par Phase 9/Survey.autofix.replay_browser.
     Ne valide le patch (patch_validated=True) que si l'outcome confirme ACTIVEMENT
     la correction (CORRECTIF_CONFIRME) — jamais une absence ambiguë ou un budget
     dépassé."""
@@ -733,7 +733,7 @@ def write_live_validation(
 ) -> Path:
     """Exécute validate_patch_live et écrit out_root/<case_id>/live_validation.json.
     Lève LiveValidationExistsError si la sortie existe déjà et force=False — jamais
-    d'écrasement silencieux (même convention que Survey/patch_replay.py)."""
+    d'écrasement silencieux (même convention que Survey/autofix/patch_replay.py)."""
     failure_case_dir = Path(failure_case_dir)
     out_root = Path(out_root)
     out_dir, out_file = _live_validation_paths(out_root, failure_case_dir.name)

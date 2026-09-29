@@ -8,7 +8,7 @@ prompt rédigé mais NON implémenté »).
 
 Tourne sur CHAQUE machine de production. Nouveau mécanisme de transport,
 additif, sous Survey/ — ne touche à aucun extracteur, aucune stratégie de
-dispatch, ni à Survey/failure_case_builder.py (Phase 2, non modifié). Lecture
+dispatch, ni à Survey/autofix/failure_case_builder.py (Phase 2, non modifié). Lecture
 seule sur le contenu déjà produit par cette phase (manifest.json,
 artifacts/) : ce module ne le modifie jamais, il se contente de le lire pour
 l'uploader, puis écrit un marqueur local dédié SIBLING de manifest.json
@@ -45,7 +45,7 @@ RÈGLES STRICTES appliquées :
     stratégie déjà unique).
   - Budget de temps explicite par case (budget_s), vérifié par
     time.monotonic() (même mécanisme que
-    Survey/extractor_integrity_gate.py::DEFAULT_TIME_BUDGET_S) ET par les
+    Survey/autofix/extractor_integrity_gate.py::DEFAULT_TIME_BUDGET_S) ET par les
     timeouts connect/read du client boto3 lui-même — aucun appel réseau ne
     peut pendre indéfiniment, à aucun des deux niveaux.
   - Échec ou dépassement de budget d'un case n'empêche jamais les autres
@@ -71,7 +71,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from Survey.autofix_worktree import _is_safe_case_id
+from Survey.autofix.autofix_worktree import _is_safe_case_id
 from Survey.log_utils import log_debug, log_info
 
 _TAG = "[FLEET_UPLOAD]"

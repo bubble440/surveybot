@@ -6,12 +6,12 @@ ne planifie ni ne décide jamais rien à la place de l'opérateur : chaque fonct
 ne fait que produire un rapport ; l'ordre de traitement ou la résolution d'un
 conflit reste une décision humaine (manuelle, ou via un prompt Codex de
 réconciliation ciblé, hors périmètre de ce module). Ne touche à aucun fichier
-existant (Survey/extractor_integrity.py, Survey/bem_proposal.py,
-Survey/context_selector.py, etc.) — réutilise leurs techniques telles quelles.
+existant (Survey/extractor_integrity.py, Survey/autofix/bem_proposal.py,
+Survey/autofix/context_selector.py, etc.) — réutilise leurs techniques telles quelles.
 
 ── Partie A : AVANT le lancement de Codex (approximatif par nature, assumé) ───
 check_pre_launch_safety(context_selection_paths) — au moins 2 chemins vers des
-context_selection.json (Phase 5, Survey/context_selector.py), chacun portant
+context_selection.json (Phase 5, Survey/autofix/context_selector.py), chacun portant
 déjà le case_id qu'il représente (champ "case_id" du fichier lui-même, jamais
 redevinée). Extrait l'ensemble des fichiers de code_files, EN EXCLUANT
 always_included (notamment Survey/BOT_EVOLUTION_MEMORY.md — présent dans
@@ -26,13 +26,13 @@ fonctions qui seront réellement touchées (cf. Partie B pour ça).
 
 ── Partie B : APRÈS que Codex a produit ses patchs, AVANT le merge (fonction) ─
 check_pre_merge_function_overlap(worktree_paths) — au moins 2 chemins vers des
-worktree.json (Phase 7, Survey/autofix_worktree.py). Pour chaque worktree,
+worktree.json (Phase 7, Survey/autofix/autofix_worktree.py). Pour chaque worktree,
 détermine les fichiers réellement modifiés depuis base_sha et les fonctions
 top-level ajoutées/modifiées/supprimées de chacun, par réutilisation STRICTE,
-SANS MODIFICATION, de Survey/bem_proposal.py::_detect_changed_files — qui
-elle-même réutilise déjà telles quelles Survey/static_validator.py::
+SANS MODIFICATION, de Survey/autofix/bem_proposal.py::_detect_changed_files — qui
+elle-même réutilise déjà telles quelles Survey/autofix/static_validator.py::
 _git_changed_paths/_resolve_package_root (Phase 8) et l'énumération AST/hash de
-Survey/bem_proposal.py (_enumerate_top_level_functions/_hash_all, la même
+Survey/autofix/bem_proposal.py (_enumerate_top_level_functions/_hash_all, la même
 technique déjà utilisée pour Survey/extractor_integrity.py::
 _find_function_source, généralisée). Aucune réimplémentation, aucun de ces
 fichiers n'est importé ni modifié pour être changé.
@@ -54,7 +54,7 @@ verdict, jamais classé "sûr" par défaut non plus.
 Un rapport JSON horodaté (même convention que les phases précédentes —
 schema_version, horodatage — mais un instantané par run sous
 out_root/<horodatage>/, jamais un fichier unique écrasé, cf.
-Survey/autofix_metrics.py::_timestamped_output_dir : ces contrôles portent sur
+Survey/autofix/autofix_metrics.py::_timestamped_output_dir : ces contrôles portent sur
 un ENSEMBLE de cases donné au moment de l'appel, pas sur un case_id unique).
 Écrit uniquement son propre artefact de traçabilité ; ne modifie jamais
 context_selections/, autofix_worktrees/, ni aucun worktree Git lui-même.
@@ -67,7 +67,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from Survey.bem_proposal import BemProposalError, ChangedFile, _detect_changed_files
+from Survey.autofix.bem_proposal import BemProposalError, ChangedFile, _detect_changed_files
 from Survey.log_utils import log_debug, log_info
 
 _TAG = "[PARALLEL_SAFETY]"
@@ -94,9 +94,9 @@ def _load_json(path: Path) -> "tuple[Any, Optional[str]]":
 
 def _timestamped_output_dir(out_root: Path) -> Path:
     """Un instantané par run, jamais un fichier écrasé — même convention que
-    Survey/autofix_metrics.py::_timestamped_output_dir. Dupliquée ici plutôt
-    qu'importée : importer Survey/autofix_metrics.py entraînerait toute sa
-    chaîne de dépendances (Survey/replay_browser.py, Playwright) pour une
+    Survey/autofix/autofix_metrics.py::_timestamped_output_dir. Dupliquée ici plutôt
+    qu'importée : importer Survey/autofix/autofix_metrics.py entraînerait toute sa
+    chaîne de dépendances (Survey/autofix/replay_browser.py, Playwright) pour une
     fonction utilitaire de huit lignes, sans rapport avec ce module en lecture
     seule sur du JSON."""
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -229,7 +229,7 @@ def check_pre_launch_safety(context_selection_paths: "list[str | Path]") -> PreL
                 continue
             if file_path in always_included_files:
                 # Défensif seulement : always_included et code_files ne devraient jamais se
-                # recouper (cf. Survey/context_selector.py) — exclusion explicite si jamais.
+                # recouper (cf. Survey/autofix/context_selector.py) — exclusion explicite si jamais.
                 continue
             code_files.add(file_path)
 
@@ -367,9 +367,9 @@ class PreMergeOverlapResult:
             "granularity": "function",
             "note": (
                 "Vérification précise, au niveau de la FONCTION, sur les patchs réellement "
-                "produits par Codex dans chaque worktree (Survey/static_validator.py::"
+                "produits par Codex dans chaque worktree (Survey/autofix/static_validator.py::"
                 "_git_changed_paths/_resolve_package_root + énumération AST/hash de "
-                "Survey/bem_proposal.py, réutilisés tels quels via _detect_changed_files). Un "
+                "Survey/autofix/bem_proposal.py, réutilisés tels quels via _detect_changed_files). Un "
                 "fichier partagé sans fonction en commun n'est jamais signalé comme un conflit — "
                 "Git le fusionnera normalement. Si un worktree partageant ce fichier échoue au "
                 "parsing AST, il est exclu (excluded_cases) et jamais deviné : les conflits sont "
@@ -392,8 +392,8 @@ def check_pre_merge_function_overlap(
     git_timeout_s: float = DEFAULT_GIT_TIMEOUT_S,
 ) -> PreMergeOverlapResult:
     """Compare au niveau fonction les patchs de >= 2 worktree.json (Phase 7),
-    par réutilisation stricte de Survey/bem_proposal.py::_detect_changed_files
-    (elle-même réutilisant Survey/static_validator.py Phase 8 et l'énumération
+    par réutilisation stricte de Survey/autofix/bem_proposal.py::_detect_changed_files
+    (elle-même réutilisant Survey/autofix/static_validator.py Phase 8 et l'énumération
     AST/hash déjà écrite pour la Phase 14). Ne modifie rien, ne décide jamais
     d'une réconciliation — seulement un rapport pour l'opérateur."""
     paths = [Path(p) for p in worktree_paths]
@@ -428,10 +428,10 @@ def check_pre_merge_function_overlap(
             changed_files, det_warnings = _detect_changed_files(data, git_timeout_s=git_timeout_s)
         except BemProposalError as exc:
             # Seule exception que _detect_changed_files remonte (git/AST déjà gérés en interne,
-            # convertis en BemProposalError) — cf. Survey/bem_proposal.py.
+            # convertis en BemProposalError) — cf. Survey/autofix/bem_proposal.py.
             raise ParallelSafetyError(
                 f"détection des fichiers/fonctions réellement modifiés (case={case_id}, {path}) "
-                f"échouée — Survey/bem_proposal.py::_detect_changed_files : {exc}"
+                f"échouée — Survey/autofix/bem_proposal.py::_detect_changed_files : {exc}"
             ) from exc
 
         for w in det_warnings:

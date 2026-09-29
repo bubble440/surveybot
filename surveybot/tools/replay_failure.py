@@ -7,7 +7,7 @@ case. Mode fidèle par défaut pour l'extraction, statique pour l'action ;
 Outil de diagnostic en lecture seule : ne modifie jamais le case ni le snapshot
 source, ne tente jamais de corriger quoi que ce soit ni de deviner un résultat
 quand l'information manque (annonce NON_REJOUABLE avec la raison dans ce cas).
-Toute la logique vit dans Survey/failure_replay.py ; ce script n'est qu'une
+Toute la logique vit dans Survey/autofix/failure_replay.py ; ce script n'est qu'une
 façade CLI.
 
 Usage :
@@ -24,7 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.failure_replay import (  # noqa: E402
+from Survey.autofix.failure_replay import (  # noqa: E402
     VERDICT_DIFFERENT,
     VERDICT_NON_REJOUABLE,
     VERDICT_NON_REPRODUIT,

@@ -1,13 +1,13 @@
 """
 diagnose_failure.py — Produit un diagnostic structuré (diagnosis.json) à partir d'un
 failure_case (Phase 2) et de son replay (Phase 3, calculé à la volée via
-Survey/failure_replay.py) : symptôme observé, comportement attendu, cause (certain/
+Survey/autofix/failure_replay.py) : symptôme observé, comportement attendu, cause (certain/
 probable/plausible) avec justification traçable, modules probablement concernés,
 confiance globale.
 
 Outil de diagnostic en lecture seule : ne modifie jamais le case ni le snapshot
 source, ne génère aucun prompt pour un agent de coding, ne nomme aucune fonction à
-modifier. Toute la logique vit dans Survey/failure_diagnosis.py ; ce script n'est
+modifier. Toute la logique vit dans Survey/autofix/failure_diagnosis.py ; ce script n'est
 qu'une façade CLI.
 
 Usage :
@@ -24,7 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.failure_diagnosis import DiagnosisError, write_diagnosis  # noqa: E402
+from Survey.autofix.failure_diagnosis import DiagnosisError, write_diagnosis  # noqa: E402
 
 
 def main(argv: "list[str] | None" = None) -> int:

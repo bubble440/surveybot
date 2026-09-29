@@ -1,14 +1,14 @@
 """
 check_parallel_safety.py — Partie A du contrôle de sécurité du parallélisme :
 AVANT le lancement de Codex, compare au niveau FICHIER les code_files d'au
-moins deux context_selection.json (Phase 5, Survey/context_selector.py) pour
+moins deux context_selection.json (Phase 5, Survey/autofix/context_selector.py) pour
 détecter les cases qui viseraient les mêmes fichiers candidats.
 
 Purement en lecture seule, aucun effet de bord sur context_selections/ ni sur
 quoi que ce soit d'autre du pipeline ; n'écrit que son propre rapport
 horodaté. Ne décide jamais d'un ordre de traitement ni ne résout un conflit —
 seulement un rapport pour l'opérateur, qui reste seul décisionnaire. Toute la
-logique vit dans Survey/parallel_safety.py ; ce script n'est qu'une façade
+logique vit dans Survey/autofix/parallel_safety.py ; ce script n'est qu'une façade
 CLI.
 
 Vérification approximative par nature (documenté explicitement dans le
@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.parallel_safety import (  # noqa: E402
+from Survey.autofix.parallel_safety import (  # noqa: E402
     ParallelSafetyError,
     write_pre_launch_safety_check,
 )

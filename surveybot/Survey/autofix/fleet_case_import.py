@@ -3,19 +3,19 @@ from __future__ import annotations
 """
 fleet_case_import.py — Partie B (importeur) du transport fleet des
 failure_cases, tourne sur la machine de dev. Contrepartie de
-Survey/fleet_case_upload.py (Partie A) : télécharge depuis le stockage R2
+Survey/autofix/fleet_case_upload.py (Partie A) : télécharge depuis le stockage R2
 partagé les cases pas encore présents localement, sous
 failure_cases/<case_id>/, exactement comme la Phase 2
-(Survey/failure_case_builder.py::build_failure_case) les produit
+(Survey/autofix/failure_case_builder.py::build_failure_case) les produit
 (manifest.json + artifacts/) — jamais de structure de dossier différente.
 
 Réutilise directement (jamais réimplémenté) le client R2 et la résolution de
-credentials de Survey/fleet_case_upload.py::_build_client/_get_bucket : même
+credentials de Survey/autofix/fleet_case_upload.py::_build_client/_get_bucket : même
 bucket, mêmes variables d'environnement FLEET_R2_* — « Une seule stratégie de
 transport (upload/download) » (RÈGLES STRICTES) implique un seul point de
 construction du client des deux côtés, pas deux implémentations qui
 pourraient diverger. case_id est revalidé avec
-Survey.autofix_worktree._is_safe_case_id (même garde-fou que la Phase 7 :
+Survey.autofix.autofix_worktree._is_safe_case_id (même garde-fou que la Phase 7 :
 un case_id doit rester un composant de chemin local sûr) avant toute
 écriture sur disque — les clés distantes proviennent normalement des seules
 machines de la fleet, mais un case_id est ici une donnée relue depuis un
@@ -35,13 +35,13 @@ serveur vérifiable), jamais un horodatage auto-déclaré transporté séparéme
 Refus explicite (jamais un écrasement silencieux) si un case_id existe déjà
 localement, sauf --force explicite. Un case dont le téléchargement échoue ou
 dépasse son budget de temps est entièrement nettoyé localement (même
-principe que Survey/failure_case_builder.py : « un case partiellement écrit
+principe que Survey/autofix/failure_case_builder.py : « un case partiellement écrit
 est pire qu'aucun case ») — jamais un case à moitié présent qui laisserait
 croire à un import réussi.
 
 Cet import ne déclenche lui-même AUCUNE suppression côté stockage partagé ni
 côté machine d'origine : le nettoyage prod reste entièrement du ressort de
-Survey/fleet_case_upload.py::cleanup_verified_cases (Partie A2), sur son
+Survey/autofix/fleet_case_upload.py::cleanup_verified_cases (Partie A2), sur son
 propre délai de rétention, indépendant du moment où le dev importe.
 """
 
@@ -53,15 +53,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from Survey.autofix_worktree import _is_safe_case_id
-from Survey.fleet_case_upload import (
+from Survey.autofix.autofix_worktree import _is_safe_case_id
+from Survey.autofix.fleet_case_upload import (
     DEFAULT_PREFIX,
     SCHEMA_VERSION,
     _CALL_TIMEOUT_S,
     _build_client,
     _get_bucket,
 )
-from Survey.fleet_case_upload import FleetUploadError as _R2ConfigError
+from Survey.autofix.fleet_case_upload import FleetUploadError as _R2ConfigError
 from Survey.log_utils import log_debug, log_info
 
 _TAG = "[FLEET_IMPORT]"

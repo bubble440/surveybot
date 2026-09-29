@@ -1,7 +1,7 @@
 """
 import_fleet_cases.py — Partie B (importeur), transport fleet des
 failure_cases depuis R2 vers la machine de dev. Toute la logique vit dans
-Survey/fleet_case_import.py ; ce script n'est qu'une façade CLI.
+Survey/autofix/fleet_case_import.py ; ce script n'est qu'une façade CLI.
 
 Liste les cases disponibles côté stockage partagé et télécharge ceux pas
 encore présents localement sous failure_cases/<case_id>/ (même structure que
@@ -34,12 +34,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.fleet_case_import import (  # noqa: E402
+from Survey.autofix.fleet_case_import import (  # noqa: E402
     DEFAULT_DOWNLOAD_TIMEOUT_S,
     FleetImportError,
     import_available_cases,
 )
-from Survey.fleet_case_upload import DEFAULT_PREFIX  # noqa: E402
+from Survey.autofix.fleet_case_upload import DEFAULT_PREFIX  # noqa: E402
 
 
 def main(argv: "list[str] | None" = None) -> int:

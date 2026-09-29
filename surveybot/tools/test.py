@@ -1,4 +1,9 @@
-from Survey.replay_browser import IsolatedReplayBrowser, extract_case_blocks, execute_case_action
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from Survey.autofix.replay_browser import IsolatedReplayBrowser, extract_case_blocks, execute_case_action
 
 CASE = r"failure_cases\20260925_211543_action_validation_failure"
 

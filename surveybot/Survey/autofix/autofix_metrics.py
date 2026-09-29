@@ -19,15 +19,15 @@ automatique pour certaines catégories) reste explicitement hors périmètre,
 en attente de plusieurs semaines de données réelles.
 
 failure_cases/ est la seule liste exhaustive de cases (tout case y a un
-dossier dès la Phase 2, cf. Survey/failure_case_builder.py::build_failure_case
+dossier dès la Phase 2, cf. Survey/autofix/failure_case_builder.py::build_failure_case
 — case_dir = out_root / case_id) : l'énumération part de là, jamais d'un
 autre dossier de phase qui pourrait être incomplet. Pour chaque case_id,
 l'artefact de chaque phase suivante est lu s'il existe, jamais supposé
 présent — son absence est comptée comme "phase non atteinte pour ce case",
 jamais une erreur.
 
-Extension additive (transport fleet, cf. Survey/fleet_case_upload.py /
-Survey/fleet_case_import.py) : failure_cases/<case_id>/fleet_origin.json,
+Extension additive (transport fleet, cf. Survey/autofix/fleet_case_upload.py /
+Survey/autofix/fleet_case_import.py) : failure_cases/<case_id>/fleet_origin.json,
 quand il existe (écrit par l'importeur, jamais par la Phase 2), distingue un
 case d'origine fleet (transporté depuis une machine de production) d'un case
 d'origine locale. Lu tel quel, jamais recalculé ni deviné pour un case qui
@@ -40,9 +40,9 @@ dans le code de chaque phase avant d'écrire ce module) :
     (Phase 11-A) : verdict="ACCEPTED"/"REJECTED".
   - patch_replay.json (Phase 9) / live_validation.json (Phase 10) :
     refused=bool, outcome=CORRECTIF_CONFIRME/BUG_PERSISTANT/NON_CONCLUANT
-    (Survey.replay_browser.OUTCOME_*).
+    (Survey.autofix.replay_browser.OUTCOME_*).
   - confidence_score.json (Phase 12) : confidence=HIGH/MEDIUM/REJECT
-    (Survey.confidence_score.CONFIDENCE_*).
+    (Survey.autofix.confidence_score.CONFIDENCE_*).
   - decision.json (Phase 13 human_reviews/, Phase 16 merge_reviews/) :
     decision="APPROVED"/"REJECTED".
   - commit_result.json (Phase 15) : commit_sha (non vide si commit réussi ou
@@ -51,7 +51,7 @@ dans le code de chaque phase avant d'écrire ce module) :
     modules_likely_involved (liste de {module, matched_signals,
     memory_entries}).
   - fleet_origin.json (transport fleet, additif) : machine_id, uploaded_at,
-    imported_at, live_validation_possible=false (Survey.fleet_case_import).
+    imported_at, live_validation_possible=false (Survey.autofix.fleet_case_import).
 
 Deux limites disclosées explicitement plutôt que masquées ou devinées :
   - "régressions" n'est PAS mesurable avec les artefacts actuels — aucune
@@ -80,13 +80,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from Survey.confidence_score import (
+from Survey.autofix.confidence_score import (
     CONFIDENCE_HIGH,
     CONFIDENCE_MEDIUM,
     CONFIDENCE_REJECT,
 )
 from Survey.log_utils import log_debug, log_info
-from Survey.replay_browser import (
+from Survey.autofix.replay_browser import (
     OUTCOME_BUG_PERSISTS,
     OUTCOME_FIX_CONFIRMED,
     OUTCOME_INCONCLUSIVE,
@@ -117,7 +117,7 @@ PHASE10_DEFINITION = (
 )
 
 FLEET_TRANSPORT_NOTE = (
-    "fleet_origin.json (transport fleet, Survey.fleet_case_import) distingue les cases "
+    "fleet_origin.json (transport fleet, Survey.autofix.fleet_case_import) distingue les cases "
     "transportés depuis une machine de production (fleet) des cases produits localement. Pour un "
     f"case fleet dont patch_replay.json (Phase 9) porte outcome={OUTCOME_INCONCLUSIVE!r}, la Phase "
     "10 n'est jamais applicable (pas d'accès physique/réseau à la machine d'origine) : ce case est "

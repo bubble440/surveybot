@@ -6,20 +6,20 @@ notification humaine, pour jusqu'à --max-cases cases éligibles, UN À LA FOIS
 (jamais en parallèle dans ce module — cf. RÈGLES STRICTES ci-dessous).
 
 N'orchestre que des phases déjà écrites et déjà validées séparément
-(Survey/static_validator.py, Survey/patch_replay.py,
-Survey/extractor_integrity_gate.py, Survey/confidence_score.py,
-Survey/human_review.py, Survey/parallel_safety.py, et — pour l'étape amont
-ci-dessous — Survey/fleet_case_import.py, Survey/failure_diagnosis.py,
-Survey/case_grouping.py, Survey/context_selector.py,
-Survey/prompt_generator.py, Survey/autofix_worktree.py, et — pour l'étape
-aval — Survey/patch_commit.py, Survey/merge_executor.py) — importées et
-appelées TELLES QUELLES, jamais réimplémentées ni modifiées (Survey/
+(Survey/autofix/static_validator.py, Survey/autofix/patch_replay.py,
+Survey/autofix/extractor_integrity_gate.py, Survey/autofix/confidence_score.py,
+Survey/autofix/human_review.py, Survey/autofix/parallel_safety.py, et — pour l'étape amont
+ci-dessous — Survey/autofix/fleet_case_import.py, Survey/autofix/failure_diagnosis.py,
+Survey/autofix/case_grouping.py, Survey/autofix/context_selector.py,
+Survey/autofix/prompt_generator.py, Survey/autofix/autofix_worktree.py, et — pour l'étape
+aval — Survey/autofix/patch_commit.py, Survey/autofix/merge_executor.py) — importées et
+appelées TELLES QUELLES, jamais réimplémentées ni modifiées (Survey/autofix/
 human_review.py excepté : une petite fonction ADDITIVE, send_status_notification,
 y a été ajoutée pour l'étape aval — cf. section dédiée). Ne touche à aucun
 extracteur ni stratégie de dispatch.
 
 Depuis l'introduction de l'étape amont (cf. section dédiée ci-dessous), la
-Phase 7 (préparation du worktree, Survey/autofix_worktree.py) EST déclenchée
+Phase 7 (préparation du worktree, Survey/autofix/autofix_worktree.py) EST déclenchée
 par ce module, par défaut, avant l'étape ci-dessous — sauf --no-upstream, qui
 restaure exactement le comportement antérieur (worktree.json/prompt.txt déjà
 présents restent une précondition satisfaite manuellement en amont). La
@@ -47,7 +47,7 @@ ordre est aussi chronologique), les --max-cases premiers retenus pour cette
 invocation. Aucune tentative de réordonnancement plus intelligent au-delà de
 ce tri déterministe : un case durablement bloqué par le contrôle de
 parallélisme (point 1 ci-dessous) resterait en tête à chaque invocation —
-accepté explicitement, cf. Survey/parallel_safety.py ("l'ordre de traitement
+accepté explicitement, cf. Survey/autofix/parallel_safety.py ("l'ordre de traitement
 [...] reste une décision humaine").
 
 ── Conséquence disclosée de la règle d'éligibilité ────────────────────────────
@@ -68,7 +68,7 @@ artefacts déjà écrits sur disque : rien n'est perdu, seule l'automatisation
 de bout en bout s'arrête à l'endroit exact où ce module s'est arrêté.
 
 ── Point 1 : contrôle de sécurité du parallélisme (avant tout lancement) ─────
-Réutilise Survey/parallel_safety.py::check_pre_launch_safety (le nom exact
+Réutilise Survey/autofix/parallel_safety.py::check_pre_launch_safety (le nom exact
 dans le code — pas "check_pre_launch_safety_check" — vérifié en lisant le
 module avant d'écrire celui-ci), importée telle quelle, jamais réimplémentée.
 Le comportement de ce contrôle lui-même (comparaison au niveau fichier) ne
@@ -77,13 +77,13 @@ change pas ; seul l'ensemble des worktrees comparés change (cf. ci-dessous).
 Définition resserrée de "en vol" (remplace l'ancienne définition volontairement
 large "tout worktree.json présent", documentée comme provisoire dès son
 introduction — cf. suite 35 de SURVEYBOT_AUTOFIX_PLAN.md — maintenant que
-merge_result.json (Survey/merge_executor.py) existe) : un worktree n'est "en
+merge_result.json (Survey/autofix/merge_executor.py) existe) : un worktree n'est "en
 vol" que s'il peut encore réellement aboutir à un merge. Un worktree dont
 l'issue est définitive ne bloque plus aucun autre case. Est définitive,
 et SEULEMENT, l'une de ces conditions, vérifiée sur un artefact réellement lu
 et bien formé (jamais devinée) :
   - merge_results/<case_id>/merge_result.json (Phase "merge automatique",
-    Survey/merge_executor.py) : status="MERGED" ou "ALREADY_MERGED" — un
+    Survey/autofix/merge_executor.py) : status="MERGED" ou "ALREADY_MERGED" — un
     status="CONFLICT" reste "en vol" (résolution manuelle encore possible) ;
   - human_reviews/<case_id>/decision.json (Phase 13) : decision="REJECTED" ;
   - merge_reviews/<case_id>/decision.json (Phase 16) : decision="REJECTED"
@@ -164,19 +164,19 @@ bornés (_MAX_RAW_OUTPUT_CHARS) par précaution, même si --output-format json
 produit normalement une sortie compacte.
 
 ── Point 3 : enchaînement des phases existantes, dans l'ordre imposé ─────────
-a. Phase 8 (Survey.static_validator.write_static_validation) : verdict
+a. Phase 8 (Survey.autofix.static_validator.write_static_validation) : verdict
    REJECTED (ou StaticValidationError) arrête la chaîne ici pour ce case.
-b. Phase 9 (Survey.patch_replay.write_patch_replay) : continue quel que soit
+b. Phase 9 (Survey.autofix.patch_replay.write_patch_replay) : continue quel que soit
    l'outcome (CORRECTIF_CONFIRME/BUG_PERSISTANT/NON_CONCLUANT, ou même
    refused=true) — seule une PatchReplayError (précondition d'usage cassée)
    arrête la chaîne ici. Un refused=true est transmis tel quel à la Phase 12,
    qui sait déjà le traiter (CRITERION_INCONCLUSIVE), jamais réinterprété ici.
-c. Phase 11-A (Survey.extractor_integrity_gate.write_extractor_integrity_check).
-d. Phase 12 (Survey.confidence_score.write_patch_confidence),
+c. Phase 11-A (Survey.autofix.extractor_integrity_gate.write_extractor_integrity_check).
+d. Phase 12 (Survey.autofix.confidence_score.write_patch_confidence),
    live_validation_path=None explicitement (Phase 10 jamais tentée
    automatiquement par ce module — exige un humain avec un vrai navigateur,
    structurellement hors de portée ici, cf. demande d'origine).
-e. confidence="HIGH" -> Phase 13 (Survey.human_review.send_review_request).
+e. confidence="HIGH" -> Phase 13 (Survey.autofix.human_review.send_review_request).
    Toute autre valeur (MEDIUM/REJECT) arrête la chaîne ici, sans notification
    — ces cases restent visibles via confidence_scores/<case_id>/
    confidence_score.json (rapports déjà existants), conformément à la Phase
@@ -231,20 +231,20 @@ run_autofix_pipeline).
 ── Étape aval : de la décision Telegram jusqu'au merge local (run_downstream_stage) ─
 Active par défaut, EN PREMIER (avant l'étape amont et l'étape existante), dans
 la MÊME invocation. Désactivée entièrement par --no-downstream. La Phase 16
-(Survey/merge_review.py::send_merge_confirmation_request, seconde
+(Survey/autofix/merge_review.py::send_merge_confirmation_request, seconde
 confirmation Telegram avant merge) SORT de la chaîne orchestrée : ses modules
 et outils (tools/propose_merge.py) restent en place et utilisables à la main,
 mais ce module ne les appelle jamais, et aucune option ne rétablit la double
 confirmation — un seul "Approuver" (Phase 13) suffit désormais à déclencher
 commit puis merge.
 
-1. Relevé des décisions : Survey/human_review.py::check_pending_reviews
+1. Relevé des décisions : Survey/autofix/human_review.py::check_pending_reviews
    appelée UNE fois, exactement comme tools/check_human_review.py (mêmes
    arguments — out_root=human_reviews_root, merge_out_root=merge_reviews_root
    — donc même fichier d'offset persisté partagé : _telegram_offset.json sous
    human_reviews_root) : jamais un second poller Telegram (Telegram ne
    fournit qu'UN SEUL flux getUpdates par bot, cf. docstring de
-   Survey/human_review.py). Un HumanReviewError (réseau, credentials Telegram
+   Survey/autofix/human_review.py). Un HumanReviewError (réseau, credentials Telegram
    absentes) est un avertissement journalisé, jamais un arrêt : les décisions
    déjà écrites sur disque (par une invocation précédente, ou par un humain
    ayant lancé tools/check_human_review.py entre-temps) restent traitées
@@ -262,18 +262,18 @@ commit puis merge.
 
 3. Pour chaque case retenu, séquentiellement (le merge modifie le dépôt
    principal, jamais en parallèle) :
-   a. Commit (Phase 15, Survey/patch_commit.py::commit_patch, réutilisée
+   a. Commit (Phase 15, Survey/autofix/patch_commit.py::commit_patch, réutilisée
       telle quelle) — sauté si commit_results/<case_id>/commit_result.json
       existe déjà (reprise après interruption). diagnosis_dir/
       context_selection_dir TOUJOURS fournis (filet de sécurité BEM actif,
-      cf. Survey/patch_commit.py). Éligibilité (confidence="HIGH",
+      cf. Survey/autofix/patch_commit.py). Éligibilité (confidence="HIGH",
       decision="APPROVED", cohérence case_id, worktree Git réel) déjà vérifiée
       par commit_patch lui-même via check_commit_eligibility — jamais
       revérifiée séparément ici (contrairement à la Phase 7 côté amont, où
       check_eligibility devait être appelée séparément pour distinguer
       inéligibilité et échec git ; ici PatchCommitError couvre les deux, sans
       distinction nécessaire — cf. point 4).
-   b. Merge (Survey/merge_executor.py::write_merge_result, réutilisée telle
+   b. Merge (Survey/autofix/merge_executor.py::write_merge_result, réutilisée telle
       quelle, AUCUNE modification de ce module). La décision qui l'autorise
       est celle de la Phase 13 (human_reviews/<case_id>/decision.json), PAS
       une decision.json de merge_reviews/ (Phase 16) : vérifié dans le code de
@@ -286,12 +286,12 @@ commit puis merge.
       Phase 13 d'une décision Phase 16 est le NOM DU DOSSIER appelant, jamais
       un champ interne. write_merge_result(merge_review_dir=human_reviews_root
       / case_id, ...) est donc appelée directement, sans le moindre changement
-      de Survey/merge_executor.py. Toutes ses gardes restent actives telles
+      de Survey/autofix/merge_executor.py. Toutes ses gardes restent actives telles
       quelles : source_branch hors PROTECTED_BRANCHES, dépôt principal
       entièrement propre avant tout basculement, branche cible réelle, jamais
       de push, conflit réel -> git merge --abort puis signalement, jamais de
       résolution automatique.
-   c. Idempotence (vérifiée dans le code de Survey/patch_commit.py avant
+   c. Idempotence (vérifiée dans le code de Survey/autofix/patch_commit.py avant
       d'écrire ce point, cf. consigne) : un worktree entièrement propre au
       moment de commit_patch (rien en attente) est traité comme DÉJÀ
       committé — le sha HEAD courant est rapporté tel quel, jamais un commit
@@ -304,14 +304,14 @@ commit puis merge.
       qu'à une tentative avec le worktree ENCORE modifié (dirty) — un cas qui
       ne devrait pas survenir dans ce flux (rien ne touche le worktree entre
       la Phase 7 et ce commit) mais reste un garde-fou de
-      Survey/patch_commit.py, non contourné. Côté merge,
+      Survey/autofix/patch_commit.py, non contourné. Côté merge,
       write_merge_result::execute_confirmed_merge cherche lui-même un commit
       déjà marqué "case_id=<id>" sur la branche CIBLE avant de tenter quoi que
       ce soit -> ALREADY_MERGED, jamais un second merge : ce module n'ajoute
       aucune logique d'idempotence supplémentaire ici, la sienne suffit.
 
 4. Issues et reprise (classification faite par ce module, à partir du
-   vocabulaire RÉEL vérifié dans Survey/merge_executor.py :
+   vocabulaire RÉEL vérifié dans Survey/autofix/merge_executor.py :
    status="MERGED"|"ALREADY_MERGED"|"CONFLICT", aucune autre valeur) :
    - MERGED / ALREADY_MERGED : terminal=true, is_error=false (issue conclusive,
      pas un défaut de l'automatisme).
@@ -335,7 +335,7 @@ commit puis merge.
    garde --force (même raisonnement que pipeline_run.json : instantané de la
    dernière tentative, jamais une précondition consommée ailleurs).
 
-5. Notification des issues (Survey/human_review.py::send_status_notification,
+5. Notification des issues (Survey/autofix/human_review.py::send_status_notification,
    petite fonction ADDITIVE — vérifié dans le code avant d'écrire ce module
    qu'aucune fonction d'envoi simple sans bouton n'existait déjà ; réutilise
    _telegram_api_call et la résolution telegram_bot_token/telegram_chat_id
@@ -380,7 +380,7 @@ par --no-upstream, qui restaure alors le comportement exact d'avant cette
 extension.
 
 1. Import fleet optionnel (--import-fleet, désactivé par défaut car il exige
-   FLEET_R2_* dans l'environnement) : Survey/fleet_case_import.py::
+   FLEET_R2_* dans l'environnement) : Survey/autofix/fleet_case_import.py::
    import_available_cases(), appelée SANS argument (racine/prefixe/budgets par
    défaut de ce module, non exposés ici — hors périmètre de cette extension).
    Un échec (FleetImportError : credentials R2 absentes ; ou toute autre
@@ -399,7 +399,7 @@ extension.
    (failure_cases/dupgroup_*/group_members.json, cf. point 4 : un membre n'est
    jamais un candidat individuel).
 
-3. Phase 4 (Survey/failure_diagnosis.py::write_diagnosis) pour chaque
+3. Phase 4 (Survey/autofix/failure_diagnosis.py::write_diagnosis) pour chaque
    candidat de la sélection ci-dessus SANS diagnoses/<case_id>/diagnosis.json
    — réutilisé tel quel sinon, jamais recalculé. Borné par
    --max-upstream-cases (DEFAULT_MAX_UPSTREAM_CASES) sur le nombre de
@@ -415,7 +415,7 @@ extension.
    terminal=false, is_error=true) — jamais de retry dans cette même invocation.
 
 4. Déduplication, UNE FOIS, après le point 3 et AVANT toute sélection de
-   contexte (Survey/case_grouping.py::write_case_groups, sur ses racines par
+   contexte (Survey/autofix/case_grouping.py::write_case_groups, sur ses racines par
    défaut — jamais réimplémentée : déjà idempotente par construction, un
    groupe complet sur disque n'est jamais régénéré ni étendu, vérifié dans
    son code avant d'écrire ce point). Chaque membre d'un groupe FORMÉ (nouveau
@@ -426,7 +426,7 @@ extension.
    sélection du point 2 (en plus de l'exclusion directe déjà faite via
    group_members.json). Le group_id lui-même est un dossier failure_cases/
    ordinaire une fois formé (manifest.json + diagnosis.json déjà copiés par
-   Survey/case_grouping.py) : il retraverse naturellement la sélection du
+   Survey/autofix/case_grouping.py) : il retraverse naturellement la sélection du
    point 2 et poursuit au point 5 comme n'importe quel case. Un
    CaseGroupingError (racine failure_cases/diagnoses introuvable — véritable
    erreur d'usage, jamais un case précis) est un avertissement : les cases
@@ -436,16 +436,16 @@ extension.
    filtrée aux seuls cases ayant désormais un diagnosis.json — ce qui exclut
    naturellement les candidats non diagnostiqués faute de budget au point 3
    et inclut les group_id fraîchement formés) : Phase 5
-   (Survey/context_selector.py::write_context_selection), Phase 6
-   (Survey/prompt_generator.py::write_prompt), Phase 7
-   (Survey/autofix_worktree.py::prepare_autofix_worktree) — chacune appelée
+   (Survey/autofix/context_selector.py::write_context_selection), Phase 6
+   (Survey/autofix/prompt_generator.py::write_prompt), Phase 7
+   (Survey/autofix/autofix_worktree.py::prepare_autofix_worktree) — chacune appelée
    SEULEMENT si son artefact de sortie n'existe pas déjà (context_selection.json/
    prompt.txt ou MANUAL_REVIEW_REQUIRED.txt/worktree.json), pour permettre une
    reprise après interruption sans jamais recalculer un artefact déjà présent.
    Deux arrêts NORMAUX (terminal=true, is_error=false, jamais une exception) :
    MANUAL_REVIEW_REQUIRED.txt écrit par la Phase 6 (case non éligible à un
    prompt automatique) ; case jugé inéligible par
-   Survey/autofix_worktree.py::check_eligibility (nom exact vérifié dans le
+   Survey/autofix/autofix_worktree.py::check_eligibility (nom exact vérifié dans le
    code), appelée SÉPARÉMENT par ce module avant prepare_autofix_worktree —
    seule façon de distinguer une INÉLIGIBILITÉ (stage/verdict/confiance :
    étale les raisons, terminal) d'un ÉCHEC OPÉRATIONNEL git dans
@@ -490,44 +490,44 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from Survey.autofix_worktree import AutofixWorktreeError, check_eligibility, prepare_autofix_worktree
-from Survey.case_grouping import CaseGroupingError, write_case_groups
-from Survey.confidence_score import (
+from Survey.autofix.autofix_worktree import AutofixWorktreeError, check_eligibility, prepare_autofix_worktree
+from Survey.autofix.case_grouping import CaseGroupingError, write_case_groups
+from Survey.autofix.confidence_score import (
     CONFIDENCE_HIGH,
     CONFIDENCE_REJECT,
     ConfidenceScoreError,
     write_patch_confidence,
 )
-from Survey.context_selector import ContextSelectionError, write_context_selection
-from Survey.extractor_integrity_gate import (
+from Survey.autofix.context_selector import ContextSelectionError, write_context_selection
+from Survey.autofix.extractor_integrity_gate import (
     IntegrityGateError,
     write_extractor_integrity_check,
 )
-from Survey.failure_diagnosis import DiagnosisError, write_diagnosis
-from Survey.human_review import (
+from Survey.autofix.failure_diagnosis import DiagnosisError, write_diagnosis
+from Survey.autofix.human_review import (
     HumanReviewError,
     check_pending_reviews,
     send_review_request,
     send_status_notification,
 )
 from Survey.log_utils import log_debug, log_info
-from Survey.merge_executor import (
+from Survey.autofix.merge_executor import (
     STATUS_ALREADY_MERGED,
     STATUS_CONFLICT,
     STATUS_MERGED,
     MergeExecutionError,
     write_merge_result,
 )
-from Survey.parallel_safety import ParallelSafetyError, check_pre_launch_safety
-from Survey.patch_commit import PatchCommitError, commit_patch
-from Survey.patch_replay import PatchReplayError, write_patch_replay
-from Survey.prompt_generator import (
+from Survey.autofix.parallel_safety import ParallelSafetyError, check_pre_launch_safety
+from Survey.autofix.patch_commit import PatchCommitError, commit_patch
+from Survey.autofix.patch_replay import PatchReplayError, write_patch_replay
+from Survey.autofix.prompt_generator import (
     MANUAL_REVIEW_FILENAME,
     PROMPT_FILENAME,
     PromptGenerationError,
     write_prompt,
 )
-from Survey.static_validator import StaticValidationError, write_static_validation
+from Survey.autofix.static_validator import StaticValidationError, write_static_validation
 
 _TAG = "[AUTOFIX_ORCHESTRATOR]"
 SCHEMA_VERSION = "1.0"
@@ -539,7 +539,7 @@ DEFAULT_PERMISSION_MODE = "acceptEdits"
 
 # Borne conservatrice, distincte de DEFAULT_MAX_CASES : la Phase 4 (diagnostic)
 # lance un vrai Chromium isolé pour tout case stage="action" avec
-# real_dispatch_replay (Survey/replay_browser.py::execute_case_action) — un
+# real_dispatch_replay (Survey/autofix/replay_browser.py::execute_case_action) — un
 # coût par case bien plus élevé qu'un simple calcul JSON. Ne borne QUE le
 # nombre de cases NOUVELLEMENT diagnostiqués par invocation (cf. docstring de
 # run_upstream_stage) : un case déjà diagnostiqué lors d'une invocation
@@ -559,7 +559,7 @@ DEFAULT_LOCK_STALE_AFTER_S = 7200.0
 # Bornes de stockage pour la sortie brute de l'invocation Claude Code —
 # --output-format json produit normalement une sortie compacte, mais jamais
 # de croissance non bornée par précaution (même philosophie que
-# Survey/static_validator.py::_check_tests, err.strip()[-4000:]).
+# Survey/autofix/static_validator.py::_check_tests, err.strip()[-4000:]).
 _MAX_RAW_OUTPUT_CHARS = 200_000
 
 STATUS_SUCCESS = "SUCCESS"
@@ -603,7 +603,7 @@ NOTIFY_STATE_CONFLICT = "conflict"
 NOTIFY_STATE_BLOCKED = "blocked"
 
 # Composant de chemin unique, allowlist conservatrice — même garde-fou que
-# Survey/autofix_worktree.py::_CASE_ID_RE, dupliqué volontairement (modules
+# Survey/autofix/autofix_worktree.py::_CASE_ID_RE, dupliqué volontairement (modules
 # indépendants, cf. convention déjà en place ailleurs dans ce chantier pour
 # ce même petit utilitaire).
 _CASE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
@@ -820,7 +820,7 @@ def discover_downstream_candidates(
     et sans merge_results/<case_id>/merge_result.json déjà écrit (cet artefact
     n'existe QUE pour une issue terminale — MERGED/ALREADY_MERGED/CONFLICT,
     write_merge_result ne l'écrit jamais pour un refus opérationnel, cf.
-    Survey/merge_executor.py — sa seule présence suffit donc comme filtre).
+    Survey/autofix/merge_executor.py — sa seule présence suffit donc comme filtre).
     Un REJECTED, ou l'absence de decision.json, n'est jamais un candidat :
     "n'appelle aucune action" (point 2), ni artefact ni tentative. Triés par
     case_id (ordre déterministe). Lecture seule."""
@@ -885,7 +885,7 @@ def _process_downstream_case(
     merge_results_root: Path,
     pipeline_runs_root: Path,
 ) -> DownstreamCaseSummary:
-    """Phases 15 (commit) puis merge (Survey/merge_executor.py) pour UN case
+    """Phases 15 (commit) puis merge (Survey/autofix/merge_executor.py) pour UN case
     déjà APPROVED (Phase 13) — garanti par l'appelant. Chaque étape est
     sautée si son artefact de sortie existe déjà (reprise après interruption,
     cf. docstring du module, point 3c pour l'idempotence exacte)."""
@@ -922,7 +922,7 @@ def _process_downstream_case(
             )
         artifacts[STAGE_DOWNSTREAM_COMMIT] = str(commit_result_path)
 
-    # ── (b) Merge (Survey/merge_executor.py) ───────────────────────────────
+    # ── (b) Merge (Survey/autofix/merge_executor.py) ───────────────────────────────
     merge_result_path = merge_results_root / case_id / "merge_result.json"
     if not merge_result_path.is_file():
         # La décision qui autorise ce merge est celle de la Phase 13
@@ -930,13 +930,13 @@ def _process_downstream_case(
         # 16, sortie de la chaîne orchestrée). Le schéma de decision.json est
         # identique dans les deux dossiers (schema_version/case_id/decision/
         # decided_at/telegram_user_id/telegram_username, aucun champ "kind" —
-        # cf. Survey/merge_executor.py, docstring, et Survey/human_review.py,
+        # cf. Survey/autofix/merge_executor.py, docstring, et Survey/autofix/human_review.py,
         # write_pending/decision commun aux deux points d'entrée) : vérifié
         # dans le code de check_merge_execution_eligibility avant d'écrire ce
         # module, elle ne lit que decision.json et compare des case_id, sans
         # jamais supposer qu'elle vit sous merge_reviews/ — appelée ici
         # directement sur human_reviews/<case_id>, sans aucune modification de
-        # Survey/merge_executor.py.
+        # Survey/autofix/merge_executor.py.
         try:
             write_merge_result(
                 merge_review_dir=human_reviews_root / case_id,
@@ -1112,12 +1112,12 @@ def write_upstream_run_result(
 def _group_members_on_disk(failure_cases_root: Path) -> "set[str]":
     """Union des membres de TOUS les groupes déjà formés
     (failure_cases/dupgroup_*/group_members.json) — ces membres ne sont
-    jamais des candidats individuels (cf. Survey/case_grouping.py, "le
+    jamais des candidats individuels (cf. Survey/autofix/case_grouping.py, "le
     group_id est traité comme un case ordinaire"). Un group_members.json
     absent/illisible pour un dossier dupgroup_* présent est ignoré pour ce
     groupe (aucun membre compté pour lui) plutôt que de bloquer la
     découverte des autres cases — jamais une exception ici."""
-    from Survey.case_grouping import GROUP_ID_PREFIX
+    from Survey.autofix.case_grouping import GROUP_ID_PREFIX
 
     members: "set[str]" = set()
     if not failure_cases_root.is_dir():
@@ -1171,14 +1171,14 @@ def discover_upstream_candidates(
 
 def _run_fleet_import() -> None:
     """--import-fleet uniquement (désactivé par défaut). Réutilise
-    Survey/fleet_case_import.py::import_available_cases telle quelle, avec
+    Survey/autofix/fleet_case_import.py::import_available_cases telle quelle, avec
     ses racines/budgets par défaut. Import lazy (dépendance boto3
     optionnelle, seulement nécessaire pour --import-fleet) : un échec de
     n'importe quelle nature (config R2 manquante, dépendance absente,
     réseau) est un avertissement journalisé, jamais un arrêt de
     l'invocation — cf. docstring du module."""
     try:
-        from Survey.fleet_case_import import FleetImportError, import_available_cases
+        from Survey.autofix.fleet_case_import import FleetImportError, import_available_cases
     except Exception as exc:  # dépendance optionnelle potentiellement absente
         log_info(_TAG, f"avertissement : import fleet indisponible (dépendance manquante ?) : {exc}")
         return
@@ -1584,7 +1584,7 @@ def _check_case_parallel_safety(
     except ParallelSafetyError as exc:
         return SafetyOutcome(
             checked=True, safe=False,
-            reason=f"contrôle de sécurité du parallélisme impossible (Survey/parallel_safety.py) : {exc}",
+            reason=f"contrôle de sécurité du parallélisme impossible (Survey/autofix/parallel_safety.py) : {exc}",
         )
 
     unsafe_for_candidate = [

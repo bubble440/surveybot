@@ -6,7 +6,7 @@ modifier, recalculer ni relancer aucune phase existante (2 à 16).
 
 Ne construit aucun mécanisme de merge automatique, aucune liste de
 catégories de confiance, ni aucune logique de décision — seulement la
-mesure. Toute la logique vit dans Survey/autofix_metrics.py ; ce script
+mesure. Toute la logique vit dans Survey/autofix/autofix_metrics.py ; ce script
 n'est qu'une façade CLI.
 
 Écrit un instantané horodaté (jamais un fichier écrasé, cet outil est fait
@@ -28,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.autofix_metrics import (  # noqa: E402
+from Survey.autofix.autofix_metrics import (  # noqa: E402
     AutofixMetricsError,
     write_autofix_metrics,
 )

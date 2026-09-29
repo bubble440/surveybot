@@ -3,19 +3,19 @@ check_human_review.py — Phase 13 (Partie 2), généralisé Phase 16. Interroge
 l'API Telegram (getUpdates) UNE SEULE FOIS par invocation, à partir d'un
 offset persisté sur disque partagé (créé à zéro s'il n'existe pas encore),
 pour retrouver et capturer les décisions humaines (Approuver/Rejeter, ou
-Confirmer le merge/Annuler) prises depuis Survey/human_review.py::
-send_review_request (Phase 13) OU Survey/merge_review.py::
+Confirmer le merge/Annuler) prises depuis Survey/autofix/human_review.py::
+send_review_request (Phase 13) OU Survey/autofix/merge_review.py::
 send_merge_confirmation_request (Phase 16).
 
 Telegram ne fournit qu'UN SEUL flux getUpdates par bot : deux pollers
 indépendants avec deux offsets indépendants se voleraient mutuellement les
-mises à jour dès qu'ils tournent tous les deux (cf. Survey/human_review.py,
+mises à jour dès qu'ils tournent tous les deux (cf. Survey/autofix/human_review.py,
 docstring du module) — cet outil reste donc l'unique poller, et route chaque
 callback_query, selon son préfixe de callback_data, vers human_reviews\\
 (Phase 13, comportement inchangé) OU merge_reviews\\ (Phase 16), avec le même
 offset persisté.
 
-Pour chaque callback_query : décode le case_id (même hachage que Survey/
+Pour chaque callback_query : décode le case_id (même hachage que Survey/autofix/
 human_review.py::_encode_case_ref, recherché symétriquement parmi les dossiers
 déjà connus sous le dossier du type concerné), retrouve le pending.json
 correspondant. Case inconnu (bouton pressé sur un message obsolète) :
@@ -29,7 +29,7 @@ durablement écrites ou explicitement ignorées — jamais avant, pour ne perdre
 aucune mise à jour en cas d'interruption en cours de traitement.
 
 Ne merge rien, ne commit rien, ne modifie aucun worktree autofix — capture
-uniquement la décision humaine. Toute la logique vit dans Survey/
+uniquement la décision humaine. Toute la logique vit dans Survey/autofix/
 human_review.py ; ce script n'est qu'une façade CLI.
 
 Usage :
@@ -45,7 +45,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.human_review import HumanReviewError, check_pending_reviews  # noqa: E402
+from Survey.autofix.human_review import HumanReviewError, check_pending_reviews  # noqa: E402
 
 
 def main(argv: "list[str] | None" = None) -> int:

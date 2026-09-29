@@ -19,7 +19,7 @@ decision="APPROVED" exactement — REJECTED, ou Phase 13 jamais déclenchée
 worktree.json (Phase 7), diagnosis.json (Phase 4), context_selection.json
 (Phase 5) doivent exister, être lisibles et cohérents en case_id — tous requis.
 confidence_score.json (Phase 12) est en pratique déjà garanti exister à ce
-stade : Phase 13 (Survey/human_review.py::check_review_eligibility) exige déjà
+stade : Phase 13 (Survey/autofix/human_review.py::check_review_eligibility) exige déjà
 confidence="HIGH" avant de pouvoir seulement notifier, donc avant que
 decision.json puisse exister — vérifié ici avec la même rigueur que les trois
 autres artefacts (même garantie structurelle), pas une précondition
@@ -27,7 +27,7 @@ supplémentaire inventée : son champ "confidence" est un des faits explicitemen
 attendus dans le brouillon.
 
 ── Étape 1 : fichiers réellement modifiés (réutilisation stricte) ────────────
-Survey/static_validator.py::_git_changed_paths / _filter_existing_python_files /
+Survey/autofix/static_validator.py::_git_changed_paths / _filter_existing_python_files /
 _resolve_package_root (Phase 8) sont importées et réutilisées TELLES QUELLES
 (jamais réimplémentées) pour déterminer, entre base_sha (worktree.json) et
 l'état courant du worktree, l'ensemble des fichiers .py réellement modifiés
@@ -86,7 +86,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from Survey.log_utils import log_debug, log_info
-from Survey.static_validator import (
+from Survey.autofix.static_validator import (
     StaticValidationError,
     _filter_existing_python_files,
     _git_changed_paths,
@@ -104,7 +104,7 @@ _MISSING_JUDGEMENT_MARKER = (
 
 # Composant de chemin unique, allowlist conservatrice — même garde-fou dupliqué
 # volontairement dans plusieurs modules indépendants de ce pipeline (cf.
-# Survey/autofix_worktree.py, Survey/human_review.py).
+# Survey/autofix/autofix_worktree.py, Survey/autofix/human_review.py).
 _CASE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
 _WINDOWS_RESERVED_NAMES = {
     "con", "prn", "aux", "nul",
@@ -312,7 +312,7 @@ class ChangedFile:
 
 def _detect_changed_files(worktree: dict, *, git_timeout_s: float) -> "tuple[list[ChangedFile], list[str]]":
     """Étapes 1+2 : fichiers réellement modifiés (réutilisation stricte de
-    Survey/static_validator.py) puis fonctions top-level ajoutées/modifiées/
+    Survey/autofix/static_validator.py) puis fonctions top-level ajoutées/modifiées/
     supprimées, par comparaison base_sha <-> worktree (git show + AST)."""
     warnings: "list[str]" = []
     worktree_path = Path(str(worktree.get("worktree_path") or ""))
@@ -326,7 +326,7 @@ def _detect_changed_files(worktree: dict, *, git_timeout_s: float) -> "tuple[lis
         changed_rel = _git_changed_paths(worktree_path, base_sha, timeout=git_timeout_s)
     except StaticValidationError as exc:
         raise BemProposalError(
-            "détection des fichiers modifiés (Survey/static_validator.py::_git_changed_paths, "
+            "détection des fichiers modifiés (Survey/autofix/static_validator.py::_git_changed_paths, "
             f"réutilisée telle quelle) échouée : {exc}"
         ) from exc
 
@@ -355,7 +355,7 @@ def _detect_changed_files(worktree: dict, *, git_timeout_s: float) -> "tuple[lis
         package_root = _resolve_package_root(worktree_path)
     except StaticValidationError as exc:
         raise BemProposalError(
-            "résolution de la racine de paquet (Survey/static_validator.py::_resolve_package_root, "
+            "résolution de la racine de paquet (Survey/autofix/static_validator.py::_resolve_package_root, "
             f"réutilisée telle quelle) échouée : {exc}"
         ) from exc
 

@@ -4,9 +4,9 @@ autofix", cf. Utils/AUTOFIX_CLONE_ORCHESTRATEUR.md). Derive depuis le code
 REELLEMENT en usage (jamais recopie a la main dans un script PowerShell separe,
 qui pourrait silencieusement se desynchroniser d'un futur renommage) :
 
-  - PROTECTED_BRANCHES (Survey/autofix_worktree.py) — jamais une branche cible
-    de merge automatique (Survey/merge_executor.py).
-  - LOCK_FILENAME / DEFAULT_LOCK_STALE_AFTER_S (Survey/autofix_orchestrator.py)
+  - PROTECTED_BRANCHES (Survey/autofix/autofix_worktree.py) — jamais une branche cible
+    de merge automatique (Survey/autofix/merge_executor.py).
+  - LOCK_FILENAME / DEFAULT_LOCK_STALE_AFTER_S (Survey/autofix/autofix_orchestrator.py)
     — nom et seuil de peremption du verrou d'exclusion de l'orchestrateur.
   - La liste des racines d'artefacts par defaut des facades tools/*.py : chaque
     argument --xxx-root d'un tools/*.py, avec sa valeur par defaut, obtenue par
@@ -78,10 +78,10 @@ def main(argv: "list[str] | None" = None) -> int:
     sys.path.insert(0, str(package_root))
 
     try:
-        from Survey.autofix_worktree import PROTECTED_BRANCHES
-        from Survey.autofix_orchestrator import DEFAULT_LOCK_STALE_AFTER_S, LOCK_FILENAME
+        from Survey.autofix.autofix_worktree import PROTECTED_BRANCHES
+        from Survey.autofix.autofix_orchestrator import DEFAULT_LOCK_STALE_AFTER_S, LOCK_FILENAME
     except Exception as exc:  # import isolé volontairement large : préflight distingue déjà un venv cassé ailleurs
-        print(json.dumps({"error": f"import Survey.autofix_worktree/autofix_orchestrator échoué : {exc!r}"}))
+        print(json.dumps({"error": f"import Survey.autofix.autofix_worktree/autofix_orchestrator échoué : {exc!r}"}))
         return 1
 
     result = {

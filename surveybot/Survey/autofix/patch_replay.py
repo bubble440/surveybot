@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """Phase 9 — replay automatique du bug après patch, dans le worktree autofix
-préparé par la Phase 7 (Survey/autofix_worktree.py), une fois la Phase 8
+préparé par la Phase 7 (Survey/autofix/autofix_worktree.py), une fois la Phase 8
 (validation statique) déjà passée pour ce case.
 
 Lecture seule sur les Phases 4/7/8 : ce module ne recalcule et ne réexécute
@@ -10,41 +10,41 @@ produits (diagnosis.json, worktree.json, validation_static.json) et refuse
 avant tout effet de bord si une condition manque. Il ne rouvre jamais
 manifest.json directement : le seul chemin par lequel ce fichier est lu est
 indirect, à l'intérieur des mécanismes de rejeu réutilisés tels quels
-(Survey/failure_replay.py::replay_failure_case, Survey/replay_browser.py::
+(Survey/autofix/failure_replay.py::replay_failure_case, Survey/autofix/replay_browser.py::
 execute_case_action), qui en ont besoin pour leur propre fonctionnement déjà
 existant — jamais une lecture indépendante par la logique propre à ce module
 (case_id/stage viennent de diagnosis.json).
 
 ── Conventions Phase 7/Phase 8 vérifiées avant d'écrire ce module ────────────
 Au moment de commencer ce patch, ni worktree.json (Phase 7) ni
-Survey/static_validator.py (Phase 8) n'existaient encore dans ce dépôt (vérifié :
+Survey/autofix/static_validator.py (Phase 8) n'existaient encore dans ce dépôt (vérifié :
 aucun fichier, aucun commit, aucune autre branche) — les deux ont été implémentés
 en parallèle par un autre chantier et fusionnés dans cette branche pendant
 l'écriture de ce module. Les schémas/CLI ci-dessous sont donc ceux réellement
 vérifiés dans le code fusionné, jamais devinés :
 
-  - worktree.json (Survey/autofix_worktree.py::write_worktree_manifest, Phase 7) :
+  - worktree.json (Survey/autofix/autofix_worktree.py::write_worktree_manifest, Phase 7) :
     out_root/<case_id>/worktree.json — {schema_version, case_id, created_at,
     branch, worktree_path, base_sha, source_branch, prompt_path, warnings}.
     Ce module lit case_id/branch/worktree_path/base_sha, exactement les champs
     déjà présents.
-  - validation_static.json (Survey/static_validator.py::write_static_validation,
+  - validation_static.json (Survey/autofix/static_validator.py::write_static_validation,
     Phase 8) : out_root/<case_id>/validation_static.json — {schema_version,
     case_id, created_at, branch, base_sha, changed_files, checks, verdict
     ("ACCEPTED"|"REJECTED"), reasons, warnings}. Ce module exige verdict=
     "ACCEPTED", exactement la valeur positive déjà produite.
-  - Convention CLI reprise de Survey/static_validator.py::validate_patch_static
+  - Convention CLI reprise de Survey/autofix/static_validator.py::validate_patch_static
     (façade tools/validate_patch_static.py) : le CHEMIN COMPLET vers
     worktree.json est pris tel quel en argument (pas un dossier qui le
     contiendrait) — Phase 8 lit ainsi l'artefact de Phase 7. Ce module reprend
     exactement la même convention pour ses propres arguments worktree.json ET
     validation_static.json (deux artefacts à fichier unique, comme celui que
     lit déjà Phase 8), tout en gardant diagnosis_dir comme un DOSSIER (comme
-    Survey/autofix_worktree.py::check_eligibility le fait déjà pour ce même
+    Survey/autofix/autofix_worktree.py::check_eligibility le fait déjà pour ce même
     artefact Phase 4).
 
 ── Résolution de racine de paquet pour exécuter le code du worktree ──────────
-Vérifié avant le point 2 de la demande : Survey/static_validator.py::
+Vérifié avant le point 2 de la demande : Survey/autofix/static_validator.py::
 _resolve_package_root(repo_root) EXISTE et résout déjà ce même besoin pour la
 Phase 8 (Survey/ et tools/ comme frères directs de repo_root ou d'un de ses
 sous-dossiers directs, jamais une structure supposée nommée en dur) — réutilisée
@@ -57,7 +57,7 @@ vérifier que Phase 8 existait déjà.
 
 Racine résolue exécutée dans un SOUS-PROCESSUS Python dédié, jamais dans ce
 process-ci. Raison, non une préférence : ce process a déjà importé
-Survey.replay_browser/Survey.failure_replay/Survey.static_validator (pour leurs
+Survey.autofix.replay_browser/Survey.autofix.failure_replay/Survey.autofix.static_validator (pour leurs
 constantes/fonctions) depuis le dépôt principal ; sys.modules les garde en
 cache, donc un simple sys.path.insert() ici referait sortir du cache les
 modules du dépôt principal, jamais ceux du worktree patché — un sous-processus
@@ -65,17 +65,17 @@ neuf est la seule façon fiable de garantir que le code réellement exécuté es
 celui du worktree, sans deviner un mécanisme d'invalidation de cache fragile.
 
 ── Mécanisme de rejeu réutilisé tel quel, jamais réimplémenté ────────────────
-  stage="extraction" : Survey.failure_replay.replay_failure_case(case_dir) —
+  stage="extraction" : Survey.autofix.failure_replay.replay_failure_case(case_dir) —
     même fonction, même vocabulaire REPRODUIT/NON_REPRODUIT/DIFFERENT/
     NON_REJOUABLE que le rejeu passif déjà utilisé pour le signal avant-patch.
-  stage="action"      : exactement la même séquence que Survey/
+  stage="action"      : exactement la même séquence que Survey/autofix/
     failure_diagnosis.py::_attempt_real_dispatch_replay (IsolatedReplayBrowser
     -> load_case_document(pre_action=True) -> extract_case_blocks ->
-    execute_case_action), toutes fonctions publiques de Survey/
+    execute_case_action), toutes fonctions publiques de Survey/autofix/
     replay_browser.py, non modifiées, appelées avec les mêmes arguments.
 
 ── Traduction du verdict après patch en validation/rejet du patch ───────────
-Vocabulaire réutilisé tel quel (Survey.replay_browser.OUTCOME_*), jamais une
+Vocabulaire réutilisé tel quel (Survey.autofix.replay_browser.OUTCOME_*), jamais une
 seconde échelle de confiance : CORRECTIF_CONFIRME / BUG_PERSISTANT /
 NON_CONCLUANT. Pour stage="action", ce vocabulaire est déjà calculé par
 execute_case_action() lui-même (_action_outcome, non modifié) — repris tel
@@ -106,15 +106,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
-from Survey.failure_replay import VERDICT_NON_REPRODUIT, VERDICT_REPRODUIT
+from Survey.autofix.failure_replay import VERDICT_NON_REPRODUIT, VERDICT_REPRODUIT
 from Survey.log_utils import log_debug, log_info
-from Survey.replay_browser import (
+from Survey.autofix.replay_browser import (
     OUTCOME_BUG_PERSISTS,
     OUTCOME_FIX_CONFIRMED,
     OUTCOME_INCONCLUSIVE,
     _DEFAULT_DISPATCH_BUDGET_S,
 )
-from Survey.static_validator import StaticValidationError, _resolve_package_root
+from Survey.autofix.static_validator import StaticValidationError, _resolve_package_root
 
 _TAG = "[PATCH_REPLAY]"
 SCHEMA_VERSION = "1.0"
@@ -139,7 +139,7 @@ worktree_root, case_dir = sys.argv[1], sys.argv[2]
 sys.path.insert(0, worktree_root)
 
 try:
-    from Survey.failure_replay import replay_failure_case
+    from Survey.autofix.failure_replay import replay_failure_case
     result = replay_failure_case(case_dir).as_dict()
 except Exception as exc:
     result = {"verdict": None, "error": f"{type(exc).__name__}: {exc}"}
@@ -155,7 +155,7 @@ worktree_root, case_dir, budget_s = sys.argv[1], sys.argv[2], float(sys.argv[3])
 sys.path.insert(0, worktree_root)
 
 try:
-    from Survey.replay_browser import (
+    from Survey.autofix.replay_browser import (
         IsolatedReplayBrowser,
         ReplayBrowserError,
         execute_case_action,
@@ -223,13 +223,13 @@ def check_preconditions(
     validation_static_path: "str | Path",
 ) -> PreconditionResult:
     """Vérifie toutes les conditions ensemble ; ne s'arrête jamais à la première
-    raison rencontrée — la liste complète est retournée, comme Survey/
+    raison rencontrée — la liste complète est retournée, comme Survey/autofix/
     autofix_worktree.py::check_eligibility (Phase 7), jamais un résultat partiel.
     Lecture seule : ne recalcule ni la Phase 4, ni la Phase 7, ni la Phase 8.
 
     worktree_manifest_path/validation_static_path sont les CHEMINS COMPLETS
     vers worktree.json/validation_static.json (pas un dossier qui les
-    contiendrait) — même convention que Survey/static_validator.py::
+    contiendrait) — même convention que Survey/autofix/static_validator.py::
     validate_patch_static (Phase 8) pour son propre argument worktree.json."""
     failure_case_dir = Path(failure_case_dir)
     diagnosis_dir = Path(diagnosis_dir)
@@ -325,7 +325,7 @@ def check_preconditions(
 
 
 def _resolve_worktree_package_root(worktree_path: Path) -> Tuple[Optional[Path], Optional[str]]:
-    """Réutilise TELLE QUELLE Survey.static_validator._resolve_package_root
+    """Réutilise TELLE QUELLE Survey.autofix.static_validator._resolve_package_root
     (Phase 8, non modifiée) — même besoin exact (localiser Survey/ et tools/
     comme frères directs de worktree_path ou d'un sous-dossier direct), déjà
     résolu par cette phase sur ce même worktree_path. Jamais une seconde
@@ -547,7 +547,7 @@ def write_patch_replay(
     Ne modifie jamais failure_case_dir/diagnosis_dir/worktree_manifest_path/
     validation_static_path. Lève PatchReplayExistsError si la sortie existe déjà
     et force=False — jamais d'écrasement silencieux (même convention que
-    Survey/replayability_classifier.py)."""
+    Survey/autofix/replayability_classifier.py)."""
     failure_case_dir = Path(failure_case_dir)
     out_root = Path(out_root)
     out_dir = out_root / failure_case_dir.name

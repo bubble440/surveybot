@@ -6,8 +6,8 @@ signal déjà disponible ne permet de choisir avec une confiance suffisante.
 
 Outil de classification en lecture seule : ne recalcule ni ne réexécute rien (aucun
 replay, aucun dispatcher, aucun navigateur) — lit exclusivement diagnosis.json déjà
-produit par Survey/failure_diagnosis.py. Toute la logique vit dans
-Survey/replayability_classifier.py ; ce script n'est qu'une façade CLI.
+produit par Survey/autofix/failure_diagnosis.py. Toute la logique vit dans
+Survey/autofix/replayability_classifier.py ; ce script n'est qu'une façade CLI.
 
 Usage :
     python tools\\classify_replayability.py diagnoses\\<case_id>
@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.replayability_classifier import ReplayabilityError, write_classification  # noqa: E402
+from Survey.autofix.replayability_classifier import ReplayabilityError, write_classification  # noqa: E402
 
 
 def main(argv: "list[str] | None" = None) -> int:

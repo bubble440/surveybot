@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """Phase 8 — validation statique automatique d'un patch autofix déjà préparé
-par la Phase 7 (Survey/autofix_worktree.py) : compilation, import isolé, lint
+par la Phase 7 (Survey/autofix/autofix_worktree.py) : compilation, import isolé, lint
 minimal (erreurs réelles uniquement, via Ruff) et tests unitaires existants
 associés aux fichiers modifiés, si une convention fichier-source ->
 fichier-de-test existe déjà dans ce dépôt. Avant même de tester le
@@ -55,11 +55,11 @@ supprimé par le patch n'a rien à compiler/importer/linter).
 4. Tests unitaires déjà associés à chaque fichier modifié, SI une convention
    de nommage existe déjà dans ce dépôt. Investigation menée avant d'écrire
    ce module, documentée ici pour traçabilité (même principe que la Source 2
-   de Survey/context_selector.py) : ce dépôt ne contient aujourd'hui aucune
+   de Survey/autofix/context_selector.py) : ce dépôt ne contient aujourd'hui aucune
    suite de tests versionnée, aucun `tests/`, aucun `conftest.py`, aucune
    dépendance pytest/ruff dans requirements.txt — pytest n'est pas installé
-   dans l'interpréteur qui exécute cet outil (vérifié). `test.py`/
-   `test3c3.py`/`test_diag.py`, à la racine du projet, sont des scripts
+   dans l'interpréteur qui exécute cet outil (vérifié). `tools/test.py`/
+   `tools/test3c3.py` et `test_diag.py` à la racine sont des scripts
    manuels pilotant un vrai navigateur (`input()` bloquant, profils Chrome
    dédiés) — jamais des tests unitaires, aucun des trois ne suit ni n'établit
    de convention de nommage fichier-source -> fichier-de-test. Le détecteur
@@ -410,7 +410,7 @@ def _check_tests(files: "list[Path]", *, package_root: Path, timeout: float) -> 
                 "aucune convention de nommage fichier-source -> fichier-de-test trouvée dans ce "
                 "dépôt pour les fichiers modifiés (recherché : tests/test_<nom>.py, "
                 "test_<nom>.py/<nom>_test.py à côté de la source, arbre tests/<même dossier> "
-                "miroir) — absence de test non pénalisante en soi, cf. Survey/static_validator.py"
+                "miroir) — absence de test non pénalisante en soi, cf. Survey/autofix/static_validator.py"
             ),
             "executed": [], "skipped_no_test": skipped, "timed_out": False, "error": None,
         }

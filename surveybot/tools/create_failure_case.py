@@ -5,7 +5,7 @@ create_failure_case.py — Convertit un ou plusieurs snapshots d'observabilité
 Outil autonome de transformation, en lecture seule sur le pipeline bot : ne modifie
 ni ne déplace jamais les snapshots source, n'exécute aucun diagnostic, aucun replay,
 aucune réparation. Toute la logique d'extraction vit dans
-Survey/failure_case_builder.py ; ce script n'est qu'une façade CLI.
+Survey/autofix/failure_case_builder.py ; ce script n'est qu'une façade CLI.
 
 Usage :
     python tools\\create_failure_case.py <snapshot_dir>
@@ -24,7 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.failure_case_builder import FailureCaseError, build_failure_case  # noqa: E402
+from Survey.autofix.failure_case_builder import FailureCaseError, build_failure_case  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:

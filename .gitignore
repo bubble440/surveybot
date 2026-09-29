@@ -54,7 +54,7 @@ replayability/
 # --- Artefacts du pipeline autofix (Phases 2 a 17 et orchestrateur) ---------
 # Tous ces dossiers sont crees par les outils sous le repertoire de travail
 # (surveybot/) : s'ils ne sont pas ignores, le merge automatique
-# (Survey/merge_executor.py) refuse de s'executer, car il exige un depot
+# (Survey/autofix/merge_executor.py) refuse de s'executer, car il exige un depot
 # principal ENTIEREMENT propre, fichiers non suivis inclus. Seuls
 # failure_cases/, diagnoses/, diag_test_cases/ et replayability/ l'etaient deja.
 context_selections/

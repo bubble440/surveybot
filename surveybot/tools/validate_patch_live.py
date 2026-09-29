@@ -1,6 +1,6 @@
 """
 validate_patch_live.py — Phase 10. Test live attach contrôlé d'un patch
-NON_CONCLUANT après la Phase 9 (Survey/patch_replay.py), sur une VRAIE page déjà
+NON_CONCLUANT après la Phase 9 (Survey/autofix/patch_replay.py), sur une VRAIE page déjà
 ouverte par un opérateur humain (Chrome lancé avec --remote-debugging-port,
 navigué manuellement dans l'état de l'incident) — potentiellement une vraie
 session de répondant.
@@ -8,7 +8,7 @@ session de répondant.
 GARDE-FOU DE SÉCURITÉ, NON NÉGOCIABLE : $env:AUTOFIX_LIVE_VALIDATE doit valoir
 EXACTEMENT "1". Vérifié EN PREMIER ci-dessous, avant tout parsing d'argument
 (avant même d'importer argparse), avant toute tentative de connexion CDP —
-aucun argument CLI ne peut jamais contourner ce contrôle. Voir Survey/
+aucun argument CLI ne peut jamais contourner ce contrôle. Voir Survey/autofix/
 live_validator.py pour le détail complet (garde-fou revérifié indépendamment
 par check_preconditions(), stratégie de connexion, budgets, vocabulaire).
 
@@ -18,7 +18,7 @@ distant ouvert. Ne s'exécute que si patch_replay.json (Phase 9) existe pour ce
 case avec refused=False et outcome="NON_CONCLUANT" exactement — sinon refus
 contrôlé avant tout effet de bord. Lit aussi, en lecture seule, worktree.json
 (Phase 7) et diagnosis.json (Phase 4, pour le stage). Toute la logique vit dans
-Survey/live_validator.py ; ce script n'est qu'une façade CLI.
+Survey/autofix/live_validator.py ; ce script n'est qu'une façade CLI.
 
 Une seule tentative par invocation : jamais de boucle interne, jamais un
 deuxième essai automatique. Pour retenter après une nouvelle correction,
@@ -58,7 +58,7 @@ def main(argv: "list[str] | None" = None) -> int:
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-    from Survey.live_validator import (  # noqa: E402
+    from Survey.autofix.live_validator import (  # noqa: E402
         DEFAULT_BUDGET_S,
         LiveValidationError,
         write_live_validation,

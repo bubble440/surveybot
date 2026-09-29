@@ -13,7 +13,7 @@ booléen silencieux, une raison est obligatoire.
 
 Si --diagnosis-dir ET --context-selection-dir sont fournis, un filet de
 sécurité automatique se déclenche avant de bloquer sur "BEM non modifié" :
-tente de produire un brouillon mécanique (Survey/bem_proposal.py, Phase 14,
+tente de produire un brouillon mécanique (Survey/autofix/bem_proposal.py, Phase 14,
 non modifiée) et, si possible, l'ajoute lui-même en fin de
 Survey/BOT_EVOLUTION_MEMORY.md dans le worktree, précédé d'un marqueur
 explicite ("entrée auto-générée"), avant le commit. Sans ces deux options,
@@ -22,7 +22,7 @@ comportement strictement inchangé.
 Refuse explicitement si un commit portant déjà la référence de ce case_id
 existe dans le log Git de la branche (jamais un commit en double). N'effectue
 jamais de push ni de merge ; ne touche jamais à une branche protégée
-(PROTECTED_BRANCHES). Toute la logique vit dans Survey/patch_commit.py ; ce
+(PROTECTED_BRANCHES). Toute la logique vit dans Survey/autofix/patch_commit.py ; ce
 script n'est qu'une façade CLI.
 
 Usage :
@@ -41,7 +41,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.patch_commit import (  # noqa: E402
+from Survey.autofix.patch_commit import (  # noqa: E402
     DEFAULT_GIT_TIMEOUT_S,
     PatchCommitError,
     commit_patch,

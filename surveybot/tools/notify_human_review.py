@@ -12,7 +12,7 @@ un accusé sous human_reviews\\<case_id>\\pending.json (chat_id, message_id,
 case_id, horodatage).
 
 Outil en lecture seule sur les Phases 4/12 : ne recalcule rien. Toute la
-logique vit dans Survey/human_review.py ; ce script n'est qu'une façade CLI.
+logique vit dans Survey/autofix/human_review.py ; ce script n'est qu'une façade CLI.
 Ne déclenche jamais de merge, de commit, ni de modification d'un worktree
 autofix.
 
@@ -30,7 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.human_review import HumanReviewError, send_review_request  # noqa: E402
+from Survey.autofix.human_review import HumanReviewError, send_review_request  # noqa: E402
 
 
 def main(argv: "list[str] | None" = None) -> int:

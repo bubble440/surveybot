@@ -1,7 +1,7 @@
 """
 check_function_overlap.py — Partie B du contrôle de sécurité du parallélisme :
 APRÈS que Codex a produit ses patchs, AVANT le merge, compare au niveau
-FONCTION au moins deux worktree.json (Phase 7, Survey/autofix_worktree.py)
+FONCTION au moins deux worktree.json (Phase 7, Survey/autofix/autofix_worktree.py)
 pour détecter les fonctions réellement modifiées par plusieurs worktrees à la
 fois — les seuls vrais conflits de fusion à ce niveau.
 
@@ -9,9 +9,9 @@ Purement en lecture seule : n'applique, ne merge, ne modifie aucun worktree ni
 aucune branche. N'écrit que son propre rapport horodaté. Ne décide jamais
 d'une réconciliation — seulement un rapport pour l'opérateur, qui réconcilie
 lui-même (manuellement, ou via un prompt Codex de réconciliation ciblé, hors
-périmètre de cet outil). Toute la logique vit dans Survey/parallel_safety.py
-(réutilisation stricte de Survey/static_validator.py et de la technique
-AST/hash de Survey/bem_proposal.py, aucune réimplémentation) ; ce script n'est
+périmètre de cet outil). Toute la logique vit dans Survey/autofix/parallel_safety.py
+(réutilisation stricte de Survey/autofix/static_validator.py et de la technique
+AST/hash de Survey/autofix/bem_proposal.py, aucune réimplémentation) ; ce script n'est
 qu'une façade CLI.
 
 Un fichier modifié par plusieurs worktrees mais sans fonction en commun n'est
@@ -33,7 +33,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.parallel_safety import (  # noqa: E402
+from Survey.autofix.parallel_safety import (  # noqa: E402
     DEFAULT_GIT_TIMEOUT_S,
     ParallelSafetyError,
     write_pre_merge_function_overlap_check,

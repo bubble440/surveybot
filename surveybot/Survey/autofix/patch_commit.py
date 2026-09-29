@@ -15,14 +15,14 @@ confidence_score.json (Phase 12) avec confidence="HIGH" exactement ; decision.js
 worktree.json (Phase 7) désignant un worktree Git réel (vérifié via
 `git rev-parse --is-inside-work-tree`, jamais une simple présence de dossier) ;
 case_id cohérent entre les trois artefacts et les trois dossiers fournis ;
-branch (worktree.json) hors de PROTECTED_BRANCHES (Survey/autofix_worktree.py,
+branch (worktree.json) hors de PROTECTED_BRANCHES (Survey/autofix/autofix_worktree.py,
 réutilisée telle quelle, jamais redéfinie) et effectivement la branche
 checked-out du worktree (garde défensive contre un worktree manipulé
 manuellement entre la Phase 7 et cette phase).
 
 En plus, "BEM mise à jour" est vérifiée par un FAIT observable, jamais une
 déclaration : Survey/BOT_EVOLUTION_MEMORY.md doit figurer parmi les fichiers
-réellement modifiés du worktree depuis base_sha — réutilise Survey/
+réellement modifiés du worktree depuis base_sha — réutilise Survey/autofix/
 static_validator.py::_git_changed_paths / _resolve_package_root (Phase 8,
 non modifiées), jamais une redétection indépendante. Un flag dédié
 (skip_bem_check_reason) exige une raison explicite non vide pour contourner
@@ -31,18 +31,18 @@ légitimes (ex. correctif d'infrastructure de test d'autofix) n'ont pas
 vocation à générer d'entrée BEM.
 
 ── Filet de sécurité automatique (additif, avant de bloquer) ─────────────────
-Le gabarit Phase 6 (Survey/prompt_generator.py) demande désormais à Codex
+Le gabarit Phase 6 (Survey/autofix/prompt_generator.py) demande désormais à Codex
 d'écrire lui-même l'entrée BEM en fin de patch. Si malgré cela le fait Git
 ci-dessus reste négatif (BEM non modifié) ET que diagnosis_dir/
 context_selection_dir sont fournis à cet appel (nouveaux paramètres optionnels
 — absents, comportement strictement inchangé, cf. non-régression) :
-Survey/bem_proposal.py::write_bem_proposal (Phase 14, non modifiée, ni
+Survey/autofix/bem_proposal.py::write_bem_proposal (Phase 14, non modifiée, ni
 importée ni appelée autrement qu'elle ne l'est déjà par sa propre façade) est
 tentée pour ce case. Si elle produit un brouillon, celui-ci est ajouté tel
 quel en fin de Survey/BOT_EVOLUTION_MEMORY.md DANS LE WORKTREE, AVANT le
 commit — précédé d'un marqueur explicite non ambigu
 (AUTO_GENERATED_BEM_MARKER) inséré comme première ligne du CORPS de l'entrée
-(juste après sa ligne d'en-tête "### ...", jamais avant : Survey/
+(juste après sa ligne d'en-tête "### ...", jamais avant : Survey/autofix/
 failure_diagnosis.py découpe ce fichier sur les lignes "### ..." pour sa
 recherche de signaux, Phase 4 — un marqueur placé avant la ligne d'en-tête
 serait rattaché par erreur à l'entrée précédente). Le fait Git est alors
@@ -89,10 +89,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from Survey.autofix_worktree import PROTECTED_BRANCHES
-from Survey.bem_proposal import BemProposalError, write_bem_proposal
+from Survey.autofix.autofix_worktree import PROTECTED_BRANCHES
+from Survey.autofix.bem_proposal import BemProposalError, write_bem_proposal
 from Survey.log_utils import log_debug, log_info
-from Survey.static_validator import (
+from Survey.autofix.static_validator import (
     StaticValidationError,
     _git_changed_paths,
     _resolve_package_root,
@@ -112,14 +112,14 @@ _MAX_SUBJECT_NAMES = 6
 # filet de sécurité ci-dessous (patterns couverts/exclus jamais validés par
 # un jugement humain ou par Codex lui-même dans ce cas). Inséré comme première
 # ligne du CORPS de l'entrée (cf. docstring du module) pour rester associé à
-# la bonne entrée lors du découpage par Survey/failure_diagnosis.py.
+# la bonne entrée lors du découpage par Survey/autofix/failure_diagnosis.py.
 AUTO_GENERATED_BEM_MARKER = (
     "[Entrée auto-générée — Codex n'a pas rédigé cette entrée, patterns couverts/exclus non validés]"
 )
 
 # Composant de chemin unique, allowlist conservatrice — même garde-fou dupliqué
 # volontairement dans plusieurs modules indépendants de ce pipeline (cf.
-# Survey/autofix_worktree.py, Survey/human_review.py, Survey/bem_proposal.py).
+# Survey/autofix/autofix_worktree.py, Survey/autofix/human_review.py, Survey/autofix/bem_proposal.py).
 _CASE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
 _WINDOWS_RESERVED_NAMES = {
     "con", "prn", "aux", "nul",
@@ -286,7 +286,7 @@ def check_commit_eligibility(
 # ─────────────────────────── BEM / duplicate / sujet ─────────────────────────
 
 def _check_bem_updated(worktree_path: Path, base_sha: str, *, timeout: float) -> "tuple[bool, list[str]]":
-    """FAIT observable, jamais une déclaration : réutilise Survey/
+    """FAIT observable, jamais une déclaration : réutilise Survey/autofix/
     static_validator.py::_git_changed_paths / _resolve_package_root (Phase 8,
     non modifiées) pour vérifier si Survey/BOT_EVOLUTION_MEMORY.md figure
     parmi les fichiers réellement modifiés depuis base_sha."""
@@ -294,7 +294,7 @@ def _check_bem_updated(worktree_path: Path, base_sha: str, *, timeout: float) ->
         changed_rel = _git_changed_paths(worktree_path, base_sha, timeout=timeout)
     except StaticValidationError as exc:
         raise PatchCommitError(
-            "détection des fichiers modifiés (Survey/static_validator.py::_git_changed_paths, "
+            "détection des fichiers modifiés (Survey/autofix/static_validator.py::_git_changed_paths, "
             f"réutilisée telle quelle) échouée : {exc}"
         ) from exc
 
@@ -302,7 +302,7 @@ def _check_bem_updated(worktree_path: Path, base_sha: str, *, timeout: float) ->
         package_root = _resolve_package_root(worktree_path)
     except StaticValidationError as exc:
         raise PatchCommitError(
-            f"résolution de la racine de paquet (Survey/static_validator.py::_resolve_package_root, "
+            f"résolution de la racine de paquet (Survey/autofix/static_validator.py::_resolve_package_root, "
             f"réutilisée telle quelle) échouée : {exc}"
         ) from exc
 
@@ -320,14 +320,14 @@ def _append_auto_generated_bem_entry(worktree_path: Path, draft_markdown: str) -
     '---' déjà utilisé entre les entrées existantes de ce fichier, avec
     AUTO_GENERATED_BEM_MARKER inséré comme première ligne du corps (juste
     après la ligne d'en-tête '### ...' du brouillon — jamais avant, cf.
-    docstring du module). Réutilise Survey/static_validator.py::
+    docstring du module). Réutilise Survey/autofix/static_validator.py::
     _resolve_package_root (Phase 8, non modifiée) pour localiser le fichier
     réel dans CE worktree, jamais dans le dépôt principal."""
     try:
         package_root = _resolve_package_root(worktree_path)
     except StaticValidationError as exc:
         raise PatchCommitError(
-            "résolution de la racine de paquet (Survey/static_validator.py::_resolve_package_root, "
+            "résolution de la racine de paquet (Survey/autofix/static_validator.py::_resolve_package_root, "
             f"réutilisée telle quelle) échouée : {exc}"
         ) from exc
 
@@ -341,7 +341,7 @@ def _append_auto_generated_bem_entry(worktree_path: Path, draft_markdown: str) -
     lines = draft_markdown.splitlines()
     if not lines or not lines[0].startswith("### "):
         raise PatchCommitError(
-            "brouillon BEM (Survey/bem_proposal.py, Phase 14) inattendu : ne commence pas par une "
+            "brouillon BEM (Survey/autofix/bem_proposal.py, Phase 14) inattendu : ne commence pas par une "
             "ligne d'en-tête '### ...' — insertion refusée plutôt que devinée"
         )
     spliced = "\n".join([lines[0], AUTO_GENERATED_BEM_MARKER, *lines[1:]])
@@ -469,7 +469,7 @@ def commit_patch(
     (défaut), le comportement du contrôle BEM est strictement inchangé (refus
     immédiat si BOT_EVOLUTION_MEMORY.md n'est pas parmi les fichiers modifiés).
     Fournis tous les deux, ils activent le filet de sécurité automatique
-    (Survey/bem_proposal.py::write_bem_proposal, Phase 14, non modifiée) —
+    (Survey/autofix/bem_proposal.py::write_bem_proposal, Phase 14, non modifiée) —
     cf. docstring du module."""
     confidence_score_dir = Path(confidence_score_dir)
     human_review_dir = Path(human_review_dir)

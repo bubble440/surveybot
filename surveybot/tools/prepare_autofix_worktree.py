@@ -7,7 +7,7 @@ amont d'un lancement manuel de Codex sur le prompt.txt déjà généré.
 Ne lance aucun agent de coding, n'applique aucun patch, ne commit rien, ne
 push rien, ne merge rien. Lecture seule sur les Phases 2-6 : lit uniquement
 manifest.json, diagnosis.json et prompt.txt déjà produits, ne les recalcule
-jamais. Toute la logique vit dans Survey/autofix_worktree.py ; ce script n'est
+jamais. Toute la logique vit dans Survey/autofix/autofix_worktree.py ; ce script n'est
 qu'une façade CLI.
 
 Éligibilité (toutes les conditions ensemble, avant tout effet de bord Git) :
@@ -43,7 +43,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.autofix_worktree import (  # noqa: E402
+from Survey.autofix.autofix_worktree import (  # noqa: E402
     AutofixWorktreeError,
     prepare_autofix_worktree,
 )

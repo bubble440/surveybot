@@ -25,7 +25,7 @@ réseau et ne sont donc pas concernées.
 
 ── Chargement du document principal d'un failure case (3C.2, première brique) ─
 `load_case_document()` charge dans une page le seul HTML principal déjà figé du
-case, choisi par la logique existante de Survey/failure_replay.py
+case, choisi par la logique existante de Survey/autofix/failure_replay.py
 (`_pick_dom_file`, une seule source de vérité pour « quel fichier selon le
 stage », jamais dupliquée ici). Le document est servi depuis la mémoire sous le
 hostname `provider_domain` du manifest : c'est la seule réponse que le
@@ -173,7 +173,7 @@ SANS pilote live (`driver=None`), le paramètre déjà existant
 `captured_option_states` de `action_validator.validate_actions` (non modifié) —
 les mêmes faits (`runtime_state.json`, capturés avant cette tentative de rejeu)
 et le même mécanisme déjà exploités sans navigateur par le rejeu statique passif
-(Survey/failure_replay.py). Résultat exposé dans `ActionExecution.trace_replay`,
+(Survey/autofix/failure_replay.py). Résultat exposé dans `ActionExecution.trace_replay`,
 un champ distinct qui n'existe QUE pour un TIMEOUT (toujours `None` pour
 SUCCESS/FAILURE/ERROR/NOT_EXECUTED/NOT_APPLICABLE) : jamais confondu avec
 `validation`/`validation_comparison` (réservés au verdict réel SUCCESS/FAILURE)
@@ -197,8 +197,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlsplit, urlunsplit
 
-from Survey.failure_case_builder import _failure_types as _report_failure_types
-from Survey.failure_replay import (
+from Survey.autofix.failure_case_builder import _failure_types as _report_failure_types
+from Survey.autofix.failure_replay import (
     VERDICT_DIFFERENT,
     VERDICT_NON_REPRODUIT,
     VERDICT_REPRODUIT,
@@ -888,7 +888,7 @@ def _trace_replay_fallback(
     fermée ou non —, mais le case porte déjà, capturés avant cette tentative de
     rejeu, les mêmes faits
     (`runtime_state.json`) que ceux déjà utilisés par le rejeu statique passif
-    (Survey/failure_replay.py) pour confirmer un résultat sans pilote live — via
+    (Survey/autofix/failure_replay.py) pour confirmer un résultat sans pilote live — via
     le même paramètre déjà existant `captured_option_states` de
     `action_validator.validate_actions` (non modifié, appelé ici avec `driver=None`,
     jamais une nouvelle lecture). Ne rejoue jamais le dispatcher : `dispatcher_success`

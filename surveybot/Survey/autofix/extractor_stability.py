@@ -68,9 +68,9 @@ un diff au niveau ligne.
 ── Rapprochement fichier registre <-> module diagnosis.json ─────────────────
 Les clés du registre sont relatives à Survey/ (ex. "dom_analyzer.py", ou
 "../preselection/x.py" pour un module hors Survey/) ; modules_likely_involved
-(Survey/failure_diagnosis.py, chemins extraits de BOT_EVOLUTION_MEMORY.md)
+(Survey/autofix/failure_diagnosis.py, chemins extraits de BOT_EVOLUTION_MEMORY.md)
 porte parfois le préfixe "Survey/" (ex. "Survey/dom_analyzer.py") — les deux
-formes coexistent réellement dans BEM (vérifié en lisant Survey/
+formes coexistent réellement dans BEM (vérifié en lisant Survey/autofix/
 failure_diagnosis.py::_files_from_entry). _normalize_module_path retire les
 préfixes "./"/"../"/"Survey/" des deux côtés avant comparaison — stratégie
 unique et déterministe, jamais une comparaison floue.
@@ -78,7 +78,7 @@ unique et déterministe, jamais une comparaison floue.
 ── RÈGLES STRICTES respectées ─────────────────────────────────────────────────
 Purement en lecture seule (aucune commande Git mutante, jamais un `git show`
 en dehors d'une lecture de contenu). Jamais un pourcentage de réussite
-(aucune source ne compte les extractions réussies, cf. Survey/
+(aucune source ne compte les extractions réussies, cf. Survey/autofix/
 autofix_metrics.py pour cette même limite déjà actée en Phase 17/19) —
 seulement des faits comptables et datés. Jamais un chiffre deviné :
 history_exploitable=false et une raison explicite remplacent toute valeur
@@ -86,12 +86,12 @@ qui aurait nécessité une supposition. Budget de temps explicite
 (git_timeout_s, une seule valeur partagée par toutes les commandes Git de ce
 module) sur chaque commande. Patch minimal : Survey/extractor_integrity.py
 (REGISTRY_FILENAME/_load_registry) réutilisé tel quel, jamais réimplémenté ni
-modifié ; Survey/failure_diagnosis.py non importé (diagnosis.json relu
+modifié ; Survey/autofix/failure_diagnosis.py non importé (diagnosis.json relu
 directement, en JSON brut — aucune dépendance sur ses fonctions internes,
 qui ne sont pas conçues pour cet usage).
 
 ── Sortie ──────────────────────────────────────────────────────────────────
-Instantané horodaté (même convention que Survey/autofix_metrics.py — jamais
+Instantané horodaté (même convention que Survey/autofix/autofix_metrics.py — jamais
 un fichier unique écrasé) sous out_root/<horodatage>/stability_report.json :
 une entrée par fonction du registre actuel, triée par incidents_since_stable
 décroissant (les fonctions les plus instables depuis leur dernière
@@ -114,7 +114,7 @@ SCHEMA_VERSION = "1.0"
 
 DEFAULT_GIT_TIMEOUT_S = 15.0
 
-_SURVEY_DIR = Path(__file__).resolve().parent
+_SURVEY_DIR = Path(__file__).resolve().parent.parent
 _REGISTRY_PATH = _SURVEY_DIR / REGISTRY_FILENAME
 
 _FIELD_SEP = "\x1f"
@@ -353,7 +353,7 @@ def _key_stability(
 def _load_diagnosis_facts(diagnoses_root: Path) -> "tuple[list[dict], list[str]]":
     """[{"case_id", "created_at": datetime aware, "modules": set(normalisé)}]
     à partir de diagnoses/<case_id>/diagnosis.json (Phase 4, relu en JSON brut
-    — aucune dépendance sur Survey/failure_diagnosis.py). diagnoses_root
+    — aucune dépendance sur Survey/autofix/failure_diagnosis.py). diagnoses_root
     absent/vide -> liste vide, jamais une erreur (Phase 4 peut n'avoir jamais
     tourné dans cet environnement) ; un case illisible/invalide/sans
     created_at exploitable est consigné en avertissement et ignoré, jamais
@@ -496,11 +496,11 @@ def compute_stability(
 
 def _timestamped_output_dir(out_root: Path) -> Path:
     """Un instantané par run, jamais un fichier écrasé — même convention que
-    Survey/autofix_metrics.py::_timestamped_output_dir. Dupliquée ici plutôt
-    qu'importée : importer Survey/autofix_metrics.py entraînerait toute sa
-    chaîne de dépendances (Survey/replay_browser.py, Playwright) pour une
+    Survey/autofix/autofix_metrics.py::_timestamped_output_dir. Dupliquée ici plutôt
+    qu'importée : importer Survey/autofix/autofix_metrics.py entraînerait toute sa
+    chaîne de dépendances (Survey/autofix/replay_browser.py, Playwright) pour une
     fonction utilitaire de huit lignes, sans rapport avec ce module purement
-    Git/JSON (même raison déjà documentée par Survey/parallel_safety.py pour
+    Git/JSON (même raison déjà documentée par Survey/autofix/parallel_safety.py pour
     cette même duplication)."""
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     candidate = out_root / stamp

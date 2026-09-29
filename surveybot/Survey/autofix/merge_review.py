@@ -13,13 +13,13 @@ de ces phases. Ne touche à aucun extracteur, aucune stratégie de dispatch, ni
 à aucun autre module existant du pipeline.
 
 ── Plomberie Telegram : réutilisée, jamais réimplémentée ─────────────────────
-Telegram ne fournit qu'UN SEUL flux getUpdates par bot (cf. Survey/
+Telegram ne fournit qu'UN SEUL flux getUpdates par bot (cf. Survey/autofix/
 human_review.py, Phase 16, docstring du module) : ce module importe et
 réutilise TELLES QUELLES la fonction d'envoi partagée (_send_two_button_review)
 et les préfixes de callback_data dédiés à cette phase (_CB_MERGE_APPROVE_PREFIX/
 _CB_MERGE_REJECT_PREFIX) — jamais un second poller indépendant. La capture de
 la décision elle-même (getUpdates, routage, écriture de decision.json) est
-entièrement déléguée à Survey/human_review.py::check_pending_reviews
+entièrement déléguée à Survey/autofix/human_review.py::check_pending_reviews
 (tools/check_human_review.py), déjà généralisé pour interroger human_reviews/
 ET merge_reviews/ dans la même invocation.
 
@@ -46,7 +46,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from Survey.human_review import (
+from Survey.autofix.human_review import (
     HumanReviewError,
     HumanReviewExistsError,
     ReviewRequestResult,

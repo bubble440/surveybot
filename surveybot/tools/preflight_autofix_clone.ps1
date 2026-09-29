@@ -35,7 +35,7 @@ param(
 # Pas de Set-StrictMode / $ErrorActionPreference = "Stop" ici : un preflight
 # doit accumuler TOUS les points bloquants avant de conclure (jamais s'arreter
 # a la premiere erreur rencontree), meme principe que les phases Python de ce
-# chantier (cf. Survey/autofix_worktree.py::check_eligibility).
+# chantier (cf. Survey/autofix/autofix_worktree.py::check_eligibility).
 
 if (-not $VenvPythonRelPath) {
     $VenvPythonRelPath = Join-Path $VenvDirName (Join-Path "Scripts" "python.exe")
@@ -114,8 +114,8 @@ if ($toplevelResult.TimedOut -or -not $toplevelResult.Ok) {
 $venvPython = Join-Path $ClonePackageRoot $VenvPythonRelPath
 $probeScript = Join-Path $ClonePackageRoot (Join-Path "tools" "introspect_autofix_pipeline.py")
 
-# -- Sonde unique (Survey/autofix_worktree.py::PROTECTED_BRANCHES, --
-#    Survey/autofix_orchestrator.py::LOCK_FILENAME/DEFAULT_LOCK_STALE_AFTER_S,
+# -- Sonde unique (Survey/autofix/autofix_worktree.py::PROTECTED_BRANCHES, --
+#    Survey/autofix/autofix_orchestrator.py::LOCK_FILENAME/DEFAULT_LOCK_STALE_AFTER_S,
 #    racines d'artefacts derivees de tools/*.py) -- jamais une valeur recopiee a
 #    la main dans ce script PowerShell (cf. tools/introspect_autofix_pipeline.py).
 $probe = $null
@@ -138,7 +138,7 @@ if (-not (Test-Path $venvPython)) {
     }
 }
 
-# -- 1) Clone propre, EXACTEMENT le critere de Survey/merge_executor.py --
+# -- 1) Clone propre, EXACTEMENT le critere de Survey/autofix/merge_executor.py --
 if ($CloneRepoRoot) {
     $statusResult = Invoke-GitTimed -GitArgs @("status", "--porcelain", "--untracked-files=all") -WorkDir $CloneRepoRoot
     if ($statusResult.TimedOut) {
@@ -147,7 +147,7 @@ if ($CloneRepoRoot) {
         Add-Result -Name "depot propre" -Ok $false -Detail "git status a echoue : $($statusResult.StdErr)"
     } elseif ($statusResult.StdOut) {
         $preview = ($statusResult.StdOut -split "`n" | Select-Object -First 10) -join "; "
-        Add-Result -Name "depot propre" -Ok $false -Detail "changements en attente (fichiers non suivis inclus) -- Survey/merge_executor.py refusera tout merge : $preview"
+        Add-Result -Name "depot propre" -Ok $false -Detail "changements en attente (fichiers non suivis inclus) -- Survey/autofix/merge_executor.py refusera tout merge : $preview"
     } else {
         Add-Result -Name "depot propre" -Ok $true -Detail "git status --porcelain --untracked-files=all vide"
     }
@@ -185,7 +185,7 @@ if ($CloneRepoRoot -and $probe -and $probe.artifact_roots) {
         }
     }
     if ($missing.Count -gt 0) {
-        Add-Result -Name "racines d'artefacts ignorees par Git" -Ok $false -Detail "non couvertes par .gitignore : $($missing -join ', ') -- Survey/merge_executor.py refusera tout merge des qu'un case y sera ecrit"
+        Add-Result -Name "racines d'artefacts ignorees par Git" -Ok $false -Detail "non couvertes par .gitignore : $($missing -join ', ') -- Survey/autofix/merge_executor.py refusera tout merge des qu'un case y sera ecrit"
     } else {
         Add-Result -Name "racines d'artefacts ignorees par Git" -Ok $true -Detail "$($probe.artifact_roots.Count) racine(s) verifiee(s) (derivees de tools/*.py)"
     }
@@ -197,7 +197,7 @@ if ($CloneRepoRoot -and $probe -and $probe.artifact_roots) {
 foreach ($varName in @("telegram_bot_token", "telegram_chat_id")) {
     $val = [Environment]::GetEnvironmentVariable($varName)
     if ([string]::IsNullOrWhiteSpace($val)) {
-        Add-Result -Name "variable d'environnement $varName" -Ok $false -Detail "absente ou vide -- requise par Survey/human_review.py (Phase 13/notifications)"
+        Add-Result -Name "variable d'environnement $varName" -Ok $false -Detail "absente ou vide -- requise par Survey/autofix/human_review.py (Phase 13/notifications)"
     } else {
         Add-Result -Name "variable d'environnement $varName" -Ok $true -Detail "presente (valeur non affichee)"
     }
@@ -206,7 +206,7 @@ if ($ExpectFleetImport) {
     foreach ($varName in @("FLEET_R2_ACCOUNT_ID", "FLEET_R2_ACCESS_KEY_ID", "FLEET_R2_SECRET_ACCESS_KEY", "FLEET_R2_BUCKET")) {
         $val = [Environment]::GetEnvironmentVariable($varName)
         if ([string]::IsNullOrWhiteSpace($val)) {
-            Add-Result -Name "variable d'environnement $varName" -Ok $false -Detail "absente ou vide -- requise par Survey/fleet_case_import.py (--import-fleet demande via -ExpectFleetImport)"
+            Add-Result -Name "variable d'environnement $varName" -Ok $false -Detail "absente ou vide -- requise par Survey/autofix/fleet_case_import.py (--import-fleet demande via -ExpectFleetImport)"
         } else {
             Add-Result -Name "variable d'environnement $varName" -Ok $true -Detail "presente (valeur non affichee)"
         }
@@ -239,7 +239,7 @@ if (-not (Test-Path $venvPython)) {
 } else {
     & $venvPython -m pip check *> $null
     $pipCheckOk = ($LASTEXITCODE -eq 0)
-    $orchestratorModule = Join-Path $ClonePackageRoot (Join-Path "Survey" "autofix_orchestrator.py")
+    $orchestratorModule = Join-Path $ClonePackageRoot "Survey/autofix/autofix_orchestrator.py"
     $importOk = $false
     $importDetail = ""
     if (Test-Path $orchestratorModule) {
@@ -251,21 +251,21 @@ if (-not (Test-Path $venvPython)) {
         # est lance depuis un autre repertoire).
         Push-Location $ClonePackageRoot
         try {
-            $importOut = & $venvPython -c "import Survey.autofix_orchestrator" 2>&1
+            $importOut = & $venvPython -c "import Survey.autofix.autofix_orchestrator" 2>&1
             $importOk = ($LASTEXITCODE -eq 0)
         } finally {
             Pop-Location
         }
         if (-not $importOk) { $importDetail = ($importOut -join " ") }
     } else {
-        $importDetail = "Survey/autofix_orchestrator.py introuvable dans le clone"
+        $importDetail = "Survey/autofix/autofix_orchestrator.py introuvable dans le clone"
     }
     if ($pipCheckOk -and $importOk) {
-        Add-Result -Name "dependances Python (venv)" -Ok $true -Detail "pip check OK, import Survey.autofix_orchestrator OK"
+        Add-Result -Name "dependances Python (venv)" -Ok $true -Detail "pip check OK, import Survey.autofix.autofix_orchestrator OK"
     } else {
         $reasons = @()
         if (-not $pipCheckOk) { $reasons += "pip check a signale un probleme de dependances" }
-        if (-not $importOk) { $reasons += "import Survey.autofix_orchestrator a echoue : $importDetail" }
+        if (-not $importOk) { $reasons += "import Survey.autofix.autofix_orchestrator a echoue : $importDetail" }
         Add-Result -Name "dependances Python (venv)" -Ok $false -Detail ($reasons -join " ; ")
     }
 }
@@ -274,8 +274,8 @@ if (-not (Test-Path $venvPython)) {
 # La localisation REELLE du worktree Git (par opposition a l'artefact de
 # tracabilite worktree.json, ecrit sous --worktrees-root="autofix_worktrees",
 # lui gitignore -- deux notions distinctes malgre le nom partage, verifie dans
-# Survey/autofix_orchestrator.py/Survey/autofix_worktree.py) est calculee par
-# Survey/autofix_worktree.py::_default_worktrees_root, jamais parametree par
+# Survey/autofix/autofix_orchestrator.py/Survey/autofix/autofix_worktree.py) est calculee par
+# Survey/autofix/autofix_worktree.py::_default_worktrees_root, jamais parametree par
 # l'orchestrateur : <parent du depot>/<nom du depot>-worktrees, un frere du
 # depot, donc structurellement hors de son arbre suivi.
 if ($CloneRepoRoot) {

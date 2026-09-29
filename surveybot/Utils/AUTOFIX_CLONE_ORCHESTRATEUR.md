@@ -7,11 +7,11 @@ les valeurs par défaut des scripts sont paramétrables.
 
 ## Pourquoi un clone séparé
 
-`Survey/merge_executor.py` (étape aval de l'orchestrateur) exige que le dépôt
+`Survey/autofix/merge_executor.py` (étape aval de l'orchestrateur) exige que le dépôt
 où il s'exécute soit **entièrement propre** (`git status --porcelain
 --untracked-files=all` vide, fichiers non suivis inclus) avant de merger un
 correctif, et refuse toute branche cible protégée (`main`, `prod`,
-`playwright-migration`, cf. `Survey/autofix_worktree.py::PROTECTED_BRANCHES`).
+`playwright-migration`, cf. `Survey/autofix/autofix_worktree.py::PROTECTED_BRANCHES`).
 Faire tourner l'orchestrateur dans le dépôt où l'opérateur code le bloque dès
 qu'un développement est en cours (fichiers modifiés ou non suivis) ; et si la
 branche de développement est l'une des branches protégées, le merge y serait
@@ -35,7 +35,7 @@ Dépôt de l'opérateur                    Clone dédié autofix
                                                 dans la branche de dev automatiquement)
 ```
 
-Un seul poller Telegram (`Survey/human_review.py::check_pending_reviews`) : il
+Un seul poller Telegram (`Survey/autofix/human_review.py::check_pending_reviews`) : il
 tourne dans le clone, jamais ailleurs. Telegram ne fournit qu'un flux
 `getUpdates` par bot — un second checkout qui lancerait aussi
 `tools\check_human_review.py` sur le même bot consommerait les mêmes mises à
@@ -131,7 +131,7 @@ soit vers un dépôt distant, ni ne merge dans une branche protégée.
   l'opérateur.
 - Lancer `tools\run_autofix_pipeline.py` en invoquant directement
   `venv\Scripts\python.exe` (sans l'« activer ») ne préfixe pas automatiquement
-  `venv\Scripts` au `PATH` du processus : `Survey/static_validator.py` (Phase 8)
+  `venv\Scripts` au `PATH` du processus : `Survey/autofix/static_validator.py` (Phase 8)
   résout `ruff` via `shutil.which`, qui échouerait silencieusement sans ce
   préfixe. `schedule_autofix_pipeline_task.ps1` le fait automatiquement pour la
   tâche planifiée ; un lancement manuel doit faire de même (rappelé en fin de

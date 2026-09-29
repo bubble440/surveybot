@@ -5,8 +5,8 @@ from __future__ import annotations
 sur un failure_case (Phase 2, manifest.json).
 
 Lecture seule sur les Phases 2/3/4 : ne modifie jamais failure_cases/ ni diagnoses/,
-n'appelle et ne réinterprète aucune donnée de Survey/failure_case_builder.py,
-Survey/failure_replay.py, Survey/failure_diagnosis.py, dom_analyzer.py, des
+n'appelle et ne réinterprète aucune donnée de Survey/autofix/failure_case_builder.py,
+Survey/autofix/failure_replay.py, Survey/autofix/failure_diagnosis.py, dom_analyzer.py, des
 validators, du dispatcher — se contente de LIRE leurs sorties déjà produites
 (manifest.json, diagnosis.json). Ne génère aucun prompt — hors périmètre.
 
@@ -60,7 +60,7 @@ from Survey.log_utils import log_debug, log_info
 _TAG = "[CONTEXT_SELECTOR]"
 SCHEMA_VERSION = "1.0"
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _MEMORY_FILE_REL = "Survey/BOT_EVOLUTION_MEMORY.md"
 
 # Documenté et volontairement modeste : assez pour couvrir les quelques modules
@@ -145,7 +145,7 @@ class ContextSelectionResult:
 _MAPPING_TABLE_NOTE = (
     "Aucune structure de mapping itype/stage -> fichier/fonction vérifiable n'a été "
     "trouvée dans dom_analyzer.py / action_dispatcher.py (investigation documentée "
-    "dans le docstring de Survey/context_selector.py : le routage réel est un "
+    "dans le docstring de Survey/autofix/context_selector.py : le routage réel est un "
     "enchaînement if/elif, pas une table énumérable ; le seul dict itype trouvé, "
     "_TYPE_ALIASES, mappe vers des synonymes texte, pas vers des fichiers). Cette "
     "source de signal contribue donc zéro fichier — la sélection repose "

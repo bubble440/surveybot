@@ -4,7 +4,7 @@
 # Utils/AUTOFIX_CLONE_ORCHESTRATEUR.md). Amene, dans la branche d'integration du
 # clone, les commits recents de la branche de developpement de l'operateur, pour
 # que le clone ne derive pas au fil du temps. CHANGE L'ETAT GIT DU CLONE --
-# traite avec prudence (memes garde-fous que Survey/merge_executor.py) :
+# traite avec prudence (memes garde-fous que Survey/autofix/merge_executor.py) :
 #
 #   - REFUSE si le verrou de l'orchestrateur (Partie B) est present et NON
 #     perime -- une invocation du pipeline est probablement en cours, un fetch/
@@ -157,7 +157,7 @@ if ((Test-Path $venvPython) -and (Test-Path $probeScript)) {
         }
     } catch {
         # Sonde indisponible : on continue avec les valeurs par defaut ci-dessus
-        # (memes valeurs que Survey/autofix_orchestrator.py au moment de
+        # (memes valeurs que Survey/autofix/autofix_orchestrator.py au moment de
         # l'ecriture de ce script) -- jamais bloquant pour CETTE resolution,
         # mais la verification du verrou elle-meme reste stricte plus bas.
         Write-Log "Sonde pipeline indisponible pour lire le seuil de peremption du verrou -- valeur par defaut ${lockStaleAfterS}s utilisee."
@@ -176,7 +176,7 @@ if (Test-Path $lockPath) {
         Write-Log "Verrou present mais perime (age=$([math]::Round($ageS))s) -- sync autorise."
     } catch {
         # Age illisible/malforme : jamais considere perime (meme convention que
-        # Survey/autofix_orchestrator.py::_lock_age_s) -- refus par prudence,
+        # Survey/autofix/autofix_orchestrator.py::_lock_age_s) -- refus par prudence,
         # jamais une hypothese optimiste sur un etat qu'on ne peut pas lire.
         Exit-Refused "verrou de l'orchestrateur present mais illisible ($lockPath) : $_ -- verifier manuellement avant de relancer le sync."
     }

@@ -5,7 +5,7 @@ partir d'un diagnostic déjà produit (Phase 4, diagnosis.json) et du manifest d
 failure_case associé (Phase 2, manifest.json).
 
 Outil en lecture seule : ne modifie jamais failure_cases/ ni diagnoses/, ne
-génère aucun prompt. Toute la logique vit dans Survey/context_selector.py ; ce
+génère aucun prompt. Toute la logique vit dans Survey/autofix/context_selector.py ; ce
 script n'est qu'une façade CLI.
 
 Usage :
@@ -24,7 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.context_selector import (  # noqa: E402
+from Survey.autofix.context_selector import (  # noqa: E402
     DEFAULT_CODE_FILES_CAP,
     ContextSelectionError,
     write_context_selection,

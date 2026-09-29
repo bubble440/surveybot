@@ -43,7 +43,7 @@ Portée strictement additive et passive :
   observé est capturé tel quel ici (même principe que le reste de la capture
   passive, qui écrit brut dans snapshots/) — le retrait de query string/fragment
   est appliqué au moment de la copie sanitisée vers failure_cases/
-  (Survey/failure_case_builder.py), pas ici, pour rester cohérent avec le
+  (Survey/autofix/failure_case_builder.py), pas ici, pour rester cohérent avec le
   découpage déjà en place (capture brute vs sanitisation à la copie).
 """
 

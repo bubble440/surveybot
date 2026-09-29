@@ -52,7 +52,7 @@ après implémentation et vérification du patch, d'ajouter une entrée dans
 Survey/BOT_EVOLUTION_MEMORY.md suivant EXACTEMENT le format déjà documenté en
 tête de ce fichier (### nom, Fichier, Bug corrigé, Correction, Patterns
 couverts, Patterns exclus, Statut) — jamais un format inventé. Reste un filet
-de sécurité mécanique côté Survey/patch_commit.py (Phase 15) si Codex ne le
+de sécurité mécanique côté Survey/autofix/patch_commit.py (Phase 15) si Codex ne le
 fait pas : cf. ce module.
 """
 

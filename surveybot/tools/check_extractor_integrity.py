@@ -10,11 +10,11 @@ validation_static.json déjà produits, ne recalcule aucune éligibilité déjà
 tranchée. Importe directement _load_registry/_hash_function de
 Survey/extractor_integrity.py DU WORKTREE (jamais un sous-processus, jamais
 une réimplémentation parallèle de la logique de hash). Toute la logique vit
-dans Survey/extractor_integrity_gate.py ; ce script n'est qu'une façade CLI.
+dans Survey/autofix/extractor_integrity_gate.py ; ce script n'est qu'une façade CLI.
 
 Portée : partie A uniquement (hash des fonctions gelées). Le rejeu de DOM
 historiques/génériques représentatifs (regression_cases/) reste un
-sous-chantier différé — cf. Survey/extractor_integrity_gate.py.
+sous-chantier différé — cf. Survey/autofix/extractor_integrity_gate.py.
 
 Convention reprise de tools/validate_patch_static.py (Phase 8) : worktree_manifest
 et validation_static sont les CHEMINS COMPLETS vers worktree.json/
@@ -35,7 +35,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.extractor_integrity_gate import (  # noqa: E402
+from Survey.autofix.extractor_integrity_gate import (  # noqa: E402
     DEFAULT_TIME_BUDGET_S,
     IntegrityGateError,
     write_extractor_integrity_check,

@@ -16,7 +16,7 @@ manuellement par l'opérateur avant d'exécuter le merge lui-même. La capture d
 la décision se fait via tools\\check_human_review.py (généralisé Phase 16 pour
 interroger human_reviews\\ ET merge_reviews\\ dans la même invocation, avec le
 même offset persisté — jamais deux pollers Telegram indépendants). Toute la
-logique vit dans Survey/merge_review.py ; ce script n'est qu'une façade CLI.
+logique vit dans Survey/autofix/merge_review.py ; ce script n'est qu'une façade CLI.
 
 Usage :
     python tools\\propose_merge.py commit_results\\<case_id> autofix_worktrees\\<case_id>
@@ -32,7 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.merge_review import MergeReviewError, send_merge_confirmation_request  # noqa: E402
+from Survey.autofix.merge_review import MergeReviewError, send_merge_confirmation_request  # noqa: E402
 
 
 def main(argv: "list[str] | None" = None) -> int:

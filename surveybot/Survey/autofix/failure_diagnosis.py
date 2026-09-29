@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-"""Transformation d'un failure_case (Phase 2, Survey/failure_case_builder.py) et de
-son résultat de replay (Phase 3, Survey/failure_replay.py) en diagnostic structuré
+"""Transformation d'un failure_case (Phase 2, Survey/autofix/failure_case_builder.py) et de
+son résultat de replay (Phase 3, Survey/autofix/failure_replay.py) en diagnostic structuré
 (diagnosis.json) : symptôme observé, comportement attendu, cause avec justification
 traçable, modules probablement concernés, niveau de confiance global.
 
-Lecture seule sur les Phases 1-3 : ce module appelle Survey.failure_replay.replay_failure_case()
+Lecture seule sur les Phases 1-3 : ce module appelle Survey.autofix.failure_replay.replay_failure_case()
 tel quel (aucune modification de dom_analyzer.py/des validators/failure_replay.py) et ne lit
 que des fichiers déjà produits par ces phases. Il n'écrit jamais dans failure_cases/ ni ne
 modifie le case source — sa sortie va dans un dossier séparé (diagnoses/ par défaut).
@@ -21,9 +21,9 @@ c'est la condition que le validator vérifie, telle qu'elle est écrite dans son
 
 ── Réexécution réelle du dispatcher pour stage="action" (real_dispatch_replay) ─
 Le verdict de replay ci-dessus reste, pour stage="action", celui du replay PASSIF
-(Survey/failure_replay.py : dispatcher_success du case d'origine réutilisé tel quel,
+(Survey/autofix/failure_replay.py : dispatcher_success du case d'origine réutilisé tel quel,
 aucun dispatcher réel exécuté) — inchangé, conservé tel quel, jamais recalculé ici.
-Quand le case dispose de ce qu'exige Survey/replay_browser.py::execute_case_action
+Quand le case dispose de ce qu'exige Survey/autofix/replay_browser.py::execute_case_action
 (Phase 3C.4, non modifié : pre_action_dom.html + les garde-fous déjà en place de ce
 worker), ce module fait EN PLUS tourner cette réexécution réelle du dispatcher (même
 budget de temps que ce worker impose déjà, _DEFAULT_DISPATCH_BUDGET_S) et conserve son
@@ -41,10 +41,10 @@ Utils/SURVEYBOT_AUTOFIX_PLAN.md, phase 3C.4).
 
 ── Réexécution réelle de l'extraction pour stage="extraction" (real_extraction_replay) ─
 Le verdict de replay ci-dessus reste, pour stage="extraction", celui du replay PASSIF
-(Survey/failure_replay.py : dom_analyzer.analyze_dom() + question_block_validator.
+(Survey/autofix/failure_replay.py : dom_analyzer.analyze_dom() + question_block_validator.
 validate_question_blocks() réellement réexécutés, mais sur un DOM statique sans
-JavaScript/layout/état runtime, cf. Survey/dom_replay_shim.py) — inchangé, conservé
-tel quel, jamais recalculé ici. Quand le case dispose de ce qu'exige Survey/
+JavaScript/layout/état runtime, cf. Survey/autofix/dom_replay_shim.py) — inchangé, conservé
+tel quel, jamais recalculé ici. Quand le case dispose de ce qu'exige Survey/autofix/
 replay_browser.py::extract_case_blocks (Phase 3C.3, non modifié : un document
 chargeable par IsolatedReplayBrowser.load_case_document + les garde-fous déjà en
 place de ce worker), ce module fait EN PLUS tourner cette réexécution réelle de
@@ -97,14 +97,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from Survey.failure_case_builder import _failure_types as _report_failure_types
-from Survey.failure_replay import replay_failure_case
+from Survey.autofix.failure_case_builder import _failure_types as _report_failure_types
+from Survey.autofix.failure_replay import replay_failure_case
 from Survey.log_utils import log_debug, log_info
 
 _TAG = "[FAILURE_DIAGNOSIS]"
 SCHEMA_VERSION = "1.0"
 
-_MEMORY_FILE = Path(__file__).resolve().parent / "BOT_EVOLUTION_MEMORY.md"
+_MEMORY_FILE = Path(__file__).resolve().parent.parent / "BOT_EVOLUTION_MEMORY.md"
 
 LEVEL_CERTAIN = "certain"
 LEVEL_PROBABLE = "probable"
@@ -235,14 +235,14 @@ def _expected_behavior_for(failure_types: list[str]) -> list[dict]:
             out.append({
                 "failure_type": ft,
                 "description": "Aucune description enregistrée pour ce failure_type dans "
-                "Survey/failure_diagnosis.py — non documenté, pas d'affirmation forcée.",
+                "Survey/autofix/failure_diagnosis.py — non documenté, pas d'affirmation forcée.",
                 "source": None,
             })
     return out
 
 
 def _cause_level_from_replay(replay_verdict: Optional[str]) -> str:
-    from Survey.failure_replay import VERDICT_REPRODUIT, VERDICT_DIFFERENT
+    from Survey.autofix.failure_replay import VERDICT_REPRODUIT, VERDICT_DIFFERENT
     if replay_verdict == VERDICT_REPRODUIT:
         return LEVEL_CERTAIN
     if replay_verdict == VERDICT_DIFFERENT:
@@ -251,7 +251,7 @@ def _cause_level_from_replay(replay_verdict: Optional[str]) -> str:
 
 
 def _cause_justification(original_types: list[str], replay_result) -> str:
-    from Survey.failure_replay import (
+    from Survey.autofix.failure_replay import (
         VERDICT_REPRODUIT, VERDICT_DIFFERENT, VERDICT_NON_REPRODUIT, VERDICT_NON_REJOUABLE,
     )
     verdict = replay_result.verdict
@@ -265,7 +265,7 @@ def _cause_justification(original_types: list[str], replay_result) -> str:
             f"Le replay sur {replay_result.dom_file_used} s'exécute et signale un problème, mais "
             f"un ensemble de failure_types différent ({replay_result.replayed_failure_types}) de "
             f"celui d'origine ({original_types}) — evaluate() décliné(s) : "
-            f"{replay_result.evaluate_declined} (cf. Survey/dom_replay_shim.py, limites de fidélité "
+            f"{replay_result.evaluate_declined} (cf. Survey/autofix/dom_replay_shim.py, limites de fidélité "
             "d'un DOM statique)."
         )
     if verdict == VERDICT_NON_REPRODUIT:
@@ -289,19 +289,19 @@ def _cause_justification(original_types: list[str], replay_result) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Réexécution réelle du dispatcher (stage="action") — Survey/replay_browser.py
+# Réexécution réelle du dispatcher (stage="action") — Survey/autofix/replay_browser.py
 # (Phase 3C.4, non modifié) réutilisé strictement tel quel. Additif : ne remplace
 # jamais le verdict de replay passif calculé ci-dessus.
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[dict]:
     """Stage="action" uniquement. Tente une réexécution RÉELLE du dispatcher (Phase
-    3C.4, Survey/replay_browser.py, non modifié) sur le document pré-action du case,
+    3C.4, Survey/autofix/replay_browser.py, non modifié) sur le document pré-action du case,
     dans le Chromium isolé de ce worker et sous le même budget de temps qu'il impose
     déjà (_DEFAULT_DISPATCH_BUDGET_S) — contrairement au replay passif ci-dessus, ceci
     fait tourner action_dispatcher.execute_actions_plan() pour de vrai.
 
-    Retourne None si non tentée : case pas stage="action", Survey.replay_browser
+    Retourne None si non tentée : case pas stage="action", Survey.autofix.replay_browser
     indisponible, ou pré-requis absents selon le garde-fou déjà existant de
     IsolatedReplayBrowser.load_case_document(pre_action=True) (pre_action_dom.html
     requis) — jamais une exception propagée, jamais un résultat deviné. Le contenu
@@ -311,7 +311,7 @@ def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[di
     if manifest.get("stage") != "action":
         return None
     try:
-        from Survey.replay_browser import (
+        from Survey.autofix.replay_browser import (
             _DEFAULT_DISPATCH_BUDGET_S,
             IsolatedReplayBrowser,
             ReplayBrowserError,
@@ -319,7 +319,7 @@ def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[di
             extract_case_blocks,
         )
     except Exception as exc:
-        log_debug(_TAG, f"Survey.replay_browser indisponible — réexécution réelle non tentée : {exc}")
+        log_debug(_TAG, f"Survey.autofix.replay_browser indisponible — réexécution réelle non tentée : {exc}")
         return None
 
     try:
@@ -345,7 +345,7 @@ def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[di
         "validation_comparison": execution.validation_comparison,
         "validation_error": execution.validation_error,
         # TIMEOUT uniquement (sinon None) : repli TRACE_REPLAY sur les faits déjà
-        # capturés (Survey/replay_browser.py::_trace_replay_fallback, non modifié) —
+        # capturés (Survey/autofix/replay_browser.py::_trace_replay_fallback, non modifié) —
         # n'affecte jamais _real_dispatch_confirms_persistence, qui ne lit que
         # validation_comparison (toujours None après TIMEOUT).
         "trace_replay": execution.trace_replay,
@@ -354,7 +354,7 @@ def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[di
 
 def _real_dispatch_confirms_persistence(real_dispatch_replay: Optional[dict]) -> bool:
     """True seulement si la réexécution réelle ci-dessus confirme ACTIVEMENT que le
-    bug persiste (outcome="BUG_PERSISTANT", cf. Survey.replay_browser._action_outcome)
+    bug persiste (outcome="BUG_PERSISTANT", cf. Survey.autofix.replay_browser._action_outcome)
     — jamais déduit d'une absence de tentative, d'un TIMEOUT, d'une exécution non
     tentée (NOT_EXECUTED) ou d'un résultat non comparable."""
     if not isinstance(real_dispatch_replay, dict):
@@ -363,14 +363,14 @@ def _real_dispatch_confirms_persistence(real_dispatch_replay: Optional[dict]) ->
     if not isinstance(comparison, dict):
         return False
     try:
-        from Survey.replay_browser import OUTCOME_BUG_PERSISTS
+        from Survey.autofix.replay_browser import OUTCOME_BUG_PERSISTS
     except Exception:
         return False
     return comparison.get("outcome") == OUTCOME_BUG_PERSISTS
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Réexécution réelle de l'extraction (stage="extraction") — Survey/replay_browser.py
+# Réexécution réelle de l'extraction (stage="extraction") — Survey/autofix/replay_browser.py
 # (Phase 3C.3, non modifié) réutilisé strictement tel quel. Additif : ne remplace
 # jamais le verdict de replay passif calculé ci-dessus. Symétrique de
 # _attempt_real_dispatch_replay ci-dessus pour stage="action", même principe.
@@ -378,16 +378,16 @@ def _real_dispatch_confirms_persistence(real_dispatch_replay: Optional[dict]) ->
 
 def _attempt_real_extraction_replay(case_dir: Path, manifest: dict) -> Optional[dict]:
     """Stage="extraction" uniquement. Tente une réexécution RÉELLE de l'extraction et
-    de son validator (Phase 3C.3, Survey/replay_browser.py::extract_case_blocks, non
+    de son validator (Phase 3C.3, Survey/autofix/replay_browser.py::extract_case_blocks, non
     modifié) sur le document du case chargé dans le Chromium isolé de ce worker —
     contrairement au replay passif ci-dessus (DOM statique, sans JavaScript/layout/état
     runtime), ceci fait tourner dom_analyzer.analyze_dom() et question_block_validator.
     validate_question_blocks() pour de vrai, avec une page réelle comme pilote.
 
-    Retourne None si non tentée : case pas stage="extraction", Survey.replay_browser
+    Retourne None si non tentée : case pas stage="extraction", Survey.autofix.replay_browser
     indisponible, ou pré-requis absents selon le garde-fou déjà existant de
     IsolatedReplayBrowser.load_case_document (aucun document chargeable pour ce case,
-    cf. _pick_dom_file de Survey/failure_replay.py, réutilisé tel quel) — jamais une
+    cf. _pick_dom_file de Survey/autofix/failure_replay.py, réutilisé tel quel) — jamais une
     exception propagée, jamais un résultat deviné. Le contenu retourné reprend tel
     quel le résultat de extract_case_blocks (comparaison des blocs à
     question_blocks.json, rapport du validator rejoué et sa comparaison à
@@ -395,9 +395,9 @@ def _attempt_real_extraction_replay(case_dir: Path, manifest: dict) -> Optional[
     if manifest.get("stage") != "extraction":
         return None
     try:
-        from Survey.replay_browser import IsolatedReplayBrowser, ReplayBrowserError, extract_case_blocks
+        from Survey.autofix.replay_browser import IsolatedReplayBrowser, ReplayBrowserError, extract_case_blocks
     except Exception as exc:
-        log_debug(_TAG, f"Survey.replay_browser indisponible — réexécution réelle non tentée : {exc}")
+        log_debug(_TAG, f"Survey.autofix.replay_browser indisponible — réexécution réelle non tentée : {exc}")
         return None
 
     try:
@@ -669,10 +669,10 @@ def diagnose_failure_case(case_dir: "str | Path") -> DiagnosisResult:
         and not _real_dispatch_confirms_persistence(real_dispatch_replay)
     ):
         warnings.append(
-            "stage=\"action\" : le replay passif (Survey/failure_replay.py) réutilise "
+            "stage=\"action\" : le replay passif (Survey/autofix/failure_replay.py) réutilise "
             "dispatcher_success du case d'origine tel quel et ne réexécute jamais le dispatcher "
             "réel — sans confirmation active de la persistance du bug par une réexécution réelle "
-            "(Survey/replay_browser.py::execute_case_action, outcome=\"BUG_PERSISTANT\"), confiance "
+            "(Survey/autofix/replay_browser.py::execute_case_action, outcome=\"BUG_PERSISTANT\"), confiance "
             f"globale plafonnée à '{LEVEL_PLAUSIBLE}' malgré un niveau de cause '{confidence_global}' "
             "— même règle de cohérence que pour manifest.incomplete=true ci-dessus."
         )

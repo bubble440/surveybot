@@ -15,13 +15,13 @@ Un case extraction REPRODUIT revérifie réellement dom_analyzer.analyze_dom() +
 le validator d'extraction sur le DOM figé — preuve forte, seule retenue pour ce
 stage (inchangé).
 
-Le replay passif d'un case action (Phase 3A/3B, Survey/failure_replay.py)
+Le replay passif d'un case action (Phase 3A/3B, Survey/autofix/failure_replay.py)
 réutilise dispatcher_success du case d'origine tel quel et ne réexécute jamais
 le dispatcher réel : un verdict REPRODUIT sur ce stage ne prouve donc toujours
-rien sur le dispatcher lui-même. Phase 4 (Survey/failure_diagnosis.py) calcule
+rien sur le dispatcher lui-même. Phase 4 (Survey/autofix/failure_diagnosis.py) calcule
 désormais, en plus, un signal réel indépendant pour ce stage quand le case
 dispose de ce qu'exige le Chromium isolé (Phase 3C.4,
-Survey/replay_browser.py::execute_case_action, non modifié) :
+Survey/autofix/replay_browser.py::execute_case_action, non modifié) :
 real_dispatch_replay.validation_comparison.outcome="BUG_PERSISTANT" confirme
 ACTIVEMENT que le dispatcher réel échoue encore, de la même façon, sur le code
 actuel non corrigé. C'est ce signal, et seulement lui, qui rend un case action
@@ -42,7 +42,7 @@ sans transformation comme composant de chemin ET comme référence Git valide
 autorité sur la syntaxe réelle des refs Git plutôt qu'une réimplémentation
 partielle de ses règles). "certain" n'est PAS revérifié indépendamment de
 REPRODUIT pour stage="extraction" — Phase 4 ne produit "certain" que lorsque
-REPRODUIT est déjà vrai pour ce stage (cf. Survey/failure_diagnosis.py::
+REPRODUIT est déjà vrai pour ce stage (cf. Survey/autofix/failure_diagnosis.py::
 _cause_level_from_replay) : un garde-fou de cohérence avec un diagnostic déjà
 calculé, pas une seconde preuve. Pour stage="action", "certain" est de la même
 façon déjà conditionné à BUG_PERSISTANT côté Phase 4 ; la vérification de
@@ -76,8 +76,8 @@ En plus de son comportement inchangé ci-dessus, cette phase persiste désormais
 le résultat (case_id, branch, worktree_path, base_sha, source_branch,
 prompt_path) sous out_root/<case_id>/worktree.json — schema_version,
 horodatage, avertissements explicites, même convention JSON déjà en usage
-(Survey/context_selector.py, Survey/failure_diagnosis.py,
-Survey/prompt_generator.py). Refus explicite (jamais un écrasement silencieux)
+(Survey/autofix/context_selector.py, Survey/autofix/failure_diagnosis.py,
+Survey/autofix/prompt_generator.py). Refus explicite (jamais un écrasement silencieux)
 si cet artefact existe déjà sans force=True, vérifié AVANT toute mutation Git
 (branche/worktree) pour ne pas créer d'état Git si l'écriture va de toute
 façon être refusée. Reste un artefact technique interne (case_id, chemins) :
@@ -250,9 +250,9 @@ def check_eligibility(
             reasons.append(
                 f"stage=\"action\" : real_dispatch_replay.validation_comparison.outcome={outcome!r} "
                 "— \"BUG_PERSISTANT\" requis (seule confirmation active, par réexécution réelle du "
-                "dispatcher, que le bug persiste sur le code actuel — cf. Survey/replay_browser.py::"
+                "dispatcher, que le bug persiste sur le code actuel — cf. Survey/autofix/replay_browser.py::"
                 "execute_case_action) ; replay.verdict=\"REPRODUIT\" seul ne prouve rien sur le "
-                "dispatcher pour ce stage (cf. Survey/failure_replay.py)"
+                "dispatcher pour ce stage (cf. Survey/autofix/failure_replay.py)"
             )
 
     confidence = str(diagnosis.get("confidence_global") or "")

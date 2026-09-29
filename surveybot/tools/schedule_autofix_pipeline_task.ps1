@@ -12,12 +12,12 @@
 #
 # Intervalle par defaut : 60 minutes. Justification (cf. investigation Partie A/B
 # de ce meme chantier) : une invocation peut enchainer jusqu'a --max-cases (5 par
-# defaut, Survey/autofix_orchestrator.py::DEFAULT_MAX_CASES) cases, CHACUN
+# defaut, Survey/autofix/autofix_orchestrator.py::DEFAULT_MAX_CASES) cases, CHACUN
 # pouvant occuper Claude Code jusqu'a --claude-timeout-s (600s par defaut,
 # DEFAULT_CLAUDE_TIMEOUT_S) avant les phases de validation suivantes (compilation,
 # import, lint, rejeu navigateur) -- une invocation complete peut donc durer
 # plusieurs dizaines de minutes. Le verrou d'exclusion de l'orchestrateur
-# (Survey/autofix_orchestrator.py::DEFAULT_LOCK_STALE_AFTER_S = 7200s = 2h, la
+# (Survey/autofix/autofix_orchestrator.py::DEFAULT_LOCK_STALE_AFTER_S = 7200s = 2h, la
 # "duree maximale theorique d'une invocation" au sens du code lui-meme) rend un
 # intervalle plus court QUE LA DUREE REELLE D'UNE INVOCATION sans danger -- le
 # declenchement suivant obtient alors juste le code de sortie 3 (verrou deja
@@ -146,7 +146,7 @@ if (-not (Test-Path $runnerScript)) {
 #    edite a la main). Un seul mecanisme pour tout ce qu'un declenchement planifie
 #    doit faire avant d'invoquer le pipeline : prefixer le PATH du dossier
 #    Scripts du venv (verifie empiriquement en Partie A -- shutil.which("ruff"),
-#    utilise par Survey/static_validator.py Phase 8, ne resout que par rapport
+#    utilise par Survey/autofix/static_validator.py Phase 8, ne resout que par rapport
 #    au PATH du PROCESSUS qui execute tools\run_autofix_pipeline.py) et se
 #    positionner dans le paquet du clone (racines d'artefacts relatives).
 #    Task Scheduler n'offre pas de mecanisme direct pour prefixer une variable
@@ -197,7 +197,7 @@ $settings = New-ScheduledTaskSettingsSet `
 # privilege que le reste de ce chantier. Compte INTERACTIF de l'operateur
 # (jamais SYSTEM), meme convention que wake_scheduler.ps1/check_zombie_bots.ps1
 # -- necessaire si jamais le pipeline devait un jour piloter un navigateur non
-# headless (non le cas aujourd'hui, Survey/replay_browser.py tourne headless).
+# headless (non le cas aujourd'hui, Survey/autofix/replay_browser.py tourne headless).
 try {
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Force -ErrorAction Stop | Out-Null
 } catch {

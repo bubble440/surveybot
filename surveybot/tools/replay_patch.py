@@ -8,7 +8,7 @@ porte verdict="ACCEPTED" — sinon refus contrôlé avant tout effet de bord, sa
 recalculer la Phase 8. Lit aussi, en lecture seule, worktree.json (Phase 7) et
 diagnosis.json (Phase 4, pour le stage et le signal "avant patch" déjà établi —
 jamais revérifié ici). Ne rouvre jamais manifest.json directement. Toute la
-logique vit dans Survey/patch_replay.py ; ce script n'est qu'une façade CLI.
+logique vit dans Survey/autofix/patch_replay.py ; ce script n'est qu'une façade CLI.
 
 Convention reprise de tools/validate_patch_static.py (Phase 8) : worktree_manifest
 et validation_static sont les CHEMINS COMPLETS vers worktree.json/
@@ -28,12 +28,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.patch_replay import (  # noqa: E402
+from Survey.autofix.patch_replay import (  # noqa: E402
     DEFAULT_EXTRACTION_TIMEOUT_S,
     PatchReplayError,
     write_patch_replay,
 )
-from Survey.replay_browser import _DEFAULT_DISPATCH_BUDGET_S  # noqa: E402
+from Survey.autofix.replay_browser import _DEFAULT_DISPATCH_BUDGET_S  # noqa: E402
 
 
 def main(argv: "list[str] | None" = None) -> int:

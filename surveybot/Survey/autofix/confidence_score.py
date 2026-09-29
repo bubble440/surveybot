@@ -30,14 +30,14 @@ un champ attendu absent, un JSON illisible) DÉGRADE le critère concerné à
 MISSING/NOT_RUN — jamais une exception, jamais un crash.
 
 ── Vocabulaire de verdict : relu dans le code, jamais redéfini en dur ────────
-  - validation_static.json (Phase 8, Survey/static_validator.py) et
-    extractor_integrity_check.json (Phase 11-A, Survey/
+  - validation_static.json (Phase 8, Survey/autofix/static_validator.py) et
+    extractor_integrity_check.json (Phase 11-A, Survey/autofix/
     extractor_integrity_gate.py) : verdict "ACCEPTED"/"REJECTED", identique
     dans les deux modules (StaticValidationResult.verdict /
     IntegrityCheckResult.verdict).
-  - patch_replay.json (Phase 9, Survey/patch_replay.py) et
-    live_validation.json (Phase 10, Survey/live_validator.py) : outcome
-    Survey.replay_browser.OUTCOME_FIX_CONFIRMED/OUTCOME_BUG_PERSISTS/
+  - patch_replay.json (Phase 9, Survey/autofix/patch_replay.py) et
+    live_validation.json (Phase 10, Survey/autofix/live_validator.py) : outcome
+    Survey.autofix.replay_browser.OUTCOME_FIX_CONFIRMED/OUTCOME_BUG_PERSISTS/
     OUTCOME_INCONCLUSIVE ("CORRECTIF_CONFIRME"/"BUG_PERSISTANT"/
     "NON_CONCLUANT"), importés ici tels quels, jamais réécrits en chaîne.
     Les deux modules exposent aussi refused (bool) : refused=true signifie
@@ -115,7 +115,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from Survey.log_utils import log_debug, log_info
-from Survey.replay_browser import (
+from Survey.autofix.replay_browser import (
     OUTCOME_BUG_PERSISTS,
     OUTCOME_FIX_CONFIRMED,
     OUTCOME_INCONCLUSIVE,

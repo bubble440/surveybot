@@ -9,11 +9,11 @@ portées, et combien de cases diagnostiqués (Phase 4) l'ont citée dans
 modules_likely_involved DEPUIS cette dernière modification (les incidents
 plus anciens ne concernent plus la version actuelle du code, ignorés).
 Jamais un pourcentage de réussite (aucune source ne les compte, cf.
-Survey/autofix_metrics.py) — seulement des faits comptables et datés.
+Survey/autofix/autofix_metrics.py) — seulement des faits comptables et datés.
 
 Purement en lecture seule : ne modifie jamais BOT_EVOLUTION_MEMORY.md,
 Survey/extractor_integrity.json, ni aucun artefact d'une phase existante.
-Toute la logique vit dans Survey/extractor_stability.py ; ce script n'est
+Toute la logique vit dans Survey/autofix/extractor_stability.py ; ce script n'est
 qu'une façade CLI.
 
 Écrit un instantané horodaté (jamais un fichier écrasé) sous
@@ -35,7 +35,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.extractor_stability import (  # noqa: E402
+from Survey.autofix.extractor_stability import (  # noqa: E402
     DEFAULT_GIT_TIMEOUT_S,
     ExtractorStabilityError,
     write_stability_report,

@@ -8,7 +8,7 @@ jamais lui-même un merge, un commit, ou une modification d'un worktree autofix
 (cf. Phases 15/16, hors périmètre).
 
 ── Précondition (Partie 1) ─────────────────────────────────────────────────
-confidence_score.json (Phase 12, Survey/confidence_score.py — non modifié)
+confidence_score.json (Phase 12, Survey/autofix/confidence_score.py — non modifié)
 doit exister pour ce case et porter confidence="HIGH" exactement. Le
 "résultat des tests" du message repris ici est le champ "criteria" réel de
 cette phase (static_validation/extractor_integrity/fix_confirmed/
@@ -34,7 +34,7 @@ repli conditionnel requests/urllib) est donc défini ici.
 callback_data est limité par l'API Telegram à 1-64 octets UTF-8 (vérifié :
 doc officielle Bots API, InlineKeyboardButton.callback_data). Un case_id de ce
 pipeline peut légitimement atteindre 121 caractères (cf. _CASE_ID_RE de
-Survey/autofix_worktree.py) — le transmettre tel quel ne tiendrait pas
+Survey/autofix/autofix_worktree.py) — le transmettre tel quel ne tiendrait pas
 toujours dans cette limite. La stratégie retenue, appliquée systématiquement
 (jamais "brut si court, haché sinon") : un hachage déterministe de taille fixe
 (16 caractères hex = 16 octets) du case_id, préfixé par un code d'action court
@@ -52,7 +52,7 @@ gestion de l'offset persisté, envoi d'un message à deux boutons + persistance
 de pending.json) est donc factorisée ici en fonctions internes réutilisables
 par deux points d'entrée publics distincts : send_review_request/
 check_pending_reviews (Phase 13, comportement inchangé, human_reviews/) et
-Survey/merge_review.py::send_merge_confirmation_request (Phase 16,
+Survey/autofix/merge_review.py::send_merge_confirmation_request (Phase 16,
 merge_reviews/), qui importe ces internes telles quelles plutôt que de
 réimplémenter un second poller. check_pending_reviews interroge getUpdates
 UNE SEULE FOIS par invocation et route chaque callback_query, selon son
@@ -63,7 +63,7 @@ avertissement, comme avant ce patch.
 
 ── Notification simple, sans bouton (send_status_notification) ────────────
 Ajoutée pour un appelant qui n'a besoin que de signaler un changement d'état
-(ex. étape aval de Survey/autofix_orchestrator.py — merge réussi/conflit/
+(ex. étape aval de Survey/autofix/autofix_orchestrator.py — merge réussi/conflit/
 blocage), sans attendre de décision en retour : réutilise _telegram_api_call
 et les mêmes variables d'environnement que _send_two_button_review, jamais un
 second client ni une résolution dupliquée. N'écrit ni pending.json ni
@@ -111,7 +111,7 @@ _KIND_AND_DECISION_BY_PREFIX = {
 }
 
 # Composant de chemin unique, allowlist conservatrice — même garde-fou que
-# Survey/autofix_worktree.py::_CASE_ID_RE, dupliqué volontairement (modules
+# Survey/autofix/autofix_worktree.py::_CASE_ID_RE, dupliqué volontairement (modules
 # indépendants, cf. convention déjà en place pour d'autres petits utilitaires
 # de ce pipeline).
 import re  # noqa: E402
@@ -220,7 +220,7 @@ def send_status_notification(text: str) -> None:
     """Envoi d'un message Telegram SIMPLE (sans bouton, sans persistance de
     pending.json/decision.json) — additif, pour un appelant qui n'a besoin que
     de signaler un changement d'état (ex. étape aval de
-    Survey/autofix_orchestrator.py : merge réussi/conflit/blocage). Réutilise
+    Survey/autofix/autofix_orchestrator.py : merge réussi/conflit/blocage). Réutilise
     le client HTTP minimal (_telegram_api_call) et la résolution des mêmes
     variables d'environnement (telegram_bot_token/telegram_chat_id) que
     _send_two_button_review, sans les dupliquer. Lève HumanReviewError si la
@@ -299,7 +299,7 @@ def check_review_eligibility(
     return ReviewEligibility(eligible=not reasons, case_id=resolved_case_id, reasons=reasons)
 
 
-# Ordre et libellés d'affichage des quatre critères de Survey/confidence_score.py
+# Ordre et libellés d'affichage des quatre critères de Survey/autofix/confidence_score.py
 # (static_validation/extractor_integrity/fix_confirmed/live_validation) — noms de
 # clés repris tels quels de ce module (non modifié), jamais réinventés.
 _CRITERIA_ORDER = ("static_validation", "extractor_integrity", "fix_confirmed", "live_validation")

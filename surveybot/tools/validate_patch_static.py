@@ -4,7 +4,7 @@ un worktree autofix déjà préparé (Phase 7, tools/prepare_autofix_worktree.py
 compilation, import isolé, lint minimal (erreurs réelles uniquement, via
 Ruff) et tests unitaires existants associés, si une convention de nommage
 fichier-source -> fichier-de-test existe déjà dans ce dépôt (aucune à ce
-jour, documenté explicitement plutôt que masqué — cf. Survey/static_validator.py).
+jour, documenté explicitement plutôt que masqué — cf. Survey/autofix/static_validator.py).
 
 Lecture seule sur la Phase 7 : lit uniquement worktree.json (le seul artefact
 produit par la Phase 7, Partie 1 de ce chantier) — ne rouvre jamais
@@ -12,7 +12,7 @@ manifest.json ni diagnosis.json, ne recalcule aucune éligibilité déjà
 tranchée. Le sous-ensemble de fichiers vérifié est déterminé par comparaison
 Git entre base_sha et l'état courant du worktree, jamais l'ensemble du dépôt.
 Aucun test live n'est déclenché, quel que soit le verdict. Toute la logique
-vit dans Survey/static_validator.py ; ce script n'est qu'une façade CLI.
+vit dans Survey/autofix/static_validator.py ; ce script n'est qu'une façade CLI.
 
 Usage :
     python tools\\validate_patch_static.py autofix_worktrees\\<case_id>\\worktree.json
@@ -28,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.static_validator import (  # noqa: E402
+from Survey.autofix.static_validator import (  # noqa: E402
     DEFAULT_COMPILE_TIMEOUT_S,
     DEFAULT_GIT_TIMEOUT_S,
     DEFAULT_IMPORT_TIMEOUT_S,

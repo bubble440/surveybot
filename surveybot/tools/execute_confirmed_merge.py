@@ -15,7 +15,7 @@ une résolution automatique. Ne touche jamais à main/prod/playwright-migration
 ni à aucune branche protégée (PROTECTED_BRANCHES), que ce soit comme branche
 autofix ou comme cible. Jamais de push, jamais de déclenchement de release.
 
-Toute la logique vit dans Survey/merge_executor.py ; ce script n'est qu'une
+Toute la logique vit dans Survey/autofix/merge_executor.py ; ce script n'est qu'une
 façade CLI.
 
 Usage :
@@ -33,7 +33,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.merge_executor import (  # noqa: E402
+from Survey.autofix.merge_executor import (  # noqa: E402
     DEFAULT_GIT_TIMEOUT_S,
     MergeExecutionError,
     write_merge_result,

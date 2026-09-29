@@ -6,7 +6,7 @@ pour un patch autofix déjà approuvé par un humain (Phase 13, decision.json).
 Lecture seule sur les artefacts déjà produits par les Phases 4, 5, 7, 12 et 13,
 et sur le worktree Git isolé de la Phase 7 (jamais modifié) ; n'écrit jamais
 dans BOT_EVOLUTION_MEMORY.md lui-même. Toute la logique vit dans
-Survey/bem_proposal.py ; ce script n'est qu'une façade CLI.
+Survey/autofix/bem_proposal.py ; ce script n'est qu'une façade CLI.
 
 Éligibilité (toutes les conditions ensemble) : decision.json (Phase 13) avec
 decision="APPROVED" exactement ; worktree.json (Phase 7), diagnosis.json
@@ -26,7 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.bem_proposal import (  # noqa: E402
+from Survey.autofix.bem_proposal import (  # noqa: E402
     DEFAULT_GIT_TIMEOUT_S,
     BemProposalError,
     write_bem_proposal,

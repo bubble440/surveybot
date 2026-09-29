@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Rejeu local et déterministe d'un failure_case (Survey/failure_case_builder.py)
+"""Rejeu local et déterministe d'un failure_case (Survey/autofix/failure_case_builder.py)
 contre dom_analyzer.analyze_dom() et le validator concerné, sur le HTML figé du
 case. Le mode fidèle est le défaut pour stage=extraction ; le mode statique
 historique reste le défaut pour stage=action et est sélectionnable explicitement.
@@ -34,7 +34,7 @@ replay sont comparés à ceux du case d'origine :
   - NON_REJOUABLE     : DOM requis absent, artefact illisible, ou erreur non
     recouvrable pendant l'extraction/la validation — jamais une conclusion forcée.
 
-Honnêteté sur la fidélité du mode statique (cf. Survey/dom_replay_shim.py) : un DOM statique n'a
+Honnêteté sur la fidélité du mode statique (cf. Survey/autofix/dom_replay_shim.py) : un DOM statique n'a
 ni JavaScript exécuté, ni layout, ni état runtime — certains signaux que
 dom_analyzer.py ou les validators calculent via evaluate() (getComputedStyle,
 getBoundingClientRect, lecture d'état live d'un widget) ne peuvent pas être
@@ -50,8 +50,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from Survey.dom_replay_shim import ReplayLoadError, load_static_driver
-from Survey.failure_case_builder import _failure_types as _report_failure_types
+from Survey.autofix.dom_replay_shim import ReplayLoadError, load_static_driver
+from Survey.autofix.failure_case_builder import _failure_types as _report_failure_types
 from Survey.log_utils import log_debug
 
 _TAG = "[FAILURE_REPLAY]"
@@ -170,7 +170,7 @@ def replay_failure_case(case_dir: "str | Path", *, mode: Optional[str] = None) -
     if mode == "faithful":
         # Le même chargeur et la même isolation registre/verrou que les autres
         # consommateurs Chromium ; aucun chemin de chargement parallèle.
-        from Survey.replay_browser import IsolatedReplayBrowser, extract_case_blocks
+        from Survey.autofix.replay_browser import IsolatedReplayBrowser, extract_case_blocks
 
         try:
             with IsolatedReplayBrowser() as browser:
@@ -309,7 +309,7 @@ def _result_from_report(driver: Any, case_id: str, stage: str, dom_name: str,
     if stats is not None and stats.declined:
         warnings.append(
             f"{stats.declined} appel(s) evaluate() n'ont pas pu être honorés "
-            "statiquement (JS/layout requis, cf. Survey/dom_replay_shim.py) — le "
+            "statiquement (JS/layout requis, cf. Survey/autofix/dom_replay_shim.py) — le "
             "replay peut sous-détecter des signaux qu'une page live aurait révélés"
         )
 

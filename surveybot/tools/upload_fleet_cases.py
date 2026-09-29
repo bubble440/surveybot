@@ -1,7 +1,7 @@
 """
 upload_fleet_cases.py — Partie A (uploader), transport fleet des
 failure_cases vers R2. Tourne sur CHAQUE machine de production. Toute la
-logique vit dans Survey/fleet_case_upload.py ; ce script n'est qu'une façade
+logique vit dans Survey/autofix/fleet_case_upload.py ; ce script n'est qu'une façade
 CLI.
 
 Sous-partie A1 : upload des cases pas encore marqués "uploadé et vérifié"
@@ -32,7 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.fleet_case_upload import (  # noqa: E402
+from Survey.autofix.fleet_case_upload import (  # noqa: E402
     DEFAULT_PREFIX,
     DEFAULT_RETENTION_DAYS,
     DEFAULT_UPLOAD_TIMEOUT_S,

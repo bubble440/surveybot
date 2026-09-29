@@ -10,7 +10,7 @@ globale "probable" ou "certain". Sinon, un signal de revue manuelle
 
 Outil en lecture seule : ne modifie jamais failure_cases/, diagnoses/, ni
 context_selections/, ne recalcule rien (pas de nouvel appel replay/diagnosis/
-context_selector). Toute la logique vit dans Survey/prompt_generator.py ; ce
+context_selector). Toute la logique vit dans Survey/autofix/prompt_generator.py ; ce
 script n'est qu'une façade CLI.
 
 Usage :
@@ -27,7 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Survey.prompt_generator import (  # noqa: E402
+from Survey.autofix.prompt_generator import (  # noqa: E402
     PromptGenerationError,
     write_prompt,
 )
