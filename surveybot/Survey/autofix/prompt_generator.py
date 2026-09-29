@@ -137,7 +137,7 @@ Pas de input() en prod, pas de chemins locaux, pas d'hypothèses fragiles.
 Patch minimal : pas de refactor gratuit.
 Respecter la séparation des responsabilités (PROJECT_ARCHITECTURE.md s'il existe), sauf si le bug l'exige explicitement ; ne pas inventer le contenu d'un document absent.
 Le worker local/dev diagnostique et valide ; le bot PROD ne lance ni agent de coding ni modification du core.
-La Phase 11-A actuelle rejette tout écart de hash protégé : compare le contrôle avant/après patch et distingue les écarts préexistants. Ne modifie jamais extractor_integrity.json pour masquer un écart. Si une modification directe du core est indispensable, documente la cause et le changement attendu à examiner ; ne prétends pas que le gate actuel l'accepte.
+La Phase 11-A compare la baseline, base_sha et le patch. Un écart préexistant de baseline bloque la certification ; un changement protégé sans intention locale explicitement fournie hors du worktree et sans diagnostic/rejeu confirmés est rejeté. Ne modifie jamais extractor_integrity.json pour masquer un écart. Si une modification directe du core est indispensable, documente la cause et le changement attendu à examiner ; ne crée pas toi-même la déclaration qui autoriserait ton patch.
 
 ACTION REQUISE
 Identifier la cause racine.

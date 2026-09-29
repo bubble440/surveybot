@@ -1874,6 +1874,7 @@ def process_case(
     allowed_tools: str,
     permission_mode: str,
     force: bool,
+    expected_core_changes_root: "Path | None" = None,
 ) -> CaseRunSummary:
     """Traite UN case, du contrôle de parallélisme jusqu'à la notification
     humaine (ou l'arrêt contrôlé le plus loin possible dans cet ordre).
@@ -1977,9 +1978,16 @@ def process_case(
 
     # ── Point 3c — Phase 11-A ────────────────────────────────────────────────
     try:
+        expected_path = (
+            expected_core_changes_root / case_id / "expected_change.json"
+            if expected_core_changes_root is not None else None
+        )
         integrity_path = write_extractor_integrity_check(
             case.worktree_manifest_path, static_validation_path,
             out_root=extractor_integrity_checks_root, force=force,
+            expected_changes_path=expected_path if expected_path and expected_path.is_file() else None,
+            diagnosis_path=diagnoses_root / case_id / "diagnosis.json",
+            patch_replay_path=patch_replay_path,
         )
     except IntegrityGateError as exc:
         return CaseRunSummary(
@@ -2050,6 +2058,7 @@ def run_autofix_pipeline(
     static_validations_root: "str | Path" = "autofix_static_validations",
     patch_replays_root: "str | Path" = "patch_replays",
     extractor_integrity_checks_root: "str | Path" = "extractor_integrity_checks",
+    expected_core_changes_root: "str | Path | None" = None,
     confidence_scores_root: "str | Path" = "confidence_scores",
     human_reviews_root: "str | Path" = "human_reviews",
     merge_results_root: "str | Path" = "merge_results",
@@ -2094,6 +2103,7 @@ def run_autofix_pipeline(
     static_validations_root = Path(static_validations_root)
     patch_replays_root = Path(patch_replays_root)
     extractor_integrity_checks_root = Path(extractor_integrity_checks_root)
+    expected_core_changes_root = Path(expected_core_changes_root) if expected_core_changes_root is not None else None
     confidence_scores_root = Path(confidence_scores_root)
     human_reviews_root = Path(human_reviews_root)
     merge_results_root = Path(merge_results_root)
@@ -2161,6 +2171,7 @@ def run_autofix_pipeline(
                 allowed_tools=allowed_tools,
                 permission_mode=permission_mode,
                 force=force,
+                expected_core_changes_root=expected_core_changes_root,
             )
             write_pipeline_run_summary(summary, out_root=pipeline_runs_root)
             summaries.append(summary)

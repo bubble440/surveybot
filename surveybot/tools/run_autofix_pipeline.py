@@ -108,6 +108,7 @@ def main(argv: "list[str] | None" = None) -> int:
     parser.add_argument("--static-validations-root", default="autofix_static_validations", help="Racine des validations statiques (Phase 8, défaut : autofix_static_validations)")
     parser.add_argument("--patch-replays-root", default="patch_replays", help="Racine des rejeux de patch (Phase 9, défaut : patch_replays)")
     parser.add_argument("--extractor-integrity-checks-root", default="extractor_integrity_checks", help="Racine des vérifications d'intégrité (Phase 11-A, défaut : extractor_integrity_checks)")
+    parser.add_argument("--expected-core-changes-root", help="Racine explicite des déclarations locales <case_id>/expected_change.json (Phase 11-A)")
     parser.add_argument("--confidence-scores-root", default="confidence_scores", help="Racine des scores de confiance (Phase 12, défaut : confidence_scores)")
     parser.add_argument("--human-reviews-root", default="human_reviews", help="Racine des revues humaines (Phase 13, défaut : human_reviews)")
     parser.add_argument("--merge-results-root", default="merge_results", help="Racine des résultats de merge (Survey/autofix/merge_executor.py, défaut : merge_results)")
@@ -137,6 +138,7 @@ def main(argv: "list[str] | None" = None) -> int:
             static_validations_root=args.static_validations_root,
             patch_replays_root=args.patch_replays_root,
             extractor_integrity_checks_root=args.extractor_integrity_checks_root,
+            expected_core_changes_root=args.expected_core_changes_root,
             confidence_scores_root=args.confidence_scores_root,
             human_reviews_root=args.human_reviews_root,
             merge_results_root=args.merge_results_root,

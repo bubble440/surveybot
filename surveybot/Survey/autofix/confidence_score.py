@@ -51,8 +51,9 @@ normale et attendue, cf. Phase 10, ne doit jamais être confondue avec un
 échec) :
   1. validation statique (Phase 8) : PASS si verdict="ACCEPTED", FAIL sinon,
      MISSING si validation_static.json absent/illisible.
-  2. intégrité des fonctions gelées (Phase 11-A) : même traduction,
-     depuis extractor_integrity_check.json.
+  2. intégrité des fonctions gelées (Phase 11-A) : PASS seulement pour un
+     artefact v2 complet ACCEPTED ; un ancien artefact ou une absence vaut
+     MISSING, un rejet ou une incohérence vaut FAIL.
   3. correctif confirmé sur le case ciblé : dérivé par défaut de
      patch_replay.json (Phase 9) — PASS si outcome=CORRECTIF_CONFIRME, FAIL
      si outcome=BUG_PERSISTANT, INCONCLUSIVE sinon (y compris refused=true),
@@ -77,27 +78,18 @@ pondérée ni un fallback empilé (conforme à la demande d'origine) ───�
   b. intégrité des fonctions gelées = FAIL -> REJECT (toujours dominant,
      même si le correctif ciblé est confirmé par ailleurs).
   c. correctif confirmé = FAIL -> REJECT.
-  d. (implicitement acquis à ce stade : statique=PASS, intégrité!=FAIL,
-     correctif!=FAIL) correctif confirmé = PASS -> HIGH.
-  e. sinon -> MEDIUM, avec le détail exact du/des critère(s) qui empêche(nt)
+  d. intégrité != PASS -> MEDIUM (aucun HIGH sur un contrôle absent).
+  e. correctif confirmé = PASS -> HIGH.
+  f. sinon -> MEDIUM, avec le détail exact du/des critère(s) qui empêche(nt)
      HIGH dans `reason`.
-La première règle qui s'applique l'emporte ; la mise en œuvre ci-dessous suit
-cet ordre littéralement (aucun raccourci de court-circuit implicite non
-documenté). Note assumée, jamais masquée : une intégrité MISSING (Phase 11-A
-jamais lancée) ne bloque PAS à elle seule un HIGH — seul un FAIL réel (hash
-différent constaté) est un motif de rejet pour ce critère, conformément à sa
-nature de garde-fou de VETO plutôt que de confirmation positive requise (au
-contraire de la validation statique et du correctif confirmé, qui exigent
-tous deux un PASS actif). L'état réel (MISSING, non PASS) du critère
-intégrité reste toujours visible tel quel dans `criteria`, jamais masqué par
-le verdict global.
+La première règle qui s'applique l'emporte. L'état du critère d'intégrité
+reste visible dans `criteria` ; seul PASS peut contribuer à HIGH.
 
 ── Avertissement systématique, non conditionnel ──────────────────────────────
 Le critère d'intégrité ne couvre à ce jour que le hash des fonctions gelées
 (Phase 11, partie A) : le rejeu de DOM représentatifs (Phase 11, partie B)
 n'existe pas encore. Un verdict HIGH ne garantit donc PAS l'absence de
-régression comportementale — seulement l'absence de modification détectée du
-code gelé. Cet avertissement est toujours présent dans `warnings`, quel que
+régression comportementale. Cet avertissement est toujours présent dans `warnings`, quel que
 soit le verdict.
 
 ── Sortie ──────────────────────────────────────────────────────────────────
@@ -137,8 +129,7 @@ CONFIDENCE_REJECT = "REJECT"
 INTEGRITY_SCOPE_WARNING = (
     "le critère d'intégrité (Phase 11, partie A) ne couvre aujourd'hui que le hash des "
     "fonctions gelées — le rejeu de DOM représentatifs (Phase 11, partie B) n'existe pas "
-    "encore : un verdict HIGH ne garantit pas l'absence de régression comportementale, "
-    "seulement l'absence de modification détectée du code gelé"
+    "encore : un verdict HIGH ne garantit pas l'absence de régression comportementale"
 )
 
 
@@ -178,6 +169,40 @@ def _binary_verdict_criterion(
     if verdict == "ACCEPTED":
         return CRITERION_PASS, f"{source}.verdict={verdict!r}"
     return CRITERION_FAIL, f"{source}.verdict={verdict!r}"
+
+
+def _integrity_criterion(data: "Optional[dict]", err: "Optional[str]") -> "tuple[str, str]":
+    source = "extractor_integrity_check.json"
+    if err or not isinstance(data, dict):
+        return CRITERION_MISSING, err or f"{source} ne contient pas un objet JSON"
+    if data.get("verdict") != "ACCEPTED":
+        return CRITERION_FAIL, f"{source}.verdict={data.get('verdict')!r}"
+    rows = data.get("functions")
+    if data.get("schema_version") != "2.0" or not isinstance(rows, list) or not rows:
+        return CRITERION_MISSING, f"{source} ne contient pas le contrôle à trois versions de la Phase 11-A"
+    if data.get("errors") != [] or data.get("budget_exceeded") is not False:
+        return CRITERION_FAIL, f"{source} contient des erreurs ou un budget dépassé"
+    if len(rows) != data.get("total_entries") or any(
+        not isinstance(row, dict) or not isinstance(row.get("key"), str)
+        or row.get("state") not in ("UNCHANGED", "EXPECTED_CHANGE") for row in rows
+    ):
+        return CRITERION_FAIL, f"{source} contient un état non accepté"
+    if data.get("checked_entries") != data.get("total_entries") or len(rows) != len({
+        row["key"] for row in rows
+    }):
+        return CRITERION_FAIL, f"{source} incomplet ou incohérent"
+    expected_count = sum(row["state"] == "EXPECTED_CHANGE" for row in rows)
+    counts = data.get("state_counts")
+    states = ("UNCHANGED", "EXPECTED_CHANGE", "UNEXPECTED_CHANGE", "BASELINE_MISMATCH")
+    if not isinstance(counts, dict) or any(type(counts.get(state)) is not int for state in states) or (
+        counts.get("UNCHANGED") != len(rows) - expected_count or
+        counts.get("EXPECTED_CHANGE") != expected_count or counts.get("UNEXPECTED_CHANGE") != 0
+        or counts.get("BASELINE_MISMATCH") != 0
+    ):
+        return CRITERION_FAIL, f"{source} contient des compteurs d'état incohérents"
+    if data.get("review_required") is not (expected_count > 0):
+        return CRITERION_FAIL, f"{source} omet ou contredit la revue requise du core"
+    return CRITERION_PASS, f"{source}.verdict='ACCEPTED'"
 
 
 def _fix_confirmed_criterion(
@@ -287,12 +312,13 @@ def _confidence_and_reason(static_v: str, integrity_v: str, fix_v: str) -> "tupl
     if fix_v == CRITERION_FAIL:
         return CONFIDENCE_REJECT, f"correctif confirmé sur le case ciblé = {fix_v}"
 
+    if integrity_v != CRITERION_PASS:
+        return CONFIDENCE_MEDIUM, f"intégrité des fonctions gelées = {integrity_v} — PASS requis pour HIGH"
+
     if fix_v == CRITERION_PASS:
         return CONFIDENCE_HIGH, None
 
     unmet = [f"correctif confirmé sur le case ciblé = {fix_v} (PASS requis pour HIGH)"]
-    if integrity_v != CRITERION_PASS:
-        unmet.append(f"intégrité des fonctions gelées = {integrity_v} (jamais confirmée PASS)")
     return CONFIDENCE_MEDIUM, "confiance MEDIUM — " + " ; ".join(unmet)
 
 
@@ -307,6 +333,8 @@ class ConfidenceScoreResult:
     confidence: str
     reason: "Optional[str]"
     warnings: "list[str]" = field(default_factory=list)
+    core_review_required: bool = False
+    core_changed_functions: "list[str]" = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {
@@ -319,6 +347,8 @@ class ConfidenceScoreResult:
             "confidence": self.confidence,
             "reason": self.reason,
             "warnings": self.warnings,
+            "core_review_required": self.core_review_required,
+            "core_changed_functions": self.core_changed_functions,
         }
 
 
@@ -408,9 +438,12 @@ def score_patch_confidence(
 
     # ── Quatre critères indépendants ─────────────────────────────────────────
     static_v, static_detail = _binary_verdict_criterion(vs_data, vs_err, "validation_static.json")
-    integrity_v, integrity_detail = _binary_verdict_criterion(
-        ei_data, ei_err, "extractor_integrity_check.json"
-    )
+    integrity_v, integrity_detail = _integrity_criterion(ei_data, ei_err)
+    if integrity_v == CRITERION_PASS and (
+        not isinstance(wt_data, dict) or not wt_data.get("base_sha")
+        or ei_data.get("base_sha") != wt_data.get("base_sha")
+    ):
+        integrity_v, integrity_detail = CRITERION_FAIL, "base_sha incohérent entre Phase 7 et Phase 11-A"
     fix_v, fix_detail, fix_source = _fix_confirmed_criterion(pr_data, pr_err, lv_data, lv_provided, lv_err)
     live_v, live_detail = _live_validation_criterion(lv_data, lv_provided, lv_err)
 
@@ -456,6 +489,9 @@ def score_patch_confidence(
     return ConfidenceScoreResult(
         case_id=case_id, branch=branch, inputs=inputs, criteria=criteria,
         confidence=confidence, reason=reason, warnings=warnings,
+        core_review_required=integrity_v == CRITERION_PASS and bool(ei_data.get("review_required")),
+        core_changed_functions=[row["key"] for row in ei_data["functions"] if row["state"] == "EXPECTED_CHANGE"]
+        if integrity_v == CRITERION_PASS else [],
     )
 
 

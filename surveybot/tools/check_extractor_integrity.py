@@ -1,29 +1,7 @@
-"""
-check_extractor_integrity.py — Phase 11, partie A. Vérifie que le patch
-présent dans un worktree autofix déjà validé statiquement (Phase 8) n'a pas
-modifié, supprimé ni renommé une fonction listée comme "gelée" dans
-Survey/extractor_integrity.py/.json — hash SHA256 recalculé sur le code du
-worktree, jamais sur celui du dépôt principal.
+"""Façade CLI de la Phase 11-A, comparaison baseline/base_sha/patch.
 
-Lecture seule sur les Phases 7/8 : lit uniquement worktree.json et
-validation_static.json déjà produits, ne recalcule aucune éligibilité déjà
-tranchée. Importe directement _load_registry/_hash_function de
-Survey/extractor_integrity.py DU WORKTREE (jamais un sous-processus, jamais
-une réimplémentation parallèle de la logique de hash). Toute la logique vit
-dans Survey/autofix/extractor_integrity_gate.py ; ce script n'est qu'une façade CLI.
-
-Portée : partie A uniquement (hash des fonctions gelées). Le rejeu de DOM
-historiques/génériques représentatifs (regression_cases/) reste un
-sous-chantier différé — cf. Survey/autofix/extractor_integrity_gate.py.
-
-Convention reprise de tools/validate_patch_static.py (Phase 8) : worktree_manifest
-et validation_static sont les CHEMINS COMPLETS vers worktree.json/
-validation_static.json (pas un dossier qui les contiendrait).
-
-Usage :
-    python tools\\check_extractor_integrity.py autofix_worktrees\\<case_id>\\worktree.json autofix_static_validations\\<case_id>\\validation_static.json
-    python tools\\check_extractor_integrity.py autofix_worktrees\\<case_id>\\worktree.json autofix_static_validations\\<case_id>\\validation_static.json --out-root extractor_integrity_checks --force
-    python tools\\check_extractor_integrity.py autofix_worktrees\\<case_id>\\worktree.json autofix_static_validations\\<case_id>\\validation_static.json --time-budget-s 60
+Une intention de changement direct du core se fournit explicitement avec les
+preuves de diagnostic et de rejeu. La Phase 11-B reste différée.
 """
 
 from __future__ import annotations
@@ -77,6 +55,9 @@ def main(argv: "list[str] | None" = None) -> int:
         default=DEFAULT_TIME_BUDGET_S,
         help=f"Budget de temps (s) pour parcourir le registre, défaut={DEFAULT_TIME_BUDGET_S}",
     )
+    parser.add_argument("--expected-changes", help="Déclaration locale de changement attendu, hors du worktree patché")
+    parser.add_argument("--diagnosis", help="diagnosis.json du même case, requis avec --expected-changes")
+    parser.add_argument("--patch-replay", help="patch_replay.json du même case, requis avec --expected-changes")
     args = parser.parse_args(argv)
 
     try:
@@ -86,6 +67,9 @@ def main(argv: "list[str] | None" = None) -> int:
             out_root=args.out_root,
             force=args.force,
             time_budget_s=args.time_budget_s,
+            expected_changes_path=args.expected_changes,
+            diagnosis_path=args.diagnosis,
+            patch_replay_path=args.patch_replay,
         )
     except IntegrityGateError as exc:
         print(f"[ERREUR] {exc}", file=sys.stderr)
@@ -96,6 +80,7 @@ def main(argv: "list[str] | None" = None) -> int:
     print(f"branche         : {data['branch']}")
     print(f"registre        : {data['registry_path']}")
     print(f"entrées         : {data['checked_entries']}/{data['total_entries']} vérifiées")
+    print(f"états           : {data['state_counts']}")
     if data["mismatches"]:
         print("FONCTIONS MODIFIÉES (hash différent du registre) :")
         for m in data["mismatches"]:

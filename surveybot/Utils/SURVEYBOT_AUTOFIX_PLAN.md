@@ -1958,13 +1958,13 @@ incident détecté
     vigilance de la fermeture réelle de page sur timeout (stage="action")
     résolu — close_page_on_timeout=False, voir Phase 10)
 11  PARTIELLEMENT TERMINÉE (partie A — hash d'intégrité des fonctions gelées,
-    extractor_integrity_gate.py + CLI, code gelé chargé depuis le worktree
-    sous un nom de module dédié, jamais du dépôt principal ; toute anomalie
-    est un rejet ; partie B — rejeu de regression_cases/ — différée faute de
+    extractor_integrity_gate.py + CLI, registre et algorithme chargés à
+    base_sha ; quatre états par fonction, écarts non autorisés rejetés ;
+    partie B — rejeu de regression_cases/ — différée faute de
     bibliothèque de cas curée — voir Phase 11)
 12  TERMINÉE (confidence_score.py + CLI ; aucun effet de bord, produit
     toujours un verdict même dégradé ; règles ordonnées HIGH/MEDIUM/REJECT,
-    intégrité en veto plutôt qu'en confirmation requise ; avertissement
+    intégrité PASS requise pour HIGH ; avertissement
     systématique : "régressions" ne couvre encore que le hash, pas un rejeu
     DOM — voir Phase 12)
 13  TERMINÉE (human_review.py + CLI notify/check, via Telegram existant —
@@ -3792,26 +3792,19 @@ pas ; seul son déclenchement devient systématique pour cette catégorie.
 
 **Statut : PARTIELLEMENT TERMINÉE.**
 
-**Partie A (hash d'intégrité des fonctions gelées) : TERMINÉE —
-`Survey/extractor_integrity_gate.py` + `tools/check_extractor_integrity.py`.
-Complément déterministe, jamais un remplacement, au rejeu DOM décrit
-ci-dessous : un hash SHA256 par fonction protégée
-(`Survey/extractor_integrity.py`/`.json`, fournis tels quels, jamais
-réimplémentés ni modifiés) détecte toute modification du corps d'une
-fonction gelée, même une modification qui ne casserait aucun cas de test
-rejoué. Éligibilité : `worktree.json` (Phase 7, worktree Git réel) +
-`validation_static.json` (Phase 8) `ACCEPTED` — orthogonal aux Phases 9/10.
-Code gelé et registre relus DEPUIS LE WORKTREE patché, jamais du dépôt
-principal ; `extractor_integrity.py` chargé dynamiquement sous un nom de
-module dédié pour ne jamais entrer en collision avec un import déjà en
-cache. Budget de temps explicite sur le parcours du registre, dépassement
-traité en erreurs explicites. Toute anomalie (hash différent ou fonction/
-fichier introuvable) est un motif de rejet, jamais un passe-droit. Registre
-fourni corrigé avant intégration : une clé dupliquée
-(`Survey/input_slider.py::set_sliderpoints`) aurait, avec la racine
-`worktree_path/Survey` (seule cohérente avec le reste du registre), rejeté
-systématiquement tout patch dès le premier run — retirée avant que ce module
-ne soit écrit.**
+**Partie A (hash d'intégrité des fonctions protégées) : TERMINÉE —
+`Survey/autofix/extractor_integrity_gate.py` + `tools/check_extractor_integrity.py`.
+Le schéma 2.0 compare le registre et le code de `base_sha` au code du worktree,
+avec l'algorithme de hash d'`extractor_integrity.py` chargé depuis ce commit.
+Chaque fonction reçoit `UNCHANGED`, `EXPECTED_CHANGE`, `UNEXPECTED_CHANGE` ou
+`BASELINE_MISMATCH`. Le registre et l'algorithme patchés ne peuvent pas modifier
+la référence. `EXPECTED_CHANGE` exige une intention locale explicite hors du
+worktree, les hashes liés au case, un diagnostic confirmé et un rejeu Phase 9
+confirmé ; le patch concret passe ensuite en revue humaine. Les autres écarts
+et les contrôles incomplets sont rejetés. Le budget de parcours reste borné.
+La baseline n'est jamais réenregistrée automatiquement. La déclaration
+d'intention doit rester sous contrôle de l'opérateur ; la Phase 11-A
+n'authentifie pas son auteur.**
 
 **Partie B (rejeu de `regression_cases/` décrit ci-dessous) : DIFFÉRÉE —
 aucune bibliothèque de DOM représentatifs n'est encore curée pour
@@ -3862,11 +3855,10 @@ Quatre critères indépendants (PASS/FAIL/INCONCLUSIVE/MISSING, NOT_RUN pour la
 validation live) dérivés du vocabulaire déjà en usage dans les Phases 8/9/10/
 11-A, jamais redéfini en dur. Décision par règles ordonnées, jamais une
 formule pondérée : statique≠PASS ou intégrité=FAIL ou correctif=FAIL →
-REJECT (intégrité toujours dominante) ; correctif=PASS (le reste déjà acquis)
-→ HIGH ; sinon MEDIUM avec la raison exacte. Nuance notable : l'intégrité
-fonctionne en veto (seul un FAIL bloque), jamais en confirmation positive
-requise — une intégrité MISSING ne bloque pas HIGH à elle seule, mais reste
-visible telle quelle dans `criteria`. Avertissement systématique, présent
+REJECT (intégrité toujours dominante) ; intégrité≠PASS → MEDIUM ;
+correctif=PASS avec intégrité=PASS → HIGH ; sinon MEDIUM avec la raison exacte.
+Un artefact Phase 11-A absent, ancien ou incomplet ne peut donc plus mener à
+HIGH. Avertissement systématique, présent
 quel que soit le verdict : "régressions" ne couvre à ce jour que le hash des
 fonctions gelées (Phase 11-A), pas un rejeu DOM comportemental (Phase 11-B,
 non construite) — un HIGH ne garantit donc pas l'absence de régression
@@ -4477,7 +4469,7 @@ Je suivrais exactement cet ordre :
     devient la voie normale des cas EXTERNAL_NON_REPLAYABLE (post-3D)
 11  Suite de régression — PARTIELLEMENT TERMINÉE (partie A : hash
     d'intégrité des fonctions gelées, extractor_integrity_gate.py + CLI,
-    verdict sur le worktree patché uniquement ; partie B : rejeu de
+    comparaison baseline / base_sha / worktree ; partie B : rejeu de
     regression_cases/ différé, aucune bibliothèque de cas curée)
 12  Score de confiance — TERMINÉE (confidence_score.py + CLI ; aucun
     effet de bord, verdict toujours produit ; HIGH/MEDIUM/REJECT par

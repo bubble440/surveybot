@@ -1,81 +1,21 @@
 from __future__ import annotations
 
-"""Phase 11, partie A — vérification d'intégrité des fonctions "gelées" (BEM)
-d'un patch autofix déjà validé statiquement par la Phase 8, avant tout rejeu
-(Phase 9) ou toute validation live (Phase 10).
+"""Phase 11-A : compare la baseline Git, le code à base_sha et le patch.
 
-Complément déterministe à Survey/extractor_integrity.py (hash SHA256 par
-fonction protégée) : ce module ne réimplémente jamais sa logique de hash, il
-l'exécute telle quelle sur le code du worktree autofix, pour vérifier qu'un
-patch généré automatiquement n'a pas modifié, supprimé ni renommé une
-fonction listée comme protégée — au même titre qu'une erreur de compilation
-ou de lint (Phase 8), un motif de rejet explicite, jamais un passe-droit
-silencieux.
-
-── Portée explicitement limitée à cette Partie A ─────────────────────────────
-Le rejeu de DOM historiques/génériques représentatifs (regression_cases/,
-décrit dans Utils/SURVEYBOT_AUTOFIX_PLAN.md pour la Phase 11) reste un
-sous-chantier différé — aucune bibliothèque de cas n'est encore curée pour
-l'alimenter. Ce module ne construit que la vérification de hash (partie A),
-à la manière des sous-chantiers déjà différés en Phase 9 (rejeu de cas
-historiques voisins) et Phase 10 (garde-fou de fermeture de page CDP en
-stage="action").
-
-── Préconditions, toutes ensemble, jamais la première seule ─────────────────
-- worktree.json (Phase 7, Survey/autofix/autofix_worktree.py::write_worktree_manifest) :
-  case_id/branch/worktree_path/base_sha déjà produits, jamais recalculés.
-  worktree_path doit exister et ressembler à un worktree Git (.git présent) —
-  même vérification que Phase 9/10 (Survey/autofix/patch_replay.py,
-  Survey/autofix/live_validator.py).
-- validation_static.json (Phase 8, Survey/autofix/static_validator.py) :
-  verdict="ACCEPTED" requis, jamais recalculé — un patch qui ne compile même
-  pas n'a pas besoin d'être vérifié pour intégrité.
-- case_id cohérent entre les deux sources et les noms de dossiers fournis.
-- Survey/extractor_integrity.py ET Survey/extractor_integrity.json doivent
-  exister réellement dans le worktree, à la racine de paquet résolue
-  (Survey.autofix.static_validator._resolve_package_root, Phase 8, réutilisée telle
-  quelle — le worktree est un clone complet du dépôt, Survey/ et tools/ y
-  vivent au même endroit relatif que dans le dépôt principal) — sinon refus
-  explicite plutôt qu'une racine devinée.
-
-── Chargement du code gelé DU WORKTREE, jamais du dépôt principal ────────────
-Survey/extractor_integrity.py est chargé dynamiquement depuis le fichier du
-worktree (importlib.util.spec_from_file_location, sous un nom de module
-dédié — jamais "Survey.extractor_integrity" — pour ne jamais lire un module
-déjà en cache dans sys.modules provenant du dépôt principal ; même
-précaution que Phase 9/10 avec Survey.autofix.replay_browser/Survey.autofix.failure_replay,
-mais résolue ici SANS sous-processus : extractor_integrity.py n'a aucune
-dépendance de paquet (stdlib seulement — argparse/ast/hashlib/json/sys/
-pathlib), un chargement direct suffit et est exigé par cette phase (jamais
-un sous-processus avec parsing de texte). Ses fonctions _load_registry/
-_hash_function sont appelées TELLES QUELLES ensuite, jamais réimplémentées.
-
-Le registre est chargé depuis Survey/extractor_integrity.json DU WORKTREE
-(le patch a pu légitimement y ajouter des entrées) — jamais une copie du
-dépôt principal.
-
-── Budget explicite, une seule stratégie ─────────────────────────────────────
-Le registre est aujourd'hui restreint (une cinquantaine d'entrées) mais son
-parcours (une lecture disque + un parsing AST par entrée) reste borné par un
-budget de temps explicite (DEFAULT_TIME_BUDGET_S) : au-delà, les entrées
-restantes ne sont pas vérifiées et comptent comme des erreurs explicites
-("budget_exceeded"), jamais un passe-droit silencieux sur ce qui n'a pas pu
-être vérifié.
-
-── Verdict ────────────────────────────────────────────────────────────────
-Toute anomalie compte comme un rejet : un hash différent (mismatch, fonction
-protégée modifiée) et une fonction/fichier introuvable (error, fonction
-protégée supprimée/renommée) sont toutes deux des motifs de rejet, avec le
-détail exact de chaque cas. Verdict tracé sous
-out_root/<case_id>/extractor_integrity_check.json, même convention JSON que
-les phases précédentes (schema_version/case_id/created_at). Ne modifie
-jamais le worktree, la branche autofix, ni aucun artefact d'une phase
-précédente.
+Le registre et l'algorithme de hash à base_sha sont la référence de confiance.
+Une déclaration explicite hors du worktree peut autoriser un changement direct
+du core, sous réserve du diagnostic confirmé et du rejeu du patch. Le résultat
+reste soumis à la revue humaine ultérieure. Aucune baseline n'est réécrite ici.
+La partie 11-B (rejeu DOM de régression) reste différée.
 """
 
 import importlib.util
 import json
+import math
+import re
 import shutil
+import subprocess
+import tempfile
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -87,11 +27,19 @@ from Survey.log_utils import log_debug, log_info
 from Survey.autofix.static_validator import StaticValidationError, _resolve_package_root
 
 _TAG = "[EXTRACTOR_INTEGRITY_GATE]"
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "2.0"
+UNCHANGED = "UNCHANGED"
+EXPECTED_CHANGE = "EXPECTED_CHANGE"
+UNEXPECTED_CHANGE = "UNEXPECTED_CHANGE"
+BASELINE_MISMATCH = "BASELINE_MISMATCH"
+_SHA = re.compile(r"[0-9a-fA-F]{40,64}\Z")
 
 # Budget de temps unique pour le parcours du registre — au-delà, abandon
 # contrôlé (entrées restantes comptées en erreur), jamais un blocage illimité.
 DEFAULT_TIME_BUDGET_S = 30.0
+MAX_REGISTRY_ENTRIES = 4096
+MAX_GIT_BLOB_BYTES = 8 * 1024 * 1024
+MAX_BASE_SOURCE_BYTES = 64 * 1024 * 1024
 
 
 class IntegrityGateError(Exception):
@@ -101,6 +49,10 @@ class IntegrityGateError(Exception):
 
 class IntegrityGateExistsError(IntegrityGateError):
     """La sortie cible existe déjà et la régénération n'a pas été demandée."""
+
+
+class IntegrityGateBudgetError(IntegrityGateError):
+    """Une source Git dépasse le budget explicite de lecture."""
 
 
 def _load_json(path: Path) -> "tuple[Any, Optional[str]]":
@@ -171,6 +123,11 @@ def check_preconditions(
                 except StaticValidationError as exc:
                     reasons.append(str(exc))
 
+    if isinstance(worktree, dict) and isinstance(validation, dict):
+        for key in ("branch", "base_sha"):
+            if validation.get(key) and validation[key] != worktree.get(key):
+                reasons.append(f"{key} incohérent entre worktree.json et validation_static.json")
+
     if package_root is not None:
         integrity_py = package_root / "Survey" / "extractor_integrity.py"
         integrity_json = package_root / "Survey" / "extractor_integrity.json"
@@ -209,14 +166,9 @@ def check_preconditions(
     )
 
 
-def _load_worktree_extractor_integrity(integrity_py_path: Path):
-    """Charge Survey/extractor_integrity.py DEPUIS LE WORKTREE dynamiquement,
-    sous un nom de module dédié — jamais "Survey.extractor_integrity", pour
-    ne jamais entrer en collision avec un éventuel import déjà en cache dans
-    sys.modules provenant du dépôt principal. _load_registry/_hash_function
-    sont ensuite appelées telles quelles : aucune réimplémentation, aucun
-    sous-processus avec parsing de texte."""
-    module_name = f"_extractor_integrity_worktree_{uuid.uuid4().hex}"
+def _load_base_extractor_integrity(integrity_py_path: Path):
+    """Charge l'algorithme de hash de base_sha, hors du worktree patché."""
+    module_name = f"_extractor_integrity_base_{uuid.uuid4().hex}"
     spec = importlib.util.spec_from_file_location(module_name, integrity_py_path)
     if spec is None or spec.loader is None:
         raise IntegrityGateError(f"impossible de charger {integrity_py_path} comme module Python")
@@ -236,6 +188,115 @@ def _load_worktree_extractor_integrity(integrity_py_path: Path):
     return module
 
 
+def _git(repo: Path, *args: str) -> bytes:
+    if args and args[0] == "show":
+        try:
+            size = int(_git(repo, "cat-file", "-s", args[1]).strip())
+        except (ValueError, IndexError) as exc:
+            raise IntegrityGateError("taille de blob Git invalide") from exc
+        if size > MAX_GIT_BLOB_BYTES:
+            raise IntegrityGateBudgetError("blob Git supérieur au budget de lecture")
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo), *args], capture_output=True,
+            timeout=10, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise IntegrityGateError(f"lecture Git impossible : {type(exc).__name__}") from exc
+    if proc.returncode:
+        raise IntegrityGateError(
+            f"lecture Git impossible ({' '.join(args[:2])}) : {proc.stderr.decode('utf-8', 'replace').strip()[:300]}"
+        )
+    return proc.stdout
+
+
+def _git_path(repo: Path, path: Path) -> str:
+    try:
+        return path.resolve().relative_to(repo.resolve()).as_posix()
+    except ValueError as exc:
+        raise IntegrityGateError(f"chemin hors du worktree Git : {path}") from exc
+
+
+def _source_path(repo: Path, survey_dir: Path, file_name: str) -> tuple[Path, str]:
+    if (
+        not file_name.endswith(".py") or "\\" in file_name or ":" in file_name
+        or file_name.startswith("/") or "\x00" in file_name
+    ):
+        raise IntegrityGateError(f"chemin de fonction protégée invalide : {file_name!r}")
+    path = (survey_dir / file_name).resolve()
+    return path, _git_path(repo, path)
+
+
+def _expected_declarations(
+    expected_changes_path: "str | Path | None", diagnosis_path: "str | Path | None",
+    patch_replay_path: "str | Path | None", *, case_id: str, base_sha: str,
+    branch: str, worktree_dir: Path, registry: dict,
+) -> tuple[dict[str, dict], list[dict]]:
+    """Une intention locale explicite n'est valide qu'avec les preuves Phase 4/9."""
+    if expected_changes_path is None:
+        return {}, []
+    path = Path(expected_changes_path)
+    errors: list[dict] = []
+    try:
+        path.resolve().relative_to(worktree_dir.resolve())
+    except ValueError:
+        pass
+    else:
+        return {}, [{"key": "<expected_changes>", "reason": "déclaration dans le worktree patché"}]
+    data, err = _load_json(path)
+    if err or not isinstance(data, dict):
+        return {}, [{"key": "<expected_changes>", "reason": err or "déclaration JSON invalide"}]
+    if data.get("case_id") != case_id or data.get("base_sha") != base_sha:
+        errors.append({"key": "<expected_changes>", "reason": "case_id ou base_sha incohérent"})
+    if data.get("schema_version") != "1.0":
+        errors.append({"key": "<expected_changes>", "reason": "schema_version de déclaration invalide"})
+    changes = data.get("changes")
+    if not isinstance(changes, list) or not 0 < len(changes) <= len(registry):
+        errors.append({"key": "<expected_changes>", "reason": "changes absent, vide ou non borné"})
+        changes = []
+    declarations: dict[str, dict] = {}
+    for item in changes:
+        key = item.get("function_id") if isinstance(item, dict) else None
+        if not isinstance(key, str) or key not in registry or key in declarations:
+            errors.append({"key": "<expected_changes>", "reason": "fonction inconnue ou dupliquée"})
+            continue
+        if not _SHA.fullmatch(str(item.get("base_hash", ""))) or not _SHA.fullmatch(str(item.get("patched_hash", ""))):
+            errors.append({"key": key, "reason": "hash d'intention invalide"})
+            continue
+        declarations[key] = item
+    for label, evidence_path in (("diagnosis", diagnosis_path), ("patch_replay", patch_replay_path)):
+        if evidence_path is not None:
+            try:
+                Path(evidence_path).resolve().relative_to(worktree_dir.resolve())
+            except ValueError:
+                pass
+            else:
+                errors.append({"key": "<expected_changes>", "reason": f"preuve {label} dans le worktree patché"})
+    diagnosis, diag_err = _load_json(Path(diagnosis_path)) if diagnosis_path else (None, "diagnostic non fourni")
+    replay, replay_err = _load_json(Path(patch_replay_path)) if patch_replay_path else (None, "rejeu non fourni")
+    diagnosis_replay = diagnosis.get("replay") if isinstance(diagnosis, dict) else None
+    replay_worktree = replay.get("worktree") if isinstance(replay, dict) else None
+    if diag_err or not isinstance(diagnosis, dict) or (
+        diagnosis.get("case_id") != case_id or diagnosis.get("confidence_global") != "certain"
+        or diagnosis.get("case_incomplete") is not False
+        or diagnosis.get("stage") not in ("extraction", "action")
+        or not isinstance(diagnosis_replay, dict) or diagnosis_replay.get("verdict") != "REPRODUIT"
+    ):
+        errors.append({"key": "<expected_changes>", "reason": "diagnostic confirmé du même case absent ou invalide"})
+    if replay_err or not isinstance(replay, dict) or (
+        replay.get("case_id") != case_id or replay.get("refused") is not False
+        or replay.get("stage") != (diagnosis.get("stage") if isinstance(diagnosis, dict) else None)
+        or replay.get("outcome") != "CORRECTIF_CONFIRME"
+        or replay.get("patch_validated") is not True
+        or not isinstance(replay_worktree, dict)
+        or replay_worktree.get("base_sha") != base_sha
+        or replay_worktree.get("branch") != branch
+        or Path(replay_worktree.get("path") or "").resolve() != worktree_dir.resolve()
+    ):
+        errors.append({"key": "<expected_changes>", "reason": "rejeu confirmé sur ce worktree absent ou invalide"})
+    return (declarations if not errors else {}), errors
+
+
 @dataclass
 class IntegrityCheckResult:
     case_id: str
@@ -244,6 +305,7 @@ class IntegrityCheckResult:
     registry_path: str
     total_entries: int
     checked_entries: int
+    functions: "list[dict]" = field(default_factory=list)
     mismatches: "list[dict]" = field(default_factory=list)
     errors: "list[dict]" = field(default_factory=list)
     budget_exceeded: bool = False
@@ -251,7 +313,9 @@ class IntegrityCheckResult:
 
     @property
     def verdict(self) -> str:
-        return "ACCEPTED" if not self.mismatches and not self.errors else "REJECTED"
+        return "ACCEPTED" if not self.errors and all(
+            row["state"] in (UNCHANGED, EXPECTED_CHANGE) for row in self.functions
+        ) and self.checked_entries == self.total_entries else "REJECTED"
 
     def as_dict(self) -> dict:
         return {
@@ -263,10 +327,16 @@ class IntegrityCheckResult:
             "registry_path": self.registry_path,
             "total_entries": self.total_entries,
             "checked_entries": self.checked_entries,
+            "functions": self.functions,
+            "state_counts": {
+                state: sum(row["state"] == state for row in self.functions)
+                for state in (UNCHANGED, EXPECTED_CHANGE, UNEXPECTED_CHANGE, BASELINE_MISMATCH)
+            },
             "mismatches": self.mismatches,
             "errors": self.errors,
             "budget_exceeded": self.budget_exceeded,
             "verdict": self.verdict,
+            "review_required": any(row["state"] == EXPECTED_CHANGE for row in self.functions),
             "warnings": self.warnings,
         }
 
@@ -276,6 +346,9 @@ def check_extractor_integrity(
     validation_static_path: "str | Path",
     *,
     time_budget_s: float = DEFAULT_TIME_BUDGET_S,
+    expected_changes_path: "str | Path | None" = None,
+    diagnosis_path: "str | Path | None" = None,
+    patch_replay_path: "str | Path | None" = None,
 ) -> IntegrityCheckResult:
     """Vérifie l'intégrité des fonctions gelées du worktree décrit par
     worktree_manifest_path/validation_static_path. Lève IntegrityGateError si
@@ -290,6 +363,8 @@ def check_extractor_integrity(
             + " ; ".join(precondition.reasons)
         )
 
+    if not math.isfinite(time_budget_s) or time_budget_s <= 0:
+        raise IntegrityGateError("time_budget_s doit être fini et positif")
     worktree = precondition.worktree or {}
     package_root = precondition.package_root
     if package_root is None:
@@ -300,93 +375,165 @@ def check_extractor_integrity(
     integrity_py = survey_dir / "extractor_integrity.py"
     integrity_json = survey_dir / "extractor_integrity.json"
 
-    module = _load_worktree_extractor_integrity(integrity_py)
-
-    try:
-        registry = module._load_registry(survey_dir)
-    except Exception as exc:
-        raise IntegrityGateError(
-            f"échec de lecture du registre {integrity_json} via _load_registry (worktree) : "
-            f"{type(exc).__name__}: {exc}"
-        ) from exc
-
-    if not isinstance(registry, dict):
-        raise IntegrityGateError(f"{integrity_json} ne contient pas un objet JSON exploitable comme registre")
-
+    worktree_dir = Path(worktree["worktree_path"]).resolve()
+    repo = Path(_git(worktree_dir, "rev-parse", "--show-toplevel").decode().strip()).resolve()
+    if repo != worktree_dir:
+        raise IntegrityGateError("worktree_path ne désigne pas la racine du worktree Git")
+    base_sha = str(worktree["base_sha"])
+    if not _SHA.fullmatch(base_sha):
+        raise IntegrityGateError("base_sha invalide")
+    resolved_sha = _git(repo, "rev-parse", "--verify", f"{base_sha}^{{commit}}").decode().strip()
+    if resolved_sha.lower() != base_sha.lower():
+        raise IntegrityGateError("base_sha ne désigne pas le commit immuable attendu")
+    _git(repo, "merge-base", "--is-ancestor", base_sha, "HEAD")
+    branch = _git(repo, "symbolic-ref", "--short", "HEAD").decode().strip()
+    if branch != str(worktree["branch"]):
+        raise IntegrityGateError("branche Git du worktree incohérente avec worktree.json")
+    registry_git_path = _git_path(repo, integrity_json)
+    algorithm_git_path = _git_path(repo, integrity_py)
+    base_registry_bytes = _git(repo, "show", f"{base_sha}:{registry_git_path}")
+    base_algorithm_bytes = _git(repo, "show", f"{base_sha}:{algorithm_git_path}")
     warnings: "list[str]" = []
-    total_entries = len(registry)
-    if total_entries == 0:
-        warnings.append("registre d'intégrité vide — rien à vérifier (jamais un motif de rejet en soi)")
-
     mismatches: "list[dict]" = []
     errors: "list[dict]" = []
+    functions: "list[dict]" = []
     checked = 0
     budget_exceeded = False
-
     start = time.monotonic()
-    keys = sorted(registry)
-    for index, key in enumerate(keys):
-        if time.monotonic() - start > time_budget_s:
-            remaining = keys[index:]
-            budget_exceeded = True
-            log_debug(
-                _TAG,
-                f"budget de temps ({time_budget_s}s) dépassé, {len(remaining)} entrée(s) non vérifiée(s)",
-            )
-            for remaining_key in remaining:
-                errors.append({
-                    "key": remaining_key,
-                    "reason": f"budget_exceeded : non vérifié, budget de {time_budget_s}s dépassé",
-                })
-            break
-
-        entry = registry.get(key)
-        if not isinstance(entry, dict) or "hash" not in entry:
-            errors.append({"key": key, "reason": "entrée de registre malformée (attendu {'hash': ...})"})
-            checked += 1
-            continue
-
-        if "::" not in key:
-            errors.append({"key": key, "reason": "clé de registre invalide (attendu 'fichier.py::fonction')"})
-            checked += 1
-            continue
-
-        file_name, function_name = key.split("::", 1)
-        expected_hash = entry["hash"]
-
-        log_debug(_TAG, f"vérification {key}")
+    with tempfile.TemporaryDirectory(prefix="surveybot-integrity-") as temporary:
+        temp_root = Path(temporary)
+        base_survey = temp_root / Path(_git_path(repo, survey_dir))
+        base_survey.mkdir(parents=True)
+        (base_survey / "extractor_integrity.py").write_bytes(base_algorithm_bytes)
+        (base_survey / "extractor_integrity.json").write_bytes(base_registry_bytes)
+        module = _load_base_extractor_integrity(base_survey / "extractor_integrity.py")
         try:
-            current_hash = module._hash_function(survey_dir, file_name, function_name)
-        except FileNotFoundError:
-            errors.append({
-                "key": key, "file": file_name, "function": function_name,
-                "reason": "fichier introuvable — fonction protégée potentiellement supprimée/déplacée",
-            })
-        except LookupError:
-            errors.append({
-                "key": key, "file": file_name, "function": function_name,
-                "reason": "fonction introuvable dans le fichier — renommée ou supprimée",
-            })
-        except Exception as exc:  # jamais un passe-droit silencieux sur une erreur inattendue
-            errors.append({
-                "key": key, "file": file_name, "function": function_name,
-                "reason": f"erreur inattendue lors du calcul du hash : {type(exc).__name__}: {exc}",
-            })
-        else:
-            if current_hash != expected_hash:
+            registry = module._load_registry(base_survey)
+        except Exception as exc:
+            raise IntegrityGateError(f"registre à base_sha illisible : {type(exc).__name__}") from exc
+        if not isinstance(registry, dict) or not 0 < len(registry) <= MAX_REGISTRY_ENTRIES:
+            raise IntegrityGateError("registre à base_sha vide, malformé ou trop grand")
+        total_entries = len(registry)
+        current_registry, current_err = _load_json(integrity_json)
+        if current_err or current_registry != registry:
+            errors.append({"key": "<registry>", "reason": "registre patché absent, illisible ou différent de celui à base_sha"})
+        try:
+            current_algorithm = integrity_py.read_text(encoding="utf-8-sig").replace("\r\n", "\n")
+            base_algorithm = base_algorithm_bytes.decode("utf-8-sig").replace("\r\n", "\n")
+            if current_algorithm != base_algorithm:
+                errors.append({"key": "<hash_algorithm>", "reason": "extractor_integrity.py modifié par le patch"})
+        except (OSError, UnicodeError):
+            errors.append({"key": "<hash_algorithm>", "reason": "extractor_integrity.py illisible"})
+        declarations, declaration_errors = _expected_declarations(
+            expected_changes_path, diagnosis_path, patch_replay_path,
+            case_id=precondition.case_id or "", base_sha=base_sha, branch=branch,
+            worktree_dir=worktree_dir, registry=registry,
+        )
+        errors.extend(declaration_errors)
+        cached_sources: dict[str, bool] = {}
+        total_base_source_bytes = 0
+        keys = sorted(registry)
+        for index, key in enumerate(keys):
+            if time.monotonic() - start > time_budget_s:
+                budget_exceeded = True
+                for remaining_key in keys[index:]:
+                    errors.append({"key": remaining_key, "reason": "budget_exceeded : fonction non vérifiée"})
+                break
+            checked += 1
+            entry = registry[key]
+            if not isinstance(entry, dict) or not _SHA.fullmatch(str(entry.get("hash", ""))) or key.count("::") != 1:
+                errors.append({"key": key, "reason": "entrée de baseline invalide"})
+                continue
+            file_name, function_name = key.split("::", 1)
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", function_name):
+                errors.append({"key": key, "reason": "nom de fonction invalide"})
+                continue
+            try:
+                _, git_path = _source_path(repo, survey_dir, file_name)
+            except IntegrityGateError as exc:
+                errors.append({"key": key, "reason": str(exc)})
+                continue
+            if git_path not in cached_sources:
+                try:
+                    source_bytes = _git(repo, "show", f"{base_sha}:{git_path}")
+                except IntegrityGateBudgetError as exc:
+                    errors.append({"key": key, "reason": str(exc)})
+                    continue
+                except IntegrityGateError:
+                    cached_sources[git_path] = False
+                else:
+                    total_base_source_bytes += len(source_bytes)
+                    if total_base_source_bytes > MAX_BASE_SOURCE_BYTES:
+                        errors.append({"key": key, "reason": "budget cumulé des sources Git dépassé"})
+                        for remaining_key in keys[index + 1:]:
+                            errors.append({"key": remaining_key, "reason": "budget_exceeded : fonction non vérifiée"})
+                        budget_exceeded = True
+                        break
+                    temp_file = temp_root / git_path
+                    temp_file.parent.mkdir(parents=True, exist_ok=True)
+                    temp_file.write_bytes(source_bytes)
+                    cached_sources[git_path] = True
+            base_hash = None
+            base_error = None
+            if not cached_sources[git_path]:
+                base_error = "fichier absent à base_sha"
+            else:
+                try:
+                    base_hash = module._hash_function(base_survey, file_name, function_name)
+                except Exception as exc:
+                    base_error = f"fonction illisible à base_sha : {type(exc).__name__}"
+            patched_hash = None
+            patch_error = None
+            try:
+                patched_hash = module._hash_function(survey_dir, file_name, function_name)
+            except Exception as exc:
+                patch_error = f"fonction patchée introuvable ou illisible : {type(exc).__name__}"
+            baseline_hash = entry["hash"]
+            if base_hash != baseline_hash:
+                state = BASELINE_MISMATCH
+            elif patched_hash == base_hash:
+                state = UNCHANGED
+            else:
+                declaration = declarations.get(key)
+                state = EXPECTED_CHANGE if (
+                    declaration and declaration["base_hash"] == base_hash
+                    and declaration["patched_hash"] == patched_hash and patched_hash is not None
+                ) else UNEXPECTED_CHANGE
+            row = {
+                "key": key, "state": state, "baseline_hash": baseline_hash,
+                "base_hash": base_hash, "patched_hash": patched_hash,
+                "changed_by_patch": base_hash != patched_hash,
+            }
+            if state == EXPECTED_CHANGE:
+                row["evidence"] = {
+                    "expected_changes_path": str(Path(expected_changes_path).resolve()),
+                    "diagnosis_path": str(Path(diagnosis_path).resolve()),
+                    "patch_replay_path": str(Path(patch_replay_path).resolve()),
+                }
+            if base_error:
+                row["base_error"] = base_error
+            if patch_error:
+                row["patch_error"] = patch_error
+            functions.append(row)
+            if state != UNCHANGED:
                 mismatches.append({
-                    "key": key, "file": file_name, "function": function_name,
-                    "expected_hash": expected_hash, "actual_hash": current_hash,
+                    "key": key, "state": state, "expected_hash": baseline_hash,
+                    "base_hash": base_hash, "actual_hash": patched_hash,
                 })
-        checked += 1
+        unused_declarations = sorted(set(declarations) - {
+            row["key"] for row in functions if row["state"] == EXPECTED_CHANGE
+        })
+        for key in unused_declarations:
+            errors.append({"key": key, "reason": "déclaration de changement attendu non concordante"})
 
     return IntegrityCheckResult(
         case_id=precondition.case_id or "",
-        branch=str(worktree.get("branch") or ""),
-        base_sha=str(worktree.get("base_sha") or ""),
+        branch=branch,
+        base_sha=base_sha,
         registry_path=str(integrity_json),
         total_entries=total_entries,
         checked_entries=checked,
+        functions=functions,
         mismatches=mismatches,
         errors=errors,
         budget_exceeded=budget_exceeded,
@@ -406,6 +553,9 @@ def write_extractor_integrity_check(
     out_root: "str | Path" = "extractor_integrity_checks",
     force: bool = False,
     time_budget_s: float = DEFAULT_TIME_BUDGET_S,
+    expected_changes_path: "str | Path | None" = None,
+    diagnosis_path: "str | Path | None" = None,
+    patch_replay_path: "str | Path | None" = None,
 ) -> Path:
     """Exécute check_extractor_integrity et écrit le résultat sous
     out_root/<case_id>/extractor_integrity_check.json. Lève
@@ -438,6 +588,8 @@ def write_extractor_integrity_check(
 
     result = check_extractor_integrity(
         worktree_manifest_path, validation_static_path, time_budget_s=time_budget_s,
+        expected_changes_path=expected_changes_path, diagnosis_path=diagnosis_path,
+        patch_replay_path=patch_replay_path,
     )
 
     out_dir.mkdir(parents=True, exist_ok=False)

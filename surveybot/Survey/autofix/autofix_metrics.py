@@ -341,6 +341,7 @@ def compute_autofix_metrics(
 
     integrity_run = 0
     integrity_verdicts: dict = {}
+    integrity_states: dict = {}
 
     patch_replay_run = 0
     patch_replay_refused = 0
@@ -402,6 +403,12 @@ def compute_autofix_metrics(
         if isinstance(ca.extractor_integrity_check, dict):
             integrity_run += 1
             _bump(integrity_verdicts, str(ca.extractor_integrity_check.get("verdict")))
+            state_counts = ca.extractor_integrity_check.get("state_counts")
+            if isinstance(state_counts, dict):
+                for state in ("UNCHANGED", "EXPECTED_CHANGE", "UNEXPECTED_CHANGE", "BASELINE_MISMATCH"):
+                    count = state_counts.get(state)
+                    if type(count) is int and count >= 0:
+                        integrity_states[state] = integrity_states.get(state, 0) + count
 
         patch_replay_outcome = None
         if isinstance(ca.patch_replay, dict):
@@ -493,6 +500,7 @@ def compute_autofix_metrics(
             "run": integrity_run,
             "accepted": integrity_verdicts.get(VERDICT_ACCEPTED, 0),
             "rejected": integrity_verdicts.get(VERDICT_REJECTED, 0),
+            "function_states": integrity_states,
         },
         "phase12_confidence_score": {
             "run": confidence_run,

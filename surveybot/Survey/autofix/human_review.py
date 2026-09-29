@@ -337,13 +337,26 @@ def _compose_message(*, case_id: str, diagnosis: dict, confidence_score: dict) -
             tests_block = "\n".join(lines)
 
     confidence = str(confidence_score.get("confidence") or "?")
+    core_review_notice = ""
+    if confidence_score.get("core_review_required") is True:
+        keys = confidence_score.get("core_changed_functions")
+        if isinstance(keys, list):
+            names = ", ".join(str(key) for key in keys[:8])
+            if len(keys) > 8:
+                names += f" (+{len(keys) - 8} autres)"
+        else:
+            names = "voir le contrôle Phase 11-A"
+        core_review_notice = (
+            f"\n\nChangement attendu du core : {names}. "
+            "Examiner le diff concret et les preuves avant d'approuver."
+        )
 
     return (
         f"🔎 Revue humaine requise — case {case_id}\n\n"
         f"Symptôme : {symptom_line}\n"
         f"Cause probable : {cause_line}\n\n"
         f"Tests :\n{tests_block}\n\n"
-        f"Confiance : {confidence}"
+        f"Confiance : {confidence}{core_review_notice}"
     )
 
 

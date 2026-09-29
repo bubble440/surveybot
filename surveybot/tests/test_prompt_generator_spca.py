@@ -74,7 +74,8 @@ class PromptGeneratorSpcaTests(unittest.TestCase):
         self.assertNotIn("ordre additif", result.content)
         self.assertNotIn("demander une validation explicite", result.content)
         self.assertIn("Survey/BOT_EVOLUTION_MEMORY.md", result.content)
-        self.assertIn("La Phase 11-A actuelle rejette tout écart", result.content)
+        self.assertIn("La Phase 11-A compare la baseline, base_sha et le patch", result.content)
+        self.assertIn("ne crée pas toi-même la déclaration", result.content)
         self.assertEqual((diag_dir / "diagnosis.json").read_bytes(), before)
 
     def test_action_prompt_preserves_three_outcomes_cta_and_headless_boundary(self) -> None:
