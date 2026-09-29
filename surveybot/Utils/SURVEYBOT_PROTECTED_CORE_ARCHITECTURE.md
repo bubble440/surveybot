@@ -16,7 +16,16 @@ Chaque correctif est rattaché à une fonction core et à un ou plusieurs failur
 
 Une couche d'orchestration unique évalue un ensemble **plat** de correctifs indépendants autour de la fonction concernée. Un correctif ne peut ni appeler un autre correctif, ni supposer son résultat, ni imposer un ordre caché d'application. Pas de chaîne `core → fix A → fix B`. Le nombre de correctifs évalués et le temps d'évaluation sont bornés ; en cas de dépassement, l'exécution abandonne la correction de façon contrôlée et trace la cause.
 
-Pour l'extraction, la correction porte sur le résultat avant sa validation. Pour l'action, la condition doit être vérifiée **avant** tout clic ou effet irréversible ; un résultat déjà exécuté ne peut pas être « corrigé » après coup. `CTA_INTERCEPT_ONLY` conserve son sens : interception sans navigation lorsqu'il est activé, clic réel lorsqu'il est désactivé. Le placement et le découpage des modules seront choisis après lecture du dépôt ; les gros fichiers historiques ne doivent pas devenir des catalogues de fixes. Aucun refactor des extracteurs ou des stratégies d'action n'est requis par ce document.
+Pour l'extraction, la correction intervient avant la validation du résultat. Pour l'action, la condition doit être vérifiée **avant** tout clic ou effet irréversible ; un résultat déjà exécuté ne peut pas être « corrigé » après coup. `CTA_INTERCEPT_ONLY` conserve son sens : interception sans navigation lorsqu'il est activé, clic réel lorsqu'il est désactivé. Le placement et le découpage des modules seront choisis après lecture du dépôt ; les gros fichiers historiques ne doivent pas devenir des catalogues de fixes. Aucun refactor des extracteurs ou des stratégies d'action n'est requis par ce document.
+
+### Position des points d'extension pour l'extraction
+
+L'ordre d'évaluation dépend de la cause confirmée sur le DOM concerné :
+
+- **DOM non couvert :** évaluer le correctif après les stratégies existantes pertinentes, lorsque celles-ci n'ont pas produit de résultat applicable. L'ajout reste strictement gardé par le fait DOM nouveau.
+- **Faux positif d'un extracteur existant :** évaluer le correctif strictement gardé juste avant la stratégie qui correspond à tort. Un ajout après cette stratégie serait inopérant si la cascade s'arrête dès son résultat.
+
+Ces positions logiques `before` et `after` décrivent l'ordre d'appel, sans imposer deux registres ni une réorganisation des extracteurs. Le garde-fou doit rester précis et le correctif indépendant ; aucun changement du corps de la stratégie existante n'est impliqué par ce seul placement.
 
 ## 3. Mesure et attribution
 
@@ -95,3 +104,15 @@ L'agent qui écrit le patch ne met jamais à jour lui-même la baseline pour fai
 5. **Supervision et adoption :** proposer à l'humain le patch concret, ses validations, ses limites et le niveau `HIGH`, `MEDIUM` ou `REJECT`. La décision d'adoption précède toute actualisation de la baseline ; le commit et le merge relèvent du worker local/dev et de l'orchestrateur, jamais du bot de production.
 
 Ce document fixe les responsabilités et les critères de décision. Il ne prescrit ni schéma de stockage définitif, ni nom de module, ni refactor préalable : leur forme dépendra de la lecture du dépôt et des cases effectivement disponibles.
+
+## 9. Tâches à faire — ordre d'implémentation
+
+1. Mettre en place l'infrastructure commune d'identité et de métriques des fonctions critiques : identifiants stables, rattachement à la baseline et compteurs minimaux utiles aux incidents, sans construire d'emblée des métriques sophistiquées.
+2. Créer le registre des correctifs externes pour l'extraction, avec des conditions DOM précises et des correctifs indépendants.
+3. Ajouter un premier point d'extension extraction qui respecte les positions `before` et `after` décrites en section 2, sans correctif métier si possible.
+4. Ajouter un point d'extension action unique, avec une modification volontaire et contrôlée du dispatcher, avant tout effet irréversible.
+5. Adapter le prompt d'autofix pour produire des correctifs selon ces points d'extension et leurs garde-fous.
+6. Adapter la Phase 11-A aux états `UNCHANGED`, `EXPECTED_CHANGE`, `UNEXPECTED_CHANGE` et `BASELINE_MISMATCH`, avec les décisions de la section 7.
+7. Ajouter le cycle de vie des correctifs et la consolidation `EVOLUTION_CANDIDATE` décrits aux sections 5 et 6.
+
+Chaque étape est validée sur le périmètre qu'elle introduit avant de passer à la suivante. Les correctifs métier répondent à des incidents confirmés ; ces points d'extension peuvent être préparés sans en inventer.
