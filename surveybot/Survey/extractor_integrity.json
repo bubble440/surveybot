@@ -6,22 +6,22 @@
     "hash": "679b71e600b9ceebf7e863a20feded550ab1f4b8bcbd65c545071ea54a63319d"
   },
   "action_dispatcher.py::_apply_by_target_id": {
-    "hash": "ab44cdcabf5605c5b72e4ad6761ff1cbc3108c665b2c0a4cf381e2d6fc0b5415"
+    "hash": "5f1477edd6bd1ea0bd03fbb33aa460476c2bb08e5304a3db4f1c5ecf1c73b8bf"
   },
   "action_dispatcher.py::_click_candidate": {
-    "hash": "eeda99faa224d75074c0ba41c7945ae920b8a94eccab577c6b72c641aab3d6a3"
+    "hash": "3eadd3f1286a350206d917d889ccb3f1d5af1cf8136c73c8baaec10c3d6a2f66"
   },
   "action_dispatcher.py::execute_action": {
-    "hash": "ed354b367c5d2dff4c4a8cb1c79c0f5c5f3f51d69aabaa7c9b7de0e74933bf07"
+    "hash": "a5c3f0cf52321c939f7f8d898601830b0046a189cee3e291f5eb9da57fff4c07"
   },
   "action_dispatcher.py::execute_actions_plan": {
-    "hash": "8024559864b5fd36fa19c34b9b667453727ff0ab518178ce54d00632784c1ebb"
+    "hash": "cd8e024fc591e53e3207be8a00a00616270a02e12f7b91c70a11aaace2e0689b"
   },
   "batch_response_parser.py::parse_batch_response": {
-    "hash": "a1178e4c0770dc1726d47a2898c1d7db14bf26996fc75d9db3372ea452070a66"
+    "hash": "06f19646c6720c3d77f8fa6a325af8783b4745a37f898b5e80d7c34c357510aa"
   },
   "cta_handler.py::try_click_navigation_cta": {
-    "hash": "e5e761d70e444808c4bbb2dfc4215297b03354c24e15647902847e91a251b120"
+    "hash": "85388408c85b814f8854a347a216029536ef64a3e62c59e262064ce23f389a82"
   },
   "dom_analyzer.py::_is_auxiliary_text_for_choice_group": {
     "hash": "b0725d416aa374f9b3ae152dc2afe8331ba3ff7b741ddaf1be85dcb6bcf910dc"
@@ -33,7 +33,7 @@
     "hash": "3f11bb27ef7936fb85f77c00e1516705bbdeb3e44b98b70638787e2deee49fdb"
   },
   "dom_analyzer.py::analyze_dom": {
-    "hash": "f2700b621dbcaec1cc263266fccf4aef806d88a2465610ed9a96ea7d7174dc87"
+    "hash": "8513f68668b24ac06ff0f6c6bc0c2c9052618aef0f14d13654f79b3a01177d89"
   },
   "dom_classifier.py::_has_visible_answerables": {
     "hash": "f563ee3cecaa19c12b3d46bd7cf642c2011a0ec9f4e93509af39f26ed032fc95"
@@ -51,7 +51,7 @@
     "hash": "d4ee06cd4e4d1f94ac4848bd394bff7d29b81f7dc75adb2a6ecb090543b68054"
   },
   "dom_extractors_decipher.py::_extract_focusvision_answers_list_groups": {
-    "hash": "8fd259a560406a599eb5f5e699d1d89f05fddc0b76300c4b054330c4ca4000d2"
+    "hash": "87885226a562a1c7d26425258028087ca00afc68f6351f02c31d2b75c497273a"
   },
   "dom_extractors_misc.py::_extract_button_choice_radio_blocks": {
     "hash": "5c8199289666b4e8613e64c63844fcf7c947472f878c0cecef978cbcc203f470"
@@ -105,10 +105,10 @@
     "hash": "b2023caec2ab3243a3a35c0abe104f1329ce77dbe1dc415c7265bf4edf2d9f77"
   },
   "dom_extractors_misc.py::_extract_qualtrics_form_multi_text_blocks": {
-    "hash": "5bb086a08d10208ef04cbb183835121000ef4924149a2d53c17828a8dd31f64e"
+    "hash": "c4a5ce3a06e5b8d4e835959242b896141f7497b24093047db9f18bfc011bccbf"
   },
   "dom_extractors_misc.py::_extract_qualtrics_te_matrix_multi_text_blocks": {
-    "hash": "2df4486b903f7a0fbfe7d421e87d45333b464f1d30adb850db38feb36402077c"
+    "hash": "689f205a5499ee72b9e358e93017c2cb4adf1b8428804976f03e9e67fc4c851b"
   },
   "dom_extractors_misc.py::_extract_researchnow_autoscreener_radio_blocks": {
     "hash": "5ef38d4c1d980d2a2d62a23a7a5430b98423d53f3fd19ce480e807a80f6f9ecc"
@@ -117,7 +117,7 @@
     "hash": "e6e2bd15e6193b7cb815de2335da7b266edff55a143bd4db93bd2e833fd1c9d0"
   },
   "dom_extractors_misc.py::_extract_table_matrix_radio_rows": {
-    "hash": "4efe0a472dd27afa3b5dc3e5391d2b9c080aeaf045ca89d616604ccd3a0c3b3d"
+    "hash": "e55f1adee2efe83861e5b5d31b04638a7732a3029bcb1ebf26492906385aa262"
   },
   "dom_question_extractor.py::_group_key_for_choice": {
     "hash": "59aaf4779032bf8053509581570b981a039155fdb5ddadeae43ac65d152e8909"
@@ -135,16 +135,16 @@
     "hash": "e6db0b2da469c085b1b530919c4a86827191e619c20599fcc356e5a4223d9d0e"
   },
   "functions.py::_handle_topsurveys_exclusion_popup": {
-    "hash": "33a0fe798ca325ec768ee36f122793bd9e5d40fa90c5ca0ac696391f87362366"
+    "hash": "cced80f4160c745ea1fb847cbdabec34526e402de4220292e4167f4e5d2e6a19"
   },
   "functions.py::_handle_topsurveys_genial_reward_popup": {
-    "hash": "a652ec1cb99dd2a1bc0354e12be5f133be4336ec38d577bbab9db10b7e540ad6"
+    "hash": "ebeb1a1aa605ee98b501e4f404bad95bcb1ad6ffce03182f3cc032bc678b4000"
   },
   "functions.py::_handle_topsurveys_streak_complete_popup": {
-    "hash": "bc75e89e96d36f12cb6874e6893faf5203a54afc580d9e2ecc1e64417f3e0de9"
+    "hash": "a2f40143dc164156e65f956be28e60adf2a74a954aacdabc63a8c351b22cf69c"
   },
   "functions.py::_resolve_topsurveys_popups": {
-    "hash": "fd5fd1293cedd445a22b77e8a3b855f3fc3cb029078572c31d23b4ac420a44fe"
+    "hash": "d5a3043294611c04ccec54406b4e041c3a657e13ec65f40cd888a173ac4b7ce3"
   },
   "input_dropdown.py::select_native_option_by_target": {
     "hash": "8d4e953313471f5a56dc9d626b4f013d6e9bd2c236dc85ca286bdb6d3f488399"
@@ -159,15 +159,15 @@
     "hash": "d0379b47da07db49d7e1ab39fd1265d73499a9900cec962250fe396a7a80fd70"
   },
   "page_snapshot.py::dump_page_snapshot": {
-    "hash": "6c39542bc025c76316d9e35c565649c49600c5b3ec6bd235681b4fd22ca98d2d"
+    "hash": "62e3bb3634441af2ab4e215cf1636a341d38806f66abcb47eb1f371900683717"
   },
   "prompt_builder.py::build_batch_prompt": {
-    "hash": "061eab9341eba709560fde047ffb8e2b914d36b2ac0d6d022ced3199f71f376d"
+    "hash": "6cb8a9d1bc69fb967c49b0da18e1f4ac88aa2effab4cc19e02cf2266763e9ce9"
   },
   "prompt_builder.py::filter_blocks_for_openai": {
     "hash": "a2a8a342d8b1be41007fec24524ee2d594084611fc18086d079dcf521259ea45"
   },
   "survey_executor.py::_should_skip_post_actions_navigation": {
-    "hash": "e86c6a0bc960c6f814a81681ed6797324a8ae1988fcb134f8c5e42904bbc9e97"
+    "hash": "83eb0f4dcba9e2746c4f40cf37333a37d185961721047c4b11f4101c7ee55134"
   }
 }
