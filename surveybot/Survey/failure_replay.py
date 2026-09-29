@@ -2,9 +2,9 @@ from __future__ import annotations
 
 """Rejeu local et déterministe d'un failure_case (Survey/failure_case_builder.py)
 contre dom_analyzer.analyze_dom() et le validator concerné, sur le HTML figé du
-case. Le mode statique historique reste le défaut ; le mode fidèle explicite
-utilise Chromium isolé (layout et hostname du provider), sans scripts de la
-page, dispatch/interaction ni réseau.
+case. Le mode fidèle est le défaut pour stage=extraction ; le mode statique
+historique reste le défaut pour stage=action et est sélectionnable explicitement.
+Chromium isolé fournit layout et hostname du provider, sans interaction ni réseau.
 
 Lecture seule sur le pipeline bot : ce module appelle dom_analyzer.analyze_dom(),
 question_block_validator.validate_question_blocks() et
@@ -34,7 +34,7 @@ replay sont comparés à ceux du case d'origine :
   - NON_REJOUABLE     : DOM requis absent, artefact illisible, ou erreur non
     recouvrable pendant l'extraction/la validation — jamais une conclusion forcée.
 
-Honnêteté sur la fidélité du mode par défaut (cf. Survey/dom_replay_shim.py) : un DOM statique n'a
+Honnêteté sur la fidélité du mode statique (cf. Survey/dom_replay_shim.py) : un DOM statique n'a
 ni JavaScript exécuté, ni layout, ni état runtime — certains signaux que
 dom_analyzer.py ou les validators calculent via evaluate() (getComputedStyle,
 getBoundingClientRect, lecture d'état live d'un widget) ne peuvent pas être
@@ -134,8 +134,8 @@ def _pick_dom_file(stage: str, artifacts_dir: Path, artifacts_flags: dict) -> "t
     return None, f"stage={stage!r} inconnu — impossible de déterminer quel DOM/validator utiliser"
 
 
-def replay_failure_case(case_dir: "str | Path", *, mode: str = "static") -> ReplayResult:
-    if mode not in ("static", "faithful"):
+def replay_failure_case(case_dir: "str | Path", *, mode: Optional[str] = None) -> ReplayResult:
+    if mode not in (None, "static", "faithful"):
         raise ValueError(f"mode de replay inconnu: {mode!r}")
     case_dir = Path(case_dir)
     case_id = case_dir.name
@@ -147,6 +147,8 @@ def replay_failure_case(case_dir: "str | Path", *, mode: str = "static") -> Repl
         return _not_replayable(case_id, "unknown", "manifest.json ne contient pas un objet JSON")
 
     stage = str(manifest.get("stage") or "unknown")
+    if mode is None:
+        mode = "faithful" if stage == "extraction" else "static"
     artifacts_flags = manifest.get("artifacts") if isinstance(manifest.get("artifacts"), dict) else {}
     artifacts_dir = case_dir / "artifacts"
 
@@ -165,26 +167,44 @@ def replay_failure_case(case_dir: "str | Path", *, mode: str = "static") -> Repl
     if dom_err:
         return _not_replayable(case_id, stage, dom_err, original_failure_types=original_types)
 
-    try:
-        html_text = (artifacts_dir / dom_name).read_text(encoding="utf-8")
-    except OSError as exc:
-        return _not_replayable(
-            case_id, stage, f"{dom_name} illisible ({exc})",
-            dom_file_used=dom_name, original_failure_types=original_types,
-        )
-
     if mode == "faithful":
-        # Import local : le chemin statique historique ne charge pas Chromium.
-        from Survey.replay_browser import IsolatedReplayBrowser
+        # Le même chargeur et la même isolation registre/verrou que les autres
+        # consommateurs Chromium ; aucun chemin de chargement parallèle.
+        from Survey.replay_browser import IsolatedReplayBrowser, extract_case_blocks
 
         try:
             with IsolatedReplayBrowser() as browser:
-                driver = browser.load_frozen_html(html_text, manifest.get("provider_domain"))
-                from Survey.dom_registry import _STABLE_TEXT_FIELD_LOCATOR, clear_registry
-
-                clear_registry()
-                _STABLE_TEXT_FIELD_LOCATOR.clear()
-                return _run_pipeline(driver, case_id, stage, dom_name, artifacts_dir, original_report, original_types)
+                driver = browser.load_case_document(case_dir)
+                extraction = extract_case_blocks(driver, case_dir)
+                if extraction.error:
+                    return _not_replayable(
+                        case_id, stage, f"analyze_dom() a échoué : {extraction.error}",
+                        dom_file_used=dom_name, original_failure_types=original_types,
+                    )
+                if stage == "extraction":
+                    if extraction.validation_error or extraction.validation is None:
+                        return _not_replayable(
+                            case_id, stage,
+                            f"validate_question_blocks() a échoué : {extraction.validation_error or 'rapport absent'}",
+                            dom_file_used=dom_name, original_failure_types=original_types,
+                            replayed_blocks_count=len(extraction.blocks),
+                        )
+                    comparison = extraction.validation_comparison
+                    if not isinstance(comparison, dict) or not comparison.get("comparable"):
+                        reasons = comparison.get("reasons") if isinstance(comparison, dict) else None
+                        return _not_replayable(
+                            case_id, stage, f"comparaison du validator non exploitable : {reasons or 'raison absente'}",
+                            dom_file_used=dom_name, original_failure_types=original_types,
+                            replayed_blocks_count=len(extraction.blocks),
+                        )
+                    return _result_from_report(
+                        driver, case_id, stage, dom_name, original_types,
+                        extraction.blocks, extraction.validation,
+                    )
+                return _run_pipeline(
+                    driver, case_id, stage, dom_name, artifacts_dir,
+                    original_report, original_types, blocks=extraction.blocks,
+                )
         except Exception as exc:
             log_debug(_TAG, f"replay fidèle échoué case={case_id}: {type(exc).__name__}: {exc}")
             return _not_replayable(
@@ -192,6 +212,13 @@ def replay_failure_case(case_dir: "str | Path", *, mode: str = "static") -> Repl
                 dom_file_used=dom_name, original_failure_types=original_types,
             )
 
+    try:
+        html_text = (artifacts_dir / dom_name).read_text(encoding="utf-8")
+    except OSError as exc:
+        return _not_replayable(
+            case_id, stage, f"{dom_name} illisible ({exc})",
+            dom_file_used=dom_name, original_failure_types=original_types,
+        )
     try:
         driver = load_static_driver(html_text)
     except ReplayLoadError as exc:
@@ -203,21 +230,21 @@ def replay_failure_case(case_dir: "str | Path", *, mode: str = "static") -> Repl
 
 
 def _run_pipeline(driver: Any, case_id: str, stage: str, dom_name: str,
-                  artifacts_dir: Path, original_report: Any, original_types: list) -> ReplayResult:
+                  artifacts_dir: Path, original_report: Any, original_types: list,
+                  *, blocks: Optional[list] = None) -> ReplayResult:
 
-    try:
-        import Survey.dom_analyzer as dom_analyzer
-        blocks = dom_analyzer.analyze_dom(driver)
-    except Exception as exc:
-        log_debug(_TAG, f"analyze_dom a levé pendant le replay case={case_id}: {type(exc).__name__}: {exc}")
-        return _not_replayable(
-            case_id, stage,
-            f"analyze_dom() a levé une exception non recouvrable pendant le replay : "
-            f"{type(exc).__name__}: {exc}",
-            dom_file_used=dom_name, original_failure_types=original_types,
-        )
-
-    warnings: list = []
+    if blocks is None:
+        try:
+            import Survey.dom_analyzer as dom_analyzer
+            blocks = dom_analyzer.analyze_dom(driver)
+        except Exception as exc:
+            log_debug(_TAG, f"analyze_dom a levé pendant le replay case={case_id}: {type(exc).__name__}: {exc}")
+            return _not_replayable(
+                case_id, stage,
+                f"analyze_dom() a levé une exception non recouvrable pendant le replay : "
+                f"{type(exc).__name__}: {exc}",
+                dom_file_used=dom_name, original_failure_types=original_types,
+            )
 
     if stage == "extraction":
         try:
@@ -268,7 +295,13 @@ def _run_pipeline(driver: Any, case_id: str, stage: str, dom_name: str,
                 replayed_blocks_count=len(blocks or []),
             )
 
+    return _result_from_report(driver, case_id, stage, dom_name, original_types, blocks, replayed_report)
+
+
+def _result_from_report(driver: Any, case_id: str, stage: str, dom_name: str,
+                        original_types: list, blocks: list, replayed_report: Any) -> ReplayResult:
     replayed_types = _report_failure_types(replayed_report)
+    warnings: list = []
 
     stats = getattr(driver, "stats", None)
     if stats is not None and stats.declined:

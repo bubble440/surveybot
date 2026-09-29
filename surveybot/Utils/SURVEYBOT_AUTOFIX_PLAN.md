@@ -1719,6 +1719,40 @@ niveau tant que le niveau précédent n'est pas fiable.
 > `NON_REPRODUIT` sur ces deux cases (respectivement 0 bloc, 12/71 evaluate ;
 > 9 blocs, 409/470 evaluate honorés/déclinés).
 
+> Mise à jour 2026-09-29 (suite 44) : le replay fidèle de la suite 43 est devenu
+> le comportement par défaut de `replay_failure_case()` pour `stage="extraction"`
+> (`--static`/`mode="static"` conservent le shim historique) ; le défaut pour
+> `stage="action"` reste statique, `--faithful` y reste explicite. Cause : avec
+> le shim, `NON_REPRODUIT` pouvait signifier qu'un `evaluate()` décisif avait
+> été décliné, et `load_case_document()` donnait `replay-case.invalid` comme
+> hostname aux diagnostics/rejeux de patch sans ressource externe capturée.
+> `load_frozen_html()` a été supprimé : tous les appelants Chromium passent par
+> `load_case_document()`, qui sert le HTML en mémoire sous le hostname
+> `provider_domain` du manifest, conserve ressources capturées, scripts
+> autorisés seulement selon la règle déjà existante, état runtime et pré-action.
+> Le mode fidèle délègue l'extraction à `extract_case_blocks()` (verrou, registre
+> DOM et cache de secours centralisés) ; erreur Chromium/document ou comparaison
+> inexploitable -> `NON_REJOUABLE`, jamais de repli statique. Aucun module du
+> pipeline bot, ni `failure_diagnosis.py`/`patch_replay.py`, n'a été modifié.
+> Validation : Focaldata `20260911_160609_extraction_validation_failure` donne
+> désormais par défaut `NON_REPRODUIT`/1 bloc/aucune issue avec le code actuel ;
+> sur le parent `c86d1c8` du commit ajoutant l'extracteur MUI cards (outillage
+> de replay actuel superposé, ancien analyseur/extracteur conservés), il donne
+> `REPRODUIT`/0 bloc/`missing_block`. Worktree temporaire retiré après essai.
+> `20260923_201701_extraction_validation_failure` : défaut `NON_REPRODUIT`/11
+> blocs ; `--static` inchangé `NON_REPRODUIT`/9 blocs. Les deux cases action
+> disponibles gardent exactement leur verdict/blocs/issues par défaut
+> (`REPRODUIT`/1 bloc chacun) ; le mode fidèle explicite donne aussi `REPRODUIT`
+> sur les deux, à titre informatif. Diagnostic Focaldata : verdict inchangé,
+> mais replay passif passé de 0 à 1 bloc ; le signal hostname voit 7 cartes.
+> `patch_replay` via CLI, avec manifestes Phase 7/8 de test : ancien code ->
+> `BUG_PERSISTANT`, code actuel -> `CORRECTIF_CONFIRME`. Le case action testé
+> est refusé par la précondition normale (`CORRECTIF_CONFIRME` avant patch,
+> `BUG_PERSISTANT` requis). Trois replays successifs dans un même processus
+> confirment l'effacement du registre/cache. Doublon restant, non corrigé :
+> `failure_diagnosis._attempt_real_extraction_replay` refait l'extraction après
+> le replay d'extraction par défaut, désormais fidèle.
+
 ## Contexte de travail actuel
 
 Nous développons le module d'observabilité, de diagnostic et d'auto-correction supervisée de SurveyBot.
@@ -1747,7 +1781,9 @@ incident détecté
 1B  ouverte en tâche de fond
 2   terminée
 3   PARTIELLEMENT TERMINÉE (3A terminée, correctif de fidélité espace insécable
-    inclus ; 3B.1/3B.2/3B.5/3B.6/3B.8 terminés, oracle checked-state étendu au
+    inclus ; replay Chromium fidèle par défaut pour l'extraction depuis la
+    suite 44, statique par défaut pour l'action ; 3B.1/3B.2/3B.5/3B.6/3B.8
+    terminés, oracle checked-state étendu au
     rejeu ; 3B.9/3B.10/3B.11 (scripts, feuilles de style, requêtes XHR/fetch
     externes) et 3C.1 + 3C.2 + 3C.3 + 3C.4 (document, ressources externes,
     CSP relâchée, état runtime restauré, extraction+validator rejoués,

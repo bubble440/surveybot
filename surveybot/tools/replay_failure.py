@@ -1,8 +1,8 @@
 """
 replay_failure.py — Rejoue localement un failure_case (failure_cases/<id>/)
 contre dom_analyzer.analyze_dom() et le validator concerné, sur le HTML figé du
-case. Mode statique par défaut ; --faithful utilise Chromium isolé pour le
-layout et le hostname, sans scripts de la page, interaction ni réseau.
+case. Mode fidèle par défaut pour l'extraction, statique pour l'action ;
+--static et --faithful sélectionnent explicitement un moteur.
 
 Outil de diagnostic en lecture seule : ne modifie jamais le case ni le snapshot
 source, ne tente jamais de corriger quoi que ce soit ni de deviner un résultat
@@ -13,6 +13,7 @@ façade CLI.
 Usage :
     python tools\\replay_failure.py failure_cases\\<id>
     python tools\\replay_failure.py --faithful failure_cases\\<id>
+    python tools\\replay_failure.py --static failure_cases\\<id>
 """
 
 from __future__ import annotations
@@ -61,13 +62,19 @@ def main(argv: "list[str] | None" = None) -> int:
         )
     )
     parser.add_argument("case_dir", help="Dossier du case (ex: failure_cases\\case_20260907_142347_action_validation_failure)")
-    parser.add_argument(
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument(
         "--faithful", action="store_true",
-        help="Rejoue le DOM figé dans Chromium isolé avec layout et hostname du provider, sans scripts ni réseau.",
+        help="Rejoue le DOM figé dans Chromium isolé (défaut pour stage=extraction).",
+    )
+    modes.add_argument(
+        "--static", action="store_true",
+        help="Utilise le shim statique historique (défaut pour stage=action).",
     )
     args = parser.parse_args(argv)
 
-    result = replay_failure_case(args.case_dir, mode="faithful" if args.faithful else "static")
+    mode = "faithful" if args.faithful else "static" if args.static else None
+    result = replay_failure_case(args.case_dir, mode=mode)
     _print_result(result)
 
     return 0 if result.verdict in (VERDICT_REPRODUIT, VERDICT_NON_REPRODUIT, VERDICT_DIFFERENT) else 1

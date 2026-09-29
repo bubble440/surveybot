@@ -27,10 +27,10 @@ réseau et ne sont donc pas concernées.
 `load_case_document()` charge dans une page le seul HTML principal déjà figé du
 case, choisi par la logique existante de Survey/failure_replay.py
 (`_pick_dom_file`, une seule source de vérité pour « quel fichier selon le
-stage », jamais dupliquée ici). Le document est servi depuis la mémoire sous une
-origine synthétique (`.invalid`, jamais résolue) : c'est la seule réponse que le
-garde-fou réseau laisse passer, et uniquement pour cette URL exacte. Toute
-sous-ressource relative ou absolue reste refusée et journalisée. La réponse
+stage », jamais dupliquée ici). Le document est servi depuis la mémoire sous le
+hostname `provider_domain` du manifest : c'est la seule réponse que le
+garde-fou réseau laisse passer, et uniquement pour cette URL exacte. Sans
+ressource capturée, toute sous-ressource est refusée et journalisée. La réponse
 porte une CSP `script-src 'none'` : les scripts du provider, déjà exécutés
 avant la capture, ne se rejouent pas sur un DOM déjà muté (ils le
 dupliqueraient ou le réécriraient) ; `page.evaluate()` de Playwright n'est pas
@@ -57,9 +57,9 @@ contrairement aux scripts/feuilles de style) ; sans `content_type` capturé,
 aucun n'est inventé. Une entrée dont le `content_type` est présent mais mal formé
 n'est pas servie. Ces réponses ne s'exécutent que si des scripts le sont (elles
 sont demandées par eux) : elles ne changent pas la décision `allow_scripts`.
-Quand au moins une ressource est servable, le document est servi à son URL
-d'origine (`url` de meta.json, sanitisée) pour que les références relatives
-du HTML se résolvent comme à la capture ; sinon URL synthétique. Les scripts
+Le document reprend le chemin de `url` dans meta.json quand elle est exploitable,
+avec le hostname du manifest, pour que les références relatives du HTML se
+résolvent comme à la capture ; sinon il utilise un chemin synthétique. Les scripts
 (inline et servis) ne sont autorisés à s'exécuter que si au moins un script
 externe est servable ; sinon la CSP `script-src 'none'` reste appliquée et le
 comportement est identique à celui d'avant ce patch. Attention : les scripts
@@ -189,6 +189,7 @@ laisserait croire à une analyse.
 
 import asyncio
 import json
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -212,7 +213,6 @@ _TAG = "[REPLAY_BROWSER]"
 # illimitée si une page en boucle réessaie).
 MAX_BLOCKED_LOG = 500
 
-_DOCUMENT_URL = "http://replay-case.invalid/document.html"
 _DOCUMENT_CSP = "script-src 'none'"
 
 # Artefact -> type de requête Playwright pour lequel ses entrées peuvent être
@@ -333,23 +333,6 @@ class IsolatedReplayBrowser:
             raise ReplayBrowserError("non démarré")
         return self._context.new_page()
 
-    def load_frozen_html(self, html: str, provider_domain: str) -> Any:
-        """Charge un DOM figé sous le hostname du case, sans scripts ni ressources.
-
-        Seul le document en mémoire est servi ; le routage du contexte refuse
-        toutes les autres requêtes. La CSP empêche l'exécution des scripts du
-        HTML, tandis que page.evaluate() reste disponible pour le pipeline.
-        """
-        import re
-
-        if not isinstance(provider_domain, str) or not re.fullmatch(
-            r"(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*",
-            provider_domain,
-        ):
-            raise ReplayBrowserError("provider_domain absent ou invalide dans le manifest")
-        self._served_resources = {}
-        return self._load_html(html, f"https://{provider_domain}/__surveybot_frozen_replay__.html")
-
     def load_case_document(self, case_dir: Union[str, Path], *, pre_action: bool = False) -> Any:
         """Charge le HTML principal figé d'un failure case dans une nouvelle page
         et la retourne. Lève ReplayBrowserError si le document n'est pas
@@ -385,10 +368,31 @@ class IsolatedReplayBrowser:
         # Réinitialisé à chaque chargement : les ressources servies sont celles
         # du dernier case chargé.
         self._served_resources = resources
-        doc_url = _DOCUMENT_URL
+        provider_domain = manifest.get("provider_domain")
+        if not isinstance(provider_domain, str) or not re.fullmatch(
+            r"(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*",
+            provider_domain,
+        ):
+            raise ReplayBrowserError("provider_domain absent ou invalide dans le manifest")
+        provider_domain = provider_domain.lower()
+        original_url = _original_document_url(artifacts_dir)
+        doc_url = f"https://{provider_domain}/__surveybot_replay__.html"
+        if original_url:
+            parts = urlsplit(original_url)
+            if parts.hostname != provider_domain:
+                if resources:
+                    raise ReplayBrowserError(
+                        "hostname de meta.json différent de provider_domain : "
+                        "résolution des ressources capturées non fiable"
+                    )
+                log_debug(_TAG, f"hostname de meta.json remplacé par celui du manifest: {parts.hostname!r}")
+            try:
+                port = parts.port if parts.hostname == provider_domain else None
+            except ValueError:
+                port = None
+            netloc = provider_domain + (f":{port}" if port else "")
+            doc_url = urlunsplit((parts.scheme, netloc, parts.path, parts.query, ""))
         allow_scripts = any(kind == "script" for kind, _ in resources)
-        if resources:
-            doc_url = _original_document_url(artifacts_dir) or _DOCUMENT_URL
         page = self._load_html(html, doc_url, allow_scripts)
         self.runtime_restore_report = {}
         if not pre_action and flags.get("runtime_state.json") is True:
@@ -400,7 +404,7 @@ class IsolatedReplayBrowser:
         )
         return page
 
-    def _load_html(self, html: str, url: str = _DOCUMENT_URL, allow_scripts: bool = False) -> Any:
+    def _load_html(self, html: str, url: str, allow_scripts: bool) -> Any:
         self._served_html[url] = (html, allow_scripts)
         page = self.new_page()
         try:
