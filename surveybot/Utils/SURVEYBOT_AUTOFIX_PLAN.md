@@ -1862,6 +1862,37 @@ niveau tant que le niveau précédent n'est pas fiable.
 > systématiquement quel dépôt/environnement (dépôt de travail vs clone,
 > lequel des deux venv) exécute réellement une commande avant d'interpréter
 > un résultat contradictoire entre deux tests apparemment identiques.
+> Mise à jour 2026-09-29 (suite 47) : les deux points ouverts de la suite 46
+> RÉSOLUS EN DIAGNOSTIC (pas encore corrigés) — CE SONT DEUX PROBLÈMES
+> DISTINCTS, aucun n'est celui initialement soupçonné.
+> (A) Claude Code n'a écrit AUCUN patch, pas un mauvais patch : `git status
+> --short`/`git diff --stat HEAD` vides dans le worktree, confirmant
+> `validation_static fichiers=0` au pied de la lettre. `run_result.json`
+> montre pourquoi : une commande Bash composite (`grep -rl` + `find` +
+> `xargs grep`), tentée pour vérifier si `hidden_block_visible_choice`
+> existait déjà, refusée par `--allowed-tools` (Bash absent, décision de
+> conception de l'orchestrateur) — Claude semble s'être rabattu sur un texte
+> de diagnostic plutôt que d'utiliser l'outil Grep pourtant déjà autorisé.
+> Contenu complet du texte de résultat non encore lu (coupé à l'affichage
+> PowerShell côté opérateur, pas dans le fichier). Recommandation en
+> attente de ce texte complet : autoriser Bash en lecture seule dans
+> --allowed-tools.
+> (B) Le registre extractor_integrity.json est désynchronisé du code réel
+> de la branche autofix-integration, INDÉPENDAMMENT DE TOUT PATCH — confirmé
+> en relançant `extractor_integrity.py check` directement sur la branche,
+> sans aucun worktree ni patch : mêmes 18/57 mésappariements que ceux
+> rapportés par la Phase 11-A sur ce case. Cause probable : du travail de
+> production légitime (dom_analyzer.py::analyze_dom, action_dispatcher.py,
+> etc.) a fait évoluer ces fonctions depuis le dernier enregistrement du
+> registre, sans `record` relancé derrière. Conséquence sérieuse tant que non
+> corrigé : la Phase 11-A rejette DÉSORMAIS TOUT case, quel que soit le
+> patch, jamais HIGH atteignable — bloquant pour l'ensemble du pipeline, pas
+> seulement ce cas de test. Correction volontairement non automatisée :
+> réenregistrer une fonction certifie que son état actuel est le bon état à
+> protéger, un jugement sur l'historique de code de l'opérateur, jamais une
+> décision technique déléguée. Chaque fonction des 18 à vérifier (git log
+> individuel) avant `record-batch`, jamais un réenregistrement en bloc sans
+> revue. Ni (A) ni (B) corrigés à la clôture de cette suite.
 
 ## Contexte de travail actuel
 
