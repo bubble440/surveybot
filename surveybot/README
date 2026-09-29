@@ -37,8 +37,6 @@ Ouvre http://localhost:8080 et connecte-toi :
 Champ         |     Valeur
 Système       |     PostgreSQL
 Serveur       |     host.docker.internal:5432
-Utilisateur   |     postgres
-Mot de passe  |     3o1L6kfCFxuncbY
 Base          |     postgres
 
 
