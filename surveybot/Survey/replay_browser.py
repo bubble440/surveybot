@@ -333,7 +333,8 @@ class IsolatedReplayBrowser:
             raise ReplayBrowserError("non démarré")
         return self._context.new_page()
 
-    def load_case_document(self, case_dir: Union[str, Path], *, pre_action: bool = False) -> Any:
+    def load_case_document(self, case_dir: Union[str, Path], *, pre_action: bool = False,
+                           execute_scripts: bool = True) -> Any:
         """Charge le HTML principal figé d'un failure case dans une nouvelle page
         et la retourne. Lève ReplayBrowserError si le document n'est pas
         chargeable (jamais de repli sur un autre fichier).
@@ -342,7 +343,8 @@ class IsolatedReplayBrowser:
         au lieu du document post-action, avec les mêmes ressources externes servies
         et la même CSP, mais SANS restaurer runtime_state.json (état d'un autre
         instant : après l'action). Absent = erreur, jamais de repli sur le
-        document post-action."""
+        document post-action. `execute_scripts=False` conserve le DOM figé au
+        rejeu passif d'extraction, sans réexécuter ses scripts capturés."""
         case_dir = Path(case_dir)
         manifest, err = _load_json(case_dir / "manifest.json")
         if err or not isinstance(manifest, dict):
@@ -392,7 +394,7 @@ class IsolatedReplayBrowser:
                 port = None
             netloc = provider_domain + (f":{port}" if port else "")
             doc_url = urlunsplit((parts.scheme, netloc, parts.path, parts.query, ""))
-        allow_scripts = any(kind == "script" for kind, _ in resources)
+        allow_scripts = execute_scripts and any(kind == "script" for kind, _ in resources)
         page = self._load_html(html, doc_url, allow_scripts)
         self.runtime_restore_report = {}
         if not pre_action and flags.get("runtime_state.json") is True:

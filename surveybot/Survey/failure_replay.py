@@ -174,7 +174,9 @@ def replay_failure_case(case_dir: "str | Path", *, mode: Optional[str] = None) -
 
         try:
             with IsolatedReplayBrowser() as browser:
-                driver = browser.load_case_document(case_dir)
+                # Le DOM d'extraction est déjà post-rendu : rejouer les scripts
+                # capturés peut retirer la question présente lors de la capture.
+                driver = browser.load_case_document(case_dir, execute_scripts=stage != "extraction")
                 extraction = extract_case_blocks(driver, case_dir)
                 if extraction.error:
                     return _not_replayable(

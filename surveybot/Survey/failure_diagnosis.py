@@ -158,7 +158,8 @@ _EXPECTED_BEHAVIOR: dict[str, dict[str, str]] = {
     },
     "missing_block": {
         "description": "Un signal DOM fort et reconnu (widget qualtrics_ranked_choices, zappi_max_diff, "
-        "focaldata_response_option_cards ou netsurvey_choice_buttons) est présent, mais aucun "
+        "focaldata_response_option_cards, netsurvey_choice_buttons ou choix visible non couvert "
+        "avec un bloc extrait ancré sur des options masquées) est présent, mais aucun "
         "bloc de question n'a été extrait pour lui.",
         "source": "Survey/question_block_validator.py::validate_question_blocks",
     },

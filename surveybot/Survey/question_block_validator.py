@@ -12,6 +12,7 @@ Phase 1A : observabilité uniquement.
 from typing import Any
 
 from Survey.dom_registry import get_target
+from Survey.log_utils import log_debug
 
 
 _ALLOWED_CHOICE_TYPES = {"radio", "checkbox", "dropdown", "matrix"}
@@ -315,6 +316,125 @@ def _help_text_as_question_signals(driver, items: list[dict]) -> dict:
         return {}
 
 
+def _hidden_block_visible_choice_signal(driver, blocks: list[dict]) -> dict | None:
+    """Signale un choix visible non couvert quand un bloc extrait pointe vers des options masquées.
+
+    Les XPath doivent résoudre des libellés portant le texte exact des options :
+    un input natif masqué avec son libellé visible ne suffit jamais au signal.
+    Tout DOM trop grand ou ambigu est décliné.
+    """
+    if len(blocks) > 30:
+        log_debug("[QUESTION_BLOCK_VALIDATOR]", "signal choix masqué décliné : plus de 30 blocs")
+        return None
+    items = []
+    all_options = set()
+    for idx, block in enumerate(blocks):
+        if not isinstance(block, dict):
+            continue
+        raw_options = block.get("options")
+        if isinstance(raw_options, list) and len(raw_options) > 100:
+            log_debug("[QUESTION_BLOCK_VALIDATOR]", "signal choix masqué décliné : plus de 100 options dans un bloc")
+            return None
+        options = [_norm_lc(o) for o in raw_options if _norm(o)] if isinstance(raw_options, list) else []
+        all_options.update(options)
+        if _norm_lc(block.get("itype")) not in {"radio", "checkbox"} or len(options) < 2:
+            continue
+        target_id = _norm(block.get("target_id"))
+        target = get_target(target_id) if target_id else None
+        xpath_map = target.get("option_xpath_map") if isinstance(target, dict) else None
+        if not isinstance(xpath_map, dict) or len(xpath_map) < 2 or len(xpath_map) > 30:
+            continue
+        pairs = [
+            {"option": _norm_lc(key), "xpath": xpath}
+            for key, xpath in xpath_map.items()
+            if isinstance(key, str) and isinstance(xpath, str) and key and xpath
+        ]
+        if len(pairs) >= 2:
+            items.append({"block_index": idx, "target_id": target_id, "pairs": pairs})
+    if len(all_options) > 100 or sum(len(item["pairs"]) for item in items) > 100:
+        log_debug("[QUESTION_BLOCK_VALIDATOR]", "signal choix masqué décliné : budget options dépassé")
+        return None
+    if not items:
+        return None
+
+    try:
+        current_frame = getattr(driver, "_current_frame", driver)
+        signal = current_frame.evaluate("""({items, extractedOptions}) => {
+            const norm = value => (value || '').normalize('NFC').replace(/\\s+/g, ' ').trim().toLowerCase();
+            const visible = node => {
+                if (!node || node.closest('[hidden], [aria-hidden="true"]')) return false;
+                const style = getComputedStyle(node);
+                return style.display !== 'none' && style.visibility !== 'hidden'
+                    && node.getClientRects().length > 0;
+            };
+            let hidden = null;
+            for (const item of items) {
+                let matched = 0;
+                for (const pair of item.pairs) {
+                    let node;
+                    try {
+                        node = document.evaluate(pair.xpath, document, null,
+                            XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                    } catch (e) { return null; }
+                    if (!node || norm(node.textContent) !== norm(pair.option) || visible(node)) {
+                        matched = 0;
+                        break;
+                    }
+                    matched++;
+                }
+                if (matched >= 2) { hidden = item; break; }
+            }
+            if (!hidden) return null;
+
+            const containers = document.querySelectorAll('fieldset, [role="radiogroup"], .question');
+            if (containers.length > 40) return {budget_exceeded: 'containers'};
+            const covered = new Set(extractedOptions.map(norm));
+            for (const container of containers) {
+                if (!visible(container)) continue;
+                const title = container.querySelector(
+                    'legend, [role="heading"], h1, h2, h3, h4, '
+                    + '[class*="question-text"], [class*="question_text"], '
+                    + '[class*="q_text"], [class*="prompt"]'
+                );
+                if (!visible(title) || norm(title.textContent).length < 8) continue;
+                const inputs = container.querySelectorAll('input[type="radio"][name], input[type="checkbox"][name]');
+                if (inputs.length > 40) return {budget_exceeded: 'inputs'};
+                if (inputs.length < 2) continue;
+                const groups = new Map();
+                for (const input of inputs) {
+                    const key = `${input.type}:${input.name}`;
+                    const enclosingLabel = input.closest('label');
+                    const labels = enclosingLabel
+                        ? [enclosingLabel]
+                        : input.parentElement.querySelectorAll('label, .option_label');
+                    if (labels.length > 10) return {budget_exceeded: 'labels'};
+                    const label = Array.from(labels).find(node => visible(node) && norm(node.textContent));
+                    if (!label) continue;
+                    const option = norm(label.textContent);
+                    if (!groups.has(key)) groups.set(key, new Set());
+                    groups.get(key).add(option);
+                }
+                for (const options of groups.values()) {
+                    if (options.size < 2) continue;
+                    if (Array.from(options).some(option => covered.has(option))) continue;
+                    return {
+                        block_index: hidden.block_index,
+                        target_id: hidden.target_id,
+                        visible_question: norm(title.textContent).slice(0, 160),
+                        visible_options_count: options.size,
+                    };
+                }
+            }
+            return null;
+        }""", {"items": items, "extractedOptions": list(all_options)})
+        if isinstance(signal, dict) and signal.get("budget_exceeded"):
+            log_debug("[QUESTION_BLOCK_VALIDATOR]", f"signal choix masqué décliné : budget {signal['budget_exceeded']} dépassé")
+            return None
+        return signal if isinstance(signal, dict) else None
+    except Exception:
+        return None
+
+
 def validate_question_blocks(question_blocks: list[dict] | None, *, driver=None) -> dict:
     """Retourne un rapport JSON-sérialisable sans effet de bord."""
     blocks = question_blocks or []
@@ -382,6 +502,14 @@ def validate_question_blocks(question_blocks: list[dict] | None, *, driver=None)
                 })
         if items:
             help_candidates = _help_text_as_question_signals(driver, items)
+
+        signal = _hidden_block_visible_choice_signal(driver, blocks)
+        if signal:
+            issues.append({
+                "failure_type": "missing_block",
+                "dom_signal": "hidden_block_visible_choice",
+                **signal,
+            })
 
     for idx, block in enumerate(blocks):
         if not isinstance(block, dict):

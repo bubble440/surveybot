@@ -1753,6 +1753,69 @@ niveau tant que le niveau précédent n'est pas fiable.
 > `failure_diagnosis._attempt_real_extraction_replay` refait l'extraction après
 > le replay d'extraction par défaut, désormais fidèle.
 
+> Mise à jour 2026-09-29 (suite 45) : cas 1B famille 1 (« extraction mauvaise
+> mais aucun `extraction_validation_failure` ») traité côté DÉTECTION
+> uniquement — validé live. Correction de classement au passage : ce cas relève
+> de la Phase 1B, pas de la 3B (la capture 3B a fonctionné, c'est le validator
+> qui ne disait rien). Cas : MetrixLab (FR), question visible « Etes-vous...? »
+> avec trois réponses (Un homme / Une femme / Autre + champ texte). L'extraction
+> retournait un unique bloc radio « Merci de répondre à cette question » /
+> « JE CONSENS... » / « JE NE CONSENS PAS... » (log `[CONSENT_MODAL]
+> detected=true options=2`), issu de la modale de consentement présente dans le
+> DOM mais non affichée ; la vraie question n'était couverte par aucun bloc.
+> Snapshot d'origine `20260929_031027_after_dom_analyze` (reason
+> `after_dom_analyze`, donc pas un snapshot d'échec : aucune détection n'avait
+> eu lieu).
+> Cause du silence, structurelle et non ponctuelle : les signaux `missing_block`
+> de `validate_question_blocks` ne s'exécutaient que si `blocks` était vide, et
+> chacun était propre à un provider ; un bloc faux mais structurellement valide
+> (target_id présent, options non vides, sans doublon) passait donc toujours.
+> Correctif, strictement additif : nouvelle fonction
+> `_hidden_block_visible_choice_signal` (`Survey/question_block_validator.py`),
+> appelée quand `blocks` est non vide et qu'un driver est fourni, même
+> `failure_type` `missing_block` (aucune nouvelle catégorie), `dom_signal=
+> hidden_block_visible_choice`, champs `block_index`/`target_id`/
+> `visible_question` (tronquée à 160 caractères)/`visible_options_count`. Un
+> seul critère, en deux temps : (1) un bloc radio/checkbox d'au moins 2 options
+> dont les libellés — résolus par `option_xpath_map` du registre, texte exact
+> de l'option exigé — sont TOUS invisibles (`display`/`visibility`/rects, ou
+> ancêtre `hidden`/`aria-hidden`) ; (2) un conteneur visible
+> (`fieldset`/`radiogroup`/`.question`) avec un titre visible d'au moins 8
+> caractères et un groupe d'au moins 2 inputs nommés à libellés visibles, dont
+> aucune option n'appartient à un bloc extrait. Un input natif masqué avec son
+> libellé visible ne déclenche JAMAIS le signal (garde-fou explicite, choisi
+> pour privilégier la précision). Bornes : 30 blocs, 100 options, 30 options
+> par bloc côté registre, 40 conteneurs/inputs, 10 libellés par input ; tout
+> dépassement, exception ou XPath invalide → signal décliné (`None`), jamais
+> une issue devinée. `_EXPECTED_BEHAVIOR["missing_block"]`
+> (`Survey/failure_diagnosis.py`) mise à jour dans le même patch, comme l'exige
+> le point de vigilance de la Phase 4. Aucun extracteur, ni `dom_analyzer.py`,
+> modifié.
+> Validation live (run réel, même page) : `[OBSERVABILITY] validation_failure
+> stage=extraction issues=['missing_block']
+> snapshot=snapshots\20260929_033834_extraction_validation_failure`, snapshot
+> complet (dont `validation_report.json`, `external_requests.json`,
+> `external_scripts.json`, `external_stylesheets.json`). Le bot a ensuite
+> poursuivi son flux normal comme la Phase 1A l'exige (bloc de consentement
+> envoyé au modèle, réponse « JE CONSENS... », dispatch lancé) : détection
+> passive, comportement inchangé, le bug d'extraction lui-même N'EST PAS
+> corrigé.
+> Non vérifié à ce stade (aucun test exécuté pour cette entrée) : (a) le rejeu
+> fidèle du failure_case issu de ce snapshot (attendu `REPRODUIT` ; le rejeu
+> statique par shim ne le reproduira pas — `getComputedStyle` et les rects sont
+> déclinés, donc `None`) ; (b) l'absence de faux positif quand la modale de
+> consentement est réellement affichée (attendue par construction : ses
+> libellés sont alors visibles) ; (c) l'absence de faux positif sur l'ensemble
+> des DOM de référence existants. Limites connues du critère : le titre est
+> cherché via une liste fixe de sélecteurs (`legend`, en-têtes, classes
+> `question-text`/`question_text`/`q_text`/`prompt`) ; seuls les inputs
+> radio/checkbox portant un `name` sont considérés ; un conteneur visible hors
+> `fieldset`/`radiogroup`/`.question` n'est pas vu ; un bloc qui ne porte pas
+> d'`option_xpath_map` dans le registre n'est pas évalué. Reste à faire,
+> séparément : corriger l'extraction elle-même (le bot doit extraire la
+> question visible tant que la modale n'est pas affichée) — cas de référence
+> disponible.
+
 ## Contexte de travail actuel
 
 Nous développons le module d'observabilité, de diagnostic et d'auto-correction supervisée de SurveyBot.
@@ -2389,6 +2452,24 @@ collecte 1B : un cas réel de ce type (faux positif dispatcher,
 une 5e famille non couverte par les 4 familles actuelles (toutes bornées à
 `dispatcher_success=False` ou à l'extraction) — ne pas patcher sur cette
 seule hypothèse tant qu'aucun snapshot réel ne la confirme.
+
+## Cas 1B collecté — MetrixLab, bloc de consentement masqué extrait à la place de la question visible
+
+**Statut : détection corrigée et validée live (suite 45) ; extraction toujours
+non corrigée, volontairement reportée.**
+
+Famille 1 (« extraction mauvaise mais aucun `extraction_validation_failure` »).
+Symptôme : la question visible (« Etes-vous...? », 3 réponses) n'est pas
+extraite ; le seul bloc retourné vient de la modale de consentement, masquée.
+Le bloc étant structurellement valide, aucune des vérifications existantes ne
+pouvait le contester. Résolu côté validator par un signal additif générique
+(`hidden_block_visible_choice`, `failure_type=missing_block`), sans règle propre
+à MetrixLab ni à la modale de consentement — cf. suite 45 pour le critère, les
+bornes et les limites non vérifiées.
+
+Enseignement pour la collecte 1B : `missing_block` ne signifie plus seulement
+« liste de blocs vide » ; il couvre aussi « bloc(s) extrait(s) ancré(s) sur du
+contenu invisible alors qu'un choix visible n'est couvert par aucun bloc ».
 
 ------------------------------------------------------------------------
 
