@@ -122,6 +122,8 @@ class ExternalFixRegistry:
             or not isinstance(fix.position, str) or fix.position not in _POSITIONS
         ):
             raise FixRegistryError("stage ou position invalide")
+        if fix.stage == "action" and fix.position != "before":
+            raise FixRegistryError("un correctif d'action doit précéder tout effet")
         if not isinstance(fix.core_function_id, str) or fix.core_function_id not in self._core_hashes:
             raise FixRegistryError("fonction core inconnue de la baseline")
         if fix.expected_core_hash != self._core_hashes[fix.core_function_id]:

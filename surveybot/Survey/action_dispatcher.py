@@ -4,6 +4,7 @@ import Survey.input_handler
 from Survey.dom_registry import get_target, get_stable_text_field_locator
 from typing import Optional
 from Survey.log_utils import is_debug, log_debug, log_info
+from Survey.action_fix_hook import ActionFixOutcome, run_action_fix_hook
 from config import RUN_ENV, is_cta_intercept_only
 
 
@@ -7964,6 +7965,15 @@ def execute_action(
 
         if not value and not target_id:
             continue
+
+        fix_outcome = run_action_fix_hook(
+            driver, parsed,
+            frame_chain=target_payload.get("frame_chain") if isinstance(target_payload, dict) else None,
+        )
+        if fix_outcome is ActionFixOutcome.HANDLED_SUCCESS:
+            return True
+        if fix_outcome is ActionFixOutcome.HANDLED_FAILURE:
+            return False
 
         # Matrix: row + col obligatoires. Pas de clic aveugle.
         if matrix_intent:
