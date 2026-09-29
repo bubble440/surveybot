@@ -1,6 +1,6 @@
 # SurveyBot — fonctions critiques protégées et cycle de vie des correctifs
 
-> Décisions d'architecture, 29 septembre 2026. Ce document complète `SURVEYBOT_AUTOFIX_PLAN.md` (SAP) sans en modifier le suivi des phases. Il décrit une cible à intégrer progressivement au pipeline, pas un état déjà implémenté.
+> Décisions d'architecture, 29 septembre 2026. Ce document complète `SURVEYBOT_AUTOFIX_PLAN.md` (SAP) sans en modifier le suivi des phases. La cible s'intègre progressivement au pipeline ; seule la tâche 1 ci-dessous est implémentée.
 
 ## 1. Portée et principe
 
@@ -107,7 +107,7 @@ Ce document fixe les responsabilités et les critères de décision. Il ne presc
 
 ## 9. Tâches à faire — ordre d'implémentation
 
-1. Mettre en place l'infrastructure commune d'identité et de métriques des fonctions critiques : identifiants stables, rattachement à la baseline et compteurs minimaux utiles aux incidents, sans construire d'emblée des métriques sophistiquées.
+1. **Implémentée — infrastructure commune d'identité et de métriques des fonctions critiques.** Identifiants stables, rattachement à la baseline et compteurs minimaux utiles aux incidents, sans métriques sophistiquées.
 2. Créer le registre des correctifs externes pour l'extraction, avec des conditions DOM précises et des correctifs indépendants.
 3. Ajouter un premier point d'extension extraction qui respecte les positions `before` et `after` décrites en section 2, sans correctif métier si possible.
 4. Ajouter un point d'extension action unique, avec une modification volontaire et contrôlée du dispatcher, avant tout effet irréversible.
@@ -116,3 +116,7 @@ Ce document fixe les responsabilités et les critères de décision. Il ne presc
 7. Ajouter le cycle de vie des correctifs et la consolidation `EVOLUTION_CANDIDATE` décrits aux sections 5 et 6.
 
 Chaque étape est validée sur le périmètre qu'elle introduit avant de passer à la suivante. Les correctifs métier répondent à des incidents confirmés ; ces points d'extension peuvent être préparés sans en inventer.
+
+**Tâche 1 — état livré.** `Survey/core_function_metrics.py` expose `record_core_call(function_id, stage=...)` pour l'extraction et l'action. `function_id` reprend exactement la clé `fichier.py::fonction` relative à `Survey/` de `extractor_integrity.json` ; seules les clés de ce registre sont acceptées. Chaque série conserve le hash de baseline et le hash du code source observé (méthode d'`extractor_integrity.py`), le stage s'il est connu, le nombre d'appels et les premières/dernières dates d'appel. Le hash du code sépare les versions même si la baseline est désynchronisée. Les compteurs restent en mémoire et sont écrits au plus une fois par minute, puis à la sortie normale, sous `core_function_metrics/<producer_id>.json` (chemin configurable par `SURVEYBOT_CORE_METRICS_DIR`) ; chaque processus possède son propre instantané atomique. Le `.gitignore` à la racine Git exclut ce dossier généré et `tests/test_core_function_metrics.py` vérifie les propriétés essentielles.
+
+La mesure est locale au processus et commence seulement quand les futurs points d'instrumentation appelleront cette API ; aucune fonction protégée existante n'est instrumentée à ce stade. Le hash du code est calculé une fois par fonction depuis les sources sur disque et suppose que le code chargé ne change pas pendant la vie du processus. Un arrêt brutal peut perdre les appels depuis le dernier instantané. Les fichiers restent locaux sans expiration automatique ni agrégation fleet ; leur rétention devra être décidée avec l'exploitation. Un échec de métriques laisse l'exécution du bot continuer.

@@ -73,6 +73,7 @@ merge_reviews/
 merge_results/
 autofix_pipeline_runs/
 autofix_metrics/
+core_function_metrics/
 extractor_stability_reports/
 case_groupings/
 parallel_safety_checks/
