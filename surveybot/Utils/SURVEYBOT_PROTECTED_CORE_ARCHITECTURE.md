@@ -1,6 +1,6 @@
 # SurveyBot — fonctions critiques protégées et cycle de vie des correctifs
 
-> Décisions d'architecture, 29 septembre 2026. Ce document complète `SURVEYBOT_AUTOFIX_PLAN.md` (SAP) sans en modifier le suivi des phases. La cible s'intègre progressivement au pipeline ; seule la tâche 1 ci-dessous est implémentée.
+> Décisions d'architecture, 29 septembre 2026. Ce document complète `SURVEYBOT_AUTOFIX_PLAN.md` (SAP) sans en modifier le suivi des phases. La cible s'intègre progressivement au pipeline ; seules les tâches 1 et 2 ci-dessous sont implémentées.
 
 ## 1. Portée et principe
 
@@ -108,7 +108,7 @@ Ce document fixe les responsabilités et les critères de décision. Il ne presc
 ## 9. Tâches à faire — ordre d'implémentation
 
 1. **Implémentée — infrastructure commune d'identité et de métriques des fonctions critiques.** Identifiants stables, rattachement à la baseline et compteurs minimaux utiles aux incidents, sans métriques sophistiquées.
-2. Créer le registre des correctifs externes pour l'extraction, avec des conditions DOM précises et des correctifs indépendants.
+2. **Implémentée — registre des correctifs externes pour l'extraction.** Conditions DOM structurelles, correctifs indépendants et positions logiques `before`/`after`, sans branchement dans la cascade.
 3. Ajouter un premier point d'extension extraction qui respecte les positions `before` et `after` décrites en section 2, sans correctif métier si possible.
 4. Ajouter un point d'extension action unique, avec une modification volontaire et contrôlée du dispatcher, avant tout effet irréversible.
 5. Adapter le prompt d'autofix pour produire des correctifs selon ces points d'extension et leurs garde-fous.
@@ -120,3 +120,7 @@ Chaque étape est validée sur le périmètre qu'elle introduit avant de passer 
 **Tâche 1 — état livré.** `Survey/core_function_metrics.py` expose `record_core_call(function_id, stage=...)` pour l'extraction et l'action. `function_id` reprend exactement la clé `fichier.py::fonction` relative à `Survey/` de `extractor_integrity.json` ; seules les clés de ce registre sont acceptées. Chaque série conserve le hash de baseline et le hash du code source observé (méthode d'`extractor_integrity.py`), le stage s'il est connu, le nombre d'appels et les premières/dernières dates d'appel. Le hash du code sépare les versions même si la baseline est désynchronisée. Les compteurs restent en mémoire et sont écrits au plus une fois par minute, puis à la sortie normale, sous `core_function_metrics/<producer_id>.json` (chemin configurable par `SURVEYBOT_CORE_METRICS_DIR`) ; chaque processus possède son propre instantané atomique. Le `.gitignore` à la racine Git exclut ce dossier généré et `tests/test_core_function_metrics.py` vérifie les propriétés essentielles.
 
 La mesure est locale au processus et commence seulement quand les futurs points d'instrumentation appelleront cette API ; aucune fonction protégée existante n'est instrumentée à ce stade. Le hash du code est calculé une fois par fonction depuis les sources sur disque et suppose que le code chargé ne change pas pendant la vie du processus. Un arrêt brutal peut perdre les appels depuis le dernier instantané. Les fichiers restent locaux sans expiration automatique ni agrégation fleet ; leur rétention devra être décidée avec l'exploitation. Un échec de métriques laisse l'exécution du bot continuer.
+
+**Tâche 2 — état livré.** `Survey/external_fix_registry.py` fournit un registre plat, vide par défaut, de déclarations immuables : `fix_id` stable, fonction core protégée selon la clé d'`extractor_integrity.json` et son hash attendu, stratégie d'ancrage selon la même notation, position `before` ou `after`, `case_id`, condition DOM par sélecteurs CSS requis/exclus et handler propre à l'entrée. Le registre valide les identités, la concordance du hash avec la baseline et le code courant, l'existence de l'ancrage et la forme des conditions, rejette les doublons, puis retourne tous les candidats sans priorité ni exécution. Il est borné à 64 correctifs, 16 cases, 8 sélecteurs requis et 8 exclus par entrée. `register` signale les erreurs aux outils locaux/dev ; `try_register` les ignore sans interrompre le bot. `tests/test_external_fix_registry.py` couvre ces propriétés avec des déclarations synthétiques.
+
+Aucun correctif métier, hook ou chargement automatique n'est actif. La forme des sélecteurs est contrôlée, mais leur précision métier, l'indépendance du code des handlers, leurs preuves de validation et leurs éventuels chevauchements demandent encore la revue et les étapes suivantes. Le registre ne persiste aucun DOM ni donnée de survey ; la tâche 3 devra définir l'évaluation bornée des conditions et le branchement `before`/`after` dans l'extraction.
