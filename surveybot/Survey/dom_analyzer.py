@@ -22,6 +22,7 @@ from typing import List, Dict, Any, Tuple, Set
 import os, re, json
 
 from Survey.log_utils import is_debug, log_debug, log_info
+from Survey.extraction_fix_hook import run_extraction_strategy_with_fixes
 
 # Imports des modules DOM
 try:
@@ -2064,7 +2065,11 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     # Guard DOM strict : div.question.sq-atmrating + div.sq-atmrating-container + span.atmrating-btn
     # Les inputs type=text sont non-visibles → skippés par le pipeline générique.
     try:
-        atmrating_blocks = _extract_decipher_atmrating_blocks(driver, frame_chain)
+        atmrating_blocks = run_extraction_strategy_with_fixes(
+            driver, frame_chain,
+            anchor_function_id="dom_extractors_decipher.py::_extract_decipher_atmrating_blocks",
+            strategy=_extract_decipher_atmrating_blocks,
+        )
         if atmrating_blocks:
             return atmrating_blocks
     except Exception:

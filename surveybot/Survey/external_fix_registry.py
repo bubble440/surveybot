@@ -1,8 +1,8 @@
-"""Registre plat des correctifs externes, sans branchement dans le bot.
+"""Registre plat des correctifs externes, vide par défaut dans le bot.
 
 Une entrée vise une fonction protégée (clé d'extractor_integrity.json) et
-désigne la stratégie d'extraction autour de laquelle un futur hook pourra
-l'évaluer. Aucun correctif métier n'est enregistré par ce module.
+désigne la stratégie d'extraction autour de laquelle le hook peut l'évaluer.
+Aucun correctif métier n'est enregistré par ce module.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ def _valid_selector(selector: str) -> bool:
 class DomCondition:
     """Tous les sélecteurs requis présents ; tous les exclus absents.
 
-    Le futur hook évaluera cette condition sur le contexte DOM courant. Les
+    Le hook d'extraction évalue cette condition sur le contexte DOM courant. Les
     sélecteurs doivent décrire la structure du code, sans texte de question,
     URL ni DOM brut. Cette intention exige encore une revue humaine.
     """
@@ -78,7 +78,7 @@ class ExternalFix:
 
     ``core_function_id`` est protégé. ``anchor_function_id`` utilise la même
     forme fichier.py::fonction, mais peut désigner une stratégie non protégée.
-    ``handler`` reste opaque jusqu'au contrat d'appel du futur hook.
+    En extraction, ``handler(driver, frame_chain)`` retourne des blocs ou None.
     """
 
     fix_id: str

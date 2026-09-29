@@ -1,6 +1,6 @@
 # SurveyBot — fonctions critiques protégées et cycle de vie des correctifs
 
-> Décisions d'architecture, 29 septembre 2026. Ce document complète `SURVEYBOT_AUTOFIX_PLAN.md` (SAP) sans en modifier le suivi des phases. La cible s'intègre progressivement au pipeline ; seules les tâches 1 et 2 ci-dessous sont implémentées.
+> Décisions d'architecture, 29 septembre 2026. Ce document complète `SURVEYBOT_AUTOFIX_PLAN.md` (SAP) sans en modifier le suivi des phases. La cible s'intègre progressivement au pipeline ; seules les tâches 1 à 3 ci-dessous sont implémentées.
 
 ## 1. Portée et principe
 
@@ -109,7 +109,7 @@ Ce document fixe les responsabilités et les critères de décision. Il ne presc
 
 1. **Implémentée — infrastructure commune d'identité et de métriques des fonctions critiques.** Identifiants stables, rattachement à la baseline et compteurs minimaux utiles aux incidents, sans métriques sophistiquées.
 2. **Implémentée — registre des correctifs externes pour l'extraction.** Conditions DOM structurelles, correctifs indépendants et positions logiques `before`/`after`, sans branchement dans la cascade.
-3. Ajouter un premier point d'extension extraction qui respecte les positions `before` et `after` décrites en section 2, sans correctif métier si possible.
+3. **Implémentée — premier point d'extension extraction.** Positions `before` et `after` autour d'une stratégie de la cascade, sans correctif métier.
 4. Ajouter un point d'extension action unique, avec une modification volontaire et contrôlée du dispatcher, avant tout effet irréversible.
 5. Adapter le prompt d'autofix pour produire des correctifs selon ces points d'extension et leurs garde-fous.
 6. Adapter la Phase 11-A aux états `UNCHANGED`, `EXPECTED_CHANGE`, `UNEXPECTED_CHANGE` et `BASELINE_MISMATCH`, avec les décisions de la section 7.
@@ -123,4 +123,8 @@ La mesure est locale au processus et commence seulement quand les futurs points 
 
 **Tâche 2 — état livré.** `Survey/external_fix_registry.py` fournit un registre plat, vide par défaut, de déclarations immuables : `fix_id` stable, fonction core protégée selon la clé d'`extractor_integrity.json` et son hash attendu, stratégie d'ancrage selon la même notation, position `before` ou `after`, `case_id`, condition DOM par sélecteurs CSS requis/exclus et handler propre à l'entrée. Le registre valide les identités, la concordance du hash avec la baseline et le code courant, l'existence de l'ancrage et la forme des conditions, rejette les doublons, puis retourne tous les candidats sans priorité ni exécution. Il est borné à 64 correctifs, 16 cases, 8 sélecteurs requis et 8 exclus par entrée. `register` signale les erreurs aux outils locaux/dev ; `try_register` les ignore sans interrompre le bot. `tests/test_external_fix_registry.py` couvre ces propriétés avec des déclarations synthétiques.
 
-Aucun correctif métier, hook ou chargement automatique n'est actif. La forme des sélecteurs est contrôlée, mais leur précision métier, l'indépendance du code des handlers, leurs preuves de validation et leurs éventuels chevauchements demandent encore la revue et les étapes suivantes. Le registre ne persiste aucun DOM ni donnée de survey ; la tâche 3 devra définir l'évaluation bornée des conditions et le branchement `before`/`after` dans l'extraction.
+Aucun correctif métier ni chargement automatique n'est actif. La forme des sélecteurs est contrôlée, mais leur précision métier, l'indépendance du code des handlers et leurs preuves de validation demandent encore une revue. Le registre ne persiste aucun DOM ni donnée de survey.
+
+**Tâche 3 — état livré.** `Survey/extraction_fix_hook.py` évalue les conditions DOM du registre sur le contexte courant et appelle un handler `handler(driver, frame_chain)` qui retourne une liste non vide de blocs d'extraction ou `None`. `before` précède la stratégie et peut éviter son exécution ; `after` ne s'évalue que si elle ne produit aucun bloc et qu'aucun correctif `before` n'a correspondu ou échoué. Le seul branchement dans `Survey/dom_analyzer.py` entoure `_extract_decipher_atmrating_blocks`, identifié par `dom_extractors_decipher.py::_extract_decipher_atmrating_blocks`, sans modifier son corps ni une autre fonction protégée. Si plusieurs correctifs correspondent, si une garde ou un handler échoue, ou si le résultat est mal formé, le chemin normal reprend. Huit candidats et 64 blocs de résultat au maximum sont acceptés ; le budget de 250 ms est vérifié entre les opérations, mais ne peut interrompre un appel DOM ou un handler bloquant. Les anomalies sont journalisées en debug sans contenu du survey. `tests/test_extraction_fix_hook.py` couvre l'ordre, les gardes, les ambiguïtés, les échecs et ce branchement dans la cascade.
+
+Le registre de production reste vide : aucun comportement métier nouveau n'est activé. Les autres stratégies de la cascade ne disposent pas encore de ce point d'extension ; chaque prochain ancrage devra être ajouté et validé séparément. Ce hook ne crée pas de failure case et ne mesure pas encore les activations de correctifs.
