@@ -1,6 +1,6 @@
 # SurveyBot — fonctions critiques protégées et cycle de vie des correctifs
 
-> Décisions d'architecture, 29 septembre 2026. Ce document complète `SURVEYBOT_AUTOFIX_PLAN.md` (SAP) sans en modifier le suivi des phases. La cible s'intègre progressivement au pipeline ; les tâches 1 à 6 ci-dessous sont implémentées dans le code.
+> Décisions d'architecture, 29 septembre 2026. Ce document complète `SURVEYBOT_AUTOFIX_PLAN.md` (SAP) sans en modifier le suivi des phases. La cible s'intègre progressivement au pipeline ; les tâches 1 à 6 sont implémentées et la tâche 7 dispose d'un socle local/dev partiel.
 
 ## 1. Portée et principe
 
@@ -113,7 +113,7 @@ Ce document fixe les responsabilités et les critères de décision. Il ne presc
 4. **Implémentée dans le code — point d'extension action unique.** Modification volontaire et contrôlée de `execute_action`, avant tout effet de l'action.
 5. **Implémentée — adaptation du prompt d'autofix.** Consignes de correctifs externes et de points d'extension conformes aux tâches 2 à 4.
 6. **Implémentée — Phase 11-A à quatre états.** Comparaison baseline / `base_sha` / patch, contrôle des changements attendus et rejet des écarts préexistants non résolus.
-7. Ajouter le cycle de vie des correctifs et la consolidation `EVOLUTION_CANDIDATE` décrits aux sections 5 et 6.
+7. **Partiellement implémentée — cycle de vie et dossier `EVOLUTION_CANDIDATE`.** Suivi local des preuves et préparation d'une revue de consolidation ; observation réelle des activations, rejeu de régression Phase 11-B et adoption d'un core consolidé restent à faire.
 
 Chaque étape est validée sur le périmètre qu'elle introduit avant de passer à la suivante. Les correctifs métier répondent à des incidents confirmés ; ces points d'extension peuvent être préparés sans en inventer.
 
@@ -141,4 +141,10 @@ Le registre reste vide en production et aucun correctif métier n'est chargé. `
 
 La déclaration `expected_change.json` porte `schema_version="1.0"`, `case_id`, `base_sha` et une liste bornée `changes` d'objets `{function_id, base_hash, patched_hash}`. Les chemins du diagnostic et du rejeu sont fournis séparément au gate ; l'artefact de résultat conserve leurs références pour la revue. Le répertoire optionnel de l'orchestrateur suit `<root>/<case_id>/expected_change.json`.
 
-La Phase 11-A n'authentifie pas cryptographiquement l'auteur de la déclaration locale : son répertoire doit rester sous contrôle de l'opérateur et hors d'accès du worker de patch. Elle ne démontre pas une absence de régression comportementale ; la Phase 11-B et le cycle de vie de la tâche 7 restent à faire. Aucun hash de baseline n'est actualisé automatiquement.
+La Phase 11-A n'authentifie pas cryptographiquement l'auteur de la déclaration locale : son répertoire doit rester sous contrôle de l'opérateur et hors d'accès du worker de patch. Elle ne démontre pas une absence de régression comportementale ; la Phase 11-B reste à faire. Aucun hash de baseline n'est actualisé automatiquement.
+
+**Tâche 7 — socle local/dev livré, validation réelle en attente.** `Survey/autofix/fix_lifecycle.py` initialise un suivi uniquement depuis un `ExternalFix` déjà validé dans le registre, puis expose `create_fix_lifecycle`, `advance_fix_lifecycle`, `mark_core_change_candidate` et `prepare_evolution_candidate`. Les passages `NOUVEAU → OBSERVÉ → VALIDÉ → STABLE` exigent respectivement une observation d'usage ou son absence déclarée, les diagnostics et replays confirmés de tous les cases liés avec contrôles statiques et Phase 11-A, puis les décisions d'adoption et une période d'activation sans contradiction documentée. Un incident nouveau rouvre l'analyse ; `CORE_CHANGE_CANDIDATE` est un signal de revue distinct de l'état du fix. Le dossier `EVOLUTION_CANDIDATE` fige la fonction et le hash du core, les fixes, cases, preuves, limites, règle proposée et compatibilités ; un conflit ou une preuve manquante bloque sa préparation comme état prêt pour analyse humaine. Il ne crée aucun patch et ne change ni registre ni baseline.
+
+Les artefacts atomiques restent sous `fix_lifecycle/<fix_id>/lifecycle.json` et `evolution_candidates/<candidate_id>/candidate.json`, hors Git, sans expiration automatique. Ils contiennent des identités, compteurs, dates et références par chemin et SHA-256 ; les sélecteurs de garde sont représentés par leur empreinte et leur nombre. Les diagnostics, DOM et textes de survey ne sont pas recopiés. `tests/test_fix_lifecycle.py` vérifie les transitions, les deux stages, les versions, les blocages et les dossiers immuables avec des données synthétiques.
+
+Le registre de production est vide et les hooks ne comptent pas encore les activations par fix. `STABLE` dépend donc d'un artefact d'observation fourni par l'opérateur, explicitement marqué comme non vérifié par télémétrie runtime ; aucun fix réel n'est déclaré stable par cette tâche. Les cas voisins sont explicitement fournis ou leur absence déclarée, et la Phase 11-B n'existe pas encore. Une consolidation exige toujours un vrai patch revu, tous les replays pertinents et une décision d'adoption séparée avant toute actualisation de baseline ou retrait de fixes.
