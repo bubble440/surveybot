@@ -65,6 +65,8 @@ class PromptGeneratorSpcaTests(unittest.TestCase):
         self.assertIn("correctif `after`", result.content)
         self.assertIn("Faux positif", result.content)
         self.assertIn("correctif `before`", result.content)
+        self.assertIn("liste explicite de Survey/external_fix_loader.py", result.content)
+        self.assertIn("seul point de chargement à modifier", result.content)
         self.assertIn(f"case_id à rattacher au correctif : {case_id}", result.content)
         bug_section = result.content.split("BUG IDENTIFIÉ\n", 1)[1].split("\nRÈGLES STRICTES", 1)[0]
         self.assertNotIn(case_id, bug_section)
@@ -90,6 +92,7 @@ class PromptGeneratorSpcaTests(unittest.TestCase):
         self.assertIn("sans modifier cette baseline", result.content)
         self.assertIn("ne pas poser de question interactive", result.content)
         self.assertIn("Le worker local/dev diagnostique", result.content)
+        self.assertIn("liste explicite de Survey/external_fix_loader.py", result.content)
         self.assertIn("Titre de commit suggéré", result.content)
 
     def test_manual_review_gate_and_phase7_output_names_are_preserved(self) -> None:

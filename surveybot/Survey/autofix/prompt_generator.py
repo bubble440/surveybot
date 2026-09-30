@@ -105,7 +105,7 @@ CORRECTIF EXTERNE ET CORE PROTÉGÉ
 Confirme la cause sur le DOM et cherche d'abord un correctif externe indépendant, minimal et gardé par des faits DOM structurels précis. Un nom de provider, un symptôme isolé ou une hypothèse ne suffisent pas.
 Réutilise Survey/external_fix_registry.py et les hooks existants. Rattache le correctif à son case_id, à une fonction core identifiée par la clé fichier.py::fonction d'extractor_integrity.json et à son hash attendu, sans modifier cette baseline pour faire accepter le patch.
 Choisis un fix_id stable et neutre ; déclare des sélecteurs requis et exclus structurels dans DomCondition, sans texte de question, réponse, compte ou URL de session.
-Vérifie que l'ancrage choisi est réellement appelé et que la déclaration du correctif est effectivement chargée. Un module ou une entrée de registre non chargés ne constituent pas un correctif actif. Si le point d'extension manque, expose cette limite et propose une couture minimale distincte ; ne déclare pas un succès non vérifié.
+Vérifie que l'ancrage choisi est réellement appelé et que la déclaration du correctif est effectivement chargée. Ajoute son module à la liste explicite de Survey/external_fix_loader.py : ce fichier est le seul point de chargement à modifier pour l'activer. Un module absent de cette liste ou une entrée de registre refusée ne constituent pas un correctif actif. Si le point d'extension manque, expose cette limite et propose une couture minimale distincte ; ne déclare pas un succès non vérifié.
 Deux correctifs qui correspondent au même DOM ne doivent être ni ordonnés arbitrairement ni composés. Préserve les conditions d'exclusion et vérifie les cas voisins.
 
 VOIE DE CORRECTION POUR CE STAGE

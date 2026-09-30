@@ -10,6 +10,7 @@ import math
 import time
 from typing import Any, Callable
 
+from Survey.external_fix_loader import load_external_fixes_once
 from Survey.external_fix_registry import EXTERNAL_FIXES, ExternalFixRegistry
 from Survey.log_utils import log_debug
 
@@ -143,6 +144,14 @@ def run_extraction_strategy_with_fixes(
     une liste non vide de blocs, ou None. Le driver est le Page/Frame courant.
     Une erreur du hook rend la main à la stratégie normale.
     """
+    if registry is EXTERNAL_FIXES:
+        try:
+            load_external_fixes_once()
+        except Exception as exc:
+            try:
+                log_debug(_TAG, f"chargement indisponible : {type(exc).__name__}")
+            except Exception:
+                pass
     try:
         budget = float(budget_s)
         budget = min(DEFAULT_BUDGET_S, max(0.0, budget)) if math.isfinite(budget) else 0.0

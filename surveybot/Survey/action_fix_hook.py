@@ -14,6 +14,7 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 from config import is_cta_intercept_only
+from Survey.external_fix_loader import load_external_fixes_once
 from Survey.external_fix_registry import EXTERNAL_FIXES, ExternalFixRegistry
 from Survey.frame_utils import switch_to_frame_chain
 from Survey.log_utils import log_debug
@@ -66,8 +67,14 @@ def run_action_fix_hook(
     DECLINED n'est permis que si le handler n'a produit aucun effet. Une
     exception ou un résultat invalide après son lancement arrête l'action.
     """
+    active_registry = EXTERNAL_FIXES if registry is None else registry
+    if active_registry is EXTERNAL_FIXES:
+        try:
+            load_external_fixes_once()
+        except Exception as exc:
+            _debug(f"chargement indisponible : {type(exc).__name__}")
     try:
-        fixes = (registry or EXTERNAL_FIXES).candidates(
+        fixes = active_registry.candidates(
             stage="action", anchor_function_id=ANCHOR_FUNCTION_ID, position="before"
         )
     except Exception as exc:
