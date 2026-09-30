@@ -118,9 +118,11 @@ def _try_position(
     except Exception as exc:
         log_debug(_TAG, f"handler indisponible : {type(exc).__name__}")
         return None, False
+    # Le budget borne la sélection et les gardes avant le handler. Une fois
+    # lancé, écarter un bloc valide selon la vitesse du navigateur rendrait le
+    # résultat du même correctif imprévisible d'un rejeu à l'autre.
     if time.monotonic() >= deadline:
-        log_debug(_TAG, f"budget dépassé anchor={anchor_function_id} position={position}")
-        return None, False
+        log_debug(_TAG, f"budget dépassé après handler anchor={anchor_function_id} position={position}")
     if result is None:
         return None, False
     if not _valid_blocks(result):

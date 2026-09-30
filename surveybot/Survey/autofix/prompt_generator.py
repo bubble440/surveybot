@@ -158,7 +158,11 @@ _STAGE_GUIDANCE = {
         "gardé, avant cette stratégie ; un ajout après serait inopérant. Le handler retourne "
         "une liste non vide de blocs conformes au chemin de validation, ou None. Vérifie "
         "dans Survey/extraction_fix_hook.py et dans la cascade que l'ancrage voulu est branché ; "
-        "les autres stratégies ne le sont pas automatiquement."
+        "les autres stratégies ne le sont pas automatiquement. Lis le DOM avec un minimum "
+        "d'appels au navigateur, idéalement une seule évaluation qui retourne toutes les "
+        "données utiles. Pour chaque option, vérifie que la cible retenue est l'élément "
+        "interactif réel du groupe, visible et cliquable (radio ou case à cocher portant le nom du groupe), "
+        "jamais un champ de saisie libre associé à son libellé."
     ),
     "action": (
         "Stage action : seul un correctif `before` est admissible, avant tout clic, saisie ou "

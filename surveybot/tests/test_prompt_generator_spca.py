@@ -65,6 +65,8 @@ class PromptGeneratorSpcaTests(unittest.TestCase):
         self.assertIn("correctif `after`", result.content)
         self.assertIn("Faux positif", result.content)
         self.assertIn("correctif `before`", result.content)
+        self.assertIn("une seule évaluation qui retourne toutes les données utiles", result.content)
+        self.assertIn("jamais un champ de saisie libre associé à son libellé", result.content)
         self.assertIn("liste explicite de Survey/external_fix_loader.py", result.content)
         self.assertIn("seul point de chargement à modifier", result.content)
         self.assertIn(f"case_id à rattacher au correctif : {case_id}", result.content)

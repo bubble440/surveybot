@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import tempfile
-import time
 import unittest
 from functools import partial
 from pathlib import Path
@@ -140,7 +139,7 @@ class ExtractionFixHookTests(unittest.TestCase):
             self.assertEqual(self._run(FakeDom(present), Mock(return_value=self.core_block)), self.core_block)
         self.assertNotIn("answer=secret", str(debug.call_args_list))
 
-    def test_candidate_cap_and_handler_over_budget_preserve_core(self) -> None:
+    def test_candidate_cap_and_handler_over_budget_keeps_valid_fix(self) -> None:
         present = ("div.synthetic-fix", "span.synthetic-signal")
         for index in range(9):
             self._register(f"fix_{index:03d}")
@@ -148,17 +147,44 @@ class ExtractionFixHookTests(unittest.TestCase):
         self.assertEqual(self.events, [])
 
         self.registry = ExternalFixRegistry(root=self.root)
+        clock = [100.0]
         def slow_handler(_driver: object, _chain: object) -> object:
-            time.sleep(0.02)
+            clock[0] = 100.02
             return self.fix_block
         self.registry.register(ExternalFix(
             fix_id="fix_slow", core_function_id="sample.py::core", expected_core_hash=self.core_hash,
             anchor_function_id=self.anchor, position="before", case_ids=("synthetic_case",),
             condition=DomCondition(("div.synthetic-fix",)), handler=slow_handler,
         ))
-        self.assertEqual(
-            self._run(FakeDom(present), Mock(return_value=self.core_block), budget_s=0.005), self.core_block
-        )
+        strategy = Mock(return_value=self.core_block)
+        with patch("Survey.extraction_fix_hook.time.monotonic", side_effect=lambda: clock[0]):
+            self.assertEqual(self._run(FakeDom(present), strategy, budget_s=0.005), self.fix_block)
+        strategy.assert_not_called()
+
+    def test_finished_handler_keeps_valid_result_after_deadline_before_and_after(self) -> None:
+        for position in ("before", "after"):
+            with self.subTest(position=position):
+                self.registry = ExternalFixRegistry(root=self.root)
+                clock = [100.0]
+
+                def handler(_driver: object, _chain: object) -> object:
+                    clock[0] = 100.02
+                    return self.fix_block
+
+                self.registry.register(ExternalFix(
+                    fix_id=f"fix_slow_{position}", core_function_id="sample.py::core",
+                    expected_core_hash=self.core_hash, anchor_function_id=self.anchor,
+                    position=position, case_ids=("synthetic_case",),
+                    condition=DomCondition(("div.synthetic-fix",)), handler=handler,
+                ))
+                strategy = Mock(return_value=[])
+                with patch("Survey.extraction_fix_hook.time.monotonic", side_effect=lambda: clock[0]), \
+                     patch("Survey.extraction_fix_hook.log_debug") as debug:
+                    result = self._run(FakeDom(("div.synthetic-fix",)), strategy, budget_s=0.005)
+                self.assertEqual(result, self.fix_block)
+                self.assertTrue(any("budget dépassé après handler" in str(call)
+                                    for call in debug.call_args_list))
+                self.assertEqual(strategy.call_count, 0 if position == "before" else 1)
 
     def test_failed_or_ambiguous_before_does_not_chain_into_after(self) -> None:
         present = ("div.synthetic-fix", "span.synthetic-signal")
