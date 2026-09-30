@@ -6,9 +6,9 @@ manuel de Codex sur ce prompt. Ne lance aucun agent de coding, n'applique aucun
 patch, ne commit rien, ne push rien, ne merge rien.
 
 Lecture seule sur les Phases 2/4/6 : ne recalcule aucun failure case, replay,
-diagnostic ou prompt — lit uniquement manifest.json (Phase 2), diagnosis.json
-(Phase 4) et prompt.txt (Phase 6), déjà produits par ces outils. N'écrit jamais
-dans failure_cases/, diagnoses/, context_selections/, ni prompts/.
+diagnostic ou prompt — lit manifest.json (Phase 2), les preuves DOM déjà
+nettoyées du case, diagnosis.json (Phase 4) et prompt.txt (Phase 6).
+N'écrit jamais dans les dossiers d'artefacts d'origine.
 
 ── Portée : stage="extraction" ET stage="action" (preuve distincte par stage) ──
 Un case extraction REPRODUIT revérifie réellement dom_analyzer.analyze_dom() +
@@ -88,6 +88,7 @@ existante, déjà destinée à l'opérateur technique, les affiche également.
 
 import json
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -98,6 +99,48 @@ from Survey.log_utils import log_debug, log_info
 
 _TAG = "[AUTOFIX_WORKTREE]"
 SCHEMA_VERSION = "1.0"
+
+_DOM_EVIDENCE_FILES = (
+    "dom_outer.html", "dom_body.html", "page_source.html",
+    "pre_action_dom.html", "post_action_dom.html",
+    "question_blocks.json", "validation_report.json",
+)
+
+
+def dom_evidence_relative_dir(case_id: str) -> Path:
+    return Path("surveybot") / "failure_cases" / case_id / "artifacts"
+
+
+def _copy_dom_evidence(failure_case_dir: Path, worktree_path: Path, case_id: str) -> None:
+    """Copie les preuves déjà nettoyées dans un chemin ignoré du worktree.
+
+    Cette isolation laisse git status, le calcul du patch et le commit aveugles
+    aux preuves tout en les rendant lisibles à l'agent lancé dans le worktree.
+    """
+    source = failure_case_dir / "artifacts"
+    destination = worktree_path / dom_evidence_relative_dir(case_id)
+    sources = [source / name for name in _DOM_EVIDENCE_FILES]
+    frames = source / "frames"
+    if frames.is_dir():
+        try:
+            sources.extend(
+                path for path in frames.iterdir()
+                if path.is_file() and path.name.startswith("frame_")
+                and path.name.endswith((".dom_outer.html", ".page_source.html"))
+            )
+        except OSError as exc:
+            log_debug(_TAG, f"preuves DOM de frames indisponibles : {frames} ({exc})")
+    for path in sources:
+        if not path.is_file():
+            continue
+        relative = path.relative_to(source)
+        try:
+            copied = destination / relative
+            copied.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, copied)
+            log_debug(_TAG, f"preuve DOM copiée : {relative.as_posix()} -> {copied}")
+        except OSError as exc:
+            log_debug(_TAG, f"preuve DOM indisponible : {path} ({exc})")
 
 PROTECTED_BRANCHES = {"playwright-migration", "main", "prod"}
 
@@ -447,6 +490,8 @@ def prepare_autofix_worktree(
         log_debug(_TAG, f"worktree add a échoué, rollback de la branche {branch!r}")
         _run_git(["branch", "-D", branch], cwd=repo_root)
         raise AutofixWorktreeError(f"création du worktree échouée : {worktree_add.stderr.strip()}")
+
+    _copy_dom_evidence(failure_case_dir, target, case_id)
 
     result = WorktreeResult(
         case_id=case_id,

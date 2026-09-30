@@ -324,6 +324,27 @@ def _suggest_commit_title(diagnosis: dict, code_files: "list[str]") -> str:
     return f"fix({scope}): corriger l'anomalie détectée sur un champ {desc}" if itype else f"fix({scope}): corriger l'anomalie détectée"
 
 
+def add_dom_evidence_context(prompt_text: str, case_id: str, evidence_dir: Path, relative_dir: Path) -> str:
+    """Ajoute au prompt émis les preuves réellement présentes dans le worktree."""
+    files = sorted(
+        path.relative_to(evidence_dir).as_posix()
+        for path in evidence_dir.rglob("*") if path.is_file()
+    ) if evidence_dir.is_dir() else []
+    has_html = any(name.endswith(".html") for name in files)
+    complete = has_html and "question_blocks.json" in files and "validation_report.json" in files
+    status = "présentes" if complete else "absentes ou incomplètes"
+    details = ", ".join(files) if files else "aucun fichier"
+    anchor = f"case_id à rattacher au correctif : {case_id}\n"
+    evidence_note = (
+        f"Preuves DOM du case dans le worktree : {relative_dir.as_posix()}\n"
+        f"État des preuves : {status} ({details}).\n"
+        "Fonde les gardes DOM du correctif uniquement sur ces fichiers du case. "
+        "Ne te fie pas aux autres fichiers de snapshot suivis du dépôt. "
+        "Si les preuves manquent, signale la limite sans inventer de sélecteurs.\n"
+    )
+    return prompt_text.replace(anchor, anchor + evidence_note, 1)
+
+
 @dataclass
 class PromptGenerationResult:
     eligible: bool

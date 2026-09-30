@@ -490,7 +490,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from Survey.autofix.autofix_worktree import AutofixWorktreeError, check_eligibility, prepare_autofix_worktree
+from Survey.autofix.autofix_worktree import (
+    AutofixWorktreeError, check_eligibility, dom_evidence_relative_dir,
+    prepare_autofix_worktree,
+)
 from Survey.autofix.case_grouping import CaseGroupingError, write_case_groups
 from Survey.autofix.confidence_score import (
     CONFIDENCE_HIGH,
@@ -525,6 +528,7 @@ from Survey.autofix.prompt_generator import (
     MANUAL_REVIEW_FILENAME,
     PROMPT_FILENAME,
     PromptGenerationError,
+    add_dom_evidence_context,
     write_prompt,
 )
 from Survey.autofix.static_validator import StaticValidationError, write_static_validation
@@ -1924,6 +1928,10 @@ def process_case(
 
     # ── Point 2 ────────────────────────────────────────────────────────────
     prompt_text = case.prompt_path.read_text(encoding="utf-8")
+    evidence_relative_dir = dom_evidence_relative_dir(case_id)
+    prompt_text = add_dom_evidence_context(
+        prompt_text, case_id, worktree_path / evidence_relative_dir, evidence_relative_dir,
+    )
     invocation = invoke_claude_headless(
         case_id=case_id, branch=branch, worktree_path=worktree_path,
         prompt_text=prompt_text, allowed_tools=allowed_tools,
