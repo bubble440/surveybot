@@ -1,3 +1,8 @@
+> **Archive historique figée.** Le contenu ci-dessous est l'ancien plan, conservé à l'identique.
+> Ses sections d'état, notamment « Contexte de travail actuel » et « Ordre concret de développement »,
+> décrivent leur époque et ne constituent pas l'état courant. L'état courant se trouve uniquement dans
+> [SURVEYBOT_AUTOFIX_PLAN.md](SURVEYBOT_AUTOFIX_PLAN.md). Aucune nouvelle chronique n'est ajoutée ici.
+
 Voici le plan complet que je recommande, de **1A jusqu'au système
 d'auto-correction mature**. Je le découpe volontairement en étapes
 courtes et validables : on ne passe jamais à l'automatisation d'un

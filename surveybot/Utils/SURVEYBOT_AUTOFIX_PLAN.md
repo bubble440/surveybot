@@ -1,6 +1,6 @@
 # SurveyBot — mémoire active de l'autofix
 
-Ce fichier est le point d'entrée à lire avant un diagnostic ou un prompt relatif à l'autofix. L'[archive intégrale](SURVEYBOT_AUTOFIX_PLAN_ARCHIVE.md) conserve **octet pour octet** l'ancien plan : journal des mises à jour jusqu'à la suite 47, descriptions détaillées des phases 1A à 20, règles, décisions, cas réels et architecture cible. Pour retrouver un détail, rechercher dans l'archive `Mise à jour ... (suite N)` ou le titre `Phase ...`. Toute nouvelle chronique détaillée va dans cette archive unique ; ce fichier conserve l'état utile au travail en cours.
+Ce fichier est le point d'entrée à lire avant un diagnostic ou un prompt relatif à l'autofix. L'[archive historique figée](SURVEYBOT_AUTOFIX_PLAN_ARCHIVE.md) conserve, après son en-tête, **octet pour octet** l'ancien plan : journal des mises à jour jusqu'à la suite 47, descriptions détaillées des phases 1A à 20, règles, décisions, cas réels et architecture cible. Pour retrouver un détail, rechercher dans l'archive `Mise à jour ... (suite N)` ou le titre `Phase ...`. L'archive ne reçoit aucune nouvelle chronique ; l'état courant se trouve uniquement ici.
 
 Les décisions de [BOT_EVOLUTION_MEMORY.md](../Survey/BOT_EVOLUTION_MEMORY.md), notamment ses « Patterns exclus », restent des frontières strictes. La séparation du cœur protégé et des points d'extension est décrite dans [SURVEYBOT_PROTECTED_CORE_ARCHITECTURE.md](SURVEYBOT_PROTECTED_CORE_ARCHITECTURE.md). Ces documents ne sont pas remplacés par cette mémoire.
 
@@ -94,4 +94,4 @@ Voir les sections de même nom dans l'[archive intégrale](SURVEYBOT_AUTOFIX_PLA
 
 ## Index de l'archive
 
-L'[archive](SURVEYBOT_AUTOFIX_PLAN_ARCHIVE.md) contient l'ancien fichier entier, avec ses titres d'origine. Rechercher `## Contexte de travail actuel` pour l'ancien état, `# Phase 1B` ou `# Phase 3` pour les chantiers partiels, `# Phase 1A`, `# Phase 2`, `# Phase 4` à `# Phase 20` pour le détail historique, `# Architecture finale cible` pour le schéma, et `## Ordre concret de développement` pour la chronologie des statuts. Le journal de tête contient les mises à jour datées et les suites 1 à 47.
+L'[archive](SURVEYBOT_AUTOFIX_PLAN_ARCHIVE.md) contient, après son en-tête, l'ancien fichier entier, avec ses titres d'origine ; ses sections d'état sont historiques. Rechercher `## Contexte de travail actuel` pour l'ancien état, `# Phase 1B` ou `# Phase 3` pour les chantiers partiels, `# Phase 1A`, `# Phase 2`, `# Phase 4` à `# Phase 20` pour le détail historique, `# Architecture finale cible` pour le schéma, et `## Ordre concret de développement` pour la chronologie des statuts. Le journal de tête contient les mises à jour datées et les suites 1 à 47.
