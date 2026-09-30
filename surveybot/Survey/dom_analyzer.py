@@ -1888,8 +1888,14 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
     # --- 0h-quinquies) Consent modal radio + bouton confirmer ---
     # Objectif: couvrir les modals RGPD avec radios masquées + labels custom.
+    # Ancrage before/after limité à cette étape : l'ordre de la cascade reste
+    # stable et, registre vide, la stratégie et la poursuite restent identiques.
     try:
-        consent_modal_blocks = _extract_consent_modal_radio_block(driver, frame_chain)
+        consent_modal_blocks = run_extraction_strategy_with_fixes(
+            driver, frame_chain,
+            anchor_function_id="dom_extractors_misc.py::_extract_consent_modal_radio_block",
+            strategy=_extract_consent_modal_radio_block,
+        )
         if consent_modal_blocks:
             return consent_modal_blocks
     except Exception:

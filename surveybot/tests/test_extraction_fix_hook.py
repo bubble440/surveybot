@@ -197,6 +197,93 @@ class ExtractionFixHookTests(unittest.TestCase):
         self.assertEqual(blocks, self.fix_block)
         strategy.assert_not_called()
 
+    def _consent_registry(self, *, position: str | None = None, handler: object = None) -> ExternalFixRegistry:
+        import Survey.dom_analyzer as analyzer
+
+        real_root = Path(analyzer.__file__).resolve().parent
+        registry = ExternalFixRegistry(root=real_root)
+        if position is not None:
+            anchor = "dom_extractors_misc.py::_extract_consent_modal_radio_block"
+            baseline = json.loads((real_root / "extractor_integrity.json").read_text(encoding="utf-8"))
+            self.assertIn(anchor, baseline)
+            core_hash = _hash_function(real_root, "dom_extractors_misc.py", "_extract_consent_modal_radio_block")
+            registry.register(ExternalFix(
+                fix_id="fix_synthetic_consent", core_function_id=anchor,
+                expected_core_hash=core_hash, anchor_function_id=anchor,
+                position=position, case_ids=("synthetic_case",),
+                condition=DomCondition(("div.synthetic-fix",)), handler=handler,
+            ))
+        return registry
+
+    def test_consent_cascade_empty_registry_keeps_strategy_and_continuation(self) -> None:
+        import Survey.dom_analyzer as analyzer
+
+        registry = self._consent_registry()
+        strategy = Mock(return_value=self.core_block)
+        next_strategy = Mock(return_value=self.fix_block)
+        with (
+            patch.object(analyzer, "_extract_consent_modal_radio_block", strategy),
+            patch.object(analyzer, "_extract_mui_card_single_choice_block", next_strategy),
+            patch.object(analyzer, "run_extraction_strategy_with_fixes", partial(
+                run_extraction_strategy_with_fixes, registry=registry
+            )),
+        ):
+            self.assertEqual(analyzer._analyze_dom_current_context(FakeDom()), self.core_block)
+            strategy.assert_called_once()
+            next_strategy.assert_not_called()
+
+            strategy.reset_mock(return_value=True)
+            strategy.return_value = []
+            self.assertEqual(analyzer._analyze_dom_current_context(FakeDom()), self.fix_block)
+            strategy.assert_called_once()
+            next_strategy.assert_called_once()
+
+    def test_consent_cascade_before_skips_strategy(self) -> None:
+        import Survey.dom_analyzer as analyzer
+
+        handler = Mock(return_value=self.fix_block)
+        registry = self._consent_registry(position="before", handler=handler)
+        strategy = Mock(return_value=self.core_block)
+        with (
+            patch.object(analyzer, "_extract_consent_modal_radio_block", strategy),
+            patch.object(analyzer, "run_extraction_strategy_with_fixes", partial(
+                run_extraction_strategy_with_fixes, registry=registry
+            )),
+        ):
+            blocks = analyzer._analyze_dom_current_context(FakeDom(("div.synthetic-fix",)))
+        self.assertEqual(blocks, self.fix_block)
+        handler.assert_called_once()
+        strategy.assert_not_called()
+
+    def test_consent_cascade_after_only_when_strategy_empty(self) -> None:
+        import Survey.dom_analyzer as analyzer
+
+        handler = Mock(return_value=self.fix_block)
+        registry = self._consent_registry(position="after", handler=handler)
+        strategy = Mock(return_value=[])
+        with (
+            patch.object(analyzer, "_extract_consent_modal_radio_block", strategy),
+            patch.object(analyzer, "run_extraction_strategy_with_fixes", partial(
+                run_extraction_strategy_with_fixes, registry=registry
+            )),
+        ):
+            self.assertEqual(
+                analyzer._analyze_dom_current_context(FakeDom(("div.synthetic-fix",))),
+                self.fix_block,
+            )
+            strategy.assert_called_once()
+            handler.assert_called_once()
+
+            strategy.reset_mock(return_value=True)
+            strategy.return_value = self.core_block
+            handler.reset_mock()
+            self.assertEqual(
+                analyzer._analyze_dom_current_context(FakeDom(("div.synthetic-fix",))),
+                self.core_block,
+            )
+            strategy.assert_called_once()
+            handler.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
