@@ -316,6 +316,11 @@ if ($LASTEXITCODE -ne 0) { Write-Error "echec 'pip install --upgrade pip'"; exit
 if ($LASTEXITCODE -ne 0) { Write-Error "echec 'pip install -r requirements.txt'"; exit 1 }
 Write-Log "Dependances du projet OK."
 
+Write-Log "Installation/mise a jour de pytest (tests associes de la Phase 8) ..."
+& $venvPython -m pip install --upgrade pytest
+if ($LASTEXITCODE -ne 0) { Write-Error "echec 'pip install pytest'"; exit 1 }
+Write-Log "pytest installe dans le venv."
+
 # ruff : DELIBEREMENT absent de requirements.txt (investigation deja menee et
 # documentee dans Survey/autofix/static_validator.py -- Phase 8 le resout via
 # shutil.which("ruff"), jamais via une dependance pip declaree). Installe ici a

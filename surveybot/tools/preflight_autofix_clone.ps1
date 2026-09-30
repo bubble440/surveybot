@@ -236,7 +236,14 @@ if (-not $claudeCmd) {
 # -- 6) Interpreteur Python et dependances OK --
 if (-not (Test-Path $venvPython)) {
     Add-Result -Name "dependances Python (venv)" -Ok $false -Detail "venv introuvable : $venvPython -- executer setup_autofix_clone.ps1"
+    Add-Result -Name "pytest (venv)" -Ok $false -Detail "venv introuvable : $venvPython -- executer setup_autofix_clone.ps1"
 } else {
+    & $venvPython -m pytest --version *> $null
+    if ($LASTEXITCODE -eq 0) {
+        Add-Result -Name "pytest (venv)" -Ok $true -Detail "disponible dans l'interpreteur du pipeline"
+    } else {
+        Add-Result -Name "pytest (venv)" -Ok $false -Detail "absent ou inutilisable dans $venvPython -- executer setup_autofix_clone.ps1"
+    }
     & $venvPython -m pip check *> $null
     $pipCheckOk = ($LASTEXITCODE -eq 0)
     $orchestratorModule = Join-Path $ClonePackageRoot "Survey/autofix/autofix_orchestrator.py"

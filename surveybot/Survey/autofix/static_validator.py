@@ -20,11 +20,11 @@ modifications trackées, committées ou non (`git diff --name-only base_sha`,
 qui compare l'arbre de base_sha à l'arbre de travail courant — couvre donc
 aussi bien un patch déjà committé sur la branche qu'un patch resté en attente
 dans le worktree) UNIES aux nouveaux fichiers non trackés
-(`git status --porcelain --untracked-files=all`, entrées `??`). Seuls les
-fichiers `.py` existant réellement sur disque sont conservés (un fichier
-supprimé par le patch n'a rien à compiler/importer/linter).
+(`git status --porcelain --untracked-files=all`, entrées `??`). Les fichiers
+`.py` existants sont compilés/importés/lintés/testés ; tous les fichiers
+ajoutés directement à la racine du paquet sont contrôlés séparément.
 
-── Quatre vérifications, dans cet ordre, une seule stratégie chacune ───────
+── Vérifications, une seule stratégie chacune ───────────────────────────────
 1. Compilation isolée par sous-processus (`python -m py_compile`) — capture
    toute SyntaxError, y compris un nom d'argument dupliqué dans une
    signature (déjà un SyntaxError CPython natif — vérifié : « duplicate
@@ -52,25 +52,14 @@ supprimé par le patch n'a rien à compiler/importer/linter).
    sélectionnable dans cette version de Ruff (vérifié : « Rule F831 » est
    rejeté par `ruff rule`) — non grave, ce cas est un SyntaxError CPython
    natif déjà couvert par le point 1, documenté ici plutôt que masqué.
-4. Tests unitaires déjà associés à chaque fichier modifié, SI une convention
-   de nommage existe déjà dans ce dépôt. Investigation menée avant d'écrire
-   ce module, documentée ici pour traçabilité (même principe que la Source 2
-   de Survey/autofix/context_selector.py) : ce dépôt ne contient aujourd'hui aucune
-   suite de tests versionnée, aucun `tests/`, aucun `conftest.py`, aucune
-   dépendance pytest/ruff dans requirements.txt — pytest n'est pas installé
-   dans l'interpréteur qui exécute cet outil (vérifié). `tools/test.py`/
-   `tools/test3c3.py` et `test_diag.py` à la racine sont des scripts
-   manuels pilotant un vrai navigateur (`input()` bloquant, profils Chrome
-   dédiés) — jamais des tests unitaires, aucun des trois ne suit ni n'établit
-   de convention de nommage fichier-source -> fichier-de-test. Le détecteur
-   ci-dessous reconnaît néanmoins plusieurs conventions Python usuelles
-   (cf. _find_associated_tests) : il s'activera automatiquement le jour où
-   l'une d'elles apparaît réellement dans ce dépôt, sans nouveau patch sur ce
-   module. Tant qu'aucun test associé n'est trouvé, ceci n'est jamais un
-   motif de rejet à lui seul (convention_found=false, documenté, pas
-   pénalisant) — seul un test déjà existant qui échoue réellement fait
-   échouer cette phase, au même titre qu'une erreur de compilation, d'import
-   ou de lint.
+4. Tests unitaires associés par convention de nommage (cf.
+   _find_associated_tests). Un module de correctif externe modifié doit avoir
+   son test associé ; ce test est exécuté avec pytest dans l'interpréteur du
+   pipeline. Pour les autres fichiers, l'absence de test reste non pénalisante.
+5. Activation stricte si le loader ou un module de correctif change : dans un
+   sous-processus borné, un registre neuf enregistre chaque déclaration et
+   vérifie sa candidature pour l'ancrage et la position déclarés.
+6. Rejet des nouveaux fichiers placés directement à la racine du paquet.
 
 Chaque sous-processus a un budget de temps explicite ; un dépassement est
 traité comme un échec de la vérification concernée, avec une raison
@@ -165,7 +154,7 @@ def _run(
 
 # ─────────────────────────── Fichiers modifiés (Git) ────────────────────────
 
-def _git_changed_paths(worktree_repo_root: Path, base_sha: str, *, timeout: float) -> "list[str]":
+def _git_changed_paths(worktree_repo_root: Path, base_sha: str, *, timeout: float) -> "tuple[list[str], list[str]]":
     """Union des chemins trackés modifiés depuis base_sha (committés ou non) et
     des nouveaux fichiers non trackés — jamais l'ensemble du dépôt."""
     ok, out, err, timed_out = _run(
@@ -176,6 +165,16 @@ def _git_changed_paths(worktree_repo_root: Path, base_sha: str, *, timeout: floa
     if not ok:
         raise StaticValidationError(f"git diff --name-only {base_sha} a échoué : {err.strip()}")
     tracked = {line.strip() for line in out.splitlines() if line.strip()}
+
+    ok_added, out_added, err_added, added_timeout = _run(
+        ["git", "diff", "--name-only", "--diff-filter=AR", base_sha],
+        cwd=worktree_repo_root, timeout=timeout,
+    )
+    if added_timeout or not ok_added:
+        raise StaticValidationError(
+            f"git diff des fichiers ajoutés a échoué : {err_added.strip() or 'budget dépassé'}"
+        )
+    added_tracked = {line.strip() for line in out_added.splitlines() if line.strip()}
 
     ok2, out2, err2, timed_out2 = _run(
         ["git", "status", "--porcelain", "--untracked-files=all"], cwd=worktree_repo_root, timeout=timeout,
@@ -190,7 +189,7 @@ def _git_changed_paths(worktree_repo_root: Path, base_sha: str, *, timeout: floa
         if line.startswith("??")
     }
 
-    return sorted(tracked | untracked)
+    return sorted(tracked | untracked), sorted(added_tracked | untracked)
 
 
 def _filter_existing_python_files(repo_root: Path, rel_paths: "list[str]") -> "list[Path]":
@@ -296,6 +295,98 @@ def _check_import(files: "list[Path]", *, package_root: Path, timeout: float) ->
     return {"ok": ok_all, "files": entries}
 
 
+_ACTIVATION_SCRIPT = r'''
+import importlib
+import json
+import sys
+from pathlib import Path
+
+from Survey import external_fix_loader as loader
+from Survey.external_fix_registry import ExternalFixRegistry
+
+result = {"ok": True, "registered": [], "error": None}
+try:
+    registry = ExternalFixRegistry(root=Path(loader.__file__).resolve().parent)
+    if len(loader.MODULE_IMPORTS) > loader.MAX_MODULES:
+        raise ValueError("MODULE_IMPORTS dépasse MAX_MODULES")
+    for import_fixes in loader.MODULE_IMPORTS:
+        try:
+            fixes = import_fixes()
+        except Exception as exc:
+            raise RuntimeError(f"module={import_fixes.__name__}: {type(exc).__name__}: {exc}") from exc
+        if not isinstance(fixes, tuple) or len(fixes) > loader.MAX_FIXES_PER_MODULE:
+            raise ValueError(f"module={import_fixes.__name__}: FIXES invalide ou trop grand")
+        for fix in fixes:
+            fix_id = getattr(fix, "fix_id", "<inconnu>")
+            try:
+                registry.register(fix)
+            except Exception as exc:
+                raise RuntimeError(f"fix_id={fix_id}: {type(exc).__name__}: {exc}") from exc
+            candidates = registry.candidates(
+                stage=fix.stage, anchor_function_id=fix.anchor_function_id,
+                position=fix.position,
+            )
+            if not any(candidate is fix for candidate in candidates):
+                raise RuntimeError(f"fix_id={fix_id}: absent des candidats pour son ancrage/position")
+            result["registered"].append(fix_id)
+    for module_name in json.loads(sys.argv[1]):
+        module = importlib.import_module(f"Survey.{module_name}")
+        fixes = getattr(module, "FIXES", None)
+        if not isinstance(fixes, tuple) or not fixes:
+            raise ValueError(f"module={module_name}: FIXES absent ou vide")
+        for fix in fixes:
+            fix_id = getattr(fix, "fix_id", "<inconnu>")
+            if registry.get(fix_id) is not fix:
+                raise RuntimeError(f"fix_id={fix_id}: module={module_name} absent de MODULE_IMPORTS")
+except Exception as exc:
+    result["ok"] = False
+    result["error"] = f"{type(exc).__name__}: {exc}"
+sys.stdout.write(json.dumps(result, ensure_ascii=False) + "\n")
+'''
+
+
+def _check_activation(changed_rel: "list[str]", *, worktree_path: Path,
+                      package_root: Path, timeout: float) -> dict:
+    survey_root = package_root / "Survey"
+    changed = {worktree_path / rel for rel in changed_rel}
+    modules = sorted({
+        path.stem for path in changed
+        if path.parent == survey_root and path.name.startswith("external_fix_")
+        and path.suffix == ".py" and path.name not in
+        {"external_fix_loader.py", "external_fix_registry.py"}
+    })
+    if survey_root / "external_fix_loader.py" not in changed and not modules:
+        return {"ok": True, "skipped": True, "registered": [], "timed_out": False, "error": None}
+
+    # Le loader de production ignore certains refus en debug. Un registre neuf
+    # et register() strict rendent ces refus visibles avant tout score/commit.
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(package_root) + (
+        os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""
+    )
+    env["LOG_LEVEL"] = "INFO"
+    ok, out, err, timed_out = _run(
+        [sys.executable, "-c", _ACTIVATION_SCRIPT, json.dumps(modules)],
+        cwd=package_root, timeout=timeout, env=env,
+    )
+    if timed_out:
+        return {"ok": False, "skipped": False, "registered": [], "timed_out": True,
+                "error": f"contrôle d'activation : budget dépassé ({timeout}s)"}
+    if not ok:
+        return {"ok": False, "skipped": False, "registered": [], "timed_out": False,
+                "error": f"contrôle d'activation : {(err or out).strip()[-2000:]}"}
+    try:
+        result = json.loads(out.strip().splitlines()[-1])
+        if not isinstance(result, dict) or not isinstance(result.get("ok"), bool):
+            raise ValueError("résultat incomplet")
+    except (IndexError, ValueError, json.JSONDecodeError) as exc:
+        return {"ok": False, "skipped": False, "registered": [], "timed_out": False,
+                "error": f"résultat du contrôle d'activation illisible : {exc}"}
+    return {"ok": result["ok"], "skipped": False,
+            "registered": result.get("registered", []), "timed_out": False,
+            "error": result.get("error")}
+
+
 # ───────────────────────────────────── Lint ─────────────────────────────────
 
 def _check_lint(files: "list[Path]", *, timeout: float) -> dict:
@@ -393,7 +484,8 @@ def _pytest_available() -> bool:
         return False
 
 
-def _check_tests(files: "list[Path]", *, package_root: Path, timeout: float) -> dict:
+def _check_tests(files: "list[Path]", *, package_root: Path, timeout: float,
+                 required: "tuple[Path, ...]" = ()) -> dict:
     associated: "dict[str, list[Path]]" = {}
     for f in files:
         found = _find_associated_tests(f, package_root)
@@ -401,6 +493,15 @@ def _check_tests(files: "list[Path]", *, package_root: Path, timeout: float) -> 
             associated[str(f)] = found
 
     skipped = [str(f) for f in files if str(f) not in associated]
+
+    missing_required = [str(f) for f in required if str(f) not in associated]
+    if missing_required:
+        return {
+            "ok": False, "convention_found": bool(associated),
+            "note": "test associé requis pour chaque module de correctif externe modifié",
+            "executed": [], "skipped_no_test": skipped, "timed_out": False,
+            "error": f"test associé absent pour {missing_required}",
+        }
 
     if not associated:
         return {
@@ -513,8 +614,17 @@ def validate_patch_static(
 
     warnings: "list[str]" = []
 
-    changed_rel = _git_changed_paths(worktree_path, base_sha, timeout=git_timeout_s)
+    changed_rel, added_rel = _git_changed_paths(worktree_path, base_sha, timeout=git_timeout_s)
     changed_files = _filter_existing_python_files(worktree_path, changed_rel)
+    package_root = _resolve_package_root(worktree_path)
+    root_new = sorted(
+        rel for rel in added_rel
+        if (worktree_path / rel).parent == package_root and (worktree_path / rel).is_file()
+    )
+    root_check = {
+        "ok": not root_new, "files": root_new,
+        "error": f"nouveau fichier à la racine du projet : {', '.join(root_new)}" if root_new else None,
+    }
 
     if not changed_files:
         warnings.append(
@@ -531,25 +641,36 @@ def validate_patch_static(
                 "note": "aucun fichier modifié à associer à un test",
                 "executed": [], "skipped_no_test": [], "timed_out": False, "error": None,
             },
+            "root_files": root_check,
+            "activation": {"ok": True, "skipped": True, "registered": [], "timed_out": False, "error": None},
         }
         return StaticValidationResult(
             case_id=case_id, branch=branch, base_sha=base_sha,
-            changed_files=[], checks=checks, reasons=[], warnings=warnings,
+            changed_files=[], checks=checks,
+            reasons=[root_check["error"]] if root_new else [], warnings=warnings,
         )
 
-    package_root = _resolve_package_root(worktree_path)
+    fix_modules = tuple(
+        f for f in changed_files if f.parent == package_root / "Survey"
+        and f.name.startswith("external_fix_")
+        and f.name not in ("external_fix_loader.py", "external_fix_registry.py")
+    )
 
     checks = {
         "compile": _check_compile(changed_files, timeout=compile_timeout_s),
         "import": _check_import(changed_files, package_root=package_root, timeout=import_timeout_s),
         "lint": _check_lint(changed_files, timeout=lint_timeout_s),
-        "tests": _check_tests(changed_files, package_root=package_root, timeout=tests_timeout_s),
+        "tests": _check_tests(changed_files, package_root=package_root,
+                              timeout=tests_timeout_s, required=fix_modules),
+        "activation": _check_activation(changed_rel, worktree_path=worktree_path,
+                                        package_root=package_root, timeout=import_timeout_s),
+        "root_files": root_check,
     }
 
     reasons: "list[str]" = []
-    for name in ("compile", "import", "lint", "tests"):
+    for name in ("compile", "import", "lint", "tests", "activation", "root_files"):
         if not checks[name]["ok"]:
-            reasons.append(f"{name} : échec (détail dans checks.{name})")
+            reasons.append(f"{name} : {checks[name].get('error') or 'échec'}")
 
     return StaticValidationResult(
         case_id=case_id, branch=branch, base_sha=base_sha,

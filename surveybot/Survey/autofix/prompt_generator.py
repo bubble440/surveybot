@@ -105,7 +105,7 @@ CORRECTIF EXTERNE ET CORE PROTÉGÉ
 Confirme la cause sur le DOM et cherche d'abord un correctif externe indépendant, minimal et gardé par des faits DOM structurels précis. Un nom de provider, un symptôme isolé ou une hypothèse ne suffisent pas.
 Réutilise Survey/external_fix_registry.py et les hooks existants. Rattache le correctif à son case_id, à une fonction core identifiée par la clé fichier.py::fonction d'extractor_integrity.json et à son hash attendu, sans modifier cette baseline pour faire accepter le patch.
 Choisis un fix_id stable et neutre ; déclare des sélecteurs requis et exclus structurels dans DomCondition, sans texte de question, réponse, compte ou URL de session.
-Vérifie que l'ancrage choisi est réellement appelé et que la déclaration du correctif est effectivement chargée. Ajoute son module à la liste explicite de Survey/external_fix_loader.py : ce fichier est le seul point de chargement à modifier pour l'activer. Un module absent de cette liste ou une entrée de registre refusée ne constituent pas un correctif actif. Si le point d'extension manque, expose cette limite et propose une couture minimale distincte ; ne déclare pas un succès non vérifié.
+Vérifie par lecture du code que l'ancrage choisi est appelé et que la déclaration du correctif figure dans la liste explicite de Survey/external_fix_loader.py. Ajoute son module à cette liste : ce fichier est le seul point de chargement à modifier pour l'activer. Le pipeline vérifiera l'enregistrement strict et la candidature pour l'ancrage et la position ; ne déclare pas un succès non vérifié. Si le point d'extension manque, expose cette limite et propose une couture minimale distincte.
 Deux correctifs qui correspondent au même DOM ne doivent être ni ordonnés arbitrairement ni composés. Préserve les conditions d'exclusion et vérifie les cas voisins.
 
 VOIE DE CORRECTION POUR CE STAGE
@@ -141,11 +141,13 @@ La Phase 11-A compare la baseline, base_sha et le patch. Un écart préexistant 
 
 ACTION REQUISE
 Identifier la cause racine.
-Appliquer un patch externe minimal et robuste si son ancrage et son chargement peuvent être vérifiés. Sinon, signaler le blocage ou un CORE_CHANGE_CANDIDATE avec les preuves disponibles ; ne pas poser de question interactive dans ce run headless.
-Vérifier la non-régression sur les DOMs de référence pertinents.
+Appliquer un patch externe minimal et robuste si son ancrage et son chargement peuvent être établis par lecture du code. Sinon, signaler le blocage ou un CORE_CHANGE_CANDIDATE avec les preuves disponibles.
+Ne lance aucune exécution de code ni commande shell : les contrôles d'activation, tests et rejeux sont effectués par le pipeline. Ne crée aucun fichier temporaire.
+Écris un test associé au module de correctif dans tests/test_<nom_du_module>.py, avec des données DOM synthétiques selon la convention des tests existants. La validation statique l'exécutera.
+Prépare la non-régression sur les DOMs de référence pertinents pour vérification par le pipeline. Termine par un constat factuel ; ne pas poser de question interactive dans ce run headless.
 Si le patch touche un CTA, appliquer la règle CTA_INTERCEPT_ONLY.
 Donne un nom à mettre comme titre du commit git.
-Après avoir implémenté et vérifié le patch, ajoute une entrée dans Survey/BOT_EVOLUTION_MEMORY.md suivant exactement le format déjà documenté en tête de ce fichier (### nom, Fichier, Bug corrigé, Correction, Patterns couverts, Patterns exclus, Statut) — jamais un format inventé.
+Après avoir écrit le patch et son test, ajoute une entrée dans Survey/BOT_EVOLUTION_MEMORY.md suivant exactement le format déjà documenté en tête de ce fichier (### nom, Fichier, Bug corrigé, Correction, Patterns couverts, Patterns exclus, Statut) — jamais un format inventé.
 """
 
 _STAGE_GUIDANCE = {
