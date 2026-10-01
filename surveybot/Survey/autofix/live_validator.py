@@ -520,9 +520,11 @@ def _run_live_subprocess(script: str, args: List[str], timeout_s: float) -> Tupl
             fh.write(script)
         try:
             completed = subprocess.run(
-                [sys.executable, tmp_path, *args],
+                [sys.executable, "-X", "utf8", tmp_path, *args],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout_s,
                 check=False,
             )
@@ -537,15 +539,18 @@ def _run_live_subprocess(script: str, args: List[str], timeout_s: float) -> Tupl
         except OSError:
             pass
 
+    stdout, stderr = completed.stdout or "", completed.stderr or ""
+    if "\ufffd" in stdout or "\ufffd" in stderr:
+        return None, "sortie UTF-8 invalide du sous-processus de validation live"
     if completed.returncode != 0:
         return None, (
             f"sous-processus de validation live terminé avec le code {completed.returncode} : "
-            f"{completed.stderr.strip()[-2000:]}"
+            f"{stderr.strip()[-2000:]}"
         )
     try:
-        return json.loads(completed.stdout.strip().splitlines()[-1]), None
+        return json.loads(stdout.strip().splitlines()[-1]), None
     except (ValueError, IndexError) as exc:
-        return None, f"sortie du sous-processus non JSON ({exc}) : {completed.stdout[-500:]!r}"
+        return None, f"sortie du sous-processus non JSON ({exc}) : {stdout[-500:]!r}"
 
 
 def _extraction_outcome(after: dict) -> str:

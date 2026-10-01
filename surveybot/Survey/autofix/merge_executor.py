@@ -197,9 +197,13 @@ def _run_git(args: "list[str]", *, cwd: Path, timeout: float) -> "tuple[bool, st
     log_debug(_TAG, f"git {' '.join(args)} (cwd={cwd}, timeout={timeout}s)")
     try:
         proc = subprocess.run(
-            ["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=timeout, check=False,
+            ["git", *args], cwd=str(cwd), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=timeout, check=False,
         )
-        return proc.returncode == 0, proc.stdout, proc.stderr, False
+        out, err = proc.stdout or "", proc.stderr or ""
+        if "\ufffd" in out or "\ufffd" in err:
+            return False, out, f"{err}\nsortie UTF-8 invalide".strip(), False
+        return proc.returncode == 0, out, err, False
     except subprocess.TimeoutExpired:
         return False, "", f"dépassement du budget ({timeout}s)", True
     except OSError as exc:

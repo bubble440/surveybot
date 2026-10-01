@@ -173,9 +173,13 @@ def _run_git(
     try:
         proc = subprocess.run(
             ["git", *args], cwd=str(cwd), input=input_text, capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
             timeout=timeout, check=False,
         )
-        return proc.returncode == 0, proc.stdout, proc.stderr, False
+        out, err = proc.stdout or "", proc.stderr or ""
+        if "\ufffd" in out or "\ufffd" in err:
+            return False, out, f"{err}\nsortie UTF-8 invalide".strip(), False
+        return proc.returncode == 0, out, err, False
     except subprocess.TimeoutExpired:
         return False, "", f"dépassement du budget ({timeout}s)", True
     except OSError as exc:
