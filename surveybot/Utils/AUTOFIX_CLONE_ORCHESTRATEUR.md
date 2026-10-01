@@ -126,9 +126,11 @@ soit vers un dépôt distant, ni ne merge dans une branche protégée.
   checkouts simultanément.
 - Le dossier réel des worktrees Git (Phase 7, distinct de l'artefact de
   traçabilité `autofix_worktrees/`) est un frère du clone
-  (`<clone>-worktrees`) : il grossit à chaque case traité et n'est nettoyé par
-  aucun de ces scripts — un nettoyage périodique manuel reste à la charge de
-  l'opérateur.
+  (`<clone>-worktrees`) : depuis le 1er octobre 2026, l'orchestrateur retire
+  lui-même le worktree et la branche d'un case mergé avec succès (aucun de ces
+  scripts n'y intervient) ; les worktrees des cases non mergés (rejetés ou en
+  échec) sont conservés volontairement et leur nettoyage manuel reste à la
+  charge de l'opérateur (cf. `GUIDE_EXPLOITATION_AUTOFIX.md`, §6 I).
 - Lancer `tools\run_autofix_pipeline.py` en invoquant directement
   `venv\Scripts\python.exe` (sans l'« activer ») ne préfixe pas automatiquement
   `venv\Scripts` au `PATH` du processus : `Survey/autofix/static_validator.py` (Phase 8)
