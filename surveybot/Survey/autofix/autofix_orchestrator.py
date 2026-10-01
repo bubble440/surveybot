@@ -492,7 +492,7 @@ from typing import Any, Optional
 
 from Survey.autofix.autofix_worktree import (
     AutofixWorktreeError, check_eligibility, dom_evidence_relative_dir,
-    prepare_autofix_worktree,
+    prepare_autofix_worktree, remove_merged_case_worktree,
 )
 from Survey.autofix.case_grouping import CaseGroupingError, write_case_groups
 from Survey.autofix.confidence_score import (
@@ -769,9 +769,10 @@ class DownstreamCaseSummary:
     notified_state: Optional[str] = None
     artifacts: "dict[str, str]" = field(default_factory=dict)
     warnings: "list[str]" = field(default_factory=list)
+    worktree_cleanup: "Optional[dict]" = None
 
     def as_dict(self) -> dict:
-        return {
+        result = {
             "schema_version": SCHEMA_VERSION,
             "case_id": self.case_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -784,6 +785,9 @@ class DownstreamCaseSummary:
             "artifacts": self.artifacts,
             "warnings": self.warnings,
         }
+        if self.worktree_cleanup is not None:
+            result["worktree_cleanup"] = self.worktree_cleanup
+        return result
 
 
 def _downstream_run_paths(out_root: Path, case_id: str) -> "tuple[Path, Path]":
@@ -984,11 +988,23 @@ def _process_downstream_case(
             message=f"✅ autofix case={case_id} : mergé avec succès.",
             previous_notified_state=previous_notified_state,
         )
+        try:
+            cleanup = remove_merged_case_worktree(
+                case_id=case_id,
+                manifest_path=worktrees_root / case_id / "worktree.json",
+                integration_branch=str(merge_data.get("target_branch") or ""),
+            )
+        except Exception as exc:
+            # Le retrait est auxiliaire : il ne change jamais l'issue du merge ni sa notification.
+            log_debug(_TAG, f"case={case_id} retrait du worktree impossible : {type(exc).__name__}: {exc}")
+            cleanup = {"status": "PRESERVED", "reason": f"retrait impossible ({type(exc).__name__}: {exc})"}
+        if cleanup["status"] in ("PRESERVED", "PARTIAL"):
+            warns.append(f"retrait du worktree : {cleanup['reason']}")
         return DownstreamCaseSummary(
             case_id=case_id, stopped_at=STAGE_DOWNSTREAM_MERGE, stop_reason=f"merge_result.json : {status}",
             terminal=True, is_error=False, notified=notified,
             notified_state=(NOTIFY_STATE_MERGED if notified else previous_notified_state),
-            artifacts=artifacts, warnings=warns,
+            artifacts=artifacts, warnings=warns, worktree_cleanup=cleanup,
         )
 
     # Statut inattendu — jamais deviné (vocabulaire vérifié dans le code avant

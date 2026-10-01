@@ -89,7 +89,11 @@ Write-Output "=== Version detectee : $version ==="
 $remoteManifestUrl = "$R2BaseUrl/manifest.json"
 try {
     $remoteManifestRaw = Invoke-WebRequest -Uri $remoteManifestUrl -UseBasicParsing -TimeoutSec 10
-    $remoteManifest    = $remoteManifestRaw.Content | ConvertFrom-Json
+    # Decodage UTF-8 explicite : sans charset dans l'en-tete HTTP, Windows PowerShell 5.1 lit .Content
+    # en Latin-1, donc un BOM UTF-8 apparait comme "i-trema + 2 car." et ConvertFrom-Json echoue
+    # ("Invalid JSON primitive") : le garde-fou de version s'ignorait alors silencieusement.
+    $remoteJson        = [Text.Encoding]::UTF8.GetString($remoteManifestRaw.RawContentStream.ToArray()).TrimStart([char]0xFEFF)
+    $remoteManifest    = $remoteJson | ConvertFrom-Json
     $remoteVersion     = $remoteManifest.version
 
     if ($remoteVersion -eq $version) {
@@ -184,7 +188,9 @@ $manifest = @{
 } | ConvertTo-Json
 
 $manifestPath = Join-Path $outputPath "manifest.json"
-Set-Content -Path $manifestPath -Value $manifest -Encoding UTF8
+# UTF-8 SANS BOM : Set-Content -Encoding UTF8 (Windows PowerShell 5.1) ecrit un BOM que le garde-fou
+# ci-dessus lisait mal lors des releases suivantes.
+[System.IO.File]::WriteAllText($manifestPath, $manifest, (New-Object System.Text.UTF8Encoding $false))
 
 Write-Output ""
 Write-Output "=== Build termine ==="

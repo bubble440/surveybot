@@ -405,6 +405,106 @@ def _current_branch_label(repo_root: Path) -> str:
     return "HEAD (detached)"
 
 
+def remove_merged_case_worktree(
+    *, case_id: str, manifest_path: Path, integration_branch: str,
+    physical_worktrees_root: "Optional[str | Path]" = None,
+) -> dict:
+    """Retire uniquement le worktree Git vérifié d'un case mergé.
+
+    Les contrôles de chemin, d'enregistrement Git, de branche et de propreté
+    précèdent toute suppression : un manifeste erroné ne doit jamais pouvoir
+    effacer un autre checkout ni des fichiers non suivis de l'opérateur.
+    """
+    def preserved(reason: str) -> dict:
+        reason = reason.replace("\n", " ")
+        log_debug(_TAG, f"case={case_id} worktree conservé : {reason}")
+        return {"status": "PRESERVED", "reason": reason}
+
+    try:
+        manifest, error = _load_json(Path(manifest_path))
+        if error or not isinstance(manifest, dict):
+            return preserved(error or "worktree.json invalide")
+        if not _is_safe_case_id(case_id) or manifest.get("case_id") != case_id:
+            return preserved("case_id du manifeste incohérent")
+        branch = manifest.get("branch")
+        if not isinstance(branch, str) or not branch or branch in PROTECTED_BRANCHES:
+            return preserved("branche absente ou protégée")
+        if branch != f"autofix/{case_id}":
+            return preserved("branche du manifeste inattendue pour ce case")
+        path_value = manifest.get("worktree_path")
+        if not isinstance(path_value, str) or not path_value:
+            return preserved("chemin du worktree absent du manifeste")
+
+        root_result = _run_git(["rev-parse", "--show-toplevel"], cwd=Path.cwd())
+        if root_result.returncode:
+            return preserved(f"dépôt courant introuvable : {root_result.stderr.strip()}")
+        repo_root = Path(root_result.stdout.strip()).resolve()
+        worktrees_root = Path(physical_worktrees_root or _default_worktrees_root(repo_root)).resolve()
+        worktree_path = Path(path_value).resolve()
+        if worktree_path == repo_root or worktree_path.parent != worktrees_root or worktree_path.name != case_id:
+            return preserved("chemin hors de la racine des worktrees du case ou dépôt principal")
+        if not worktree_path.exists():
+            log_debug(_TAG, f"case={case_id} worktree déjà absent : {worktree_path}")
+            return {"status": "ALREADY_ABSENT", "reason": "worktree déjà absent"}
+
+        listed = _run_git(["worktree", "list", "--porcelain"], cwd=repo_root)
+        if listed.returncode:
+            return preserved(f"git worktree list a échoué : {listed.stderr.strip()}")
+        records = []
+        for block in listed.stdout.strip().split("\n\n"):
+            fields = dict(line.split(" ", 1) for line in block.splitlines() if " " in line)
+            if "worktree" in fields:
+                records.append(fields)
+        if not records or Path(records[0]["worktree"]).resolve() != repo_root:
+            return preserved("le dépôt courant n'est pas le worktree principal enregistré")
+        matches = [record for record in records if Path(record["worktree"]).resolve() == worktree_path]
+        if len(matches) != 1 or matches[0].get("branch") != f"refs/heads/{branch}":
+            return preserved("worktree non enregistré sur la branche du manifeste")
+
+        current = _run_git(["symbolic-ref", "-q", "--short", "HEAD"], cwd=repo_root)
+        if current.returncode or current.stdout.strip() != integration_branch:
+            return preserved("branche d'intégration courante différente du résultat de merge")
+        ancestor = _run_git([
+            "merge-base", "--is-ancestor",
+            f"refs/heads/{branch}", f"refs/heads/{integration_branch}",
+        ], cwd=repo_root)
+        if ancestor.returncode == 1:
+            return preserved("branche du case non ancêtre de la branche d'intégration courante")
+        if ancestor.returncode:
+            return preserved(f"git merge-base a échoué : {ancestor.stderr.strip()}")
+        status = _run_git(["status", "--porcelain", "--untracked-files=all"], cwd=worktree_path)
+        if status.returncode:
+            return preserved(f"git status du worktree a échoué : {status.stderr.strip()}")
+        if status.stdout.strip():
+            return preserved("worktree modifié ou fichiers non suivis présents")
+
+        removed = _run_git(["worktree", "remove", str(worktree_path)], cwd=repo_root)
+        if removed.returncode:
+            return preserved(f"git worktree remove a échoué : {removed.stderr.strip()}")
+        try:
+            deleted = _run_git(["branch", "-d", branch], cwd=repo_root)
+            if deleted.returncode:
+                raise AutofixWorktreeError(f"git branch -d a échoué : {deleted.stderr.strip()}")
+        except Exception as exc:
+            # Rétablit le checkout si la seconde commande Git refuse la branche.
+            try:
+                restored = _run_git(["worktree", "add", str(worktree_path), branch], cwd=repo_root)
+                if restored.returncode:
+                    reason = f"{exc}; restauration échouée : {restored.stderr.strip()}"
+                    log_debug(_TAG, f"case={case_id} retrait partiel : {reason}")
+                    return {"status": "PARTIAL", "reason": reason}
+            except Exception as restore_exc:
+                reason = f"{exc}; restauration échouée : {restore_exc}"
+                log_debug(_TAG, f"case={case_id} retrait partiel : {reason}")
+                return {"status": "PARTIAL", "reason": reason}
+            return preserved(str(exc))
+
+        log_info(_TAG, f"case={case_id} worktree retiré et branche supprimée : {worktree_path} ({branch})")
+        return {"status": "REMOVED", "reason": None}
+    except Exception as exc:
+        return preserved(f"retrait impossible ({type(exc).__name__}: {exc})")
+
+
 def prepare_autofix_worktree(
     *,
     failure_case_dir: "str | Path",
