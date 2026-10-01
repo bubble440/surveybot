@@ -323,7 +323,9 @@ def _detect_changed_files(worktree: dict, *, git_timeout_s: float) -> "tuple[lis
         raise BemProposalError("worktree.json (Phase 7) sans base_sha exploitable")
 
     try:
-        changed_rel = _git_changed_paths(worktree_path, base_sha, timeout=git_timeout_s)
+        # Même contrat Phase 8 que patch_commit : seule la liste complète des
+        # chemins modifiés alimente l'analyse AST des fonctions du patch.
+        changed_rel, _added_rel = _git_changed_paths(worktree_path, base_sha, timeout=git_timeout_s)
     except StaticValidationError as exc:
         raise BemProposalError(
             "détection des fichiers modifiés (Survey/autofix/static_validator.py::_git_changed_paths, "

@@ -291,7 +291,9 @@ def _check_bem_updated(worktree_path: Path, base_sha: str, *, timeout: float) ->
     non modifiées) pour vérifier si Survey/BOT_EVOLUTION_MEMORY.md figure
     parmi les fichiers réellement modifiés depuis base_sha."""
     try:
-        changed_rel = _git_changed_paths(worktree_path, base_sha, timeout=timeout)
+        # Le validateur renvoie (modifiés, ajoutés) : conserver la première
+        # liste évite qu'un tuple de listes fasse planter le commit approuvé.
+        changed_rel, _added_rel = _git_changed_paths(worktree_path, base_sha, timeout=timeout)
     except StaticValidationError as exc:
         raise PatchCommitError(
             "détection des fichiers modifiés (Survey/autofix/static_validator.py::_git_changed_paths, "
