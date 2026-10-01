@@ -52,7 +52,7 @@ $ErrorActionPreference = "Stop"
 $ExcludeDirs = @(
     ".venv", "venv", "__pycache__", ".nuitka_cache", "dist_nuitka", $OutputDir,
     ".git", ".claude", "profiles", "pids", "logs", "code.old", "code_new_tmp", 
-    "Utils", "tools"
+    "Utils", "tools", "failure_cases", "replayability", "diagnoses", "tests"
 )
 $ExcludeFiles = @(
     "accounts.json", "receiver_config.json", "secret.env",
