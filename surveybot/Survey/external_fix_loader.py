@@ -21,7 +21,17 @@ MAX_FIXES_PER_MODULE = 64
 # Pour activer un module : définir ici une fonction avec un import statique
 # ``from Survey.<module_nomme> import FIXES`` puis l'ajouter à ce tuple.
 # Un import dans la fonction permet d'isoler son échec des modules suivants.
-MODULE_IMPORTS: tuple[Callable[[], tuple[ExternalFix, ...]], ...] = ()
+
+
+def _load_hidden_consent_modal_visible_radio_question() -> tuple[ExternalFix, ...]:
+    from Survey.external_fix_hidden_consent_radio_question import FIXES
+
+    return FIXES
+
+
+MODULE_IMPORTS: tuple[Callable[[], tuple[ExternalFix, ...]], ...] = (
+    _load_hidden_consent_modal_visible_radio_question,
+)
 
 _lock = threading.Lock()
 _loaded = False
