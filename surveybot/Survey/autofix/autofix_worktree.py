@@ -197,14 +197,21 @@ def _run_git(args: "list[str]", *, cwd: Path, timeout: float = 30.0) -> "subproc
     """Une seule tentative, jamais de retry ni de stratégie alternative."""
     log_debug(_TAG, f"git {' '.join(args)} (cwd={cwd})")
     try:
-        return subprocess.run(
+        proc = subprocess.run(
             ["git", *args],
             cwd=str(cwd),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             check=False,
         )
+        proc.stdout = proc.stdout or ""
+        proc.stderr = proc.stderr or ""
+        if "\ufffd" in proc.stdout or "\ufffd" in proc.stderr:
+            raise AutofixWorktreeError(f"git {' '.join(args)} : sortie UTF-8 invalide")
+        return proc
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise AutofixWorktreeError(f"commande git indisponible/expirée : git {' '.join(args)} ({exc})") from exc
 

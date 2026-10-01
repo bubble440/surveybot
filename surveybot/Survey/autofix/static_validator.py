@@ -137,11 +137,16 @@ def _run(
             cwd=str(cwd),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             env=env,
             check=False,
         )
-        return proc.returncode == 0, proc.stdout, proc.stderr, False
+        out, err = proc.stdout or "", proc.stderr or ""
+        if "\ufffd" in out or "\ufffd" in err:
+            return False, out, f"{err}\nsortie UTF-8 invalide".strip(), False
+        return proc.returncode == 0, out, err, False
     except subprocess.TimeoutExpired as exc:
         def _decode(part: Any) -> str:
             if isinstance(part, bytes):
@@ -227,7 +232,7 @@ def _check_compile(files: "list[Path]", *, timeout: float) -> dict:
     ok_all = True
     for f in files:
         ok, out, err, timed_out = _run(
-            [sys.executable, "-m", "py_compile", str(f)], cwd=f.parent, timeout=timeout,
+            [sys.executable, "-X", "utf8", "-m", "py_compile", str(f)], cwd=f.parent, timeout=timeout,
         )
         success = ok and not timed_out
         entry: dict = {"file": str(f), "ok": success}
@@ -278,7 +283,7 @@ def _check_import(files: "list[Path]", *, package_root: Path, timeout: float) ->
             continue
 
         ok, out, err, timed_out = _run(
-            [sys.executable, "-c", f"import {module}"],
+            [sys.executable, "-X", "utf8", "-c", f"import {module}"],
             cwd=str(package_root), timeout=timeout, env=env,
         )
         success = ok and not timed_out
@@ -366,7 +371,7 @@ def _check_activation(changed_rel: "list[str]", *, worktree_path: Path,
     )
     env["LOG_LEVEL"] = "INFO"
     ok, out, err, timed_out = _run(
-        [sys.executable, "-c", _ACTIVATION_SCRIPT, json.dumps(modules)],
+        [sys.executable, "-X", "utf8", "-c", _ACTIVATION_SCRIPT, json.dumps(modules)],
         cwd=package_root, timeout=timeout, env=env,
     )
     if timed_out:
@@ -530,7 +535,7 @@ def _check_tests(files: "list[Path]", *, package_root: Path, timeout: float,
 
     test_files = sorted({str(t) for tests in associated.values() for t in tests})
     ok, out, err, timed_out = _run(
-        [sys.executable, "-m", "pytest", "-q", *test_files],
+        [sys.executable, "-X", "utf8", "-m", "pytest", "-q", *test_files],
         cwd=package_root, timeout=timeout,
     )
     success = ok and not timed_out

@@ -1697,7 +1697,8 @@ def invoke_claude_headless(
     try:
         proc = subprocess.run(
             cmd, cwd=str(worktree_path), input=prompt_text,
-            capture_output=True, text=True, timeout=timeout_s, check=False,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=timeout_s, check=False,
         )
     except subprocess.TimeoutExpired as exc:
         return ClaudeInvocationResult(
@@ -1716,12 +1717,14 @@ def invoke_claude_headless(
             raw_stdout="", raw_stderr="", error=f"exécution impossible : {exc}",
         )
 
-    raw_stdout = (proc.stdout or "")[-_MAX_RAW_OUTPUT_CHARS:]
-    raw_stderr = (proc.stderr or "")[-_MAX_RAW_OUTPUT_CHARS:]
+    stdout, stderr = proc.stdout or "", proc.stderr or ""
+    invalid_utf8 = "\ufffd" in stdout or "\ufffd" in stderr
+    raw_stdout = stdout[-_MAX_RAW_OUTPUT_CHARS:]
+    raw_stderr = stderr[-_MAX_RAW_OUTPUT_CHARS:]
 
     parsed: Optional[dict] = None
     parse_error: Optional[str] = None
-    stripped = (proc.stdout or "").strip()
+    stripped = stdout.strip()
     if not stripped:
         parse_error = "sortie standard vide — aucun résultat JSON exploitable"
     else:
@@ -1739,7 +1742,10 @@ def invoke_claude_headless(
     is_error = parsed.get("is_error") if parsed else None
     subtype = parsed.get("subtype") if parsed else None
 
-    if proc.returncode != 0:
+    if invalid_utf8:
+        status = STATUS_ERROR
+        error = "sortie UTF-8 invalide de Claude Code"
+    elif proc.returncode != 0:
         status = STATUS_FAILURE
         error = f"code de sortie non nul ({proc.returncode})" + (f" ; {parse_error}" if parse_error else "")
     elif parsed is None:

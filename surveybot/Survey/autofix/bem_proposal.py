@@ -236,9 +236,13 @@ def _run_git(args: "list[str]", *, cwd: Path, timeout: float) -> "tuple[bool, st
     log_debug(_TAG, f"git {' '.join(args)} (cwd={cwd}, timeout={timeout}s)")
     try:
         proc = subprocess.run(
-            ["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=timeout, check=False,
+            ["git", *args], cwd=str(cwd), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=timeout, check=False,
         )
-        return proc.returncode == 0, proc.stdout, proc.stderr, False
+        out, err = proc.stdout or "", proc.stderr or ""
+        if "\ufffd" in out or "\ufffd" in err:
+            return False, out, f"{err}\nsortie UTF-8 invalide".strip(), False
+        return proc.returncode == 0, out, err, False
     except subprocess.TimeoutExpired:
         return False, "", f"dépassement du budget ({timeout}s)", True
     except OSError as exc:
@@ -249,11 +253,13 @@ def _git_show_at(worktree_path: Path, base_sha: str, git_rel_posix: str, *, time
     """Contenu du fichier à base_sha, ou None si absent à cette révision
     (interprété comme "fichier nouveau créé par le patch" — pas nécessairement
     une erreur ; stratégie unique, sans distinction plus fine)."""
-    ok, out, _err, timed_out = _run_git(
+    ok, out, err, timed_out = _run_git(
         ["show", f"{base_sha}:{git_rel_posix}"], cwd=worktree_path, timeout=timeout,
     )
     if timed_out:
         raise BemProposalError(f"git show {base_sha}:{git_rel_posix} a dépassé son budget ({timeout}s)")
+    if "sortie UTF-8 invalide" in err:
+        raise BemProposalError(f"git show {base_sha}:{git_rel_posix} : {err}")
     if not ok:
         return None
     return out
