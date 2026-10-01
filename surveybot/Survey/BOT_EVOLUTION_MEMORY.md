@@ -5921,3 +5921,34 @@ Statut : CONFIRMÉ en conditions réelles (2026-09-24, LifePoints S4_FR) — `qa
 URL changée → page suivante (40 %). Checkbox QARTS : même fonction, non re-testé sur DOM de référence.
 Note : `click_nfield_swatches_by_label` porte le même résidu (`_el`/`_arg1` avec wrapper `([a,b])`) —
 non corrigé, à traiter sur DOM confirmé.
+
+## PLATEFORME : METRIXLAB/TOLUNA — FAUX POSITIF `_extract_consent_modal_radio_block` SUR MODALE DÉJÀ MASQUÉE (correctif externe)
+
+### hidden_consent_modal_visible_radio_question (Survey/external_fix_hidden_consent_radio_question.py)
+Fichier : correctif externe, branché en `before` sur l'ancrage
+`dom_extractors_misc.py::_extract_consent_modal_radio_block` (core inchangé) via
+`Survey/external_fix_loader.py` (`MODULE_IMPORTS`).
+Bug corrigé : `_extract_consent_modal_radio_block` retournait le radiogroup de consentement
+(`#modal-container`, `.consent-form-radiogroup`) même lorsque `#modal-container` porte un `style`
+contenant "none" (modale déjà résolue/masquée), alors qu'une question radio distincte et réellement
+visible (`div.question.radio_question`, inputs `input.radioQT`) n'était jamais extraite. Signal DOM
+observé : `hidden_block_visible_choice` (case `20260929_033834_extraction_validation_failure`,
+MetrixLab/Toluna, `websurvey5.metrixlab.com`).
+Correction : correctif `before`, strictement gardé par sélecteurs requis
+`#modal-container[style*=none]`, `.consent-form-radiogroup input[name=consent]` et
+`.question.radio_question .answer_options input.radioQT` (exclusion `.question.radio_question.hidden_div`).
+Le handler extrait le(s) widget `.question.radio_question` visibles, texte dans `.radio_q_text`, options
+dans `.answer_options .option_label`, cible de clic ancrée sur `input.radioQT` (jamais le champ texte libre
+"Autre, merci de préciser:").
+Patterns couverts :
+- `#modal-container` avec `style` contenant "none" co-existant avec un `.question.radio_question`
+  visible ailleurs sur la page (widget MetrixLab/Toluna `radio_q_text` / `answer_options` / `radioQT`).
+Patterns exclus :
+- `.question.radio_question` portant la classe `hidden_div` ou contenant un descendant `.hidden_div`
+  (questions réellement masquées de cette même plateforme, ex. `question9900`, `question919`).
+- Modale de consentement réellement affichée (pas de "none" dans son `style`) : le core historique reste
+  seul appelé, comportement inchangé.
+Statut : VALIDÉ sur le failure case rejouable (échec avant patch confirmé par `validation_report.json`,
+bloc attendu conforme après patch) ; tests unitaires synthétiques
+(`tests/test_external_fix_hidden_consent_radio_question.py`). Observation runtime réelle (activations,
+STABLE) non faite à ce stade.
