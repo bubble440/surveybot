@@ -25,9 +25,13 @@ class StaticValidatorActivationTests(unittest.TestCase):
         (self.package / "tools").mkdir()
         source_survey = Path(__file__).resolve().parents[1] / "Survey"
         (self.survey / "__init__.py").write_text("", encoding="utf-8")
-        for name in ("extractor_integrity.py", "external_fix_registry.py",
-                     "external_fix_loader.py", "log_utils.py"):
+        for name in ("extractor_integrity.py", "external_fix_registry.py", "log_utils.py"):
             shutil.copyfile(source_survey / name, self.survey / name)
+        # La liste de la fixture reste indépendante des correctifs adoptés dans le dépôt réel.
+        (self.survey / "external_fix_loader.py").write_text(
+            "MAX_MODULES = 64\nMAX_FIXES_PER_MODULE = 64\nMODULE_IMPORTS = ()\n",
+            encoding="utf-8",
+        )
         (self.survey / "core.py").write_text(
             "def core():\n    return []\n\ndef anchor():\n    return []\n", encoding="utf-8",
         )
