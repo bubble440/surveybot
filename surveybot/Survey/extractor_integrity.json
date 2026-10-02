@@ -87,7 +87,7 @@
     "hash": "b4b822051a0070af497d446678110fa1729a2d470787bf1731d040a3264e188b"
   },
   "dom_extractors_misc.py::_extract_consent_modal_radio_block": {
-    "hash": "0fd0a206a1adb3d99da988681af022b9892bb7dddfef2e8cdb36970380dbf7a7"
+    "hash": "d8606bbaefdf946fe1c486461550fe126dfffc9e1d413b516255cc24def3f655"
   },
   "dom_extractors_misc.py::_extract_datadiggers_icontrol_radio_block": {
     "hash": "6176df03ace1eb968f29bb3a939f30f86155fca4f58d8c9d48254e0a79b55f29"

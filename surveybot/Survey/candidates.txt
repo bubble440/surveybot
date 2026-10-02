@@ -20,6 +20,7 @@ input_text.py::fill_text_input
 action_dispatcher.py::execute_action
 dom_extractors_misc.py::_extract_kantar_rowpicker_radio_blocks
 input_radio.py::click_kantar_rowpicker_radio
+dom_extractors_misc.py::_extract_consent_modal_radio_block
 dom_extractors_misc.py::_extract_confirmit_wix_checkbox_grid_blocks
 dom_extractors_misc.py::_extract_mriweb_grid_num_row_blocks
 dom_extractors_misc.py::_extract_datadiggers_icontrol_radio_block
