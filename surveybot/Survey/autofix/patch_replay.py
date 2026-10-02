@@ -162,7 +162,7 @@ try:
         extract_case_blocks,
     )
     with IsolatedReplayBrowser() as browser:
-        page = browser.load_case_document(case_dir, pre_action=True)
+        page = browser.load_case_document(case_dir, pre_action=True, execute_scripts=False)
         extraction = extract_case_blocks(page, case_dir)
         execution = execute_case_action(
             page, case_dir, budget_s=budget_s, question_blocks=extraction.blocks,
