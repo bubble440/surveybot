@@ -19,7 +19,7 @@ param(
 )
 
 $ports = 9009
-$projectDir = "C:\projects\Surveys"
+$projectDir = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $tabScript  = "C:\projects\Surveys\surveybot\tools\attach_tab.ps1"
 
 if(-not (Test-Path $tabScript)){
