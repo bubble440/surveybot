@@ -21,7 +21,7 @@ validators, du dispatcher — se contente de LIRE leurs sorties déjà produites
    Investigation menée avant d'écrire ce module (grep exhaustif : noms usuels de
    structure — ITYPE_*, _ITYPE_MAP, EXTRACTOR_MAP, dispatch_table — puis tout
    dict littéral dont les clés sont des valeurs d'itype "radio"/"checkbox"/...).
-   Résultat, documenté ici pour traçabilité : AUCUNE table statique itype/stage
+   Résultat, documenté ici pour traçabilité.
    -> fichier/fonction n'existe dans ce codebase à ce jour.
      - Survey/action_dispatcher.py::_apply_by_target_id route par un long
        enchaînement de conditions "if resolved_itype == ... and payload.get(...)"
@@ -38,9 +38,7 @@ validators, du dispatcher — se contente de LIRE leurs sorties déjà produites
    reviendrait à interpréter le code par ressemblance — exactement ce que la
    consigne interdit. Cette source de signal contribue donc actuellement zéro
    fichier, et context_selection.json le documente explicitement (champ
-   mapping_table_signal) plutôt que de le passer sous silence. Si une vraie
-   table de dispatch apparaît un jour dans le code, ce module pourra être étendu
-   pour la consommer — non anticipé ici (patch minimal).
+   mapping_table_signal) plutôt que de le passer sous silence.
 
 ── Plafond ────────────────────────────────────────────────────────────────────
 CODE_FILES_CAP fichiers de code au maximum (hors BOT_EVOLUTION_MEMORY.md, toujours
@@ -68,6 +66,27 @@ _MEMORY_FILE_REL = "Survey/BOT_EVOLUTION_MEMORY.md"
 # incident, avec une marge — sans dériver vers une transmission quasi complète
 # du dépôt, qui dégraderait le diagnostic en aval plutôt que de l'aider.
 DEFAULT_CODE_FILES_CAP = 8
+
+# Un case stage="action" passe toujours par ces deux fichiers : le dispatcher exécute
+# l'action et input_handler en est la façade vers les modules input_* (déterministe).
+_ACTION_BASE_FILES = (
+    "Survey/action_dispatcher.py",
+    "Survey/input_handler.py",
+)
+
+# Fichier complémentaire selon l'itype normalisé du case (valeurs de _TYPE_ALIASES).
+# Un itype absent de cette table n'ajoute rien (pas de supposition).
+_ACTION_ITYPE_FILES = {
+    "radio": "Survey/input_radio.py",
+    "checkbox": "Survey/input_checkbox.py",
+    "text": "Survey/input_text.py",
+    "textarea": "Survey/input_text.py",
+    "number": "Survey/input_text.py",
+    "open": "Survey/input_text.py",
+    "dropdown": "Survey/input_dropdown.py",
+    "matrix-col": "Survey/input_matrix.py",
+    "button": "Survey/cta_handler.py",  # boutons CTA : gérés par cta_handler
+}
 
 
 class ContextSelectionError(Exception):
@@ -152,6 +171,12 @@ _MAPPING_TABLE_NOTE = (
     "entièrement sur modules_likely_involved de la Phase 4."
 )
 
+_MAPPING_TABLE_NOTE_ACTION = (
+    "stage=action : table statique explicite (Survey/autofix/context_selector.py, "
+    "_ACTION_BASE_FILES / _ACTION_ITYPE_FILES) — action_dispatcher.py et input_handler.py "
+    "toujours retenus, plus le module input_* de l'itype du case s'il est connu."
+)
+
 
 def select_context(
     diagnosis_dir: "str | Path",
@@ -200,8 +225,27 @@ def select_context(
             f"disque (référence obsolète) et ont été exclus : {stale_references}"
         )
 
-    # ── Source 2 : table de mapping itype/stage vérifiée dans le code ──────────
-    # Confirmée absente pour ce codebase (cf. docstring du module) — contribue 0.
+    # ── Source 2 : fichiers de base d'un case stage="action" ───────────────────
+    # Placés AVANT ceux de la Phase 4 pour ne jamais être éliminés par le plafond.
+    is_action = str(diagnosis.get("stage") or "") == "action"
+    if is_action:
+        itype = str(diagnosis.get("itype") or "").strip().lower()
+        base_rel = list(_ACTION_BASE_FILES)
+        extra = _ACTION_ITYPE_FILES.get(itype)
+        if extra and extra not in base_rel:
+            base_rel.append(extra)
+        base: list[SelectedFile] = []
+        for rel_path in base_rel:
+            if not (_REPO_ROOT / rel_path).is_file():
+                warnings.append(f"fichier de base d'action absent du disque, ignoré : {rel_path}")
+                continue
+            base.append(SelectedFile(
+                file=rel_path,
+                reason=f"stage=action (itype={itype or 'inconnu'}) : fichier de base du chemin d'exécution",
+                source="stage_action_baseline",
+            ))
+        known = {b.file for b in base}
+        candidates = base + [c for c in candidates if c.file not in known]
 
     code_files_found = len(candidates)
     truncated = code_files_found > code_files_cap
@@ -211,7 +255,7 @@ def select_context(
         dropped_files = [d.file for d in dropped]
         candidates = kept
         warnings.append(
-            f"sélection tronquée : {code_files_found} fichier(s) trouvé(s) par la Phase 4, "
+            f"sélection tronquée : {code_files_found} fichier(s) trouvé(s), "
             f"plafond={code_files_cap} — {len(dropped_files)} retiré(s) plutôt que la liste "
             f"n'étende silencieusement : {dropped_files}"
         )
@@ -242,8 +286,8 @@ def select_context(
         truncated=truncated,
         dropped_files=dropped_files,
         mapping_table_checked=True,
-        mapping_table_found=False,
-        mapping_table_note=_MAPPING_TABLE_NOTE,
+        mapping_table_found=is_action,
+        mapping_table_note=_MAPPING_TABLE_NOTE_ACTION if is_action else _MAPPING_TABLE_NOTE,
         stale_references=stale_references,
         warnings=warnings,
     )
