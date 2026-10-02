@@ -71,4 +71,4 @@ if (Test-Path $profileDir) {
 python tools\create_failure_case.py <snapshot_dir>
 $env:LOG_LEVEL="debug"; python tools\replay_failure.py failure_cases\<id>
 
-python tools\diagnose_failure.py failure_cases\<cases>
+python tools\diagnose_failure.py failure_cases\<cases> --force
