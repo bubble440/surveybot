@@ -3257,10 +3257,11 @@ def _apply_by_target_id(
                     #        if debug_target:
                     #            log_debug("[TARGET_DEBUG]", f"_click_candidate: synthetic_cursor preamble exception={_short_exc(_syn_exc)} before {label!r}")
 
+                    pointer_timeout_ms = 1000
                     # 1) click webdriver standard
                     if _first <= 1:
                         try:
-                            node.click()
+                            node.click(timeout=pointer_timeout_ms)
                             _cm_cache[_cm_key] = 1
                             return True
                         except Exception as e:
@@ -3270,7 +3271,7 @@ def _apply_by_target_id(
                     # 2) ActionChains (souvent plus robuste quand le DOM est "capricieux")
                     if _first <= 2:
                         try:
-                            node.hover(); node.click()
+                            node.hover(timeout=pointer_timeout_ms); node.click(timeout=pointer_timeout_ms)
                             _cm_cache[_cm_key] = 2
                             return True
                         except Exception as e:
