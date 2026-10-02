@@ -3591,10 +3591,7 @@ def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) ->
         if el is None:
             return False
         try:
-            if hasattr(el, "is_visible"):
-                if not el.is_visible():
-                    return False
-            elif hasattr(el, "is_displayed") and not el.is_displayed():
+            if hasattr(el, "is_displayed") and not el.is_displayed():
                 return False
         except Exception:
             return False
@@ -3602,7 +3599,7 @@ def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) ->
             style = _norm_lc(el.get_attribute("style") or "")
         except Exception:
             style = ""
-        if re.search(r"(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\b", style):
+        if "display:none" in style or "visibility:hidden" in style:
             return False
         try:
             aria_hidden = _norm_lc(el.get_attribute("aria-hidden") or "")
