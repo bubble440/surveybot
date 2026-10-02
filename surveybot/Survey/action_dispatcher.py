@@ -8287,67 +8287,43 @@ def execute_action(
                     value,
                     allow_mx_vertical_carousel_advance=allow_mx_vertical_carousel_advance,
                 ):
-                    applied = True  # initialisation explicite avant post-verification MetrixLab
-                    if applied:
-                        # Post-vérification spécifique MetrixLab/Toluna checkboxQT/radioQT.
-                        # Le clic seul ne suffit pas: cette UI custom ne confirme pas l'état via
-                        # input.checked de manière fiable. L'état réel est porté par:
-                        #   - .option_checkbox.input_on
-                        #   - .option_label.input_label_on
-                        try:
-                            verified = driver.evaluate(r"""() => {
-                                const tid = _el;
-                                if (!tid) return true;
-
-                                const groups = Array.from(document.querySelectorAll('div.answer_options'));
-                                if (!groups.length) return true;
-
-                                const hasQt = groups.some(w => {
-                                    const inp = w.querySelector('input[name]');
-                                    return inp && /^(checkbox|radio)$/i.test(inp.type || '') && (inp.className || '').includes('QT');
+                    # Post-vérification MetrixLab/Toluna : seul le wrapper QT de
+                    # l'option demandée peut confirmer l'application du clic.
+                    qt_group_key = (target_payload.get("group_key") or "") if isinstance(target_payload, dict) else ""
+                    if not re.fullmatch(r"(?:radio|checkbox):name:.+", qt_group_key):
+                        log_info("[TARGET]", "apply ok=true strategy=target_id reason=applied")
+                        return True
+                    try:
+                        verified = driver.evaluate(r"""({groupKey, expected}) => {
+                            const match = /^(radio|checkbox):name:(.+)$/.exec(groupKey || '');
+                            if (!match) return true;
+                            const qtClass = match[1] === 'radio' ? 'radioQT' : 'checkboxQT';
+                            const normalize = text => String(text || '').normalize('NFKC')
+                                .replace(/\s+/g, ' ').trim().toLowerCase();
+                            const wrappers = Array.from(document.querySelectorAll('div.answer_options'))
+                                .filter(w => {
+                                    const input = w.querySelector('input.radioQT, input.checkboxQT');
+                                    return input && input.name === match[2] && input.classList.contains(qtClass);
                                 });
-                                if (!hasQt) return true;
+                            if (!wrappers.length) return true;
+                            const selected = wrappers.filter(w =>
+                                normalize(w.querySelector('.option_label')?.textContent) === normalize(expected));
+                            if (selected.length !== 1) return false;
+                            const wrapper = selected[0];
+                            return !!(wrapper.querySelector('.option_radio.input_on, .option_checkbox.input_on') ||
+                                wrapper.querySelector('.option_label.input_label_on'));
+                        }""", {
+                            "groupKey": qt_group_key,
+                            "expected": value,
+                        })
+                    except Exception as e:
+                        verified = False
+                        log_debug("[TARGET_DEBUG]", f"target_id QT post-verification error: {_short_exc(e)}")
 
-                                // Cas group_<hash> : vérifier qu'au moins une option du groupe est réellement activée
-                                if (String(tid).startsWith('group_')) {
-                                    return groups.some(w => {
-                                    const cb = w.querySelector('.option_checkbox');
-                                    const lb = w.querySelector('.option_label');
-                                    return !!(
-                                        (cb && cb.classList.contains('input_on')) ||
-                                        (lb && lb.classList.contains('input_label_on'))
-                                    );
-                                    });
-                                }
-
-                                // Cas option individuelle : tenter de retrouver le wrapper via l'input enregistré
-                                const allInputs = Array.from(document.querySelectorAll('div.answer_options input[name]'));
-                                for (const inp of allInputs) {
-                                    const wrap = inp.closest('div.answer_options');
-                                    if (!wrap) continue;
-                                    const cb = wrap.querySelector('.option_checkbox');
-                                    const lb = wrap.querySelector('.option_label');
-                                    if (
-                                    (cb && cb.classList.contains('input_on')) ||
-                                    (lb && lb.classList.contains('input_label_on'))
-                                    ) {
-                                    return true;
-                                    }
-                                }
-                                return false;
-}""")
-                        except Exception:
-                            verified = False
-
-                        if verified:
-                            return True
-
-                        # Faux positif: la stratégie target_id a "cliqué" mais l'UI n'a pas appliqué l'état.
-                        # Continuer vers le fallback label-based au lieu de déclarer succès.
-                        applied = False
-
-                    log_info("[TARGET]", "apply ok=true strategy=target_id reason=applied")
-                    return True
+                    if verified:
+                        log_info("[TARGET]", "apply ok=true strategy=target_id reason=applied")
+                        return True
+                    log_debug("[TARGET_DEBUG]", f"target_id QT post-verification failed: target_id={target_id!r} value={value!r}")
             except Exception as e:
                 if debug_target:
                     log_debug("[TARGET_DEBUG]", f"_apply_by_target_id exception: {type(e).__name__}: {e}")

@@ -14,6 +14,7 @@ from typing import Any
 
 from Survey.dom_registry import get_target
 from Survey.input_utils import is_checked
+from Survey.log_utils import log_debug
 
 
 def _norm(value: Any) -> str:
@@ -355,19 +356,70 @@ def _dispatcher_false_negative_issue(
     natif (non modifiée), puis en complément la détection pour widgets
     checkbox/radio sans input natif (marqueur de sélection stylé). Chaque
     détecteur reste indépendant et scopé à son propre garde-fou DOM ; aucune des
-    fonctions existantes n'est modifiée par les autres.
+    fonctions existantes n'est modifiée par les autres. Pour QT, `checked` seul
+    est ignoré si l'option ciblée ne porte aucun marqueur visuel de sélection.
     """
+    skip_qt_native_checked = False
+    if isinstance(action, dict) and driver is not None:
+        target_id = _norm(action.get("target_id"))
+        itype = _norm_lc(action.get("itype"))
+        value = _norm_lc(action.get("value"))
+        if target_id and itype in {"radio", "checkbox"} and value:
+            payload = get_target(target_id)
+            group_key = payload.get("group_key") if isinstance(payload, dict) else None
+            prefix = f"{itype}:name:"
+            if (
+                isinstance(payload, dict)
+                and payload.get("kind") == "group"
+                and payload.get("itype") == itype
+                and isinstance(group_key, str)
+                and group_key.startswith(prefix)
+                and group_key[len(prefix):]
+            ):
+                qt_class = "radioQT" if itype == "radio" else "checkboxQT"
+                visual_class = "option_radio" if itype == "radio" else "option_checkbox"
+                try:
+                    current_frame = getattr(driver, "_current_frame", driver)
+                    inputs = current_frame.query_selector_all(
+                        f"div.answer_options > input.{qt_class}[type='checkbox']"
+                    )
+                    if len(inputs) > 32:
+                        log_debug("[OBSERVABILITY]", f"QT exclusion skipped: option budget target={target_id!r}")
+                    else:
+                        matching_rows = []
+                        for input_el in inputs:
+                            if input_el.get_attribute("name") != group_key[len(prefix):]:
+                                continue
+                            row = input_el.query_selector("xpath=..")
+                            label = row.query_selector(".option_label") if row is not None else None
+                            visual = row.query_selector(f".{visual_class}") if row is not None else None
+                            if label is None or visual is None or _norm_lc(label.text_content()) != value:
+                                continue
+                            question = row.query_selector("xpath=..")
+                            question_classes = (question.get_attribute("class") or "").split() if question is not None else []
+                            if "question" not in question_classes or "hidden_div" in question_classes:
+                                continue
+                            matching_rows.append(row)
+                        if len(matching_rows) == 1:
+                            skip_qt_native_checked = matching_rows[0].query_selector(
+                                ".option_radio.input_on, .option_checkbox.input_on, .option_label.input_label_on"
+                            ) is None
+                except Exception as exc:
+                    log_debug("[OBSERVABILITY]", f"QT exclusion unavailable: target={target_id!r} error={type(exc).__name__}")
+    if skip_qt_native_checked:
+        log_debug("[OBSERVABILITY]", f"QT native checked ignored: target={target_id!r} value={value!r}")
+
     return (
         _ifop_zip2city_false_negative_issue(
             action,
             driver=driver,
             question_blocks=question_blocks,
         )
-        or _checkbox_radio_false_negative_issue(action, driver=driver)
+        or (None if skip_qt_native_checked else _checkbox_radio_false_negative_issue(action, driver=driver))
         or _checkbox_radio_marker_false_negative_issue(action, driver=driver)
-        or _checkbox_radio_captured_state_false_negative_issue(
+        or (None if skip_qt_native_checked else _checkbox_radio_captured_state_false_negative_issue(
             action, captured_facts=captured_option_states
-        )
+        ))
     )
 
 
