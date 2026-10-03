@@ -193,7 +193,9 @@ _DISPATCH_STEP_RE = re.compile(
     r"(?:apply ok=(?:true|false) strategy=[a-z][a-z0-9_]{0,63} reason=[a-z][a-z0-9_]{0,63}"
     r"|strategy=[a-z][a-z0-9_-]{0,63} (?:attempted|click=attempted|result=(?:success|failed)"
     r"|exception=[A-Za-z_][A-Za-z0-9_]{0,63}|verification=failed|reason=no_strategy)"
-    r"|click=(?:native_failed|hover_failed)|capture=truncated)"
+    r"|click=(?:native_failed|hover_failed)|capture=truncated"
+    r"|action_fix (?:selected fix_id=[a-z][a-z0-9_]{2,63}"
+    r"|verdict=(?:DECLINED|HANDLED_SUCCESS|HANDLED_FAILURE)))"
 )
 
 

@@ -825,6 +825,11 @@ def _safe_target_log(tag: Any, msg: Any) -> Optional[str]:
             return "click=native_failed"
         if msg.startswith("actionchains click failed on "):
             return "click=hover_failed"
+    if tag == "[ACTION_FIX]":
+        if re.fullmatch(r"selected fix_id=[a-z][a-z0-9_]{2,63}", msg):
+            return f"action_fix {msg}"
+        if re.fullmatch(r"verdict=(?:DECLINED|HANDLED_SUCCESS|HANDLED_FAILURE)", msg):
+            return f"action_fix {msg}"
     return None
 
 

@@ -129,7 +129,35 @@ class PromptGeneratorSpcaTests(unittest.TestCase):
         original = generate_prompt(diag_dir, selection_dir).content
         path = diag_dir / "diagnosis.json"
         diagnosis = json.loads(path.read_text(encoding="utf-8"))
-        diagnosis["real_dispatch_replay"] = {"dispatcher_steps": ["strategy=target_id verification=failed"]}
+        diagnosis["real_dispatch_replay"] = {"dispatcher_steps": [
+            "strategy=target_id verification=failed",
+            "action_fix selected fix_id=fix_radio_qt",
+            "action_fix verdict=HANDLED_FAILURE",
+        ]}
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        self.assertEqual(generate_prompt(diag_dir, selection_dir).content, original)
+
+    def test_action_fix_decision_steps_are_closed_facts_in_action_prompt(self) -> None:
+        diag_dir, selection_dir = self._case("synthetic_action_fix_decision", stage="action")
+        original = generate_prompt(diag_dir, selection_dir).content
+        path = diag_dir / "diagnosis.json"
+        diagnosis = json.loads(path.read_text(encoding="utf-8"))
+        diagnosis["real_dispatch_replay"] = {"dispatcher_steps": [
+            "action_fix selected fix_id=fix_radio_qt",
+            "action_fix verdict=HANDLED_FAILURE",
+            "action_fix selected fix_id=bad-id",
+            "action_fix verdict=UNKNOWN",
+            "action_fix verdict=DECLINED value=secret_answer",
+        ]}
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        enriched = generate_prompt(diag_dir, selection_dir).content
+        self.assertIn("- action_fix selected fix_id=fix_radio_qt", enriched)
+        self.assertIn("- action_fix verdict=HANDLED_FAILURE", enriched)
+        self.assertNotIn("bad-id", enriched)
+        self.assertNotIn("UNKNOWN", enriched)
+        self.assertNotIn("secret_answer", enriched)
+
+        diagnosis["real_dispatch_replay"].pop("dispatcher_steps")
         path.write_text(json.dumps(diagnosis), encoding="utf-8")
         self.assertEqual(generate_prompt(diag_dir, selection_dir).content, original)
 

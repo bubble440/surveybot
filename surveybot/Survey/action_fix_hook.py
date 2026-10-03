@@ -7,6 +7,7 @@ déclencher ensuite le chemin historique de la même action.
 from __future__ import annotations
 
 import math
+import re
 import time
 from contextlib import nullcontext
 from enum import Enum
@@ -33,6 +34,18 @@ class ActionFixOutcome(Enum):
     DECLINED = "declined"
     HANDLED_SUCCESS = "handled_success"
     HANDLED_FAILURE = "handled_failure"
+
+
+def _log_selected_decision(fix: Any, outcome: ActionFixOutcome) -> None:
+    """Journal best-effort : un échec d'écriture ne change jamais le verdict."""
+    try:
+        fix_id = fix.fix_id
+        if not isinstance(fix_id, str) or re.fullmatch(r"[a-z][a-z0-9_]{2,63}", fix_id) is None:
+            fix_id = "unknown"
+        log_debug(_TAG, f"selected fix_id={fix_id}")
+        log_debug(_TAG, f"verdict={outcome.name}")
+    except BaseException:
+        pass
 
 
 def _debug(message: str) -> None:
@@ -110,6 +123,8 @@ def run_action_fix_hook(
         return ActionFixOutcome.DECLINED
 
     handler_started = False
+    selected_fix = None
+    returned_outcome = None
     try:
         context = switch_to_frame_chain(driver, list(chain)) if chain else nullcontext(True)
         with context as frame_ok:
@@ -140,6 +155,7 @@ def run_action_fix_hook(
                 matched = fix
             if matched is None:
                 return ActionFixOutcome.DECLINED
+            selected_fix = matched
             if time.monotonic() >= deadline:
                 _debug("budget dépassé avant handler")
                 raise TimeoutError
@@ -148,12 +164,19 @@ def run_action_fix_hook(
             outcome = matched.handler(driver, dom, action)
             if not isinstance(outcome, ActionFixOutcome):
                 _debug("résultat de handler invalide")
-                return ActionFixOutcome.HANDLED_FAILURE
+                returned_outcome = ActionFixOutcome.HANDLED_FAILURE
+                return returned_outcome
             if time.monotonic() >= deadline:
                 _debug("budget dépassé après handler")
                 if outcome is ActionFixOutcome.DECLINED:
-                    return ActionFixOutcome.HANDLED_FAILURE
-            return outcome
+                    returned_outcome = ActionFixOutcome.HANDLED_FAILURE
+                    return returned_outcome
+            returned_outcome = outcome
+            return returned_outcome
     except Exception as exc:
         _debug(f"hook indisponible : {type(exc).__name__}")
-        return ActionFixOutcome.HANDLED_FAILURE if handler_started else ActionFixOutcome.DECLINED
+        returned_outcome = ActionFixOutcome.HANDLED_FAILURE if handler_started else ActionFixOutcome.DECLINED
+        return returned_outcome
+    finally:
+        if selected_fix is not None and returned_outcome is not None:
+            _log_selected_decision(selected_fix, returned_outcome)

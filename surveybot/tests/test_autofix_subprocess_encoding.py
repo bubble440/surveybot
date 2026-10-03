@@ -84,6 +84,22 @@ class AutofixSubprocessEncodingTests(unittest.TestCase):
         self.assertEqual(output.getvalue(), "")
         self.assertEqual(steps, ["strategy=radio_main attempted", "strategy=radio_main result=failed"])
 
+    def test_dispatcher_capture_accepts_only_closed_action_fix_decisions(self) -> None:
+        output = io.StringIO()
+        with patch.dict(os.environ, {"LOG_LEVEL": "INFO"}), redirect_stdout(output):
+            with _capture_dispatcher_steps() as steps:
+                log_debug("[ACTION_FIX]", "selected fix_id=fix_radio_qt")
+                log_debug("[ACTION_FIX]", "verdict=HANDLED_FAILURE")
+                log_debug("[ACTION_FIX]", "selected fix_id=bad-id")
+                log_debug("[ACTION_FIX]", "verdict=DECLINED value=secret_answer")
+                log_debug("[ACTION_FIX]", "verdict=UNKNOWN")
+                log_debug("[OTHER]", "selected fix_id=fix_radio_qt")
+        self.assertEqual(output.getvalue(), "")
+        self.assertEqual(steps, [
+            "action_fix selected fix_id=fix_radio_qt",
+            "action_fix verdict=HANDLED_FAILURE",
+        ])
+
     def test_utf8_output_outside_cp1252_is_preserved(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             ok, out, err, timed_out = _run(
