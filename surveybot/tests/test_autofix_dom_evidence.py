@@ -42,19 +42,22 @@ class AutofixDomEvidenceTests(unittest.TestCase):
             ["git", *args], cwd=cwd, text=True, capture_output=True, check=True,
         )
 
-    def _prepare(self, case_id: str, files: dict[str, bytes]):
+    def _prepare(self, case_id: str, files: dict[str, bytes], *, stage: str = "extraction"):
         case_dir = self.root / "inputs" / case_id
         diagnosis_dir = self.root / "diagnoses" / case_id
         prompt_dir = self.root / "prompts" / case_id
         for directory in (case_dir, diagnosis_dir, prompt_dir):
             directory.mkdir(parents=True)
         (case_dir / "manifest.json").write_text(
-            json.dumps({"case_id": case_id, "stage": "extraction"}), encoding="utf-8",
+            json.dumps({"case_id": case_id, "stage": stage}), encoding="utf-8",
         )
-        (diagnosis_dir / "diagnosis.json").write_text(json.dumps({
-            "case_id": case_id, "stage": "extraction", "replay": {"verdict": "REPRODUIT"},
+        diagnosis = {
+            "case_id": case_id, "stage": stage, "replay": {"verdict": "REPRODUIT"},
             "confidence_global": "certain", "case_incomplete": False,
-        }), encoding="utf-8")
+        }
+        if stage == "action":
+            diagnosis["real_dispatch_replay"] = {"validation_comparison": {"outcome": "BUG_PERSISTANT"}}
+        (diagnosis_dir / "diagnosis.json").write_text(json.dumps(diagnosis), encoding="utf-8")
         (prompt_dir / "prompt.txt").write_text(
             f"MÉTADONNÉES TECHNIQUES DU CASE\ncase_id à rattacher au correctif : {case_id}\n"
             "BUG IDENTIFIÉ\nSymptôme synthétique\nRÈGLES STRICTES\n",
@@ -161,6 +164,86 @@ class AutofixDomEvidenceTests(unittest.TestCase):
         self.assertIn("État des preuves : absentes ou incomplètes (dom_body.html)",
                       self._emitted_prompt(result))
         self.assertEqual(self._git("status", "--porcelain", cwd=result.worktree_path).stdout, "")
+
+    def test_action_copies_and_mentions_both_optional_evidence_files(self) -> None:
+        case_id = "synthetic_action_evidence_both"
+        files = {
+            "pre_action_dom.html": b"<html>before</html>",
+            "post_action_dom.html": b"<html>after</html>",
+            "question_blocks.json": b"[]",
+            "validation_report.json": b"{}",
+            "runtime_state.json": b'{"facts":[{"visible":true,"checked":false}]}',
+            "action_trace.json": b'{"steps":[{"result":"failed"}]}',
+            "actions_requested.json": b'{"value":"raw answer"}',
+        }
+        result, originals = self._prepare(case_id, files, stage="action")
+        evidence = result.worktree_path / dom_evidence_relative_dir(case_id)
+        prompt = self._emitted_prompt(result)
+        for name in ("runtime_state.json", "action_trace.json"):
+            self.assertEqual((evidence / name).read_bytes(), originals[name])
+            self.assertIn(name, prompt)
+        self.assertFalse((evidence / "actions_requested.json").exists())
+        self.assertNotIn("actions_requested.json", prompt)
+
+    def test_action_mentions_only_the_optional_evidence_that_exists(self) -> None:
+        for name in ("runtime_state.json", "action_trace.json"):
+            with self.subTest(name=name):
+                case_id = "synthetic_action_only_" + name.removesuffix(".json")
+                result, originals = self._prepare(case_id, {
+                    "pre_action_dom.html": b"<html>before</html>",
+                    "post_action_dom.html": b"<html>after</html>",
+                    "question_blocks.json": b"[]",
+                    "validation_report.json": b"{}",
+                    name: b'{"synthetic":true}',
+                }, stage="action")
+                evidence = result.worktree_path / dom_evidence_relative_dir(case_id)
+                prompt = self._emitted_prompt(result)
+                other = "action_trace.json" if name == "runtime_state.json" else "runtime_state.json"
+                self.assertEqual((evidence / name).read_bytes(), originals[name])
+                self.assertIn(name, prompt)
+                self.assertFalse((evidence / other).exists())
+                self.assertNotIn(other, prompt)
+
+    def test_action_without_optional_evidence_keeps_existing_list(self) -> None:
+        case_id = "synthetic_action_evidence_none"
+        result, _ = self._prepare(case_id, {
+            "pre_action_dom.html": b"<html>before</html>",
+            "post_action_dom.html": b"<html>after</html>",
+            "question_blocks.json": b"[]",
+            "validation_report.json": b"{}",
+            "actions_requested.json": b'{"value":"raw answer"}',
+        }, stage="action")
+        evidence = result.worktree_path / dom_evidence_relative_dir(case_id)
+        prompt = self._emitted_prompt(result)
+        self.assertFalse((evidence / "runtime_state.json").exists())
+        self.assertFalse((evidence / "action_trace.json").exists())
+        self.assertFalse((evidence / "actions_requested.json").exists())
+        self.assertIn(
+            "État des preuves : présentes (post_action_dom.html, pre_action_dom.html, "
+            "question_blocks.json, validation_report.json).", prompt,
+        )
+
+    def test_extraction_ignores_action_only_evidence_and_keeps_prompt(self) -> None:
+        case_id = "synthetic_extraction_ignores_action_evidence"
+        result, _ = self._prepare(case_id, {
+            "dom_outer.html": b"<html>extraction</html>",
+            "question_blocks.json": b"[]",
+            "validation_report.json": b"{}",
+            "runtime_state.json": b'{"facts":[]}',
+            "action_trace.json": b'{"steps":[]}',
+            "actions_requested.json": b'{"value":"raw answer"}',
+        })
+        evidence = result.worktree_path / dom_evidence_relative_dir(case_id)
+        prompt = self._emitted_prompt(result)
+        self.assertEqual(sorted(path.name for path in evidence.iterdir()), [
+            "dom_outer.html", "question_blocks.json", "validation_report.json",
+        ])
+        self.assertIn(
+            "État des preuves : présentes (dom_outer.html, question_blocks.json, validation_report.json).",
+            prompt,
+        )
+        for name in ("runtime_state.json", "action_trace.json", "actions_requested.json"):
+            self.assertNotIn(name, prompt)
 
     def test_headless_invocation_receives_evidence_path(self) -> None:
         result, _ = self._prepare("synthetic_headless_case", {

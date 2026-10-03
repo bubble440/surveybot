@@ -105,13 +105,14 @@ _DOM_EVIDENCE_FILES = (
     "pre_action_dom.html", "post_action_dom.html",
     "question_blocks.json", "validation_report.json",
 )
+_ACTION_EVIDENCE_FILES = ("runtime_state.json", "action_trace.json")
 
 
 def dom_evidence_relative_dir(case_id: str) -> Path:
     return Path("surveybot") / "failure_cases" / case_id / "artifacts"
 
 
-def _copy_dom_evidence(failure_case_dir: Path, worktree_path: Path, case_id: str) -> None:
+def _copy_dom_evidence(failure_case_dir: Path, worktree_path: Path, case_id: str, stage: str) -> None:
     """Copie les preuves déjà nettoyées dans un chemin ignoré du worktree.
 
     Cette isolation laisse git status, le calcul du patch et le commit aveugles
@@ -120,6 +121,8 @@ def _copy_dom_evidence(failure_case_dir: Path, worktree_path: Path, case_id: str
     source = failure_case_dir / "artifacts"
     destination = worktree_path / dom_evidence_relative_dir(case_id)
     sources = [source / name for name in _DOM_EVIDENCE_FILES]
+    if stage == "action":
+        sources.extend(source / name for name in _ACTION_EVIDENCE_FILES)
     frames = source / "frames"
     if frames.is_dir():
         try:
@@ -221,6 +224,7 @@ class EligibilityResult:
     eligible: bool
     case_id: Optional[str]
     reasons: "list[str]" = field(default_factory=list)
+    stage: str = ""
 
 
 def check_eligibility(
@@ -312,7 +316,7 @@ def check_eligibility(
     if bool(diagnosis.get("case_incomplete")):
         reasons.append("case_incomplete=true")
 
-    return EligibilityResult(eligible=not reasons, case_id=resolved_case_id, reasons=reasons)
+    return EligibilityResult(eligible=not reasons, case_id=resolved_case_id, reasons=reasons, stage=stage)
 
 
 @dataclass
@@ -598,7 +602,7 @@ def prepare_autofix_worktree(
         _run_git(["branch", "-D", branch], cwd=repo_root)
         raise AutofixWorktreeError(f"création du worktree échouée : {worktree_add.stderr.strip()}")
 
-    _copy_dom_evidence(failure_case_dir, target, case_id)
+    _copy_dom_evidence(failure_case_dir, target, case_id, eligibility.stage)
 
     result = WorktreeResult(
         case_id=case_id,

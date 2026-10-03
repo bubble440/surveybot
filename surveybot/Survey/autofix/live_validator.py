@@ -495,6 +495,7 @@ try:
             "validation_comparison": execution.validation_comparison,
             "validation_error": execution.validation_error,
             "trace_replay": execution.trace_replay,
+            "dispatcher_steps": execution.dispatcher_steps,
         }
     finally:
         # Jamais browser.close() ici non plus : execute_case_action est appelee

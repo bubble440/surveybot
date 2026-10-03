@@ -101,6 +101,38 @@ class PromptGeneratorSpcaTests(unittest.TestCase):
         self.assertIn("liste explicite de Survey/external_fix_loader.py", result.content)
         self.assertIn("Titre de commit suggéré", result.content)
 
+    def test_action_dispatcher_steps_are_optional_bounded_facts_in_prompt(self) -> None:
+        diag_dir, selection_dir = self._case("synthetic_dispatch_steps", stage="action")
+        original = generate_prompt(diag_dir, selection_dir).content
+        path = diag_dir / "diagnosis.json"
+        diagnosis = json.loads(path.read_text(encoding="utf-8"))
+        diagnosis["real_dispatch_replay"] = {"status": "FAILURE"}
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        self.assertEqual(generate_prompt(diag_dir, selection_dir).content, original)
+
+        diagnosis["real_dispatch_replay"]["dispatcher_steps"] = (
+            ["strategy=target_id verification=failed", "apply ok=false strategy=none reason=no_strategy"]
+            + ["secret question/answer/label https://private.example", "strategy=" + "x" * 200 + " result=failed"]
+            + ["strategy=radio_main result=failed"] * 30
+        )
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        enriched = generate_prompt(diag_dir, selection_dir).content
+        self.assertIn("Étapes techniques observées lors de la réexécution réelle du dispatcher", enriched)
+        self.assertIn("- strategy=target_id verification=failed", enriched)
+        self.assertIn("- apply ok=false strategy=none reason=no_strategy", enriched)
+        self.assertEqual(enriched.count("- strategy=radio_main result=failed"), 20)
+        self.assertNotIn("secret question/answer/label", enriched)
+        self.assertNotIn("private.example", enriched)
+
+    def test_dispatcher_steps_do_not_change_extraction_prompt(self) -> None:
+        diag_dir, selection_dir = self._case("synthetic_extraction_dispatch_steps")
+        original = generate_prompt(diag_dir, selection_dir).content
+        path = diag_dir / "diagnosis.json"
+        diagnosis = json.loads(path.read_text(encoding="utf-8"))
+        diagnosis["real_dispatch_replay"] = {"dispatcher_steps": ["strategy=target_id verification=failed"]}
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        self.assertEqual(generate_prompt(diag_dir, selection_dir).content, original)
+
     def test_manual_review_gate_and_phase7_output_names_are_preserved(self) -> None:
         eligible_diag, eligible_selection = self._case("synthetic_eligible_case")
         prompt_path = write_prompt(eligible_diag, eligible_selection, out_root=self.root / "prompts")

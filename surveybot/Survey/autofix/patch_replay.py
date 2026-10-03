@@ -177,6 +177,7 @@ try:
         "validation_comparison": execution.validation_comparison,
         "validation_error": execution.validation_error,
         "trace_replay": execution.trace_replay,
+        "dispatcher_steps": execution.dispatcher_steps,
     }
 except Exception as exc:
     result = {"status": None, "error": f"{type(exc).__name__}: {exc}"}

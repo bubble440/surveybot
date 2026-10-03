@@ -190,8 +190,10 @@ laisserait croire à une analyse.
 import asyncio
 import json
 import re
+import sys
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -780,6 +782,130 @@ REPLAY_MODE_TRACE_REPLAY = "TRACE_REPLAY"
 
 _DEFAULT_DISPATCH_BUDGET_S = 30.0
 _MAX_DISPATCH_ACTIONS = 60
+# Extrait technique du dispatcher : jamais de ligne brute, ni libellé, valeur,
+# question ou URL. La capture s'arrête après 24 lignes de 160 caractères.
+_MAX_DISPATCH_STEPS = 24
+_MAX_DISPATCH_STEP_CHARS = 160
+_CLICK_LABELS = frozenset({
+    "savanta_jqm_carousel_btn", "decipher_cardrating_button", "decipher_clickable_ranking",
+    "toluna_runtime_ranking", "mx_vertical_carousel_next", "qualtrics_carousel_next",
+    "decipher_clickable_cell", "decipher_radio_clickable_cell", "interview_layout_btn",
+    "sq_atm1d_widget", "target", "mat-radio-button", "mat-radio-container", "span", "input",
+})
+
+
+def _safe_target_log(tag: Any, msg: Any) -> Optional[str]:
+    """Ne garde que des codes techniques connus, jamais une ligne du journal brute."""
+    if not isinstance(msg, str):
+        return None
+    if tag == "[TARGET]" and msg.startswith("apply "):
+        match = re.match(
+            r"apply ok=(true|false) strategy=([a-z][a-z0-9_]{0,63}) "
+            r"reason=([a-z][a-z0-9_]{0,63})(?:\s|$)", msg,
+        )
+        if match:
+            return f"apply ok={match[1]} strategy={match[2]} reason={match[3]}"
+        match = re.match(
+            r"apply ok=(true|false) reason=([a-z][a-z0-9_]{0,63})"
+            r"(?: strategy=([a-z][a-z0-9_]{0,63}))?(?:\s|$)", msg,
+        )
+        if match:
+            return f"apply ok={match[1]} strategy={match[3] or 'unspecified'} reason={match[2]}"
+    if tag == "[TARGET_DEBUG]":
+        if msg.startswith("target_id QT post-verification failed"):
+            return "strategy=target_id verification=failed"
+        if msg.startswith("selection failed after waits"):
+            return "strategy=target_id verification=failed"
+        if msg.startswith("Aucune stratégie n'a abouti"):
+            return "strategy=none reason=no_strategy"
+        if msg.startswith("native click failed on "):
+            return "click=native_failed"
+        if msg.startswith("actionchains click failed on "):
+            return "click=hover_failed"
+    return None
+
+
+@contextmanager
+def _capture_dispatcher_steps() -> Any:
+    """Observe le thread du rejeu sans changer LOG_LEVEL ni les sorties console.
+
+    Le traceur précédent, s'il existe, garde ses callbacks locaux. Seules les
+    fonctions du dispatcher, d'input_radio et les appels aux deux loggers sont
+    examinés ; aucun argument de réponse ni message d'exception n'est conservé.
+    """
+    steps: List[str] = []
+    previous = sys.gettrace()
+    previous_locals: Dict[int, Any] = {}
+    observed_frames: Dict[int, str] = {}
+    truncated = False
+
+    def add(line: str) -> None:
+        nonlocal truncated
+        if len(steps) < _MAX_DISPATCH_STEPS:
+            steps.append(line[:_MAX_DISPATCH_STEP_CHARS])
+        elif line.startswith("apply ok=false ") and line.endswith("reason=no_strategy"):
+            steps[-2] = "capture=truncated"
+            steps[-1] = line[:_MAX_DISPATCH_STEP_CHARS]
+            truncated = True
+        elif not truncated:
+            steps[-1] = "capture=truncated"
+            truncated = True
+
+    def trace(frame: Any, event: str, arg: Any) -> Any:
+        frame_id = id(frame)
+        old_local = previous_locals.get(frame_id)
+        if event == "call" and previous is not None:
+            old_local = previous(frame, event, arg)
+        elif old_local is not None:
+            old_local = old_local(frame, event, arg)
+        if event == "return" or old_local is None:
+            previous_locals.pop(frame_id, None)
+        else:
+            previous_locals[frame_id] = old_local
+
+        code = frame.f_code
+        if event == "call" and code in (log_info.__code__, log_debug.__code__):
+            line = _safe_target_log(frame.f_locals.get("tag"), frame.f_locals.get("msg"))
+            if line is not None:
+                add(line)
+        if not truncated:
+            if event == "call" and code.co_filename.endswith("action_dispatcher.py"):
+                if code.co_name == "_click_candidate":
+                    label = frame.f_locals.get("label")
+                    if isinstance(label, str) and label in _CLICK_LABELS:
+                        observed_frames[frame_id] = label
+                        add(f"strategy={label} click=attempted")
+                elif code.co_name == "_apply_by_target_id":
+                    observed_frames[frame_id] = "target_id"
+                elif code.co_name in ("_try", "_run_radio_strategy", "_run_checkbox_strategy"):
+                    name = frame.f_locals.get("name" if code.co_name == "_try" else "strategy_name")
+                    if isinstance(name, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", name):
+                        observed_frames[frame_id] = name
+                        add(f"strategy={name} attempted")
+            elif event == "call" and code.co_filename.endswith("input_radio.py"):
+                if re.fullmatch(r"(?:click_|fallback_click_)[A-Za-z0-9_]{0,64}", code.co_name):
+                    observed_frames[frame_id] = code.co_name
+                    add(f"strategy={code.co_name} click=attempted")
+
+            strategy = observed_frames.get(frame_id)
+            if strategy is not None and event == "exception":
+                name = arg[0].__name__
+                if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", name):
+                    add(f"strategy={strategy} exception={name}")
+            elif strategy is not None and event == "return":
+                if arg is True or arg is False:
+                    add(f"strategy={strategy} result={'success' if arg else 'failed'}")
+                observed_frames.pop(frame_id, None)
+
+        if event == "return":
+            observed_frames.pop(frame_id, None)
+        return trace if frame_id in observed_frames or frame_id in previous_locals else None
+
+    sys.settrace(trace)
+    try:
+        yield steps
+    finally:
+        sys.settrace(previous)
 
 
 @dataclass
@@ -806,6 +932,7 @@ class ActionExecution:
     # {"available": False, "reason": ...} = TIMEOUT sans repli possible, à distinguer
     # explicitement d'une analyse réellement effectuée.
     trace_replay: Optional[Dict[str, Any]] = None
+    dispatcher_steps: Optional[List[str]] = None
 
 
 def _action_outcome(comparison: Dict[str, Any], dispatcher_success: bool) -> Dict[str, Any]:
@@ -1006,12 +1133,13 @@ def execute_case_action(
         import Survey.action_dispatcher as action_dispatcher
 
         started = time.perf_counter()
-        outcome, value, exc = _run_with_deadline(
-            page,
-            float(budget_s),
-            lambda: action_dispatcher.execute_actions_plan(page, actions, stop_on_navigation=True),
-            close_page_on_timeout=close_page_on_timeout,
-        )
+        with _capture_dispatcher_steps() as dispatcher_steps:
+            outcome, value, exc = _run_with_deadline(
+                page,
+                float(budget_s),
+                lambda: action_dispatcher.execute_actions_plan(page, actions, stop_on_navigation=True),
+                close_page_on_timeout=close_page_on_timeout,
+            )
         duration = round(time.perf_counter() - started, 3)
         validation = validation_comparison = validation_error = None
         trace_replay = None
@@ -1056,6 +1184,7 @@ def execute_case_action(
     result.validation, result.validation_comparison, result.validation_error = (
         validation, validation_comparison, validation_error
     )
+    result.dispatcher_steps = dispatcher_steps or None
     log_info(
         _TAG,
         f"dispatcher {case_dir.name}: {result.status} success={result.dispatcher_success} "

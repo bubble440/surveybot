@@ -350,6 +350,7 @@ def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[di
         # n'affecte jamais _real_dispatch_confirms_persistence, qui ne lit que
         # validation_comparison (toujours None après TIMEOUT).
         "trace_replay": execution.trace_replay,
+        "dispatcher_steps": execution.dispatcher_steps,
     }
 
 

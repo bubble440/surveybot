@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import io
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -12,7 +15,9 @@ from Survey.autofix.failure_diagnosis import _attempt_real_dispatch_replay
 from Survey.autofix.live_validator import _ACTION_RUNNER_SCRIPT as _LIVE_ACTION_RUNNER_SCRIPT
 from Survey.autofix.patch_replay import _ACTION_RUNNER_SCRIPT as _PATCH_ACTION_RUNNER_SCRIPT
 from Survey.autofix.patch_commit import _find_existing_case_commit
+from Survey.autofix.replay_browser import _capture_dispatcher_steps
 from Survey.autofix.static_validator import _run
+from Survey.log_utils import log_debug, log_info
 
 
 class AutofixSubprocessEncodingTests(unittest.TestCase):
@@ -21,6 +26,7 @@ class AutofixSubprocessEncodingTests(unittest.TestCase):
             status="NOT_EXECUTED", reason="budget invalide", dispatcher_success=None,
             duration_s=None, budget_s=0, validation_comparison=None,
             validation_error=None, trace_replay=None,
+            dispatcher_steps=["strategy=target_id verification=failed"],
         )
         extraction = SimpleNamespace(blocks=[], error=None)
         with (
@@ -30,8 +36,45 @@ class AutofixSubprocessEncodingTests(unittest.TestCase):
         ):
             result = _attempt_real_dispatch_replay(Path("synthetic_case"), {"stage": "action"})
         self.assertEqual(result["reason"], "budget invalide")
+        self.assertEqual(result["dispatcher_steps"], execution.dispatcher_steps)
         self.assertIn('"reason": execution.reason', _PATCH_ACTION_RUNNER_SCRIPT)
         self.assertIn('"reason": execution.reason', _LIVE_ACTION_RUNNER_SCRIPT)
+        self.assertIn('"dispatcher_steps": execution.dispatcher_steps', _PATCH_ACTION_RUNNER_SCRIPT)
+        self.assertIn('"dispatcher_steps": execution.dispatcher_steps', _LIVE_ACTION_RUNNER_SCRIPT)
+
+    def test_dispatcher_capture_is_bounded_sanitized_and_independent_of_log_level(self) -> None:
+        output = io.StringIO()
+        with patch.dict(os.environ, {"LOG_LEVEL": "INFO"}), redirect_stdout(output):
+            with _capture_dispatcher_steps() as steps:
+                log_info("[TARGET]", "apply ok=true strategy=radio_main reason=applied")
+                for _ in range(30):
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        "target_id QT post-verification failed: question='secret question' "
+                        "value='secret answer' option='secret label' url='https://private.example'",
+                    )
+                log_info("[TARGET]", "apply ok=false reason=no_strategy strategy=none")
+        self.assertEqual(
+            output.getvalue(),
+            "[TARGET] apply ok=true strategy=radio_main reason=applied\n"
+            "[TARGET] apply ok=false reason=no_strategy strategy=none\n",
+        )
+        self.assertEqual(steps[0], "apply ok=true strategy=radio_main reason=applied")
+        self.assertEqual(len(steps), 24)
+        self.assertEqual(steps[-2:], ["capture=truncated", "apply ok=false strategy=none reason=no_strategy"])
+        self.assertTrue(all(len(step) <= 160 for step in steps))
+        self.assertNotIn("secret", " ".join(steps))
+        self.assertNotIn("private.example", " ".join(steps))
+
+    def test_dispatcher_capture_records_strategy_result_without_debug_console(self) -> None:
+        from Survey.action_dispatcher import _try
+
+        output = io.StringIO()
+        with patch.dict(os.environ, {"LOG_LEVEL": "INFO"}), redirect_stdout(output):
+            with _capture_dispatcher_steps() as steps:
+                self.assertFalse(_try(SimpleNamespace(), "radio_main", lambda: False))
+        self.assertEqual(output.getvalue(), "")
+        self.assertEqual(steps, ["strategy=radio_main attempted", "strategy=radio_main result=failed"])
 
     def test_utf8_output_outside_cp1252_is_preserved(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

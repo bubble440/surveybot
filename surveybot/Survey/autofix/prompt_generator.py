@@ -187,6 +187,15 @@ _SAFE_ISSUE_FIELDS = (
     "max_select", "min_select", "dom_signal", "observed", "actions_count",
 )
 
+# Même enveloppe que la capture du rejeu (24 lignes, 160 caractères). Le prompt
+# n'accepte que ses codes techniques normalisés, jamais une ligne brute du log.
+_DISPATCH_STEP_RE = re.compile(
+    r"(?:apply ok=(?:true|false) strategy=[a-z][a-z0-9_]{0,63} reason=[a-z][a-z0-9_]{0,63}"
+    r"|strategy=[a-z][a-z0-9_-]{0,63} (?:attempted|click=attempted|result=(?:success|failed)"
+    r"|exception=[A-Za-z_][A-Za-z0-9_]{0,63}|verification=failed|reason=no_strategy)"
+    r"|click=(?:native_failed|hover_failed)|capture=truncated)"
+)
+
 
 def _load_json(path: Path) -> "tuple[Any, Optional[str]]":
     if not path.is_file():
@@ -311,6 +320,17 @@ def _build_bug_identifie(diagnosis: dict, code_files: "list[str]") -> str:
         )
         for ft in replayed_types:
             lines.append(f"- {_describe_expected(eb_lookup, ft)}")
+
+    if stage == "action":
+        real_replay = diagnosis.get("real_dispatch_replay")
+        raw_steps = real_replay.get("dispatcher_steps") if isinstance(real_replay, dict) else None
+        if isinstance(raw_steps, list):
+            steps = [step for step in raw_steps[:24]
+                     if isinstance(step, str) and len(step) <= 160 and _DISPATCH_STEP_RE.fullmatch(step)]
+            if steps:
+                lines.append("")
+                lines.append("Étapes techniques observées lors de la réexécution réelle du dispatcher :")
+                lines.extend(f"- {step}" for step in steps)
 
     lines.append("")
     lines.append("Fichiers probablement concernés :")
