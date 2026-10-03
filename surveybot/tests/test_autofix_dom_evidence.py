@@ -10,8 +10,11 @@ from unittest.mock import patch
 
 from Survey.autofix.autofix_worktree import dom_evidence_relative_dir, prepare_autofix_worktree
 from Survey.autofix.autofix_orchestrator import (
-    ClaudeInvocationResult, EligibleCase, SafetyOutcome, STATUS_FAILURE, process_case,
+    ClaudeInvocationResult, EligibleCase, SafetyOutcome, STATUS_FAILURE, STATUS_SUCCESS,
+    STAGE_CONFIDENCE_SCORE, STAGE_NO_CHANGES, _MAX_AGENT_FINAL_TEXT_CHARS,
+    _worktree_terminal_state, invoke_claude_headless, process_case, write_pipeline_run_summary,
 )
+from Survey.autofix.human_review import HumanReviewError
 from Survey.autofix.prompt_generator import add_dom_evidence_context
 
 
@@ -74,6 +77,38 @@ class AutofixDomEvidenceTests(unittest.TestCase):
         return add_dom_evidence_context(
             result.prompt_path.read_text(encoding="utf-8"), result.case_id,
             result.worktree_path / relative, relative,
+        )
+
+    def _process_prepared_case(self, result, *, force: bool = False):
+        return process_case(
+            EligibleCase(result.case_id, result.manifest_path, result.prompt_path),
+            failure_cases_root=self.root / "inputs", diagnoses_root=self.root / "diagnoses",
+            context_selections_root=self.root / "context", worktrees_root=self.root / "outputs",
+            codex_runs_root=self.root / "runs", static_validations_root=self.root / "static",
+            patch_replays_root=self.root / "replays",
+            extractor_integrity_checks_root=self.root / "integrity",
+            confidence_scores_root=self.root / "confidence", human_reviews_root=self.root / "reviews",
+            merge_results_root=self.root / "merges", merge_reviews_root=self.root / "merge_reviews",
+            pipeline_runs_root=self.root / "pipeline",
+            core_change_candidates_root=self.root / "core_change_candidates",
+            claude_timeout_s=1, allowed_tools="Read Edit Write Grep Glob",
+            permission_mode="acceptEdits", force=force,
+        )
+
+    def _write_synthetic_static(self, case_id: str, changed_files: list[str]) -> Path:
+        path = self.root / "static" / case_id / "validation_static.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            "case_id": case_id, "verdict": "ACCEPTED", "changed_files": changed_files,
+        }), encoding="utf-8")
+        return path
+
+    def _terminal_state(self, case_id: str) -> tuple[bool, str]:
+        return _worktree_terminal_state(
+            case_id, merge_results_root=self.root / "merges",
+            human_reviews_root=self.root / "reviews", merge_reviews_root=self.root / "merge_reviews",
+            confidence_scores_root=self.root / "confidence", static_validations_root=self.root / "static",
+            codex_runs_root=self.root / "runs", pipeline_runs_root=self.root / "pipeline",
         )
 
     def test_copies_only_case_evidence_to_ignored_path_and_mentions_it(self) -> None:
@@ -170,3 +205,129 @@ class AutofixDomEvidenceTests(unittest.TestCase):
         self.assertEqual(captured["worktree_path"], result.worktree_path)
         self.assertEqual(captured["allowed_tools"], "Read Edit Write Grep Glob")
         self.assertEqual(captured["permission_mode"], "acceptEdits")
+
+    def test_agent_final_text_is_bounded_and_explicit_candidate_is_detected(self) -> None:
+        text = "a" * (_MAX_AGENT_FINAL_TEXT_CHARS + 1) + " CORE_CHANGE_CANDIDATE"
+        output = json.dumps({"is_error": False, "result": text})
+        with patch("Survey.autofix.autofix_orchestrator.shutil.which", return_value="claude"), \
+             patch("Survey.autofix.autofix_orchestrator.subprocess.run",
+                   return_value=subprocess.CompletedProcess([], 0, output, "")):
+            invocation = invoke_claude_headless(
+                case_id="synthetic_case", branch="synthetic", worktree_path=self.repo,
+                prompt_text="synthetic prompt",
+            )
+        self.assertEqual(invocation.status, STATUS_SUCCESS)
+        self.assertEqual(len(invocation.as_dict()["agent_final_text"]), _MAX_AGENT_FINAL_TEXT_CHARS)
+        self.assertTrue(invocation.declares_core_change_candidate)
+
+    def test_empty_diff_stops_notifies_once_and_is_terminal(self) -> None:
+        result, _ = self._prepare("synthetic_no_changes", {})
+        final_text = "CORE_CHANGE_CANDIDATE : changement du core à examiner."
+        invocation = ClaudeInvocationResult(
+            case_id=result.case_id, branch=result.branch, worktree_path=str(result.worktree_path),
+            status=STATUS_SUCCESS, exit_code=0, timed_out=False, session_id=None,
+            is_error=False, subtype="success", command=[], raw_stdout="{}", raw_stderr="",
+            error=None, agent_final_text=final_text, declares_core_change_candidate=True,
+        )
+        with patch("Survey.autofix.autofix_orchestrator._check_case_parallel_safety",
+                   return_value=SafetyOutcome(checked=True, safe=True, reason=None)), \
+             patch("Survey.autofix.autofix_orchestrator.invoke_claude_headless", return_value=invocation), \
+             patch("Survey.autofix.autofix_orchestrator.write_static_validation",
+                   side_effect=lambda *_args, **_kwargs: self._write_synthetic_static(result.case_id, [])), \
+             patch("Survey.autofix.autofix_orchestrator.write_patch_replay") as replay, \
+             patch("Survey.autofix.autofix_orchestrator.write_extractor_integrity_check") as integrity, \
+             patch("Survey.autofix.autofix_orchestrator.write_patch_confidence") as confidence, \
+             patch("Survey.autofix.autofix_orchestrator.send_status_notification") as notify:
+            first = self._process_prepared_case(result)
+            self.assertFalse(self._terminal_state(result.case_id)[0])
+            write_pipeline_run_summary(first, out_root=self.root / "pipeline")
+            second = self._process_prepared_case(result, force=True)
+        self.assertEqual(first.stopped_at, STAGE_NO_CHANGES)
+        self.assertTrue(first.stop_reason.startswith("CORE_CHANGE_CANDIDATE"))
+        self.assertFalse(first.is_error)
+        self.assertTrue(first.notified)
+        self.assertTrue(second.notified)
+        self.assertTrue(self._terminal_state(result.case_id)[0])
+        notify.assert_called_once()
+        replay.assert_not_called()
+        integrity.assert_not_called()
+        confidence.assert_not_called()
+        run_data = json.loads((self.root / "runs" / result.case_id / "run_result.json").read_text(encoding="utf-8"))
+        self.assertEqual(run_data["agent_final_text"], final_text)
+        candidate = json.loads(Path(first.artifacts["core_change_candidate"]).read_text(encoding="utf-8"))
+        self.assertEqual(candidate["case_id"], result.case_id)
+        self.assertEqual(candidate["signal"], "CORE_CHANGE_CANDIDATE")
+        self.assertEqual(candidate["reason"], final_text)
+        self.assertEqual(candidate["agent_final_text"], final_text)
+
+    def test_empty_diff_notification_failure_is_only_a_warning(self) -> None:
+        result, _ = self._prepare("synthetic_notify_failure", {})
+        invocation = ClaudeInvocationResult(
+            case_id=result.case_id, branch=result.branch, worktree_path=str(result.worktree_path),
+            status=STATUS_SUCCESS, exit_code=0, timed_out=False, session_id=None,
+            is_error=False, subtype="success", command=[], raw_stdout="{}", raw_stderr="",
+            error=None, agent_final_text="aucun correctif réalisable",
+        )
+        with patch("Survey.autofix.autofix_orchestrator._check_case_parallel_safety",
+                   return_value=SafetyOutcome(checked=True, safe=True, reason=None)), \
+             patch("Survey.autofix.autofix_orchestrator.invoke_claude_headless", return_value=invocation), \
+             patch("Survey.autofix.autofix_orchestrator.write_static_validation",
+                   side_effect=lambda *_args, **_kwargs: self._write_synthetic_static(result.case_id, [])), \
+             patch("Survey.autofix.autofix_orchestrator.send_status_notification",
+                   side_effect=HumanReviewError("notification indisponible")) as notify:
+            summary = self._process_prepared_case(result)
+            write_pipeline_run_summary(summary, out_root=self.root / "pipeline")
+            repeated = self._process_prepared_case(result, force=True)
+        self.assertEqual(summary.stopped_at, STAGE_NO_CHANGES)
+        self.assertFalse(summary.is_error)
+        self.assertFalse(summary.notified)
+        self.assertEqual(len(summary.warnings), 1)
+        self.assertFalse(repeated.notified)
+        notify.assert_called_once()
+
+    def test_nonempty_diff_continues_to_existing_confidence_stage(self) -> None:
+        result, _ = self._prepare("synthetic_changed_case", {})
+        invocation = ClaudeInvocationResult(
+            case_id=result.case_id, branch=result.branch, worktree_path=str(result.worktree_path),
+            status=STATUS_SUCCESS, exit_code=0, timed_out=False, session_id=None,
+            is_error=False, subtype="success", command=[], raw_stdout="{}", raw_stderr="",
+            error=None, agent_final_text="correctif ajouté",
+        )
+        confidence_path = self.root / "confidence" / result.case_id / "confidence_score.json"
+        confidence_path.parent.mkdir(parents=True, exist_ok=True)
+        confidence_path.write_text(json.dumps({"confidence": "REJECT"}), encoding="utf-8")
+        with patch("Survey.autofix.autofix_orchestrator._check_case_parallel_safety",
+                   return_value=SafetyOutcome(checked=True, safe=True, reason=None)), \
+             patch("Survey.autofix.autofix_orchestrator.invoke_claude_headless", return_value=invocation), \
+             patch("Survey.autofix.autofix_orchestrator.write_static_validation",
+                   side_effect=lambda *_args, **_kwargs: self._write_synthetic_static(result.case_id, ["Survey/fix.py"])), \
+             patch("Survey.autofix.autofix_orchestrator.write_patch_replay",
+                   return_value=self.root / "replays" / "synthetic.json") as replay, \
+             patch("Survey.autofix.autofix_orchestrator.write_extractor_integrity_check",
+                   return_value=self.root / "integrity" / "synthetic.json") as integrity, \
+             patch("Survey.autofix.autofix_orchestrator.write_patch_confidence",
+                   return_value=confidence_path) as confidence, \
+             patch("Survey.autofix.autofix_orchestrator.send_status_notification") as notify:
+            summary = self._process_prepared_case(result)
+        self.assertEqual(summary.stopped_at, STAGE_CONFIDENCE_SCORE)
+        self.assertFalse(summary.notified)
+        replay.assert_called_once()
+        integrity.assert_called_once()
+        confidence.assert_called_once()
+        notify.assert_not_called()
+
+    def test_existing_terminal_decisions_remain_unchanged(self) -> None:
+        case_id = "synthetic_terminal_states"
+        run_path = self.root / "runs" / case_id / "run_result.json"
+        run_path.parent.mkdir(parents=True)
+        run_path.write_text(json.dumps({"status": "FAILURE"}), encoding="utf-8")
+        self.assertTrue(self._terminal_state(case_id)[0])
+
+        run_path.write_text(json.dumps({"status": "SUCCESS"}), encoding="utf-8")
+        static_path = self.root / "static" / case_id / "validation_static.json"
+        static_path.parent.mkdir(parents=True)
+        static_path.write_text(json.dumps({"verdict": "REJECTED"}), encoding="utf-8")
+        self.assertTrue(self._terminal_state(case_id)[0])
+
+        self._write_synthetic_static(case_id, ["Survey/fix.py"])
+        self.assertFalse(self._terminal_state(case_id)[0])

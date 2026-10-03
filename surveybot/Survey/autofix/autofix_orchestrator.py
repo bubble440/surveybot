@@ -95,7 +95,9 @@ et bien formé (jamais devinée) :
     verdict="REJECTED" ;
   - codex_runs/<case_id>/run_result.json (invocation Claude Code de CE
     module) : status différent de "SUCCESS" (invocation échouée, aucun patch
-    produit).
+    produit) ;
+  - autofix_pipeline_runs/<case_id>/pipeline_run.json : stopped_at="NO_CHANGES"
+    avec is_error=false (validation statique ACCEPTED, changed_files vide).
 Un artefact absent, illisible, malformé ou dont le champ attendu est absent
 laisse le worktree "en vol" — jamais une hypothèse optimiste. Une seule
 définition, pas de règles empilées ni de délai d'expiration : un worktree qui
@@ -181,6 +183,8 @@ e. confidence="HIGH" -> Phase 13 (Survey.autofix.human_review.send_review_reques
    — ces cases restent visibles via confidence_scores/<case_id>/
    confidence_score.json (rapports déjà existants), conformément à la Phase
    13 elle-même ("MEDIUM/REJECT ne déclenchent jamais de notification").
+Un verdict statique ACCEPTED avec changed_files=[] s'arrête avant b. à
+NO_CHANGES ; une notification simple signale l'issue à l'opérateur.
 
 ── Sortie : résumé par case ───────────────────────────────────────────────────
 Pour CHAQUE case retenu dans cette invocation (traité OU reporté),
@@ -565,6 +569,10 @@ DEFAULT_LOCK_STALE_AFTER_S = 7200.0
 # de croissance non bornée par précaution (même philosophie que
 # Survey/autofix/static_validator.py::_check_tests, err.strip()[-4000:]).
 _MAX_RAW_OUTPUT_CHARS = 200_000
+# Début du texte final de l'agent conservé séparément de la sortie brute
+# (8 000 caractères maximum) ; la raison courte garde ses 240 premiers caractères.
+_MAX_AGENT_FINAL_TEXT_CHARS = 8_000
+_MAX_NO_CHANGES_REASON_CHARS = 240
 
 STATUS_SUCCESS = "SUCCESS"
 STATUS_FAILURE = "FAILURE"
@@ -574,6 +582,8 @@ STATUS_ERROR = "ERROR"
 STAGE_PARALLEL_SAFETY = "parallel_safety"
 STAGE_CLAUDE_INVOCATION = "claude_invocation"
 STAGE_STATIC_VALIDATION = "static_validation"
+STAGE_NO_CHANGES = "NO_CHANGES"
+STAGE_CORE_CHANGE_CANDIDATE = "core_change_candidate"
 STAGE_PATCH_REPLAY = "patch_replay"
 STAGE_EXTRACTOR_INTEGRITY = "extractor_integrity"
 STAGE_CONFIDENCE_SCORE = "confidence_score"
@@ -592,7 +602,7 @@ STAGE_UPSTREAM_WORKTREE = "worktree"
 STAGE_DOWNSTREAM_COMMIT = "commit"
 STAGE_DOWNSTREAM_MERGE = "merge"
 
-# Clés d'état pour la garde anti-doublon de notification (point 5) — trois
+# Clés d'état pour la garde anti-doublon de notification (point 5) — quatre
 # catégories seulement, au niveau du CASE entier, pas par raison précise de
 # blocage : un premier blocage (ex. dépôt non propre) puis un second blocage
 # d'une autre nature (ex. commit refusé) partagent la même clé "blocked" et ne
@@ -605,6 +615,7 @@ STAGE_DOWNSTREAM_MERGE = "merge"
 NOTIFY_STATE_MERGED = "merged"
 NOTIFY_STATE_CONFLICT = "conflict"
 NOTIFY_STATE_BLOCKED = "blocked"
+NOTIFY_STATE_NO_CHANGES = "no_changes"
 
 # Composant de chemin unique, allowlist conservatrice — même garde-fou que
 # Survey/autofix/autofix_worktree.py::_CASE_ID_RE, dupliqué volontairement (modules
@@ -861,7 +872,7 @@ def _maybe_notify(
 ) -> "tuple[bool, list[str]]":
     """N'envoie que si notify_state diffère de previous_notified_state —
     jamais deux fois pour le même état, y compris entre invocations (l'état
-    précédent est relu depuis downstream_run.json par l'appelant). Un échec
+    précédent est relu depuis l'artefact de synthèse par l'appelant). Un échec
     d'envoi (HumanReviewError : credentials absentes, réseau) est un
     avertissement retourné à l'appelant, JAMAIS une exception : l'état n'est
     alors PAS marqué notifié (cf. appelant), pour qu'une invocation future
@@ -871,7 +882,7 @@ def _maybe_notify(
     changement de RAISON précise à l'intérieur du même état (ex. deux
     blocages non terminaux successifs pour des raisons différentes) ne
     déclenche pas une seconde notification tant que l'état lui-même
-    (merged/conflict/blocked) ne change pas."""
+    (merged/conflict/blocked/no_changes) ne change pas."""
     if notify_state == previous_notified_state:
         return False, []
     try:
@@ -1501,6 +1512,7 @@ def _worktree_terminal_state(
     confidence_scores_root: Path,
     static_validations_root: Path,
     codex_runs_root: Path,
+    pipeline_runs_root: "Path | None" = None,
 ) -> "tuple[bool, str]":
     """Détermine si le worktree case_id a atteint une issue définitive (donc
     n'est plus "en vol") — cf. docstring du module (Point 1) pour la
@@ -1548,6 +1560,12 @@ def _worktree_terminal_state(
     if run_status is not None and run_status != STATUS_SUCCESS:
         return True, f"run_result.status={run_status!r}"
 
+    if pipeline_runs_root is not None:
+        pipeline_data, _ = _load_json(pipeline_runs_root / case_id / "pipeline_run.json")
+        if (isinstance(pipeline_data, dict) and pipeline_data.get("stopped_at") == STAGE_NO_CHANGES
+                and pipeline_data.get("is_error") is False):
+            return True, f"pipeline_run.stopped_at={STAGE_NO_CHANGES!r}"
+
     return False, "en vol (" + ", ".join(f"{k}={v!r}" for k, v in states.items()) + ")"
 
 
@@ -1562,6 +1580,7 @@ def _check_case_parallel_safety(
     confidence_scores_root: Path,
     static_validations_root: Path,
     codex_runs_root: Path,
+    pipeline_runs_root: "Path | None" = None,
 ) -> SafetyOutcome:
     """cf. docstring du module (Point 1) pour la définition retenue de "en
     vol" et sa justification. N'écrit rien : lecture seule, jamais de
@@ -1583,6 +1602,7 @@ def _check_case_parallel_safety(
             confidence_scores_root=confidence_scores_root,
             static_validations_root=static_validations_root,
             codex_runs_root=codex_runs_root,
+            pipeline_runs_root=pipeline_runs_root,
         )
         if is_terminal:
             log_debug(_TAG, f"case={other_id} : worktree exclu du contrôle (issue définitive — {state_label})")
@@ -1651,9 +1671,11 @@ class ClaudeInvocationResult:
     raw_stderr: str
     error: Optional[str]
     warnings: "list[str]" = field(default_factory=list)
+    agent_final_text: Optional[str] = None
+    declares_core_change_candidate: bool = False
 
     def as_dict(self) -> dict:
-        return {
+        result = {
             "schema_version": SCHEMA_VERSION,
             "case_id": self.case_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -1671,6 +1693,9 @@ class ClaudeInvocationResult:
             "error": self.error,
             "warnings": self.warnings,
         }
+        if self.agent_final_text is not None:
+            result["agent_final_text"] = self.agent_final_text
+        return result
 
 
 def _decode(part: Any) -> str:
@@ -1757,6 +1782,8 @@ def invoke_claude_headless(
     session_id = parsed.get("session_id") if parsed else None
     is_error = parsed.get("is_error") if parsed else None
     subtype = parsed.get("subtype") if parsed else None
+    final_text = parsed.get("result") if parsed else None
+    final_text = final_text if isinstance(final_text, str) else None
 
     if invalid_utf8:
         status = STATUS_ERROR
@@ -1779,6 +1806,9 @@ def invoke_claude_headless(
         status=status, exit_code=proc.returncode, timed_out=False,
         session_id=session_id, is_error=is_error, subtype=subtype,
         command=cmd, raw_stdout=raw_stdout, raw_stderr=raw_stderr, error=error,
+        agent_final_text=final_text[:_MAX_AGENT_FINAL_TEXT_CHARS] if final_text is not None else None,
+        # Détection déterministe de la mention explicite, insensible à la casse.
+        declares_core_change_candidate="CORE_CHANGE_CANDIDATE" in final_text.upper() if final_text else False,
     )
 
 
@@ -1818,6 +1848,22 @@ def write_run_result(
     out_file.write_text(json.dumps(result.as_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
 
     log_info(_TAG, f"case={result.case_id} invocation Claude Code status={result.status} -> {out_file}")
+    return out_file
+
+
+def write_core_change_candidate(
+    case_id: str, reason: str, agent_final_text: str, *, out_root: Path,
+) -> Path:
+    """Conserve la mention explicite CORE_CHANGE_CANDIDATE, sans l'interpréter."""
+    out_file = out_root / case_id / "core_change_candidate.json"
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    out_file.write_text(json.dumps({
+        "schema_version": SCHEMA_VERSION,
+        "case_id": case_id,
+        "signal": "CORE_CHANGE_CANDIDATE",
+        "reason": reason,
+        "agent_final_text": agent_final_text,
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
     return out_file
 
 
@@ -1901,6 +1947,8 @@ def process_case(
     permission_mode: str,
     force: bool,
     expected_core_changes_root: "Path | None" = None,
+    pipeline_runs_root: "Path | None" = None,
+    core_change_candidates_root: "Path | None" = None,
 ) -> CaseRunSummary:
     """Traite UN case, du contrôle de parallélisme jusqu'à la notification
     humaine (ou l'arrêt contrôlé le plus loin possible dans cet ordre).
@@ -1941,6 +1989,7 @@ def process_case(
         confidence_scores_root=confidence_scores_root,
         static_validations_root=static_validations_root,
         codex_runs_root=codex_runs_root,
+        pipeline_runs_root=pipeline_runs_root,
     )
     if not safety.safe:
         return CaseRunSummary(
@@ -1961,6 +2010,18 @@ def process_case(
     )
     run_result_path = write_run_result(invocation, out_root=codex_runs_root, force=force)
     artifacts[STAGE_CLAUDE_INVOCATION] = str(run_result_path)
+    agent_summary = " ".join((invocation.agent_final_text or "").split())[:_MAX_NO_CHANGES_REASON_CHARS]
+
+    if invocation.declares_core_change_candidate:
+        try:
+            candidate_path = write_core_change_candidate(
+                case_id, agent_summary or "CORE_CHANGE_CANDIDATE déclaré",
+                invocation.agent_final_text or "",
+                out_root=core_change_candidates_root or codex_runs_root.parent / "core_change_candidates",
+            )
+            artifacts[STAGE_CORE_CHANGE_CANDIDATE] = str(candidate_path)
+        except OSError as exc:
+            warnings.append(f"artefact CORE_CHANGE_CANDIDATE indisponible : {exc}")
 
     if invocation.status != STATUS_SUCCESS:
         return CaseRunSummary(
@@ -1988,6 +2049,34 @@ def process_case(
             case_id=case_id, deferred=False, stopped_at=STAGE_STATIC_VALIDATION,
             stop_reason=f"validation_static.json.verdict={static_verdict!r} (\"ACCEPTED\" requis)",
             is_error=False, artifacts=artifacts, warnings=warnings,
+        )
+
+    if static_data.get("changed_files") == []:
+        reason = agent_summary or "aucun fichier modifié"
+        # Une synthèse NO_CHANGES antérieure prouve que l'envoi a déjà été tenté.
+        # Même après un échec incertain, ne pas risquer un second message.
+        previous_data, _ = _load_json(
+            pipeline_runs_root / case_id / "pipeline_run.json"
+        ) if pipeline_runs_root is not None else (None, None)
+        previously_attempted = (
+            isinstance(previous_data, dict) and previous_data.get("stopped_at") == STAGE_NO_CHANGES
+        )
+        if previously_attempted:
+            notified = previous_data.get("notified") is True
+        else:
+            notified, notify_warnings = _maybe_notify(
+                case_id, notify_state=NOTIFY_STATE_NO_CHANGES,
+                previous_notified_state=None,
+                message=(
+                    f"Autofix case={case_id} : aucun changement. {reason}\n"
+                    f"Artefact : {artifacts.get(STAGE_CORE_CHANGE_CANDIDATE, str(run_result_path))}"
+                ),
+            )
+            warnings.extend(notify_warnings)
+        return CaseRunSummary(
+            case_id=case_id, deferred=False, stopped_at=STAGE_NO_CHANGES,
+            stop_reason=reason, is_error=False, artifacts=artifacts,
+            notified=notified, warnings=warnings,
         )
 
     # ── Point 3b — Phase 9 (continue quel que soit l'outcome) ──────────────
@@ -2095,6 +2184,7 @@ def run_autofix_pipeline(
     merge_reviews_root: "str | Path" = "merge_reviews",
     commit_results_root: "str | Path" = "commit_results",
     pipeline_runs_root: "str | Path" = "autofix_pipeline_runs",
+    core_change_candidates_root: "str | Path" = "core_change_candidates",
     max_cases: int = DEFAULT_MAX_CASES,
     claude_timeout_s: float = DEFAULT_CLAUDE_TIMEOUT_S,
     allowed_tools: str = DEFAULT_ALLOWED_TOOLS,
@@ -2140,6 +2230,7 @@ def run_autofix_pipeline(
     merge_reviews_root = Path(merge_reviews_root)
     commit_results_root = Path(commit_results_root)
     pipeline_runs_root = Path(pipeline_runs_root)
+    core_change_candidates_root = Path(core_change_candidates_root)
 
     # ── Point 0 : verrou d'exclusion (jamais deux invocations en même temps) ─
     lock = acquire_lock(pipeline_runs_root, stale_after_s=lock_stale_after_s)
@@ -2202,6 +2293,8 @@ def run_autofix_pipeline(
                 permission_mode=permission_mode,
                 force=force,
                 expected_core_changes_root=expected_core_changes_root,
+                pipeline_runs_root=pipeline_runs_root,
+                core_change_candidates_root=core_change_candidates_root,
             )
             write_pipeline_run_summary(summary, out_root=pipeline_runs_root)
             summaries.append(summary)
