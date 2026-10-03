@@ -404,15 +404,14 @@ extension.
    jamais un candidat individuel).
 
 3. Phase 4 (Survey/autofix/failure_diagnosis.py::write_diagnosis) pour chaque
-   candidat de la sélection ci-dessus SANS diagnoses/<case_id>/diagnosis.json
-   — réutilisé tel quel sinon, jamais recalculé. Borné par
+   candidat sans diagnostic ou avec un diagnostic dont l'empreinte du code
+   est absente, différente ou marquée dirty. Borné par
    --max-upstream-cases (DEFAULT_MAX_UPSTREAM_CASES) sur le nombre de
-   diagnostics RÉELLEMENT NOUVEAUX tentés (succès ou échec ; un case déjà
-   diagnostiqué ne consomme jamais ce budget) — cf. DEFAULT_MAX_UPSTREAM_CASES
+   diagnostics nouveaux ou régénérés tentés (succès ou échec) — cf. DEFAULT_MAX_UPSTREAM_CASES
    pour la justification (coût Chromium réel de la Phase 4 pour
-   stage="action"). Un candidat non encore diagnostiqué au moment où ce
-   budget est épuisé n'est PAS touché cette invocation (aucun
-   upstream_run.json écrit pour lui) : il reste éligible à une invocation
+   stage="action"). Un candidat sans diagnostic ou avec un diagnostic périmé
+   au moment où ce budget est épuisé n'est PAS transmis aux phases suivantes
+   cette invocation (aucun upstream_run.json écrit pour lui) : il reste éligible à une invocation
    future, exactement comme un case au-delà de --max-cases pour l'étape
    existante. Un DiagnosisError (échec opérationnel : manifest.json/
    validation_report.json manquant ou invalide) est signalé (upstream_run.json
@@ -422,7 +421,8 @@ extension.
    contexte (Survey/autofix/case_grouping.py::write_case_groups, sur ses racines par
    défaut — jamais réimplémentée : déjà idempotente par construction, un
    groupe complet sur disque n'est jamais régénéré ni étendu, vérifié dans
-   son code avant d'écrire ce point). Chaque membre d'un groupe FORMÉ (nouveau
+   son code avant d'écrire ce point). Ce regroupement est reporté si un diagnostic
+   encore périmé reste sur disque après la Phase 4. Chaque membre d'un groupe FORMÉ (nouveau
    ou déjà gelé, recalculé identique par compute_case_groups) reçoit, s'il
    n'en a pas déjà un, un upstream_run.json terminal=true (stopped_at=
    "deduplication") nommant le group_id qui le remplace désormais — c'est
@@ -437,8 +437,8 @@ extension.
    continuent individuellement, jamais un arrêt de l'invocation.
 
 5. Pour chaque case retenu (sélection du point 2 RECALCULÉE après le point 4,
-   filtrée aux seuls cases ayant désormais un diagnosis.json — ce qui exclut
-   naturellement les candidats non diagnostiqués faute de budget au point 3
+   filtrée aux seuls cases ayant désormais un diagnosis.json valable pour
+   cette invocation — ce qui exclut les candidats reportés faute de budget au point 3
    et inclut les group_id fraîchement formés) : Phase 5
    (Survey/autofix/context_selector.py::write_context_selection), Phase 6
    (Survey/autofix/prompt_generator.py::write_prompt), Phase 7
@@ -510,7 +510,7 @@ from Survey.autofix.extractor_integrity_gate import (
     IntegrityGateError,
     write_extractor_integrity_check,
 )
-from Survey.autofix.failure_diagnosis import DiagnosisError, write_diagnosis
+from Survey.autofix.failure_diagnosis import DiagnosisError, get_code_fingerprint, write_diagnosis
 from Survey.autofix.human_review import (
     HumanReviewError,
     check_pending_reviews,
@@ -1331,6 +1331,20 @@ def _process_upstream_case(
     )
 
 
+def _stale_diagnosis_reason(path: Path, current_fingerprint: Optional[dict]) -> Optional[str]:
+    if current_fingerprint is None:
+        return "empreinte courante indisponible"
+    diagnosis, _err = _load_json(path)
+    fingerprint = diagnosis.get("code_fingerprint") if isinstance(diagnosis, dict) else None
+    if not isinstance(fingerprint, dict) or not fingerprint.get("base_sha"):
+        return "empreinte absente"
+    if fingerprint.get("dirty") is not False:
+        return "arbre modifié lors du diagnostic"
+    if fingerprint != current_fingerprint:
+        return "empreinte différente"
+    return None
+
+
 def run_upstream_stage(
     *,
     failure_cases_root: "str | Path" = "failure_cases",
@@ -1358,17 +1372,25 @@ def run_upstream_stage(
     if import_fleet:
         _run_fleet_import()
 
-    # ── Points 2/3 : sélection + Phase 4 bornée aux diagnostics NOUVEAUX ────
+    # ── Points 2/3 : sélection + Phase 4 bornée (nouveaux ou périmés) ───────
     candidates = discover_upstream_candidates(
         failure_cases_root=failure_cases_root, worktrees_root=worktrees_root,
         pipeline_runs_root=pipeline_runs_root,
     )
+    current_fingerprint = get_code_fingerprint() if candidates else None
     new_diagnoses = 0
+    unavailable: set[str] = set()
     for case_id in candidates:
         diagnosis_path = diagnoses_root / case_id / "diagnosis.json"
-        if diagnosis_path.is_file():
-            continue  # réutilisé tel quel, jamais recalculé
+        stale_reason = (
+            _stale_diagnosis_reason(diagnosis_path, current_fingerprint)
+            if diagnosis_path.is_file() else None
+        )
+        if diagnosis_path.is_file() and stale_reason is None:
+            continue
         if new_diagnoses >= max_upstream_cases:
+            if stale_reason is not None:
+                unavailable.add(case_id)
             log_debug(
                 _TAG,
                 f"case={case_id} : diagnostic (Phase 4) reporté "
@@ -1376,28 +1398,45 @@ def run_upstream_stage(
             )
             continue
         new_diagnoses += 1
+        if stale_reason is not None:
+            log_info(_TAG, f"case={case_id} : régénération diagnostic ({stale_reason})")
         try:
-            write_diagnosis(failure_cases_root / case_id, out_root=diagnoses_root, force=False)
-        except DiagnosisError as exc:
+            write_diagnosis(
+                failure_cases_root / case_id, out_root=diagnoses_root,
+                force=stale_reason is not None,
+            )
+        except (DiagnosisError, OSError) as exc:
+            unavailable.add(case_id)
             summary = UpstreamCaseSummary(
                 case_id=case_id, stopped_at=STAGE_UPSTREAM_DIAGNOSIS,
                 stop_reason=str(exc), terminal=False, is_error=True,
             )
             write_upstream_run_result(summary, out_root=pipeline_runs_root)
             summaries.append(summary)
+        else:
+            if _stale_diagnosis_reason(diagnosis_path, current_fingerprint) is not None:
+                unavailable.add(case_id)
 
     # ── Point 4 : déduplication, une fois, avant toute sélection de contexte ─
     grouping_result = None
-    try:
-        grouping_result, _report_path = write_case_groups(
-            diagnoses_root=diagnoses_root, failure_cases_root=failure_cases_root,
-            context_selections_root=context_selections_root,
-        )
-    except CaseGroupingError as exc:
-        log_info(
-            _TAG,
-            f"avertissement : regroupement (déduplication) échoué, cases traités individuellement : {exc}",
-        )
+    # Le regroupement lit tous les diagnostics présents sur disque : ne pas lui
+    # transmettre ceux qui restent périmés après la Phase 4.
+    grouping_blocked = any(
+        (diagnoses_root / cid / "diagnosis.json").is_file()
+        and not (context_selections_root / cid / "context_selection.json").is_file()
+        for cid in unavailable
+    )
+    if not grouping_blocked:
+        try:
+            grouping_result, _report_path = write_case_groups(
+                diagnoses_root=diagnoses_root, failure_cases_root=failure_cases_root,
+                context_selections_root=context_selections_root,
+            )
+        except CaseGroupingError as exc:
+            log_info(
+                _TAG,
+                f"avertissement : regroupement (déduplication) échoué, cases traités individuellement : {exc}",
+            )
 
     if grouping_result is not None:
         for group in grouping_result.groups:
@@ -1423,7 +1462,7 @@ def run_upstream_stage(
             failure_cases_root=failure_cases_root, worktrees_root=worktrees_root,
             pipeline_runs_root=pipeline_runs_root,
         )
-        if (diagnoses_root / cid / "diagnosis.json").is_file()
+        if cid not in unavailable and (diagnoses_root / cid / "diagnosis.json").is_file()
     ]
     for case_id in final_ids:
         summary = _process_upstream_case(

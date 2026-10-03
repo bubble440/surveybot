@@ -6,14 +6,17 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from Survey.autofix.autofix_worktree import dom_evidence_relative_dir, prepare_autofix_worktree
 from Survey.autofix.autofix_orchestrator import (
     ClaudeInvocationResult, EligibleCase, SafetyOutcome, STATUS_FAILURE, STATUS_SUCCESS,
     STAGE_CONFIDENCE_SCORE, STAGE_NO_CHANGES, _MAX_AGENT_FINAL_TEXT_CHARS,
-    _worktree_terminal_state, invoke_claude_headless, process_case, write_pipeline_run_summary,
+    STAGE_UPSTREAM_DIAGNOSIS, UpstreamCaseSummary, _worktree_terminal_state,
+    invoke_claude_headless, process_case, run_upstream_stage, write_pipeline_run_summary,
 )
+from Survey.autofix.failure_diagnosis import DiagnosisError, get_code_fingerprint, write_diagnosis
 from Survey.autofix.human_review import HumanReviewError
 from Survey.autofix.prompt_generator import add_dom_evidence_context
 
@@ -41,6 +44,12 @@ class AutofixDomEvidenceTests(unittest.TestCase):
         return subprocess.run(
             ["git", *args], cwd=cwd, text=True, capture_output=True, check=True,
         )
+
+    def test_diagnosis_fingerprint_uses_phase_seven_head_and_detects_dirty_tree(self) -> None:
+        base_sha = self._git("rev-parse", "HEAD", cwd=self.repo).stdout.strip()
+        self.assertEqual(get_code_fingerprint(), {"base_sha": base_sha, "dirty": False})
+        (self.repo / "surveybot" / "tracked.txt").write_text("modified", encoding="utf-8")
+        self.assertEqual(get_code_fingerprint(), {"base_sha": base_sha, "dirty": True})
 
     def _prepare(self, case_id: str, files: dict[str, bytes], *, stage: str = "extraction"):
         case_dir = self.root / "inputs" / case_id
@@ -414,3 +423,168 @@ class AutofixDomEvidenceTests(unittest.TestCase):
 
         self._write_synthetic_static(case_id, ["Survey/fix.py"])
         self.assertFalse(self._terminal_state(case_id)[0])
+
+
+class AutofixUpstreamFingerprintTests(unittest.TestCase):
+    fingerprint = {"base_sha": "a" * 40, "dirty": False}
+
+    def setUp(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+
+    def _case(self, case_id: str, fingerprint=None) -> Path:
+        case_dir = self.root / "failure_cases" / case_id
+        case_dir.mkdir(parents=True)
+        (case_dir / "manifest.json").write_text("{}", encoding="utf-8")
+        if fingerprint is not None:
+            self._diagnosis(case_id, fingerprint)
+        return case_dir
+
+    def _diagnosis(self, case_id: str, fingerprint=None) -> Path:
+        path = self.root / "diagnoses" / case_id / "diagnosis.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {"case_id": case_id, "stage": "action"}
+        if fingerprint is not None:
+            data["code_fingerprint"] = fingerprint
+        path.write_text(json.dumps(data), encoding="utf-8")
+        return path
+
+    def _invoke(self, *, budget=5, writer=None, fingerprint_unavailable=False):
+        def write_synthetic(case_dir, *, out_root, force):
+            return self._diagnosis(case_dir.name, self.fingerprint)
+
+        with (
+            patch("Survey.autofix.autofix_orchestrator.get_code_fingerprint",
+                  return_value=None if fingerprint_unavailable else self.fingerprint),
+            patch("Survey.autofix.autofix_orchestrator.write_diagnosis",
+                  side_effect=writer or write_synthetic) as write,
+            patch("Survey.autofix.autofix_orchestrator.write_case_groups",
+                  return_value=(SimpleNamespace(groups=[]), self.root / "groups.json")) as grouping,
+            patch("Survey.autofix.autofix_orchestrator._process_upstream_case",
+                  side_effect=lambda case_id, **_kwargs: UpstreamCaseSummary(
+                      case_id, "worktree", None, True, False)) as process,
+        ):
+            summaries = run_upstream_stage(
+                failure_cases_root=self.root / "failure_cases",
+                diagnoses_root=self.root / "diagnoses",
+                context_selections_root=self.root / "context",
+                prompts_root=self.root / "prompts",
+                worktrees_root=self.root / "worktrees",
+                pipeline_runs_root=self.root / "pipeline",
+                max_upstream_cases=budget,
+            )
+        return summaries, write, grouping, process
+
+    def test_write_diagnosis_adds_optional_fingerprint_without_schema_change(self) -> None:
+        result = SimpleNamespace(
+            case_id="synthetic", cause_level="plausible", confidence_global="plausible",
+            modules_likely_involved=[],
+            as_dict=lambda: {"schema_version": "1.0", "case_id": "synthetic"},
+        )
+        with (
+            patch("Survey.autofix.failure_diagnosis.get_code_fingerprint",
+                  return_value=self.fingerprint),
+            patch("Survey.autofix.failure_diagnosis.diagnose_failure_case", return_value=result),
+        ):
+            path = write_diagnosis(self.root / "synthetic", out_root=self.root / "diagnoses")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["schema_version"], "1.0")
+        self.assertEqual(payload["code_fingerprint"], self.fingerprint)
+
+    def test_diagnosis_remains_readable_when_git_fingerprint_is_unavailable(self) -> None:
+        result = SimpleNamespace(
+            case_id="synthetic", cause_level="plausible", confidence_global="plausible",
+            modules_likely_involved=[],
+            as_dict=lambda: {"schema_version": "1.0", "case_id": "synthetic"},
+        )
+        with (
+            patch("Survey.autofix.failure_diagnosis.get_code_fingerprint", return_value=None),
+            patch("Survey.autofix.failure_diagnosis.diagnose_failure_case", return_value=result),
+        ):
+            path = write_diagnosis(self.root / "synthetic", out_root=self.root / "diagnoses")
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8")), result.as_dict())
+
+    def test_matching_fingerprint_reuses_diagnosis(self) -> None:
+        self._case("case_matching", self.fingerprint)
+        summaries, write, grouping, process = self._invoke()
+        write.assert_not_called()
+        grouping.assert_called_once()
+        self.assertEqual([s.case_id for s in summaries], ["case_matching"])
+        self.assertEqual(process.call_count, 1)
+
+    def test_changed_missing_and_dirty_fingerprints_regenerate_once(self) -> None:
+        for case_id, fingerprint in (
+            ("case_changed", {"base_sha": "b" * 40, "dirty": False}),
+            ("case_missing", None),
+            ("case_dirty", {"base_sha": "a" * 40, "dirty": True}),
+        ):
+            self._case(case_id)
+            self._diagnosis(case_id, fingerprint)
+        with patch("Survey.autofix.autofix_orchestrator.log_info") as info:
+            summaries, write, grouping, process = self._invoke(budget=3)
+        self.assertEqual(write.call_count, 3)
+        self.assertTrue(all(call.kwargs["force"] for call in write.call_args_list))
+        self.assertEqual(
+            len([call for call in info.call_args_list if "régénération diagnostic" in call.args[1]]),
+            3,
+        )
+        self.assertEqual(process.call_count, 3)
+        self.assertEqual({s.case_id for s in summaries},
+                         {"case_changed", "case_missing", "case_dirty"})
+        grouping.assert_called_once()
+
+    def test_exhausted_budget_defers_stale_case_without_forwarding_it(self) -> None:
+        self._case("case_a_new")
+        self._case("case_b_stale", {"base_sha": "b" * 40, "dirty": False})
+        summaries, write, grouping, process = self._invoke(budget=1)
+        write.assert_called_once()
+        self.assertEqual(write.call_args.kwargs["force"], False)
+        grouping.assert_not_called()
+        self.assertEqual([call.args[0] for call in process.call_args_list], ["case_a_new"])
+        self.assertEqual([s.case_id for s in summaries], ["case_a_new"])
+        self.assertTrue((self.root / "diagnoses" / "case_b_stale" / "diagnosis.json").is_file())
+
+    def test_regeneration_failure_stops_at_diagnosis(self) -> None:
+        self._case("case_failed", {"base_sha": "b" * 40, "dirty": False})
+        def fail_diagnosis(*_args, **_kwargs):
+            raise DiagnosisError("échec synthétique")
+        summaries, write, grouping, process = self._invoke(
+            writer=fail_diagnosis,
+        )
+        write.assert_called_once()
+        grouping.assert_not_called()
+        process.assert_not_called()
+        self.assertEqual(len(summaries), 1)
+        self.assertEqual(summaries[0].stopped_at, STAGE_UPSTREAM_DIAGNOSIS)
+        self.assertTrue(summaries[0].is_error)
+        self.assertIn("échec synthétique", summaries[0].stop_reason)
+
+    def test_case_with_worktree_is_not_reexamined(self) -> None:
+        self._case("case_with_worktree", {"base_sha": "b" * 40, "dirty": False})
+        manifest = self.root / "worktrees" / "case_with_worktree" / "worktree.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text("{}", encoding="utf-8")
+        summaries, write, grouping, process = self._invoke()
+        self.assertEqual(summaries, [])
+        write.assert_not_called()
+        process.assert_not_called()
+
+    def test_terminal_case_is_not_reexamined(self) -> None:
+        self._case("case_terminal", {"base_sha": "b" * 40, "dirty": False})
+        run = self.root / "pipeline" / "case_terminal" / "upstream_run.json"
+        run.parent.mkdir(parents=True)
+        run.write_text(json.dumps({"terminal": True}), encoding="utf-8")
+        summaries, write, grouping, process = self._invoke()
+        self.assertEqual(summaries, [])
+        write.assert_not_called()
+        process.assert_not_called()
+
+    def test_unavailable_current_fingerprint_is_conservatively_stale(self) -> None:
+        self._case("case_unknown", self.fingerprint)
+        summaries, write, grouping, process = self._invoke(fingerprint_unavailable=True)
+        write.assert_called_once()
+        self.assertTrue(write.call_args.kwargs["force"])
+        grouping.assert_not_called()
+        process.assert_not_called()
+        self.assertEqual(summaries, [])

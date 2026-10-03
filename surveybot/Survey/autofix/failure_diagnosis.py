@@ -92,6 +92,7 @@ vide (jamais une association approximative).
 
 import json
 import re
+import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -117,6 +118,32 @@ class DiagnosisError(Exception):
 
 class DiagnosisExistsError(DiagnosisError):
     """La sortie cible existe déjà et la régénération n'a pas été demandée."""
+
+
+def get_code_fingerprint() -> Optional[dict]:
+    """HEAD de la Phase 7 et état sale du dépôt, ou None si Git est indisponible."""
+    cwd = Path.cwd()
+    outputs = []
+    for args in (["rev-parse", "--show-toplevel"], ["rev-parse", "HEAD"],
+                 ["status", "--porcelain"]):
+        try:
+            proc = subprocess.run(
+                ["git", *args], cwd=str(cwd), capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=30, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if proc.returncode != 0 or "\ufffd" in (proc.stdout or ""):
+            return None
+        outputs.append(proc.stdout or "")
+        if len(outputs) == 1:
+            if not outputs[0].strip():
+                return None
+            cwd = Path(outputs[0].strip())
+    base_sha = outputs[1].strip()
+    if not re.fullmatch(r"[0-9a-f]{40,64}", base_sha):
+        return None
+    return {"base_sha": base_sha, "dirty": bool(outputs[2].strip())}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -741,18 +768,22 @@ def write_diagnosis(
                 "(pas de diagnosis.json) — suppression refusée, vérifier manuellement"
             )
         import shutil
-        log_info(_TAG, f"régénération forcée : suppression de {out_dir}")
+        log_debug(_TAG, f"régénération forcée : suppression de {out_dir}")
         shutil.rmtree(out_dir)
 
+    fingerprint = get_code_fingerprint()
     result = diagnose_failure_case(case_dir)
 
     out_dir.mkdir(parents=True, exist_ok=False)
+    payload = result.as_dict()
+    if fingerprint is not None:
+        payload["code_fingerprint"] = fingerprint
     out_file.write_text(
-        json.dumps(result.as_dict(), ensure_ascii=False, indent=2),
+        json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
-    log_info(
+    (log_debug if force else log_info)(
         _TAG,
         f"diagnostic créé case={result.case_id} cause={result.cause_level} "
         f"confiance={result.confidence_global} modules={len(result.modules_likely_involved)} -> {out_file}",
