@@ -135,7 +135,8 @@ environnement, version 2.1.283) AVANT d'écrire ce module, jamais supposée :
   - --output-format json (exige --print/-p) : un seul objet JSON en sortie
     standard, vérifié par un appel réel — contient au moins
     is_error/subtype/session_id/result/num_turns. Stocké tel quel (sortie
-    brute) dans run_result.json, jamais réinterprété au-delà de ces champs.
+    brute) dans run_result.json ; total_cost_usd et num_turns y sont aussi
+    copiés lorsqu'ils sont numériques et valides, sans peser sur la décision.
   - Transmission du prompt : NI un argument positionnel (risque de limite de
     longueur argv/de quoting shell pour un prompt long et multi-lignes), NI un
     fichier temporaire supplémentaire (le prompt existe déjà sur disque,
@@ -150,6 +151,10 @@ environnement, version 2.1.283) AVANT d'écrire ce module, jamais supposée :
     (Edit/Write, déjà seuls listés dans --allowedTools avec Read/Grep/Glob qui
     ne mutent rien), sans ouvrir la porte à des outils non listés. Vérifié
     fonctionnel par un appel réel (Write a réussi sans blocage avec ce mode).
+  - --restricted : actif par défaut, désactivable avec --no-restricted ; retire
+    les outils de commande et borne les outils de fichiers au worktree.
+  - --permission-prompts none : refuse les demandes sans attente interactive.
+  - --max-budget-usd 5 : plafond par session ; 0 omet cette option.
 
 Un seul mécanisme d'invocation, un seul essai (subprocess.run avec
 timeout=claude_timeout_s explicite) — jamais de retry automatique. Un
@@ -160,7 +165,8 @@ binaire "claude" est résolu via shutil.which (jamais un chemin codé en dur) ;
 son absence sur PATH est un statut ERROR explicite, jamais une exception non
 gérée. Écrit systématiquement codex_runs/<case_id>/run_result.json (schéma :
 schema_version/case_id/created_at + branch/worktree_path/status/exit_code/
-timed_out/session_id/is_error/subtype/command/raw_stdout/raw_stderr/error),
+timed_out/session_id/is_error/subtype/command/raw_stdout/raw_stderr/error,
+total_cost_usd/num_turns facultatifs),
 même convention JSON que les phases précédentes. raw_stdout/raw_stderr sont
 bornés (_MAX_RAW_OUTPUT_CHARS) par précaution, même si --output-format json
 produit normalement une sortie compacte.
@@ -485,6 +491,7 @@ section amont).
 """
 
 import json
+import math
 import os
 import re
 import shutil
@@ -532,6 +539,7 @@ from Survey.autofix.prompt_generator import (
     MANUAL_REVIEW_FILENAME,
     PROMPT_FILENAME,
     PromptGenerationError,
+    _DISPATCH_STEP_RE,
     add_dom_evidence_context,
     write_prompt,
 )
@@ -544,6 +552,7 @@ DEFAULT_MAX_CASES = 5
 DEFAULT_CLAUDE_TIMEOUT_S = 600.0
 DEFAULT_ALLOWED_TOOLS = "Read Edit Write Grep Glob"
 DEFAULT_PERMISSION_MODE = "acceptEdits"
+DEFAULT_MAX_BUDGET_USD = 5.0
 
 # Borne conservatrice, distincte de DEFAULT_MAX_CASES : la Phase 4 (diagnostic)
 # lance un vrai Chromium isolé pour tout case stage="action" avec
@@ -553,6 +562,7 @@ DEFAULT_PERMISSION_MODE = "acceptEdits"
 # run_upstream_stage) : un case déjà diagnostiqué lors d'une invocation
 # précédente continue d'avancer (Phases 5/6/7) sans être compté ici.
 DEFAULT_MAX_UPSTREAM_CASES = 3
+_MAX_COMPLETED_HISTORY_CASES = 200
 
 # Âge de péremption du verrou d'exclusion (point 0) : généreux, délibérément
 # très supérieur au temps maximal théorique d'une invocation avec les valeurs
@@ -573,6 +583,9 @@ _MAX_RAW_OUTPUT_CHARS = 200_000
 # (8 000 caractères maximum) ; la raison courte garde ses 240 premiers caractères.
 _MAX_AGENT_FINAL_TEXT_CHARS = 8_000
 _MAX_NO_CHANGES_REASON_CHARS = 240
+_MAX_AGENT_FINAL_SUMMARY_CHARS = 200
+_AGENT_SUMMARY_TAIL_LINES = 10
+_AGENT_SUMMARY_RE = re.compile(r"^\s*r\s*[eé]\s*s\s*u\s*m\s*[eé]\s*:\s*(.*)$", re.IGNORECASE)
 
 STATUS_SUCCESS = "SUCCESS"
 STATUS_FAILURE = "FAILURE"
@@ -593,6 +606,7 @@ STAGE_HUMAN_REVIEW = "human_review"
 # étapes ci-dessus (qui commencent, elles, une fois worktree.json déjà là).
 STAGE_UPSTREAM_DIAGNOSIS = "diagnosis"
 STAGE_UPSTREAM_DEDUPLICATION = "deduplication"
+STAGE_UPSTREAM_HISTORY_DUPLICATE = "historical_duplicate"
 STAGE_UPSTREAM_CONTEXT_SELECTION = "context_selection"
 STAGE_UPSTREAM_PROMPT = "prompt_generation"
 STAGE_UPSTREAM_WORKTREE_ELIGIBILITY = "worktree_eligibility"
@@ -1098,9 +1112,12 @@ class UpstreamCaseSummary:
     terminal: bool
     is_error: bool
     artifacts: "dict[str, str]" = field(default_factory=dict)
+    equivalent_case_id: Optional[str] = None
+    equivalent_outcome: Optional[str] = None
+    retry_hint: Optional[str] = None
 
     def as_dict(self) -> dict:
-        return {
+        result = {
             "schema_version": SCHEMA_VERSION,
             "case_id": self.case_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -1110,6 +1127,11 @@ class UpstreamCaseSummary:
             "is_error": self.is_error,
             "artifacts": self.artifacts,
         }
+        if self.equivalent_case_id is not None:
+            result["equivalent_case_id"] = self.equivalent_case_id
+            result["equivalent_outcome"] = self.equivalent_outcome
+            result["retry_hint"] = self.retry_hint
+        return result
 
 
 def _upstream_run_paths(out_root: Path, case_id: str) -> "tuple[Path, Path]":
@@ -1135,7 +1157,9 @@ def write_upstream_run_result(
     log_info(
         _TAG,
         f"case={summary.case_id} [amont] stopped_at={summary.stopped_at!r} "
-        f"terminal={summary.terminal} is_error={summary.is_error} -> {out_file}",
+        f"terminal={summary.terminal} is_error={summary.is_error} -> {out_file}"
+        + (f" equivalent={summary.equivalent_case_id} outcome={summary.equivalent_outcome}"
+           if summary.equivalent_case_id is not None else ""),
     )
     return out_file
 
@@ -1169,6 +1193,7 @@ def discover_upstream_candidates(
     failure_cases_root: Path,
     worktrees_root: Path,
     pipeline_runs_root: Path,
+    retry_previous_failures: bool = False,
 ) -> "list[str]":
     """cf. docstring du module ("Étape amont", point 2) : dossiers de
     failure_cases/ (manifest.json présent, case_id sûr) sans worktree.json
@@ -1194,7 +1219,9 @@ def discover_upstream_candidates(
         if (worktrees_root / case_id / "worktree.json").is_file():
             continue
         upstream_data, _err = _load_json(pipeline_runs_root / case_id / "upstream_run.json")
-        if isinstance(upstream_data, dict) and upstream_data.get("terminal"):
+        if (isinstance(upstream_data, dict) and upstream_data.get("terminal")
+                and not (retry_previous_failures
+                         and upstream_data.get("stopped_at") == STAGE_UPSTREAM_HISTORY_DUPLICATE)):
             continue
         out.append(case_id)
     return out
@@ -1345,6 +1372,102 @@ def _stale_diagnosis_reason(path: Path, current_fingerprint: Optional[dict]) -> 
     return None
 
 
+_SIGNATURE_CODE_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,63}")
+_SIGNATURE_MODULE_RE = re.compile(r"Survey/[a-z][a-z0-9_]*\.py")
+
+
+def _diagnosis_signature(diagnosis: dict) -> Optional[tuple]:
+    """Signature de codes structurels ; un champ incertain désactive la comparaison."""
+    stage, itype = diagnosis.get("stage"), diagnosis.get("itype")
+    symptom = diagnosis.get("symptom")
+    failure_types = symptom.get("failure_types") if isinstance(symptom, dict) else None
+    if (stage not in ("action", "extraction") or not isinstance(itype, str)
+            or not _SIGNATURE_CODE_RE.fullmatch(itype)
+            or not isinstance(failure_types, list) or not failure_types
+            or any(not isinstance(code, str) or not _SIGNATURE_CODE_RE.fullmatch(code)
+                   for code in failure_types)):
+        return None
+    base = (stage, itype, tuple(sorted(set(failure_types))))
+    if stage == "action":
+        replay = diagnosis.get("real_dispatch_replay")
+        steps = replay.get("dispatcher_steps") if isinstance(replay, dict) else None
+        if not isinstance(steps, list) or not steps or len(steps) > 24:
+            return None
+        normalized = []
+        for step in steps:
+            if not isinstance(step, str) or len(step) > 160 or not _DISPATCH_STEP_RE.fullmatch(step):
+                return None
+            code = "action_fix selected" if step.startswith("action_fix selected fix_id=") else step
+            if not normalized or normalized[-1] != code:
+                normalized.append(code)
+        return base + (tuple(normalized),)
+
+    modules = diagnosis.get("modules_likely_involved")
+    if not isinstance(modules, list) or not modules:
+        return None
+    normalized_modules = []
+    for entry in modules:
+        if not isinstance(entry, dict):
+            return None
+        module, signals = entry.get("module"), entry.get("matched_signals")
+        if (not isinstance(module, str) or not _SIGNATURE_MODULE_RE.fullmatch(module)
+                or not isinstance(signals, list) or not signals):
+            return None
+        # group_key peut porter un nom ou une valeur de sondage.
+        if any(not isinstance(signal, str) or not signal.startswith("context_flag:")
+               or not _SIGNATURE_CODE_RE.fullmatch(signal[len("context_flag:"):])
+               for signal in signals):
+            return None
+        normalized_modules.append((module, tuple(sorted(set(signals)))))
+    return base + (tuple(sorted(set(normalized_modules))),)
+
+
+def _historical_failure_match(
+    case_id: str, diagnosis: dict, *, diagnoses_root: Path,
+    confidence_scores_root: Path, static_validations_root: Path,
+    pipeline_runs_root: Path, human_reviews_root: Path,
+    merge_reviews_root: Path, merge_results_root: Path,
+) -> Optional[tuple[str, str]]:
+    signature = _diagnosis_signature(diagnosis)
+    fingerprint = diagnosis.get("code_fingerprint")
+    if (signature is None or not isinstance(fingerprint, dict)
+            or not fingerprint.get("base_sha") or fingerprint.get("dirty") is not False
+            or not diagnoses_root.is_dir()):
+        return None
+    examined = 0
+    match = None
+    for entry in sorted(diagnoses_root.iterdir(), key=lambda path: path.name, reverse=True):
+        history_id = entry.name
+        if history_id == case_id or not entry.is_dir() or not _is_safe_case_id(history_id):
+            continue
+        examined += 1
+        if examined > _MAX_COMPLETED_HISTORY_CASES:
+            log_debug(_TAG, f"case={case_id} : historique > {_MAX_COMPLETED_HISTORY_CASES}, déduplication abandonnée")
+            return None
+        # Une revue ou un merge, même illisible, rend l'issue incertaine.
+        if (merge_results_root / history_id / "merge_result.json").is_file() or (
+            human_reviews_root / history_id / "decision.json"
+        ).is_file() or (merge_reviews_root / history_id / "decision.json").is_file():
+            continue
+        score, _ = _load_json(confidence_scores_root / history_id / "confidence_score.json")
+        static, _ = _load_json(static_validations_root / history_id / "validation_static.json")
+        pipeline, _ = _load_json(pipeline_runs_root / history_id / "pipeline_run.json")
+        if isinstance(score, dict) and score.get("confidence") == CONFIDENCE_REJECT:
+            outcome = "REJECT"
+        elif isinstance(pipeline, dict) and pipeline.get("stopped_at") == STAGE_NO_CHANGES and pipeline.get("is_error") is False:
+            outcome = STAGE_NO_CHANGES
+        elif isinstance(static, dict) and static.get("verdict") == "REJECTED":
+            outcome = "REJECTED"
+        else:
+            continue
+        historical, _ = _load_json(entry / "diagnosis.json")
+        if (match is None and isinstance(historical, dict)
+                and historical.get("code_fingerprint") == fingerprint
+                and _diagnosis_signature(historical) == signature):
+            match = (history_id, outcome)
+    return match
+
+
 def run_upstream_stage(
     *,
     failure_cases_root: "str | Path" = "failure_cases",
@@ -1353,6 +1476,12 @@ def run_upstream_stage(
     prompts_root: "str | Path" = "prompts",
     worktrees_root: "str | Path" = "autofix_worktrees",
     pipeline_runs_root: "str | Path" = "autofix_pipeline_runs",
+    confidence_scores_root: "str | Path" = "confidence_scores",
+    static_validations_root: "str | Path" = "autofix_static_validations",
+    human_reviews_root: "str | Path" = "human_reviews",
+    merge_reviews_root: "str | Path" = "merge_reviews",
+    merge_results_root: "str | Path" = "merge_results",
+    retry_previous_failures: bool = False,
     import_fleet: bool = False,
     max_upstream_cases: int = DEFAULT_MAX_UPSTREAM_CASES,
 ) -> "list[UpstreamCaseSummary]":
@@ -1365,6 +1494,11 @@ def run_upstream_stage(
     prompts_root = Path(prompts_root)
     worktrees_root = Path(worktrees_root)
     pipeline_runs_root = Path(pipeline_runs_root)
+    confidence_scores_root = Path(confidence_scores_root)
+    static_validations_root = Path(static_validations_root)
+    human_reviews_root = Path(human_reviews_root)
+    merge_reviews_root = Path(merge_reviews_root)
+    merge_results_root = Path(merge_results_root)
 
     summaries: "list[UpstreamCaseSummary]" = []
 
@@ -1375,7 +1509,7 @@ def run_upstream_stage(
     # ── Points 2/3 : sélection + Phase 4 bornée (nouveaux ou périmés) ───────
     candidates = discover_upstream_candidates(
         failure_cases_root=failure_cases_root, worktrees_root=worktrees_root,
-        pipeline_runs_root=pipeline_runs_root,
+        pipeline_runs_root=pipeline_runs_root, retry_previous_failures=retry_previous_failures,
     )
     current_fingerprint = get_code_fingerprint() if candidates else None
     new_diagnoses = 0
@@ -1460,11 +1594,33 @@ def run_upstream_stage(
     final_ids = [
         cid for cid in discover_upstream_candidates(
             failure_cases_root=failure_cases_root, worktrees_root=worktrees_root,
-            pipeline_runs_root=pipeline_runs_root,
+            pipeline_runs_root=pipeline_runs_root, retry_previous_failures=retry_previous_failures,
         )
         if cid not in unavailable and (diagnoses_root / cid / "diagnosis.json").is_file()
     ]
     for case_id in final_ids:
+        if not retry_previous_failures:
+            diagnosis, _ = _load_json(diagnoses_root / case_id / "diagnosis.json")
+            historical = _historical_failure_match(
+                case_id, diagnosis, diagnoses_root=diagnoses_root,
+                confidence_scores_root=confidence_scores_root,
+                static_validations_root=static_validations_root,
+                pipeline_runs_root=pipeline_runs_root,
+                human_reviews_root=human_reviews_root,
+                merge_reviews_root=merge_reviews_root, merge_results_root=merge_results_root,
+            ) if isinstance(diagnosis, dict) else None
+            if historical is not None:
+                equivalent_id, outcome = historical
+                summary = UpstreamCaseSummary(
+                    case_id=case_id, stopped_at=STAGE_UPSTREAM_HISTORY_DUPLICATE,
+                    stop_reason=f"équivalent au case terminé {equivalent_id} ({outcome})",
+                    terminal=True, is_error=False,
+                    equivalent_case_id=equivalent_id, equivalent_outcome=outcome,
+                    retry_hint="Relancer tools/run_autofix_pipeline.py --retry-previous-failures",
+                )
+                write_upstream_run_result(summary, out_root=pipeline_runs_root)
+                summaries.append(summary)
+                continue
         summary = _process_upstream_case(
             case_id,
             failure_cases_root=failure_cases_root, diagnoses_root=diagnoses_root,
@@ -1711,7 +1867,10 @@ class ClaudeInvocationResult:
     error: Optional[str]
     warnings: "list[str]" = field(default_factory=list)
     agent_final_text: Optional[str] = None
+    agent_final_summary: Optional[str] = None
     declares_core_change_candidate: bool = False
+    total_cost_usd: Optional[float] = None
+    num_turns: Optional[int] = None
 
     def as_dict(self) -> dict:
         result = {
@@ -1734,6 +1893,12 @@ class ClaudeInvocationResult:
         }
         if self.agent_final_text is not None:
             result["agent_final_text"] = self.agent_final_text
+        if self.agent_final_summary is not None:
+            result["agent_final_summary"] = self.agent_final_summary
+        if self.total_cost_usd is not None:
+            result["total_cost_usd"] = self.total_cost_usd
+        if self.num_turns is not None:
+            result["num_turns"] = self.num_turns
         return result
 
 
@@ -1741,6 +1906,17 @@ def _decode(part: Any) -> str:
     if isinstance(part, bytes):
         return part.decode("utf-8", errors="replace")
     return part or ""
+
+
+def _extract_agent_final_summary(final_text: str) -> Optional[str]:
+    for line in reversed(final_text.splitlines()[-_AGENT_SUMMARY_TAIL_LINES:]):
+        match = _AGENT_SUMMARY_RE.match(line)
+        if match:
+            cleaned = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", match.group(1))
+            summary = " ".join(cleaned.split())[:_MAX_AGENT_FINAL_SUMMARY_CHARS]
+            if summary:
+                return summary
+    return None
 
 
 def invoke_claude_headless(
@@ -1752,10 +1928,16 @@ def invoke_claude_headless(
     allowed_tools: str = DEFAULT_ALLOWED_TOOLS,
     permission_mode: str = DEFAULT_PERMISSION_MODE,
     timeout_s: float = DEFAULT_CLAUDE_TIMEOUT_S,
+    restricted: bool = True,
+    max_budget_usd: float = DEFAULT_MAX_BUDGET_USD,
 ) -> ClaudeInvocationResult:
     """Un seul mécanisme, un seul essai — jamais de retry. cf. docstring du
     module (Point 2) pour la justification de chaque flag, vérifiée avant
     d'écrire cette fonction (claude --help + appels réels)."""
+    if (isinstance(max_budget_usd, bool) or not isinstance(max_budget_usd, (int, float))
+            or max_budget_usd < 0
+            or (isinstance(max_budget_usd, float) and not math.isfinite(max_budget_usd))):
+        raise AutofixOrchestratorError(f"--max-budget-usd doit être un nombre fini >= 0 ({max_budget_usd!r} fourni)")
     claude_bin = shutil.which("claude")
     if not claude_bin:
         return ClaudeInvocationResult(
@@ -1771,7 +1953,12 @@ def invoke_claude_headless(
         "--output-format", "json",
         "--allowedTools", allowed_tools,
         "--permission-mode", permission_mode,
+        "--permission-prompts", "none",
     ]
+    if restricted:
+        cmd.append("--restricted")
+    if max_budget_usd > 0:
+        cmd.extend(("--max-budget-usd", str(max_budget_usd)))
     log_debug(_TAG, f"case={case_id} : {' '.join(cmd)} (cwd={worktree_path}, timeout={timeout_s}s)")
 
     try:
@@ -1821,19 +2008,28 @@ def invoke_claude_headless(
     session_id = parsed.get("session_id") if parsed else None
     is_error = parsed.get("is_error") if parsed else None
     subtype = parsed.get("subtype") if parsed else None
+    cost = parsed.get("total_cost_usd") if parsed else None
+    total_cost_usd = (
+        cost if isinstance(cost, (int, float)) and not isinstance(cost, bool)
+        and cost >= 0 and (not isinstance(cost, float) or math.isfinite(cost)) else None
+    )
+    turns = parsed.get("num_turns") if parsed else None
+    num_turns = turns if isinstance(turns, int) and not isinstance(turns, bool) and turns >= 0 else None
     final_text = parsed.get("result") if parsed else None
     final_text = final_text if isinstance(final_text, str) else None
 
     if invalid_utf8:
         status = STATUS_ERROR
-        error = "sortie UTF-8 invalide de Claude Code"
+        error = "sortie UTF-8 invalide de Claude Code" + (f" (subtype={subtype!r})" if subtype is not None else "")
     elif proc.returncode != 0:
         status = STATUS_FAILURE
-        error = f"code de sortie non nul ({proc.returncode})" + (f" ; {parse_error}" if parse_error else "")
+        error = (f"code de sortie non nul ({proc.returncode})"
+                 + (f" ; subtype={subtype!r}" if subtype is not None else "")
+                 + (f" ; {parse_error}" if parse_error else ""))
     elif parsed is None:
         status = STATUS_ERROR
         error = parse_error
-    elif is_error is False:
+    elif is_error is False and subtype in (None, "success"):
         status = STATUS_SUCCESS
         error = None
     else:
@@ -1846,6 +2042,8 @@ def invoke_claude_headless(
         session_id=session_id, is_error=is_error, subtype=subtype,
         command=cmd, raw_stdout=raw_stdout, raw_stderr=raw_stderr, error=error,
         agent_final_text=final_text[:_MAX_AGENT_FINAL_TEXT_CHARS] if final_text is not None else None,
+        agent_final_summary=_extract_agent_final_summary(final_text) if final_text is not None else None,
+        total_cost_usd=total_cost_usd, num_turns=num_turns,
         # Détection déterministe de la mention explicite, insensible à la casse.
         declares_core_change_candidate="CORE_CHANGE_CANDIDATE" in final_text.upper() if final_text else False,
     )
@@ -1892,17 +2090,21 @@ def write_run_result(
 
 def write_core_change_candidate(
     case_id: str, reason: str, agent_final_text: str, *, out_root: Path,
+    agent_final_summary: Optional[str] = None,
 ) -> Path:
     """Conserve la mention explicite CORE_CHANGE_CANDIDATE, sans l'interpréter."""
     out_file = out_root / case_id / "core_change_candidate.json"
     out_file.parent.mkdir(parents=True, exist_ok=True)
-    out_file.write_text(json.dumps({
+    data = {
         "schema_version": SCHEMA_VERSION,
         "case_id": case_id,
         "signal": "CORE_CHANGE_CANDIDATE",
         "reason": reason,
         "agent_final_text": agent_final_text,
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    }
+    if agent_final_summary is not None:
+        data["agent_final_summary"] = agent_final_summary
+    out_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     return out_file
 
 
@@ -1985,6 +2187,8 @@ def process_case(
     allowed_tools: str,
     permission_mode: str,
     force: bool,
+    restricted: bool = True,
+    max_budget_usd: float = DEFAULT_MAX_BUDGET_USD,
     expected_core_changes_root: "Path | None" = None,
     pipeline_runs_root: "Path | None" = None,
     core_change_candidates_root: "Path | None" = None,
@@ -2046,17 +2250,20 @@ def process_case(
         case_id=case_id, branch=branch, worktree_path=worktree_path,
         prompt_text=prompt_text, allowed_tools=allowed_tools,
         permission_mode=permission_mode, timeout_s=claude_timeout_s,
+        restricted=restricted, max_budget_usd=max_budget_usd,
     )
     run_result_path = write_run_result(invocation, out_root=codex_runs_root, force=force)
     artifacts[STAGE_CLAUDE_INVOCATION] = str(run_result_path)
-    agent_summary = " ".join((invocation.agent_final_text or "").split())[:_MAX_NO_CHANGES_REASON_CHARS]
+    agent_text_start = " ".join((invocation.agent_final_text or "").split())[:_MAX_NO_CHANGES_REASON_CHARS]
+    agent_summary = invocation.agent_final_summary or agent_text_start
 
     if invocation.declares_core_change_candidate:
         try:
             candidate_path = write_core_change_candidate(
-                case_id, agent_summary or "CORE_CHANGE_CANDIDATE déclaré",
+                case_id, agent_text_start or "CORE_CHANGE_CANDIDATE déclaré",
                 invocation.agent_final_text or "",
                 out_root=core_change_candidates_root or codex_runs_root.parent / "core_change_candidates",
+                agent_final_summary=invocation.agent_final_summary,
             )
             artifacts[STAGE_CORE_CHANGE_CANDIDATE] = str(candidate_path)
         except OSError as exc:
@@ -2082,11 +2289,20 @@ def process_case(
     artifacts[STAGE_STATIC_VALIDATION] = str(static_validation_path)
 
     static_data, _ = _load_json(static_validation_path)
-    static_verdict = (static_data or {}).get("verdict")
+    static_verdict = static_data.get("verdict") if isinstance(static_data, dict) else None
     if static_verdict != "ACCEPTED":
+        stop_reason = f"validation_static.json.verdict={static_verdict!r} (\"ACCEPTED\" requis)"
+        reasons = static_data.get("reasons") if isinstance(static_data, dict) else None
+        if isinstance(reasons, list) and reasons and isinstance(reasons[0], str):
+            # Première raison : espaces normalisés, 200 caractères au maximum.
+            first_reason = " ".join(reasons[0].split())[:200]
+            if first_reason:
+                stop_reason += f" — {first_reason}"
+                if len(reasons) > 1:
+                    stop_reason += f" (+{len(reasons) - 1} raison(s) supplémentaire(s))"
         return CaseRunSummary(
             case_id=case_id, deferred=False, stopped_at=STAGE_STATIC_VALIDATION,
-            stop_reason=f"validation_static.json.verdict={static_verdict!r} (\"ACCEPTED\" requis)",
+            stop_reason=stop_reason,
             is_error=False, artifacts=artifacts, warnings=warnings,
         )
 
@@ -2228,10 +2444,13 @@ def run_autofix_pipeline(
     claude_timeout_s: float = DEFAULT_CLAUDE_TIMEOUT_S,
     allowed_tools: str = DEFAULT_ALLOWED_TOOLS,
     permission_mode: str = DEFAULT_PERMISSION_MODE,
+    restricted: bool = True,
+    max_budget_usd: float = DEFAULT_MAX_BUDGET_USD,
     force: bool = False,
     run_upstream: bool = True,
     import_fleet: bool = False,
     max_upstream_cases: int = DEFAULT_MAX_UPSTREAM_CASES,
+    retry_previous_failures: bool = False,
     run_downstream: bool = True,
     lock_stale_after_s: float = DEFAULT_LOCK_STALE_AFTER_S,
 ) -> "tuple[list[DownstreamCaseSummary], list[UpstreamCaseSummary], list[CaseRunSummary]]":
@@ -2250,6 +2469,10 @@ def run_autofix_pipeline(
         raise AutofixOrchestratorError(f"--max-cases doit être >= 1 ({max_cases} fourni)")
     if max_upstream_cases < 1:
         raise AutofixOrchestratorError(f"--max-upstream-cases doit être >= 1 ({max_upstream_cases} fourni)")
+    if (isinstance(max_budget_usd, bool) or not isinstance(max_budget_usd, (int, float))
+            or max_budget_usd < 0
+            or (isinstance(max_budget_usd, float) and not math.isfinite(max_budget_usd))):
+        raise AutofixOrchestratorError(f"--max-budget-usd doit être un nombre fini >= 0 ({max_budget_usd!r} fourni)")
     if lock_stale_after_s <= 0:
         raise AutofixOrchestratorError(f"--lock-stale-after-s doit être > 0 ({lock_stale_after_s} fourni)")
 
@@ -2297,6 +2520,12 @@ def run_autofix_pipeline(
                 prompts_root=prompts_root,
                 worktrees_root=worktrees_root,
                 pipeline_runs_root=pipeline_runs_root,
+                confidence_scores_root=confidence_scores_root,
+                static_validations_root=static_validations_root,
+                human_reviews_root=human_reviews_root,
+                merge_reviews_root=merge_reviews_root,
+                merge_results_root=merge_results_root,
+                retry_previous_failures=retry_previous_failures,
                 import_fleet=import_fleet,
                 max_upstream_cases=max_upstream_cases,
             )
@@ -2330,6 +2559,8 @@ def run_autofix_pipeline(
                 claude_timeout_s=claude_timeout_s,
                 allowed_tools=allowed_tools,
                 permission_mode=permission_mode,
+                restricted=restricted,
+                max_budget_usd=max_budget_usd,
                 force=force,
                 expected_core_changes_root=expected_core_changes_root,
                 pipeline_runs_root=pipeline_runs_root,

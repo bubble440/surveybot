@@ -60,7 +60,7 @@ Survey/autofix/autofix_worktree.py, et pour l'étape aval : Survey/autofix/patch
 Survey/autofix/merge_executor.py).
 
 Codes de sortie : 0 (succès, aucune erreur), 1 (au moins un case en erreur, ou
---max-cases/--max-upstream-cases/--lock-stale-after-s invalide), 3 (verrou
+--max-cases/--max-upstream-cases/--lock-stale-after-s/--max-budget-usd invalide), 3 (verrou
 d'exclusion déjà détenu par une autre invocation — pas une erreur d'usage).
 
 Usage :
@@ -83,6 +83,7 @@ from Survey.autofix.autofix_orchestrator import (  # noqa: E402
     DEFAULT_ALLOWED_TOOLS,
     DEFAULT_CLAUDE_TIMEOUT_S,
     DEFAULT_LOCK_STALE_AFTER_S,
+    DEFAULT_MAX_BUDGET_USD,
     DEFAULT_MAX_CASES,
     DEFAULT_MAX_UPSTREAM_CASES,
     DEFAULT_PERMISSION_MODE,
@@ -119,10 +120,13 @@ def main(argv: "list[str] | None" = None) -> int:
     parser.add_argument("--claude-timeout-s", type=float, default=DEFAULT_CLAUDE_TIMEOUT_S, help=f"Budget de temps (s) de l'invocation Claude Code, défaut={DEFAULT_CLAUDE_TIMEOUT_S}")
     parser.add_argument("--allowed-tools", default=DEFAULT_ALLOWED_TOOLS, help=f"Liste d'outils autorisés pour Claude Code (--allowedTools), défaut={DEFAULT_ALLOWED_TOOLS!r}")
     parser.add_argument("--permission-mode", default=DEFAULT_PERMISSION_MODE, help=f"Mode de permission Claude Code (--permission-mode), défaut={DEFAULT_PERMISSION_MODE!r}")
+    parser.add_argument("--no-restricted", dest="restricted", action="store_false", default=True, help="Désactive --restricted pour l'invocation Claude Code (actif par défaut)")
+    parser.add_argument("--max-budget-usd", type=float, default=DEFAULT_MAX_BUDGET_USD, help=f"Plafond de dépense Claude Code en dollars par session (défaut : {DEFAULT_MAX_BUDGET_USD:g} USD ; 0 désactive le plafond)")
     parser.add_argument("--force", action="store_true", help="Régénère un artefact déjà existant pour un case traité dans cette invocation (jamais un écrasement silencieux)")
     parser.add_argument("--no-upstream", dest="upstream", action="store_false", default=True, help="Désactive l'étape amont (failure_cases -> worktree) — restaure le comportement d'avant cette étape (worktree.json/prompt.txt déjà présents restent une précondition manuelle)")
     parser.add_argument("--import-fleet", action="store_true", help="Avant l'étape amont, importe les failure_cases disponibles côté stockage fleet (Survey/autofix/fleet_case_import.py) — désactivé par défaut, exige FLEET_R2_* dans l'environnement ; un échec est un avertissement, jamais un arrêt")
     parser.add_argument("--max-upstream-cases", type=int, default=DEFAULT_MAX_UPSTREAM_CASES, help=f"Nombre maximum de DIAGNOSTICS (Phase 4) réellement nouveaux tentés par invocation — un case déjà diagnostiqué n'est pas compté (défaut : {DEFAULT_MAX_UPSTREAM_CASES}, conservateur car la Phase 4 lance un vrai Chromium isolé pour un case stage=\"action\")")
+    parser.add_argument("--retry-previous-failures", action="store_true", help="Ignore les échecs historiques pour cette invocation, y compris les cases déjà arrêtés comme doublons historiques")
     parser.add_argument("--no-downstream", dest="downstream", action="store_false", default=True, help="Désactive l'étape aval (décision Telegram -> commit -> merge local) — restaure le comportement d'avant cette étape")
     parser.add_argument("--lock-stale-after-s", type=float, default=DEFAULT_LOCK_STALE_AFTER_S, help=f"Âge (s) au-delà duquel un verrou d'exclusion (point 0) déjà présent est considéré abandonné et repris avec un avertissement (défaut : {DEFAULT_LOCK_STALE_AFTER_S}, généreux — doit rester supérieur au temps maximal théorique d'une invocation)")
     args = parser.parse_args(argv)
@@ -149,10 +153,13 @@ def main(argv: "list[str] | None" = None) -> int:
             claude_timeout_s=args.claude_timeout_s,
             allowed_tools=args.allowed_tools,
             permission_mode=args.permission_mode,
+            restricted=args.restricted,
+            max_budget_usd=args.max_budget_usd,
             force=args.force,
             run_upstream=args.upstream,
             import_fleet=args.import_fleet,
             max_upstream_cases=args.max_upstream_cases,
+            retry_previous_failures=args.retry_previous_failures,
             run_downstream=args.downstream,
             lock_stale_after_s=args.lock_stale_after_s,
         )

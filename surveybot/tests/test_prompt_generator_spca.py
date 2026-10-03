@@ -80,6 +80,7 @@ class PromptGeneratorSpcaTests(unittest.TestCase):
         self.assertIn("Survey/BOT_EVOLUTION_MEMORY.md", result.content)
         self.assertIn("La Phase 11-A compare la baseline, base_sha et le patch", result.content)
         self.assertIn("ne crée pas toi-même la déclaration", result.content)
+        self.assertIn("Termine ta réponse finale par une dernière ligne unique « RÉSUMÉ : <conclusion> »", result.content)
         self.assertEqual((diag_dir / "diagnosis.json").read_bytes(), before)
 
     def test_action_prompt_preserves_three_outcomes_cta_and_headless_boundary(self) -> None:
@@ -100,6 +101,7 @@ class PromptGeneratorSpcaTests(unittest.TestCase):
         self.assertIn("Le worker local/dev diagnostique", result.content)
         self.assertIn("liste explicite de Survey/external_fix_loader.py", result.content)
         self.assertIn("Titre de commit suggéré", result.content)
+        self.assertIn("Termine ta réponse finale par une dernière ligne unique « RÉSUMÉ : <conclusion> »", result.content)
 
     def test_action_dispatcher_steps_are_optional_bounded_facts_in_prompt(self) -> None:
         diag_dir, selection_dir = self._case("synthetic_dispatch_steps", stage="action")
@@ -123,6 +125,69 @@ class PromptGeneratorSpcaTests(unittest.TestCase):
         self.assertEqual(enriched.count("- strategy=radio_main result=failed"), 20)
         self.assertNotIn("secret question/answer/label", enriched)
         self.assertNotIn("private.example", enriched)
+
+    def test_action_prompt_accepts_only_closed_click_failure_reasons(self) -> None:
+        diag_dir, selection_dir = self._case("synthetic_click_failure_reasons", stage="action")
+        path = diag_dir / "diagnosis.json"
+        diagnosis = json.loads(path.read_text(encoding="utf-8"))
+        valid = [
+            "click=native_failed", "click=hover_failed",
+            "click=native_failed reason=not_visible",
+            "click=hover_failed reason=intercepted",
+            "click=native_failed reason=not_enabled",
+            "click=hover_failed reason=unstable",
+            "click=native_failed reason=detached",
+        ]
+        invalid = [
+            "click=native_failed reason=unknown",
+            "click=hover_failed reason=detached secret answer",
+            "click=native_failed reason=not_visible\nsecret answer",
+            "click=other_failed reason=detached",
+            "click=native_failed reason=detached_more",
+        ]
+        diagnosis["real_dispatch_replay"] = {"dispatcher_steps": valid + invalid}
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        content = generate_prompt(diag_dir, selection_dir).content
+        for step in valid:
+            self.assertIn(f"- {step}\n", content)
+        for step in invalid:
+            self.assertNotIn(f"- {step}\n", content)
+        self.assertNotIn("secret answer", content)
+
+    def test_action_target_shapes_enrich_only_action_prompt(self) -> None:
+        diag_dir, selection_dir = self._case("synthetic_action_shapes", stage="action")
+        original = generate_prompt(diag_dir, selection_dir).content
+        path = diag_dir / "diagnosis.json"
+        diagnosis = json.loads(path.read_text(encoding="utf-8"))
+        diagnosis["real_dispatch_replay"] = {"target_shapes": [{
+            "kind": "group", "itype": "radio", "frame_chain_present": True,
+            "frame_depth": 1, "options_count": 2, "group_key_shape": "radio:name:dom:<GROUP>",
+            "locator_shapes": [{"shape": "//*[@id=<LITERAL>]/ancestor::*[@class=' answer_options ']",
+                                "count": 2}],
+        }]}
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        enriched = generate_prompt(diag_dir, selection_dir).content
+        self.assertIn("Forme des cibles observée dans le registre", enriched)
+        self.assertIn("groupe=radio:name:dom:<GROUP>", enriched)
+        self.assertIn("localisateur (2 occurrence(s))", enriched)
+        self.assertIn("answer_options", enriched)
+        self.assertIn("Les tests doivent reproduire la forme réelle des cibles", enriched)
+        self.assertIn("signale toute hypothèse sur cette forme", enriched)
+        self.assertNotIn("Forme des cibles observée dans le registre", original)
+        self.assertNotIn("Les tests doivent reproduire la forme réelle des cibles", original)
+
+        diagnosis["real_dispatch_replay"]["target_shapes"][0]["locator_shapes"][0]["shape"] = (
+            '//*[@id="private_id"]'
+        )
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        self.assertEqual(generate_prompt(diag_dir, selection_dir).content, original)
+
+        diagnosis["stage"] = "extraction"
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        extraction_with_key = generate_prompt(diag_dir, selection_dir).content
+        diagnosis["real_dispatch_replay"].pop("target_shapes")
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        self.assertEqual(generate_prompt(diag_dir, selection_dir).content, extraction_with_key)
 
     def test_dispatcher_steps_do_not_change_extraction_prompt(self) -> None:
         diag_dir, selection_dir = self._case("synthetic_extraction_dispatch_steps")
@@ -174,8 +239,21 @@ class PromptGeneratorSpcaTests(unittest.TestCase):
         diagnosis["real_dispatch_replay"]["execute_scripts"] = False
         path.write_text(json.dumps(diagnosis), encoding="utf-8")
         enriched = generate_prompt(diag_dir, selection_dir).content
-        self.assertIn("les scripts de la page sont désactivés dans le document figé", enriched)
-        self.assertIn("un état posé par le JavaScript du site", enriched)
+        replay_fact = (
+            "L'incident d'origine a été capturé par le bot en exécution réelle, avec les scripts "
+            "de la page actifs. Seule la réexécution de diagnostic charge le document figé sans "
+            "scripts : elle ne peut reproduire ni confirmer un état créé par le JavaScript du site. "
+            "Cette limite du rejeu n'explique pas l'incident d'origine et ne prouve pas que "
+            "l'échec rapporté était attendu."
+        )
+        self.assertEqual(
+            enriched,
+            original.replace(
+                "\n\nFichiers probablement concernés :",
+                f"\n\n{replay_fact}\n\nFichiers probablement concernés :",
+                1,
+            ),
+        )
 
         diagnosis["real_dispatch_replay"]["execute_scripts"] = True
         path.write_text(json.dumps(diagnosis), encoding="utf-8")

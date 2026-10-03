@@ -240,6 +240,11 @@ _MAX_RESOURCES_PER_ARTIFACT = 200
 _MAX_ACTION_TARGETS = 40
 _MAX_COMPARED_BLOCKS = 200
 _EXTRACTION_LOCK = threading.Lock()
+_MAX_SHAPE_TARGETS = 8
+_MAX_SHAPE_OPTIONS = 64
+_MAX_SHAPE_FORMS = 8
+_MAX_SHAPE_LOCATOR_CHARS = 512
+_MAX_SHAPE_CHARS = 3000
 
 # Budget max de faits d'état runtime restaurés (la capture est déjà bornée à 40).
 _MAX_RUNTIME_FACTS = 60
@@ -762,6 +767,76 @@ def extract_case_blocks(page: Any, case_dir: Union[str, Path]) -> CaseExtraction
     return result
 
 
+def summarize_action_target_shapes(targets: Dict[str, Optional[Dict[str, Any]]]) -> Optional[list]:
+    """Faits structurels bornés des cibles du plan ; aucune clé ni charge utile brute."""
+    def abandon() -> None:
+        log_debug(_TAG, "résumé du registre omis : borne dépassée ou forme non exploitable")
+        return None
+
+    try:
+        if not targets or len(targets) > _MAX_SHAPE_TARGETS:
+            return abandon()
+        summary = []
+        for payload in targets.values():
+            if not isinstance(payload, dict):
+                return abandon()
+            kind = payload.get("kind")
+            itype = payload.get("itype")
+            if kind not in ("group", "single", "multi", "date") or itype not in (
+                "radio", "checkbox", "text", "textarea", "number", "select", "date", "button"
+            ):
+                return abandon()
+            chain = payload.get("frame_chain")
+            if chain is not None and not isinstance(chain, (list, tuple)):
+                return abandon()
+            if chain is not None and len(chain) > 8:
+                return abandon()
+            group_key = payload.get("group_key")
+            group_match = re.match(r"^(radio|checkbox):(name|fieldset):(?:(dom|dom_container):)?", group_key or "") if isinstance(group_key, str) else None
+            group_prefix = (group_match.group(0) + "<GROUP>") if group_match else None
+            option_map = payload.get("option_xpath_map")
+            if option_map is not None and not isinstance(option_map, dict):
+                return abandon()
+            if isinstance(option_map, dict) and len(option_map) > _MAX_SHAPE_OPTIONS:
+                return abandon()
+            counts: Dict[str, int] = {}
+            for locator in (option_map or {}).values():
+                if not isinstance(locator, str) or len(locator) > _MAX_SHAPE_LOCATOR_CHARS:
+                    return abandon()
+                def replace_literal(match: re.Match) -> str:
+                    value = match.group(2)
+                    before = locator[locator.rfind("[", 0, match.start()) + 1:match.start()]
+                    css_class = (
+                        "@class" in before
+                        and not re.search(r"@(id|name|value|href|src|title|aria-label)\b", before.split("@class")[-1])
+                        and re.fullmatch(r" [A-Za-z_][A-Za-z0-9_-]* ", value)
+                    )
+                    return match.group(0) if css_class else "<LITERAL>"
+                shape = re.sub(r"(['\"])(.*?)\1", replace_literal, locator)
+                if re.search(r"https?://|@[\w-]+\s*=\s*[A-Za-z_]|[\r\n]", shape, re.I):
+                    return abandon()
+                counts[shape] = counts.get(shape, 0) + 1
+                if len(counts) > _MAX_SHAPE_FORMS:
+                    return abandon()
+            item = {
+                "kind": kind, "itype": itype,
+                "frame_chain_present": chain is not None,
+                "frame_depth": len(chain or []),
+                "options_count": len(option_map or {}),
+                "group_key_shape": group_prefix,
+                "locator_shapes": [
+                    {"shape": shape, "count": count} for shape, count in sorted(counts.items())
+                ],
+            }
+            summary.append(item)
+        if len(json.dumps(summary, ensure_ascii=False)) > _MAX_SHAPE_CHARS:
+            return abandon()
+    except Exception as exc:
+        log_debug(_TAG, f"résumé du registre abandonné : {type(exc).__name__}")
+        return None
+    return summary
+
+
 # ── Dispatcher réel (3C.4) ────────────────────────────────────────────────────
 STATUS_SUCCESS = "SUCCESS"
 STATUS_FAILURE = "FAILURE"
@@ -796,6 +871,13 @@ _CLICK_LABELS = frozenset({
     "decipher_clickable_cell", "decipher_radio_clickable_cell", "interview_layout_btn",
     "sq_atm1d_widget", "target", "mat-radio-button", "mat-radio-container", "span", "input",
 })
+_CLICK_FAILURE_REASONS = (
+    ("detached", ("element is detached from", "element is not attached to the dom")),
+    ("intercepted", ("intercepts pointer events",)),
+    ("not_visible", ("element is not visible",)),
+    ("not_enabled", ("element is not enabled",)),
+    ("unstable", ("element is not stable",)),
+)
 
 
 def _safe_target_log(tag: Any, msg: Any) -> Optional[str]:
@@ -822,10 +904,13 @@ def _safe_target_log(tag: Any, msg: Any) -> Optional[str]:
             return "strategy=target_id verification=failed"
         if msg.startswith("Aucune stratégie n'a abouti"):
             return "strategy=none reason=no_strategy"
-        if msg.startswith("native click failed on "):
-            return "click=native_failed"
-        if msg.startswith("actionchains click failed on "):
-            return "click=hover_failed"
+        if msg.startswith("native click failed on ") or msg.startswith("actionchains click failed on "):
+            failure = "click=native_failed" if msg.startswith("native click failed on ") else "click=hover_failed"
+            detail = msg.partition(": ")[2].lower()
+            for reason, markers in _CLICK_FAILURE_REASONS:
+                if any(marker in detail for marker in markers):
+                    return f"{failure} reason={reason}"
+            return failure
     if tag == "[ACTION_FIX]":
         if re.fullmatch(r"selected fix_id=[a-z][a-z0-9_]{2,63}", msg):
             return f"action_fix {msg}"
@@ -850,11 +935,14 @@ def _capture_dispatcher_steps() -> Any:
 
     def add(line: str) -> None:
         nonlocal truncated
+        bounded_line = line[:_MAX_DISPATCH_STEP_CHARS]
+        if steps and bounded_line == steps[-1]:
+            return
         if len(steps) < _MAX_DISPATCH_STEPS:
-            steps.append(line[:_MAX_DISPATCH_STEP_CHARS])
+            steps.append(bounded_line)
         elif line.startswith("apply ok=false ") and line.endswith("reason=no_strategy"):
             steps[-2] = "capture=truncated"
-            steps[-1] = line[:_MAX_DISPATCH_STEP_CHARS]
+            steps[-1] = bounded_line
             truncated = True
         elif not truncated:
             steps[-1] = "capture=truncated"

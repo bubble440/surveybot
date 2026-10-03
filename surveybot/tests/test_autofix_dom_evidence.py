@@ -1,24 +1,156 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from Survey.autofix.autofix_worktree import dom_evidence_relative_dir, prepare_autofix_worktree
 from Survey.autofix.autofix_orchestrator import (
-    ClaudeInvocationResult, EligibleCase, SafetyOutcome, STATUS_FAILURE, STATUS_SUCCESS,
-    STAGE_CONFIDENCE_SCORE, STAGE_NO_CHANGES, _MAX_AGENT_FINAL_TEXT_CHARS,
-    STAGE_UPSTREAM_DIAGNOSIS, UpstreamCaseSummary, _worktree_terminal_state,
-    invoke_claude_headless, process_case, run_upstream_stage, write_pipeline_run_summary,
+    AutofixOrchestratorError, ClaudeInvocationResult, DEFAULT_MAX_BUDGET_USD,
+    EligibleCase, SafetyOutcome, STATUS_FAILURE, STATUS_SUCCESS,
+    STAGE_CLAUDE_INVOCATION, STAGE_CONFIDENCE_SCORE, STAGE_NO_CHANGES,
+    STAGE_STATIC_VALIDATION, _MAX_AGENT_FINAL_TEXT_CHARS,
+    STAGE_UPSTREAM_DIAGNOSIS, STAGE_UPSTREAM_HISTORY_DUPLICATE, UpstreamCaseSummary,
+    _diagnosis_signature, _worktree_terminal_state,
+    _extract_agent_final_summary, invoke_claude_headless, process_case,
+    run_autofix_pipeline, run_upstream_stage,
+    write_pipeline_run_summary, write_run_result,
 )
 from Survey.autofix.failure_diagnosis import DiagnosisError, get_code_fingerprint, write_diagnosis
 from Survey.autofix.human_review import HumanReviewError
 from Survey.autofix.prompt_generator import add_dom_evidence_context
+
+
+class AutofixHeadlessInvocationTests(unittest.TestCase):
+    def test_command_options_and_subprocess_contract(self) -> None:
+        scenarios = (
+            ({}, ["--restricted", "--max-budget-usd", "5.0"]),
+            ({"restricted": False}, ["--max-budget-usd", "5.0"]),
+            ({"max_budget_usd": 2.5}, ["--restricted", "--max-budget-usd", "2.5"]),
+            ({"max_budget_usd": 0}, ["--restricted"]),
+        )
+        base = ["claude", "-p", "--output-format", "json",
+                "--allowedTools", "Read Edit Write Grep Glob",
+                "--permission-mode", "acceptEdits", "--permission-prompts", "none"]
+        for options, suffix in scenarios:
+            with self.subTest(options=options), \
+                 patch("Survey.autofix.autofix_orchestrator.shutil.which", return_value="claude"), \
+                 patch("Survey.autofix.autofix_orchestrator.subprocess.run",
+                       return_value=subprocess.CompletedProcess([], 0,
+                           '{"is_error": false, "subtype": "success"}', "")) as run:
+                result = invoke_claude_headless(
+                    case_id="synthetic", branch="synthetic", worktree_path=Path("worktree"),
+                    prompt_text="synthetic prompt", **options,
+                )
+                self.assertEqual(result.command, base + suffix)
+                self.assertEqual(result.status, STATUS_SUCCESS)
+                run.assert_called_once_with(
+                    base + suffix, cwd="worktree", input="synthetic prompt",
+                    capture_output=True, text=True, encoding="utf-8", errors="replace",
+                    timeout=600.0, check=False,
+                )
+
+    def test_cost_and_turns_are_optional_validated_artifact_fields(self) -> None:
+        samples = (
+            ({"total_cost_usd": 1.25, "num_turns": 6}, (1.25, 6)),
+            ({}, (None, None)),
+            ({"total_cost_usd": "1.25", "num_turns": True}, (None, None)),
+            ({"total_cost_usd": -1, "num_turns": -2}, (None, None)),
+            ({"total_cost_usd": float("inf"), "num_turns": 2.5}, (None, None)),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            for index, (fields, expected) in enumerate(samples):
+                with self.subTest(fields=fields), \
+                     patch("Survey.autofix.autofix_orchestrator.shutil.which", return_value="claude"), \
+                     patch("Survey.autofix.autofix_orchestrator.subprocess.run",
+                           return_value=subprocess.CompletedProcess([], 0, json.dumps({
+                               "is_error": False, "subtype": "success", **fields,
+                           }), "")):
+                    result = invoke_claude_headless(
+                        case_id=f"synthetic_{index}", branch="synthetic",
+                        worktree_path=Path("worktree"), prompt_text="synthetic prompt",
+                    )
+                path = write_run_result(result, out_root=Path(directory))
+                artifact = json.loads(path.read_text(encoding="utf-8"))
+                for key, value in zip(("total_cost_usd", "num_turns"), expected):
+                    if value is None:
+                        self.assertNotIn(key, artifact)
+                    else:
+                        self.assertEqual(artifact[key], value)
+                self.assertEqual(artifact["schema_version"], "1.0")
+
+    def test_cli_reported_failure_keeps_subtype_and_stops(self) -> None:
+        for returncode, payload in (
+            (0, {"is_error": False, "subtype": "error_max_budget_usd",
+                 "total_cost_usd": 5.1, "num_turns": 12}),
+            (1, {"is_error": True, "subtype": "error_max_budget_usd",
+                 "total_cost_usd": 5.1, "num_turns": 12}),
+        ):
+            with self.subTest(returncode=returncode), \
+                 patch("Survey.autofix.autofix_orchestrator.shutil.which", return_value="claude"), \
+                 patch("Survey.autofix.autofix_orchestrator.subprocess.run",
+                       return_value=subprocess.CompletedProcess([], returncode, json.dumps(payload), "")):
+                result = invoke_claude_headless(
+                    case_id="synthetic", branch="synthetic", worktree_path=Path("worktree"),
+                    prompt_text="synthetic prompt",
+                )
+            self.assertEqual(result.status, STATUS_FAILURE)
+            self.assertIn("error_max_budget_usd", result.error)
+            self.assertEqual(result.as_dict()["total_cost_usd"], 5.1)
+            self.assertEqual(result.as_dict()["num_turns"], 12)
+
+    def test_budget_validation_and_cli_options(self) -> None:
+        from tools.run_autofix_pipeline import main
+
+        with patch("tools.run_autofix_pipeline.run_autofix_pipeline", return_value=([], [], [])) as run:
+            self.assertEqual(main([]), 0)
+            self.assertTrue(run.call_args.kwargs["restricted"])
+            self.assertEqual(run.call_args.kwargs["max_budget_usd"], DEFAULT_MAX_BUDGET_USD)
+            self.assertEqual(main(["--no-restricted", "--max-budget-usd", "0"]), 0)
+            self.assertFalse(run.call_args.kwargs["restricted"])
+            self.assertEqual(run.call_args.kwargs["max_budget_usd"], 0)
+            self.assertEqual(main(["--max-budget-usd", "2.5"]), 0)
+            self.assertEqual(run.call_args.kwargs["max_budget_usd"], 2.5)
+
+        for invalid in ("-1", "nan", "inf"):
+            with self.subTest(invalid=invalid), redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(main(["--max-budget-usd", invalid]), 1)
+                self.assertIn("--max-budget-usd doit être un nombre fini >= 0", stderr.getvalue())
+        with redirect_stderr(io.StringIO()) as stderr, self.assertRaises(SystemExit) as raised:
+            main(["--max-budget-usd", "invalid"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--max-budget-usd", stderr.getvalue())
+        self.assertIn("invalid float value", stderr.getvalue())
+        for invalid in (-1, "invalid", float("nan")):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(
+                AutofixOrchestratorError, "--max-budget-usd doit être un nombre fini >= 0"
+            ):
+                invoke_claude_headless(
+                    case_id="synthetic", branch="synthetic", worktree_path=Path("worktree"),
+                    prompt_text="synthetic prompt", max_budget_usd=invalid,
+                )
+
+    def test_pipeline_forwards_invocation_options(self) -> None:
+        case = EligibleCase("synthetic", Path("manifest.json"), Path("prompt.txt"))
+        summary = SimpleNamespace(case_id="synthetic")
+        with patch("Survey.autofix.autofix_orchestrator.acquire_lock", return_value=object()), \
+             patch("Survey.autofix.autofix_orchestrator.release_lock"), \
+             patch("Survey.autofix.autofix_orchestrator.discover_eligible_cases", return_value=[case]), \
+             patch("Survey.autofix.autofix_orchestrator.process_case", return_value=summary) as process, \
+             patch("Survey.autofix.autofix_orchestrator.write_pipeline_run_summary"):
+            _, _, results = run_autofix_pipeline(
+                run_upstream=False, run_downstream=False, restricted=False, max_budget_usd=2.5,
+            )
+        self.assertEqual(results, [summary])
+        self.assertFalse(process.call_args.kwargs["restricted"])
+        self.assertEqual(process.call_args.kwargs["max_budget_usd"], 2.5)
 
 
 class AutofixDomEvidenceTests(unittest.TestCase):
@@ -297,9 +429,26 @@ class AutofixDomEvidenceTests(unittest.TestCase):
         self.assertEqual(captured["worktree_path"], result.worktree_path)
         self.assertEqual(captured["allowed_tools"], "Read Edit Write Grep Glob")
         self.assertEqual(captured["permission_mode"], "acceptEdits")
+        self.assertTrue(captured["restricted"])
+        self.assertEqual(captured["max_budget_usd"], DEFAULT_MAX_BUDGET_USD)
+
+    def test_budget_failure_stops_before_validation(self) -> None:
+        prepared, _ = self._prepare("synthetic_budget_failure", {})
+        output = json.dumps({"is_error": True, "subtype": "error_max_budget_usd"})
+        with patch("Survey.autofix.autofix_orchestrator._check_case_parallel_safety",
+                   return_value=SafetyOutcome(checked=True, safe=True, reason=None)), \
+             patch("Survey.autofix.autofix_orchestrator.shutil.which", return_value="claude"), \
+             patch("Survey.autofix.autofix_orchestrator.subprocess.run",
+                   return_value=subprocess.CompletedProcess([], 1, output, "")), \
+             patch("Survey.autofix.autofix_orchestrator.write_static_validation") as validate:
+            summary = self._process_prepared_case(prepared)
+        self.assertEqual(summary.stopped_at, STAGE_CLAUDE_INVOCATION)
+        self.assertTrue(summary.is_error)
+        self.assertIn("error_max_budget_usd", summary.stop_reason)
+        validate.assert_not_called()
 
     def test_agent_final_text_is_bounded_and_explicit_candidate_is_detected(self) -> None:
-        text = "a" * (_MAX_AGENT_FINAL_TEXT_CHARS + 1) + " CORE_CHANGE_CANDIDATE"
+        text = "a" * (_MAX_AGENT_FINAL_TEXT_CHARS + 1) + " CORE_CHANGE_CANDIDATE\nRÉSUMÉ : candidat à examiner"
         output = json.dumps({"is_error": False, "result": text})
         with patch("Survey.autofix.autofix_orchestrator.shutil.which", return_value="claude"), \
              patch("Survey.autofix.autofix_orchestrator.subprocess.run",
@@ -310,7 +459,66 @@ class AutofixDomEvidenceTests(unittest.TestCase):
             )
         self.assertEqual(invocation.status, STATUS_SUCCESS)
         self.assertEqual(len(invocation.as_dict()["agent_final_text"]), _MAX_AGENT_FINAL_TEXT_CHARS)
+        self.assertEqual(invocation.as_dict()["agent_final_summary"], "candidat à examiner")
         self.assertTrue(invocation.declares_core_change_candidate)
+
+    def test_agent_final_summary_uses_last_matching_tail_line_and_sanitizes(self) -> None:
+        for line in ("RÉSUMÉ : bref", "resume:bref", "  r É s u m e  :  bref  "):
+            with self.subTest(line=line):
+                self.assertEqual(_extract_agent_final_summary(line), "bref")
+        self.assertEqual(
+            _extract_agent_final_summary("RÉSUMÉ : ancien\ntexte\nReSuMe :  conclusion \x00 finale\t "),
+            "conclusion finale",
+        )
+        self.assertEqual(_extract_agent_final_summary("RÉSUMÉ : " + "x" * 205), "x" * 200)
+        self.assertIsNone(_extract_agent_final_summary("aucune ligne conforme"))
+        self.assertIsNone(_extract_agent_final_summary("RÉSUMÉ : ancien\n" + "bruit\n" * 10))
+
+    def test_static_rejection_reason_uses_first_bounded_reason_only_when_readable(self) -> None:
+        base = 'validation_static.json.verdict=\'REJECTED\' ("ACCEPTED" requis)'
+        scenarios = (
+            ("one", {"verdict": "REJECTED", "reasons": ["lint : outil absent"]},
+             base + " — lint : outil absent"),
+            ("many", {"verdict": "REJECTED", "reasons": ["compile : échec", "lint : échec", "tests : échec"]},
+             base + " — compile : échec (+2 raison(s) supplémentaire(s))"),
+            ("long", {"verdict": "REJECTED", "reasons": ["  lint\n\t" + "x" * 205]},
+             base + " — lint " + "x" * 195),
+            ("empty", {"verdict": "REJECTED", "reasons": []}, base),
+            ("blank", {"verdict": "REJECTED", "reasons": [" \n\t "]}, base),
+            ("missing", {"verdict": "REJECTED"}, base),
+            ("unreadable", "{invalid json", "validation_static.json.verdict=None (\"ACCEPTED\" requis)"),
+            ("malformed", ["unexpected"], "validation_static.json.verdict=None (\"ACCEPTED\" requis)"),
+            ("unknown", {"verdict": "UNKNOWN", "reasons": []},
+             "validation_static.json.verdict='UNKNOWN' (\"ACCEPTED\" requis)"),
+        )
+        for suffix, artifact, expected in scenarios:
+            with self.subTest(suffix=suffix):
+                prepared, _ = self._prepare("synthetic_static_" + suffix, {})
+                invocation = ClaudeInvocationResult(
+                    case_id=prepared.case_id, branch=prepared.branch,
+                    worktree_path=str(prepared.worktree_path), status=STATUS_SUCCESS,
+                    exit_code=0, timed_out=False, session_id=None, is_error=False,
+                    subtype="success", command=[], raw_stdout="{}", raw_stderr="", error=None,
+                )
+                static_path = self.root / "static" / prepared.case_id / "validation_static.json"
+                static_path.parent.mkdir(parents=True, exist_ok=True)
+                content = artifact if isinstance(artifact, str) else json.dumps(artifact)
+                static_path.write_text(content, encoding="utf-8")
+                with patch("Survey.autofix.autofix_orchestrator._check_case_parallel_safety",
+                           return_value=SafetyOutcome(checked=True, safe=True, reason=None)), \
+                     patch("Survey.autofix.autofix_orchestrator.invoke_claude_headless",
+                           return_value=invocation), \
+                     patch("Survey.autofix.autofix_orchestrator.write_static_validation",
+                           return_value=static_path), \
+                     patch("Survey.autofix.autofix_orchestrator.write_patch_replay") as replay:
+                    summary = self._process_prepared_case(prepared)
+                self.assertEqual(summary.stop_reason, expected)
+                self.assertEqual(summary.stopped_at, STAGE_STATIC_VALIDATION)
+                self.assertFalse(summary.is_error)
+                self.assertEqual(static_path.read_text(encoding="utf-8"), content)
+                replay.assert_not_called()
+                output = write_pipeline_run_summary(summary, out_root=self.root / "pipeline")
+                self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["stop_reason"], expected)
 
     def test_empty_diff_stops_notifies_once_and_is_terminal(self) -> None:
         result, _ = self._prepare("synthetic_no_changes", {})
@@ -346,10 +554,50 @@ class AutofixDomEvidenceTests(unittest.TestCase):
         confidence.assert_not_called()
         run_data = json.loads((self.root / "runs" / result.case_id / "run_result.json").read_text(encoding="utf-8"))
         self.assertEqual(run_data["agent_final_text"], final_text)
+        self.assertNotIn("agent_final_summary", run_data)
         candidate = json.loads(Path(first.artifacts["core_change_candidate"]).read_text(encoding="utf-8"))
         self.assertEqual(candidate["case_id"], result.case_id)
         self.assertEqual(candidate["signal"], "CORE_CHANGE_CANDIDATE")
         self.assertEqual(candidate["reason"], final_text)
+        self.assertEqual(candidate["agent_final_text"], final_text)
+        self.assertNotIn("agent_final_summary", candidate)
+        self.assertEqual(first.stop_reason, final_text)
+        self.assertEqual(
+            notify.call_args.args[0],
+            f"Autofix case={result.case_id} : aucun changement. {final_text}\n"
+            f"Artefact : {first.artifacts['core_change_candidate']}",
+        )
+
+    def test_empty_diff_uses_final_summary_for_reason_notification_and_candidate(self) -> None:
+        result, _ = self._prepare("synthetic_summary_no_changes", {})
+        final_text = "Introduction longue sans conclusion utile. CORE_CHANGE_CANDIDATE\nRÉSUMÉ : Aucun correctif fiable établi."
+        invocation = ClaudeInvocationResult(
+            case_id=result.case_id, branch=result.branch, worktree_path=str(result.worktree_path),
+            status=STATUS_SUCCESS, exit_code=0, timed_out=False, session_id=None,
+            is_error=False, subtype="success", command=[], raw_stdout="{}", raw_stderr="",
+            error=None, agent_final_text=final_text, agent_final_summary="Aucun correctif fiable établi.",
+            declares_core_change_candidate=True,
+        )
+        with patch("Survey.autofix.autofix_orchestrator._check_case_parallel_safety",
+                   return_value=SafetyOutcome(checked=True, safe=True, reason=None)), \
+             patch("Survey.autofix.autofix_orchestrator.invoke_claude_headless", return_value=invocation), \
+             patch("Survey.autofix.autofix_orchestrator.write_static_validation",
+                   side_effect=lambda *_args, **_kwargs: self._write_synthetic_static(result.case_id, [])), \
+             patch("Survey.autofix.autofix_orchestrator.send_status_notification") as notify:
+            summary = self._process_prepared_case(result)
+        self.assertEqual(summary.stopped_at, STAGE_NO_CHANGES)
+        self.assertEqual(summary.stop_reason, "Aucun correctif fiable établi.")
+        self.assertEqual(
+            notify.call_args.args[0],
+            f"Autofix case={result.case_id} : aucun changement. Aucun correctif fiable établi.\n"
+            f"Artefact : {summary.artifacts['core_change_candidate']}",
+        )
+        run_data = json.loads((self.root / "runs" / result.case_id / "run_result.json").read_text(encoding="utf-8"))
+        self.assertEqual(run_data["agent_final_text"], final_text)
+        self.assertEqual(run_data["agent_final_summary"], "Aucun correctif fiable établi.")
+        candidate = json.loads(Path(summary.artifacts["core_change_candidate"]).read_text(encoding="utf-8"))
+        self.assertEqual(candidate["agent_final_summary"], "Aucun correctif fiable établi.")
+        self.assertTrue(candidate["reason"].startswith("Introduction longue"))
         self.assertEqual(candidate["agent_final_text"], final_text)
 
     def test_empty_diff_notification_failure_is_only_a_warning(self) -> None:
@@ -450,7 +698,39 @@ class AutofixUpstreamFingerprintTests(unittest.TestCase):
         path.write_text(json.dumps(data), encoding="utf-8")
         return path
 
-    def _invoke(self, *, budget=5, writer=None, fingerprint_unavailable=False):
+    def _structured_diagnosis(self, case_id: str, *, stage="action", fingerprint=None,
+                              steps=None, modules=None) -> Path:
+        path = self._diagnosis(case_id, self.fingerprint if fingerprint is None else fingerprint)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data.update({
+            "stage": stage, "itype": "radio",
+            "symptom": {"failure_types": ["action_not_applied"]},
+            "real_dispatch_replay": {"dispatcher_steps": steps if steps is not None else [
+                "strategy=target_id verification=failed",
+                "strategy=target_id verification=failed",
+                "apply ok=false strategy=none reason=no_strategy",
+            ]},
+            "modules_likely_involved": modules if modules is not None else [
+                {"module": "Survey/synthetic_extractor.py", "matched_signals": ["context_flag:synthetic_widget"]},
+            ],
+            "target_id": "internal_target_secret", "provider_domain": "private.example",
+        })
+        path.write_text(json.dumps(data), encoding="utf-8")
+        return path
+
+    def _historical_outcome(self, case_id: str, outcome: str) -> None:
+        roots = {
+            "REJECT": ("confidence", "confidence_score.json", {"confidence": "REJECT"}),
+            "NO_CHANGES": ("pipeline", "pipeline_run.json", {"stopped_at": "NO_CHANGES", "is_error": False}),
+            "STATIC_REJECTED": ("static", "validation_static.json", {"verdict": "REJECTED"}),
+        }
+        directory, filename, payload = roots[outcome]
+        path = self.root / directory / case_id / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+    def _invoke(self, *, budget=5, writer=None, fingerprint_unavailable=False,
+                retry_previous_failures=False):
         def write_synthetic(case_dir, *, out_root, force):
             return self._diagnosis(case_dir.name, self.fingerprint)
 
@@ -472,6 +752,12 @@ class AutofixUpstreamFingerprintTests(unittest.TestCase):
                 prompts_root=self.root / "prompts",
                 worktrees_root=self.root / "worktrees",
                 pipeline_runs_root=self.root / "pipeline",
+                confidence_scores_root=self.root / "confidence",
+                static_validations_root=self.root / "static",
+                human_reviews_root=self.root / "human",
+                merge_reviews_root=self.root / "merge_reviews",
+                merge_results_root=self.root / "merges",
+                retry_previous_failures=retry_previous_failures,
                 max_upstream_cases=budget,
             )
         return summaries, write, grouping, process
@@ -588,3 +874,119 @@ class AutofixUpstreamFingerprintTests(unittest.TestCase):
         grouping.assert_not_called()
         process.assert_not_called()
         self.assertEqual(summaries, [])
+
+    def test_historical_reject_stops_before_context_with_safe_artifact(self) -> None:
+        self._structured_diagnosis("case_old")
+        self._historical_outcome("case_old", "REJECT")
+        self._case("case_new")
+        self._structured_diagnosis("case_new")
+        with patch("Survey.autofix.autofix_orchestrator.log_info") as info, \
+             patch("Survey.autofix.autofix_orchestrator.send_status_notification") as notify:
+            summaries, write, _grouping, process = self._invoke()
+        write.assert_not_called()
+        process.assert_not_called()
+        notify.assert_not_called()
+        self.assertEqual(len([call for call in info.call_args_list
+                              if "historical_duplicate" in call.args[1]]), 1)
+        self.assertEqual(len(summaries), 1)
+        self.assertEqual(summaries[0].stopped_at, STAGE_UPSTREAM_HISTORY_DUPLICATE)
+        self.assertTrue(summaries[0].terminal)
+        artifact = json.loads((self.root / "pipeline" / "case_new" / "upstream_run.json").read_text(encoding="utf-8"))
+        self.assertEqual(artifact["equivalent_case_id"], "case_old")
+        self.assertEqual(artifact["equivalent_outcome"], "REJECT")
+        self.assertIn("--retry-previous-failures", artifact["retry_hint"])
+        self.assertNotIn("internal_target_secret", json.dumps(artifact))
+        self.assertNotIn("private.example", json.dumps(artifact))
+        for root in ("context", "prompts", "worktrees", "runs"):
+            self.assertFalse((self.root / root / "case_new").exists())
+
+    def test_historical_no_changes_and_static_rejection_are_reused(self) -> None:
+        self._structured_diagnosis("case_no_changes")
+        self._historical_outcome("case_no_changes", "NO_CHANGES")
+        self._structured_diagnosis("case_static_rejected", stage="extraction")
+        self._historical_outcome("case_static_rejected", "STATIC_REJECTED")
+        self._case("new_action")
+        self._structured_diagnosis("new_action")
+        self._case("new_extraction")
+        self._structured_diagnosis("new_extraction", stage="extraction")
+        summaries, _write, _grouping, process = self._invoke()
+        process.assert_not_called()
+        self.assertEqual(
+            {(s.case_id, s.equivalent_outcome) for s in summaries},
+            {("new_action", "NO_CHANGES"), ("new_extraction", "REJECTED")},
+        )
+
+    def test_changed_fingerprint_or_missing_signature_continues_normally(self) -> None:
+        self._structured_diagnosis("case_old", fingerprint={"base_sha": "b" * 40, "dirty": False})
+        self._historical_outcome("case_old", "REJECT")
+        for case_id in ("changed_code", "action_without_steps", "extraction_without_module"):
+            self._case(case_id)
+        self._structured_diagnosis("changed_code")
+        self._structured_diagnosis("action_without_steps", steps=[])
+        self._structured_diagnosis("extraction_without_module", stage="extraction", modules=[])
+        summaries, _write, _grouping, process = self._invoke()
+        self.assertEqual(process.call_count, 3)
+        self.assertTrue(all(s.stopped_at == "worktree" for s in summaries))
+
+    def test_merged_approved_and_in_flight_history_do_not_deduplicate(self) -> None:
+        for case_id in ("merged", "approved", "in_flight"):
+            self._structured_diagnosis(case_id)
+        self._historical_outcome("merged", "REJECT")
+        self._historical_outcome("approved", "REJECT")
+        for directory, case_id, filename, payload in (
+            ("merges", "merged", "merge_result.json", {"status": "MERGED"}),
+            ("human", "approved", "decision.json", {"decision": "APPROVED"}),
+        ):
+            path = self.root / directory / case_id / filename
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(payload), encoding="utf-8")
+        self._case("new_case")
+        self._structured_diagnosis("new_case")
+        summaries, _write, _grouping, process = self._invoke()
+        process.assert_called_once()
+        self.assertEqual(summaries[0].stopped_at, "worktree")
+
+    def test_history_limit_abandons_deduplication_and_retry_option_bypasses_it(self) -> None:
+        for case_id in ("old_a", "old_b"):
+            self._structured_diagnosis(case_id)
+            self._historical_outcome(case_id, "REJECT")
+        self._case("new_case")
+        self._structured_diagnosis("new_case")
+        with patch("Survey.autofix.autofix_orchestrator._MAX_COMPLETED_HISTORY_CASES", 1):
+            summaries, _write, _grouping, process = self._invoke()
+        process.assert_called_once()
+        self.assertEqual(summaries[0].stopped_at, "worktree")
+
+        # Une relance explicite ignore aussi un arrêt historical_duplicate déjà écrit.
+        run = self.root / "pipeline" / "new_case" / "upstream_run.json"
+        run.write_text(json.dumps({"terminal": True, "stopped_at": STAGE_UPSTREAM_HISTORY_DUPLICATE}), encoding="utf-8")
+        summaries, _write, _grouping, process = self._invoke(retry_previous_failures=True)
+        process.assert_called_once()
+        self.assertEqual(summaries[0].stopped_at, "worktree")
+
+    def test_signature_contains_only_technical_codes(self) -> None:
+        path = self._structured_diagnosis("action_signature", steps=[
+            "action_fix selected fix_id=secretname",
+            "action_fix selected fix_id=anothersecret",
+            "strategy=target_id verification=failed",
+        ])
+        diagnosis = json.loads(path.read_text(encoding="utf-8"))
+        signature = _diagnosis_signature(diagnosis)
+        self.assertIsNotNone(signature)
+        self.assertEqual(signature[-1], ("action_fix selected", "strategy=target_id verification=failed"))
+        for secret in ("secretname", "anothersecret", "internal_target_secret", "private.example"):
+            self.assertNotIn(secret, repr(signature))
+        path = self._structured_diagnosis("extraction_signature", stage="extraction")
+        diagnosis = json.loads(path.read_text(encoding="utf-8"))
+        self.assertIsNotNone(_diagnosis_signature(diagnosis))
+        diagnosis["modules_likely_involved"][0]["matched_signals"] = ["group_key=survey_private_answer"]
+        self.assertIsNone(_diagnosis_signature(diagnosis))
+
+    def test_cli_retry_option_is_explicit_and_disabled_by_default(self) -> None:
+        from tools.run_autofix_pipeline import main
+
+        with patch("tools.run_autofix_pipeline.run_autofix_pipeline", return_value=([], [], [])) as run:
+            self.assertEqual(main([]), 0)
+            self.assertFalse(run.call_args.kwargs["retry_previous_failures"])
+            self.assertEqual(main(["--retry-previous-failures"]), 0)
+            self.assertTrue(run.call_args.kwargs["retry_previous_failures"])

@@ -345,6 +345,7 @@ def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[di
             ReplayBrowserError,
             execute_case_action,
             extract_case_blocks,
+            summarize_action_target_shapes,
         )
     except Exception as exc:
         log_debug(_TAG, f"Survey.autofix.replay_browser indisponible — réexécution réelle non tentée : {exc}")
@@ -356,6 +357,7 @@ def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[di
                 case_dir, pre_action=True, execute_scripts=_ACTION_REPLAY_EXECUTE_SCRIPTS,
             )
             extraction = extract_case_blocks(page, case_dir)
+            target_shapes = summarize_action_target_shapes(getattr(extraction, "targets", {}))
             execution = execute_case_action(
                 page, case_dir, budget_s=_DEFAULT_DISPATCH_BUDGET_S, question_blocks=extraction.blocks,
             )
@@ -366,7 +368,7 @@ def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[di
         log_debug(_TAG, f"réexécution réelle du dispatcher a échoué : {type(exc).__name__}: {exc}")
         return None
 
-    return {
+    result = {
         "status": execution.status,
         "reason": execution.reason,
         "dispatcher_success": execution.dispatcher_success,
@@ -383,6 +385,9 @@ def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[di
         "dispatcher_steps": execution.dispatcher_steps,
         "execute_scripts": _ACTION_REPLAY_EXECUTE_SCRIPTS,
     }
+    if target_shapes is not None:
+        result["target_shapes"] = target_shapes
+    return result
 
 
 def _real_dispatch_confirms_persistence(real_dispatch_replay: Optional[dict]) -> bool:

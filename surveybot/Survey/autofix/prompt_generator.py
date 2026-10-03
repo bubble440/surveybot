@@ -148,6 +148,7 @@ Prépare la non-régression sur les DOMs de référence pertinents pour vérific
 Si le patch touche un CTA, appliquer la règle CTA_INTERCEPT_ONLY.
 Donne un nom à mettre comme titre du commit git.
 Après avoir écrit le patch et son test, ajoute une entrée dans Survey/BOT_EVOLUTION_MEMORY.md suivant exactement le format déjà documenté en tête de ce fichier (### nom, Fichier, Bug corrigé, Correction, Patterns couverts, Patterns exclus, Statut) — jamais un format inventé.
+Termine ta réponse finale par une dernière ligne unique « RÉSUMÉ : <conclusion> » : conclusion factuelle en français, de 200 caractères maximum après le libellé, sans retour à la ligne. Indique ce qui a été fait ou pourquoi aucun fichier n'a été modifié, sans texte de question, libellé ni valeur de réponse du sondage.
 """
 
 _STAGE_GUIDANCE = {
@@ -193,7 +194,8 @@ _DISPATCH_STEP_RE = re.compile(
     r"(?:apply ok=(?:true|false) strategy=[a-z][a-z0-9_]{0,63} reason=[a-z][a-z0-9_]{0,63}"
     r"|strategy=[a-z][a-z0-9_-]{0,63} (?:attempted|click=attempted|result=(?:success|failed)"
     r"|exception=[A-Za-z_][A-Za-z0-9_]{0,63}|verification=failed|reason=no_strategy)"
-    r"|click=(?:native_failed|hover_failed)|capture=truncated"
+    r"|click=(?:native_failed|hover_failed)(?: reason=(?:not_visible|intercepted|not_enabled|unstable|detached))?"
+    r"|capture=truncated"
     r"|action_fix (?:selected fix_id=[a-z][a-z0-9_]{2,63}"
     r"|verdict=(?:DECLINED|HANDLED_SUCCESS|HANDLED_FAILURE)))"
 )
@@ -252,6 +254,47 @@ def _render_issue_facts(issue: dict) -> str:
         elif key == "question":
             parts.append(f"intitulé : {val!r}")
     return "; ".join(parts)
+
+
+def _render_target_shapes(real_replay: dict) -> list[str]:
+    targets = real_replay.get("target_shapes")
+    if not isinstance(targets, list) or not 0 < len(targets) <= 8:
+        return []
+    lines = []
+    for target in targets:
+        if not isinstance(target, dict):
+            return []
+        kind, itype = target.get("kind"), target.get("itype")
+        depth, options = target.get("frame_depth"), target.get("options_count")
+        present, group = target.get("frame_chain_present"), target.get("group_key_shape")
+        forms = target.get("locator_shapes")
+        if (kind not in ("group", "single", "multi", "date")
+                or itype not in ("radio", "checkbox", "text", "textarea", "number", "select", "date", "button")
+                or type(present) is not bool or type(depth) is not int or not 0 <= depth <= 8
+                or type(options) is not int or not 0 <= options <= 64
+                or (group is not None and (not isinstance(group, str) or not re.fullmatch(
+                    r"(radio|checkbox):(name|fieldset):(?:(dom|dom_container):)?<GROUP>", group
+                )))
+                or not isinstance(forms, list) or len(forms) > 8):
+            return []
+        lines.append(
+            f"- bloc={kind}, champ={itype}, frames présentes={present}, profondeur={depth}, "
+            f"options={options}, groupe={group}"
+        )
+        for form in forms:
+            if not isinstance(form, dict):
+                return []
+            shape, count = form.get("shape"), form.get("count")
+            if (not isinstance(shape, str) or len(shape) > 512
+                    or re.search(r"https?://|[\r\n]|@[\w-]+\s*=\s*[A-Za-z_]", shape, re.I)
+                    or type(count) is not int or not 1 <= count <= 64):
+                return []
+            for literal in re.finditer(r"(['\"])(.*?)\1", shape):
+                before = shape[shape.rfind("[", 0, literal.start()) + 1:literal.start()]
+                if "@class" not in before or not re.fullmatch(r" [A-Za-z_][A-Za-z0-9_-]* ", literal.group(2)):
+                    return []
+            lines.append(f"  - localisateur ({count} occurrence(s)) : {shape}")
+    return lines if len("\n".join(lines)) <= 3000 else []
 
 
 def _build_bug_identifie(diagnosis: dict, code_files: "list[str]") -> str:
@@ -328,8 +371,11 @@ def _build_bug_identifie(diagnosis: dict, code_files: "list[str]") -> str:
         if isinstance(real_replay, dict) and real_replay.get("execute_scripts") is False:
             lines.append("")
             lines.append(
-                "Fait du rejeu réel : les scripts de la page sont désactivés dans le document figé ; "
-                "un état posé par le JavaScript du site lors du chargement n'y est pas reproductible."
+                "L'incident d'origine a été capturé par le bot en exécution réelle, avec les scripts "
+                "de la page actifs. Seule la réexécution de diagnostic charge le document figé sans "
+                "scripts : elle ne peut reproduire ni confirmer un état créé par le JavaScript du site. "
+                "Cette limite du rejeu n'explique pas l'incident d'origine et ne prouve pas que "
+                "l'échec rapporté était attendu."
             )
         raw_steps = real_replay.get("dispatcher_steps") if isinstance(real_replay, dict) else None
         if isinstance(raw_steps, list):
@@ -339,6 +385,11 @@ def _build_bug_identifie(diagnosis: dict, code_files: "list[str]") -> str:
                 lines.append("")
                 lines.append("Étapes techniques observées lors de la réexécution réelle du dispatcher :")
                 lines.extend(f"- {step}" for step in steps)
+        shape_lines = _render_target_shapes(real_replay) if isinstance(real_replay, dict) else []
+        if shape_lines:
+            lines.append("")
+            lines.append("Forme des cibles observée dans le registre après extraction du rejeu réel :")
+            lines.extend(shape_lines)
 
     lines.append("")
     lines.append("Fichiers probablement concernés :")
@@ -450,6 +501,15 @@ def generate_prompt(diagnosis_dir: "str | Path", context_selection_dir: "str | P
     prompt_text = _TEMPLATE.format(
         bug_identifie=bug_identifie, case_id=case_id, stage_guidance=stage_guidance
     )
+    real_replay = diagnosis.get("real_dispatch_replay")
+    if stage == "action" and isinstance(real_replay, dict) and _render_target_shapes(real_replay):
+        prompt_text = prompt_text.replace(
+            "La validation statique l'exécutera.\n",
+            "La validation statique l'exécutera.\n"
+            "Les tests doivent reproduire la forme réelle des cibles fournie dans BUG IDENTIFIÉ, "
+            "pas une forme simplifiée ou supposée ; signale toute hypothèse sur cette forme.\n",
+            1,
+        )
     commit_title = _suggest_commit_title(diagnosis, code_files)
     prompt_text += f"\nTitre de commit suggéré : {commit_title}\n"
 
