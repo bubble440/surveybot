@@ -199,6 +199,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlsplit, urlunsplit
 
+from Survey.action_fix_hook import observe_action_fix_successes
 from Survey.autofix.failure_case_builder import _failure_types as _report_failure_types
 from Survey.autofix.failure_replay import (
     VERDICT_DIFFERENT,
@@ -1082,6 +1083,7 @@ def _trace_replay_fallback(
     }
 
 
+@observe_action_fix_successes()
 def execute_case_action(
     page: Any,
     case_dir: Union[str, Path],

@@ -12,6 +12,7 @@ import re
 import unicodedata
 from typing import Any
 
+from Survey.action_fix_hook import successful_action_fixes
 from Survey.dom_registry import get_target
 from Survey.input_utils import is_checked
 from Survey.log_utils import log_debug
@@ -423,6 +424,76 @@ def _dispatcher_false_negative_issue(
     )
 
 
+def _action_fix_success_unconfirmed_issue(action: Any, *, driver) -> dict | None:
+    """QT seulement : un succès externe exige le marqueur UI déjà reconnu ici.
+
+    La forme group/option_xpath_map vient du registre de dom_analyzer. Toute
+    structure absente, ambiguë ou illisible reste indéterminée et est ignorée.
+    """
+    if not isinstance(action, dict) or driver is None:
+        return None
+    target_id = _norm(action.get("target_id"))
+    itype = _norm_lc(action.get("itype"))
+    value = _norm(action.get("value"))
+    if not target_id or itype not in {"radio", "checkbox"} or not value:
+        return None
+
+    payload = get_target(target_id)
+    prefix = f"{itype}:name:"
+    if (
+        not isinstance(payload, dict)
+        or payload.get("kind") != "group"
+        or payload.get("itype") != itype
+        or payload.get("frame_chain")
+        or not isinstance(payload.get("group_key"), str)
+        or not payload["group_key"].startswith(prefix)
+        or not payload["group_key"][len(prefix):]
+        or not _checkbox_radio_option_xpath(payload, value)
+    ):
+        return None
+
+    qt_class = "radioQT" if itype == "radio" else "checkboxQT"
+    visual_class = "option_radio" if itype == "radio" else "option_checkbox"
+    try:
+        current_frame = getattr(driver, "_current_frame", driver)
+        inputs = current_frame.query_selector_all(
+            f"div.answer_options > input.{qt_class}[type='checkbox']"
+        )
+        if not inputs or len(inputs) > 32:
+            return None
+        matching_rows = []
+        for input_el in inputs:
+            if input_el.get_attribute("name") != payload["group_key"][len(prefix):]:
+                continue
+            row = input_el.query_selector("xpath=..")
+            label = row.query_selector(".option_label") if row is not None else None
+            visual = row.query_selector(f".{visual_class}") if row is not None else None
+            if label is None or visual is None or _norm_lc(label.text_content()) != _norm_lc(value):
+                continue
+            question = row.query_selector("xpath=..")
+            classes = (question.get_attribute("class") or "").split() if question is not None else []
+            question_class = "radio_question" if itype == "radio" else "checkbox_question"
+            if "question" not in classes or question_class not in classes or "hidden_div" in classes:
+                continue
+            matching_rows.append(row)
+        if len(matching_rows) != 1:
+            return None
+        if matching_rows[0].query_selector(
+            ".option_radio.input_on, .option_checkbox.input_on, .option_label.input_label_on"
+        ) is not None:
+            return None
+    except Exception:
+        return None
+
+    return {
+        "failure_type": "action_fix_success_unconfirmed",
+        "target_id": target_id,
+        "itype": itype,
+        "value": value,
+        "dom_signal": "qt_visual_marker_absent",
+    }
+
+
 def validate_actions(
     actions: list[dict] | None,
     *,
@@ -522,6 +593,27 @@ def validate_actions(
                 "failure_type": "dispatcher_reported_failure",
                 "actions_count": len(requested),
             })
+
+    if requested and dispatcher_success is True and driver is not None:
+        successful_fixes = list(successful_action_fixes(driver))
+        for idx, action in enumerate(requested):
+            if not isinstance(action, dict):
+                continue
+            signature = (
+                _norm(action.get("qid")), _norm(action.get("target_id")),
+                _norm_lc(action.get("itype")), _norm_lc(action.get("value")),
+            )
+            for record_idx, record in enumerate(successful_fixes):
+                if signature != (
+                    _norm(record[0]), _norm(record[1]),
+                    _norm_lc(record[2]), _norm_lc(record[3]),
+                ):
+                    continue
+                del successful_fixes[record_idx]
+                issue = _action_fix_success_unconfirmed_issue(action, driver=driver)
+                if issue is not None:
+                    issues.append({"action_index": idx, "qid": _norm(action.get("qid")), **issue})
+                break
 
     return {
         "stage": "action",

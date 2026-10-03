@@ -675,6 +675,7 @@ def _install_extraction_observer() -> None:
 def _install_action_observer() -> None:
     try:
         import Survey.action_dispatcher as action_dispatcher
+        from Survey.action_fix_hook import observe_action_fix_successes
         from Survey.action_validator import validate_actions
         from Survey.failure_recorder import record_validation_failure
 
@@ -682,6 +683,7 @@ def _install_action_observer() -> None:
         if getattr(original, "_phase1a_observer", False):
             return
 
+        @observe_action_fix_successes()
         def observed_execute_actions_plan(driver, actions, *args, **kwargs):
             pre_action_dom = ""
             try:

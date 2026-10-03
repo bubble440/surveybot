@@ -9,7 +9,8 @@ from __future__ import annotations
 import math
 import re
 import time
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 from enum import Enum
 from types import MappingProxyType
 from typing import Any, Mapping
@@ -26,6 +27,7 @@ MAX_CANDIDATES = 8
 MAX_SELECTORS_PER_KIND = 8
 MAX_FRAME_DEPTH = 4
 DEFAULT_BUDGET_S = 0.25
+_ACTION_FIX_SUCCESSES = ContextVar("action_fix_successes", default=None)
 
 
 class ActionFixOutcome(Enum):
@@ -34,6 +36,34 @@ class ActionFixOutcome(Enum):
     DECLINED = "declined"
     HANDLED_SUCCESS = "handled_success"
     HANDLED_FAILURE = "handled_failure"
+
+
+@contextmanager
+def observe_action_fix_successes(*, driver: Any = None, recorded_actions: Any = ()):
+    """Isole les succès du plan ; en rejeu passif, reçoit leur provenance enregistrée."""
+    # Le rejeu réel peut appeler un dispatcher déjà enveloppé par page_snapshot.
+    # Les deux observateurs du même plan doivent voir les mêmes succès.
+    if driver is None and _ACTION_FIX_SUCCESSES.get() is not None:
+        yield
+        return
+    records = []
+    if driver is not None:
+        for action in recorded_actions:
+            if isinstance(action, Mapping):
+                records.append((driver, *(action.get(key) for key in (
+                    "qid", "target_id", "itype", "value"
+                ))))
+    token = _ACTION_FIX_SUCCESSES.set(records)
+    try:
+        yield
+    finally:
+        _ACTION_FIX_SUCCESSES.reset(token)
+
+
+def successful_action_fixes(driver: Any) -> tuple[tuple[Any, ...], ...]:
+    """Retourne les (qid, target_id, itype, value) traités sur ce pilote."""
+    records = _ACTION_FIX_SUCCESSES.get()
+    return tuple(record[1:] for record in records or () if record[0] is driver)
 
 
 def _log_selected_decision(fix: Any, outcome: ActionFixOutcome) -> None:
@@ -179,4 +209,13 @@ def run_action_fix_hook(
         return returned_outcome
     finally:
         if selected_fix is not None and returned_outcome is not None:
+            if returned_outcome is ActionFixOutcome.HANDLED_SUCCESS:
+                try:
+                    records = _ACTION_FIX_SUCCESSES.get()
+                    if records is not None:
+                        records.append((driver, *(parsed_action.get(key) for key in (
+                            "qid", "target_id", "itype", "value"
+                        ))))
+                except Exception:
+                    pass
             _log_selected_decision(selected_fix, returned_outcome)

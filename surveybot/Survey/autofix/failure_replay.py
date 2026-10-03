@@ -280,14 +280,23 @@ def _run_pipeline(driver: Any, case_id: str, stage: str, dom_name: str,
         runtime_state, _rs_err = _load_json(artifacts_dir / "runtime_state.json")
         captured_facts = runtime_state.get("facts") if isinstance(runtime_state, dict) else None
         try:
+            from Survey.action_fix_hook import observe_action_fix_successes
             from Survey.action_validator import validate_actions
-            replayed_report = validate_actions(
-                actions,
-                dispatcher_success=dispatcher_success,
-                driver=driver,
-                question_blocks=blocks,
-                captured_option_states=captured_facts if isinstance(captured_facts, dict) else None,
-            )
+            original_issues = original_report.get("issues") if isinstance(original_report, dict) else None
+            recorded_successes = [
+                issue for issue in (original_issues if isinstance(original_issues, list) else [])
+                if isinstance(issue, dict) and issue.get("failure_type") == "action_fix_success_unconfirmed"
+            ]
+            # Le type d'issue enregistre la provenance du hook ; le DOM final est
+            # relu indépendamment pour décider si cette issue se reproduit.
+            with observe_action_fix_successes(driver=driver, recorded_actions=recorded_successes):
+                replayed_report = validate_actions(
+                    actions,
+                    dispatcher_success=dispatcher_success,
+                    driver=driver,
+                    question_blocks=blocks,
+                    captured_option_states=captured_facts if isinstance(captured_facts, dict) else None,
+                )
         except Exception as exc:
             return _not_replayable(
                 case_id, stage,
