@@ -156,13 +156,16 @@ sys.path.insert(0, worktree_root)
 
 try:
     from Survey.autofix.replay_browser import (
+        _ACTION_REPLAY_EXECUTE_SCRIPTS,
         IsolatedReplayBrowser,
         ReplayBrowserError,
         execute_case_action,
         extract_case_blocks,
     )
     with IsolatedReplayBrowser() as browser:
-        page = browser.load_case_document(case_dir, pre_action=True, execute_scripts=False)
+        page = browser.load_case_document(
+            case_dir, pre_action=True, execute_scripts=_ACTION_REPLAY_EXECUTE_SCRIPTS,
+        )
         extraction = extract_case_blocks(page, case_dir)
         execution = execute_case_action(
             page, case_dir, budget_s=budget_s, question_blocks=extraction.blocks,
@@ -178,6 +181,7 @@ try:
         "validation_error": execution.validation_error,
         "trace_replay": execution.trace_replay,
         "dispatcher_steps": execution.dispatcher_steps,
+        "execute_scripts": _ACTION_REPLAY_EXECUTE_SCRIPTS,
     }
 except Exception as exc:
     result = {"status": None, "error": f"{type(exc).__name__}: {exc}"}

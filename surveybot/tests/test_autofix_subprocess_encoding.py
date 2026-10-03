@@ -15,7 +15,7 @@ from Survey.autofix.failure_diagnosis import _attempt_real_dispatch_replay
 from Survey.autofix.live_validator import _ACTION_RUNNER_SCRIPT as _LIVE_ACTION_RUNNER_SCRIPT
 from Survey.autofix.patch_replay import _ACTION_RUNNER_SCRIPT as _PATCH_ACTION_RUNNER_SCRIPT
 from Survey.autofix.patch_commit import _find_existing_case_commit
-from Survey.autofix.replay_browser import _capture_dispatcher_steps
+from Survey.autofix.replay_browser import _ACTION_REPLAY_EXECUTE_SCRIPTS, _capture_dispatcher_steps
 from Survey.autofix.static_validator import _run
 from Survey.log_utils import log_debug, log_info
 
@@ -30,17 +30,25 @@ class AutofixSubprocessEncodingTests(unittest.TestCase):
         )
         extraction = SimpleNamespace(blocks=[], error=None)
         with (
-            patch("Survey.autofix.replay_browser.IsolatedReplayBrowser"),
+            patch("Survey.autofix.replay_browser.IsolatedReplayBrowser") as browser_type,
             patch("Survey.autofix.replay_browser.extract_case_blocks", return_value=extraction),
             patch("Survey.autofix.replay_browser.execute_case_action", return_value=execution),
         ):
             result = _attempt_real_dispatch_replay(Path("synthetic_case"), {"stage": "action"})
         self.assertEqual(result["reason"], "budget invalide")
         self.assertEqual(result["dispatcher_steps"], execution.dispatcher_steps)
+        self.assertIs(result["execute_scripts"], _ACTION_REPLAY_EXECUTE_SCRIPTS)
+        self.assertIs(result["execute_scripts"], False)
+        self.assertIs(
+            browser_type.return_value.__enter__.return_value.load_case_document.call_args.kwargs["execute_scripts"],
+            result["execute_scripts"],
+        )
         self.assertIn('"reason": execution.reason', _PATCH_ACTION_RUNNER_SCRIPT)
         self.assertIn('"reason": execution.reason', _LIVE_ACTION_RUNNER_SCRIPT)
         self.assertIn('"dispatcher_steps": execution.dispatcher_steps', _PATCH_ACTION_RUNNER_SCRIPT)
         self.assertIn('"dispatcher_steps": execution.dispatcher_steps', _LIVE_ACTION_RUNNER_SCRIPT)
+        self.assertIn('execute_scripts=_ACTION_REPLAY_EXECUTE_SCRIPTS', _PATCH_ACTION_RUNNER_SCRIPT)
+        self.assertIn('"execute_scripts": _ACTION_REPLAY_EXECUTE_SCRIPTS', _PATCH_ACTION_RUNNER_SCRIPT)
 
     def test_dispatcher_capture_is_bounded_sanitized_and_independent_of_log_level(self) -> None:
         output = io.StringIO()

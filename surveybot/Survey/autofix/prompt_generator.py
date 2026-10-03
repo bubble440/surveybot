@@ -323,6 +323,12 @@ def _build_bug_identifie(diagnosis: dict, code_files: "list[str]") -> str:
 
     if stage == "action":
         real_replay = diagnosis.get("real_dispatch_replay")
+        if isinstance(real_replay, dict) and real_replay.get("execute_scripts") is False:
+            lines.append("")
+            lines.append(
+                "Fait du rejeu réel : les scripts de la page sont désactivés dans le document figé ; "
+                "un état posé par le JavaScript du site lors du chargement n'y est pas reproductible."
+            )
         raw_steps = real_replay.get("dispatcher_steps") if isinstance(real_replay, dict) else None
         if isinstance(raw_steps, list):
             steps = [step for step in raw_steps[:24]

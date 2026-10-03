@@ -133,6 +133,34 @@ class PromptGeneratorSpcaTests(unittest.TestCase):
         path.write_text(json.dumps(diagnosis), encoding="utf-8")
         self.assertEqual(generate_prompt(diag_dir, selection_dir).content, original)
 
+    def test_action_script_mode_fact_is_optional_and_stage_scoped(self) -> None:
+        diag_dir, selection_dir = self._case("synthetic_action_script_mode", stage="action")
+        original = generate_prompt(diag_dir, selection_dir).content
+        path = diag_dir / "diagnosis.json"
+        diagnosis = json.loads(path.read_text(encoding="utf-8"))
+
+        diagnosis["real_dispatch_replay"] = {"status": "FAILURE"}
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        self.assertEqual(generate_prompt(diag_dir, selection_dir).content, original)
+
+        diagnosis["real_dispatch_replay"]["execute_scripts"] = False
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        enriched = generate_prompt(diag_dir, selection_dir).content
+        self.assertIn("les scripts de la page sont désactivés dans le document figé", enriched)
+        self.assertIn("un état posé par le JavaScript du site", enriched)
+
+        diagnosis["real_dispatch_replay"]["execute_scripts"] = True
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        self.assertEqual(generate_prompt(diag_dir, selection_dir).content, original)
+
+        diagnosis["stage"] = "extraction"
+        diagnosis["real_dispatch_replay"]["execute_scripts"] = False
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        extraction_with_key = generate_prompt(diag_dir, selection_dir).content
+        diagnosis["real_dispatch_replay"].pop("execute_scripts")
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        self.assertEqual(generate_prompt(diag_dir, selection_dir).content, extraction_with_key)
+
     def test_manual_review_gate_and_phase7_output_names_are_preserved(self) -> None:
         eligible_diag, eligible_selection = self._case("synthetic_eligible_case")
         prompt_path = write_prompt(eligible_diag, eligible_selection, out_root=self.root / "prompts")

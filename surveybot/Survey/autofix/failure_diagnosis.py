@@ -312,6 +312,7 @@ def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[di
         return None
     try:
         from Survey.autofix.replay_browser import (
+            _ACTION_REPLAY_EXECUTE_SCRIPTS,
             _DEFAULT_DISPATCH_BUDGET_S,
             IsolatedReplayBrowser,
             ReplayBrowserError,
@@ -324,7 +325,9 @@ def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[di
 
     try:
         with IsolatedReplayBrowser() as browser:
-            page = browser.load_case_document(case_dir, pre_action=True, execute_scripts=False)
+            page = browser.load_case_document(
+                case_dir, pre_action=True, execute_scripts=_ACTION_REPLAY_EXECUTE_SCRIPTS,
+            )
             extraction = extract_case_blocks(page, case_dir)
             execution = execute_case_action(
                 page, case_dir, budget_s=_DEFAULT_DISPATCH_BUDGET_S, question_blocks=extraction.blocks,
@@ -351,6 +354,7 @@ def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[di
         # validation_comparison (toujours None après TIMEOUT).
         "trace_replay": execution.trace_replay,
         "dispatcher_steps": execution.dispatcher_steps,
+        "execute_scripts": _ACTION_REPLAY_EXECUTE_SCRIPTS,
     }
 
 

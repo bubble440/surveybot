@@ -782,6 +782,9 @@ REPLAY_MODE_TRACE_REPLAY = "TRACE_REPLAY"
 
 _DEFAULT_DISPATCH_BUDGET_S = 30.0
 _MAX_DISPATCH_ACTIONS = 60
+# Mode du document pré-action pour les rejeux réels Phase 4/9.
+_ACTION_REPLAY_EXECUTE_SCRIPTS = False
+
 # Extrait technique du dispatcher : jamais de ligne brute, ni libellé, valeur,
 # question ou URL. La capture s'arrête après 24 lignes de 160 caractères.
 _MAX_DISPATCH_STEPS = 24
