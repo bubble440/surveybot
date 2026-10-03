@@ -5953,8 +5953,3 @@ bloc attendu conforme après patch) ; tests unitaires synthétiques
 (`tests/test_external_fix_hidden_consent_radio_question.py`). Observation runtime réelle (activations,
 STABLE) non faite à ce stade.
 
-### _click_candidate / _apply_by_target_id — groupe MetrixLab/Toluna radioQT dont la cible n'est pas cliquable
-Fichier : Survey/action_dispatcher.py
-Signal : group_key radio:name:q1001 (DOM : .question.radio_question > .answer_options avec .option_radio visuel et input.radioQT masqué).
-Symptôme observé : le clic natif puis le hover/clic sur la cible expirent ("element is not visible"), le clic forcé de l'input natif ne produit pas l'état UI input_on, la post-vérification QT échoue et le dispatcher retourne apply ok=false reason=no_strategy. Rejeu hors ligne (scripts coupés) : même résultat, BUG_PERSISTANT.
-Cause racine : non établie à la date de cette entrée.

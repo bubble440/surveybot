@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Callable
 
 from Survey.extractor_integrity import _hash_function, _load_registry
-from Survey.log_utils import log_debug
+from Survey.log_utils import log_debug, log_info
 
 _TAG = "[EXTERNAL_FIX_REGISTRY]"
 _SURVEY_ROOT = Path(__file__).resolve().parent
@@ -182,7 +182,13 @@ class ExternalFixRegistry:
             return True
         except Exception as exc:
             try:
-                log_debug(_TAG, f"correctif ignoré : {type(exc).__name__}")
+                fix_id = (
+                    fix.fix_id if isinstance(fix, ExternalFix)
+                    and isinstance(fix.fix_id, str) and _FIX_ID.fullmatch(fix.fix_id)
+                    else "inconnu"
+                )
+                message = str(exc).replace("\r", " ").replace("\n", " ")[:160]
+                log_info(_TAG, f"correctif ignoré fix_id={fix_id} : {type(exc).__name__}: {message}")
             except Exception:
                 pass
             return False

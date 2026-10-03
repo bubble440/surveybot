@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from Survey.external_fix_registry import DomCondition, ExternalFix, ExternalFixRegistry, FixRegistryError
 from Survey.extractor_integrity import _hash_function
@@ -114,7 +115,17 @@ class ExternalFixRegistryTests(unittest.TestCase):
         registry = ExternalFixRegistry(root=self.root)
         with self.assertRaisesRegex(FixRegistryError, "code core différent"):
             registry.register(self._fix())
-        self.assertFalse(registry.try_register(self._fix()))
+        with patch("Survey.external_fix_registry.log_info") as info:
+            self.assertFalse(registry.try_register(self._fix()))
+        info.assert_called_once()
+        self.assertIn("fix_id=fix_alpha", info.call_args.args[1])
+        self.assertIn("code core différent du hash attendu", info.call_args.args[1])
+
+        with patch.object(registry, "register", side_effect=FixRegistryError("x" * 200 + "\nsecret")), \
+             patch("Survey.external_fix_registry.log_info") as info:
+            self.assertFalse(registry.try_register(self._fix()))
+        self.assertEqual(info.call_count, 1)
+        self.assertNotIn("secret", info.call_args.args[1])
 
 
 if __name__ == "__main__":

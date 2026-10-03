@@ -86,12 +86,14 @@ class ExternalFixLoaderTests(unittest.TestCase):
             patch.object(loader, "MODULE_IMPORTS", (failed_import, importer)),
             patch.object(loader, "_loaded", False),
             patch("Survey.external_fix_loader.log_debug") as loader_debug,
-            patch("Survey.external_fix_registry.log_debug") as registry_debug,
+            patch("Survey.external_fix_registry.log_info") as registry_info,
         ):
             self.assertEqual(self._run_extraction(Mock(return_value=[])), self.blocks)
             importer.assert_called_once()
             self.assertNotIn("session=secret", str(loader_debug.call_args_list))
-            self.assertNotIn("session=secret", str(registry_debug.call_args_list))
+            registry_info.assert_called_once()
+            self.assertIn("fix_id=inconnu", registry_info.call_args.args[1])
+            self.assertNotIn("session=secret", str(registry_info.call_args_list))
             self.assertEqual(len(EXTERNAL_FIXES.candidates(
                 stage="extraction", anchor_function_id=self.anchor, position="before",
             )), 1)

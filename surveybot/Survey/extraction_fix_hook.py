@@ -112,6 +112,7 @@ def _try_position(
     if not matched:
         return None, True
     if time.monotonic() >= deadline:
+        log_debug(_TAG, f"budget dépassé anchor={anchor_function_id} position={position}")
         return None, False
     try:
         result = matched[0].handler(driver, frame_chain)

@@ -487,6 +487,7 @@ try:
         )
         result = {
             "status": execution.status,
+            "reason": execution.reason,
             "dispatcher_success": execution.dispatcher_success,
             "duration_s": execution.duration_s,
             "budget_s": execution.budget_s,

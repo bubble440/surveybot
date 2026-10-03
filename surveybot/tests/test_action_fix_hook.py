@@ -129,6 +129,15 @@ class ActionFixHookTests(unittest.TestCase):
             self._run(FakeDom((self.selector,)), budget_s=0.005), ActionFixOutcome.HANDLED_FAILURE
         )
 
+        self.registry = ExternalFixRegistry(root=self.root)
+        before_budget_handler = Mock(return_value=ActionFixOutcome.HANDLED_SUCCESS)
+        self._register("fix_budget", before_budget_handler)
+        with patch("Survey.action_fix_hook.log_debug") as debug:
+            self.assertIs(self._run(FakeDom((self.selector,)), budget_s=0), ActionFixOutcome.DECLINED)
+        before_budget_handler.assert_not_called()
+        self.assertTrue(any("budget dépassé avant handler" in str(call)
+                            for call in debug.call_args_list))
+
     def test_frame_context_and_cta_intercept(self) -> None:
         frame = FakeDom((self.selector,))
         page = FakeDom()

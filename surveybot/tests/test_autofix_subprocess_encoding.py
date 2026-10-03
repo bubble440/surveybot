@@ -5,13 +5,34 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
+from Survey.autofix.failure_diagnosis import _attempt_real_dispatch_replay
+from Survey.autofix.live_validator import _ACTION_RUNNER_SCRIPT as _LIVE_ACTION_RUNNER_SCRIPT
+from Survey.autofix.patch_replay import _ACTION_RUNNER_SCRIPT as _PATCH_ACTION_RUNNER_SCRIPT
 from Survey.autofix.patch_commit import _find_existing_case_commit
 from Survey.autofix.static_validator import _run
 
 
 class AutofixSubprocessEncodingTests(unittest.TestCase):
+    def test_not_executed_reason_is_preserved_in_action_replay_outputs(self) -> None:
+        execution = SimpleNamespace(
+            status="NOT_EXECUTED", reason="budget invalide", dispatcher_success=None,
+            duration_s=None, budget_s=0, validation_comparison=None,
+            validation_error=None, trace_replay=None,
+        )
+        extraction = SimpleNamespace(blocks=[], error=None)
+        with (
+            patch("Survey.autofix.replay_browser.IsolatedReplayBrowser"),
+            patch("Survey.autofix.replay_browser.extract_case_blocks", return_value=extraction),
+            patch("Survey.autofix.replay_browser.execute_case_action", return_value=execution),
+        ):
+            result = _attempt_real_dispatch_replay(Path("synthetic_case"), {"stage": "action"})
+        self.assertEqual(result["reason"], "budget invalide")
+        self.assertIn('"reason": execution.reason', _PATCH_ACTION_RUNNER_SCRIPT)
+        self.assertIn('"reason": execution.reason', _LIVE_ACTION_RUNNER_SCRIPT)
+
     def test_utf8_output_outside_cp1252_is_preserved(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             ok, out, err, timed_out = _run(

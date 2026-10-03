@@ -44,10 +44,12 @@ def _debug(message: str) -> None:
 
 def _selector_present(dom: Any, selector: str, cache: dict[str, bool], deadline: float) -> bool:
     if time.monotonic() >= deadline:
+        _debug("budget dépassé avant handler")
         raise TimeoutError
     if selector not in cache:
         cache[selector] = dom.query_selector(selector) is not None
     if time.monotonic() >= deadline:
+        _debug("budget dépassé avant handler")
         raise TimeoutError
     return cache[selector]
 
@@ -119,6 +121,7 @@ def run_action_fix_hook(
             matched = None
             for fix in fixes:
                 if time.monotonic() >= deadline:
+                    _debug("budget dépassé avant handler")
                     raise TimeoutError
                 condition = fix.condition
                 if (
@@ -138,6 +141,7 @@ def run_action_fix_hook(
             if matched is None:
                 return ActionFixOutcome.DECLINED
             if time.monotonic() >= deadline:
+                _debug("budget dépassé avant handler")
                 raise TimeoutError
 
             handler_started = True

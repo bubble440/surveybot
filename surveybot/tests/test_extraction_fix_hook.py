@@ -120,7 +120,10 @@ class ExtractionFixHookTests(unittest.TestCase):
         with patch("Survey.extraction_fix_hook.log_debug") as debug:
             self.assertEqual(self._run(FakeDom(present, broken=True), Mock(return_value=self.core_block)), self.core_block)
         self.assertNotIn("session=secret", str(debug.call_args_list))
-        self.assertEqual(self._run(FakeDom(present), Mock(return_value=self.core_block), budget_s=0), self.core_block)
+        with patch("Survey.extraction_fix_hook.log_debug") as debug:
+            self.assertEqual(self._run(FakeDom(present), Mock(return_value=self.core_block), budget_s=0), self.core_block)
+        self.assertTrue(any(f"budget dépassé anchor={self.anchor} position=before" in str(call)
+                            for call in debug.call_args_list))
 
         self.registry = ExternalFixRegistry(root=self.root)
         self._register("fix_bad", result=[{"itype": "radio", "question": "fixture", "options": "wrong"}])

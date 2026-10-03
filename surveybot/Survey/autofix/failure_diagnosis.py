@@ -338,6 +338,7 @@ def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[di
 
     return {
         "status": execution.status,
+        "reason": execution.reason,
         "dispatcher_success": execution.dispatcher_success,
         "duration_s": execution.duration_s,
         "budget_s": execution.budget_s,
