@@ -197,7 +197,8 @@ _DISPATCH_STEP_RE = re.compile(
     r"|click=(?:native_failed|hover_failed)(?: reason=(?:not_visible|intercepted|not_enabled|unstable|detached))?"
     r"|capture=truncated"
     r"|action_fix (?:selected fix_id=[a-z][a-z0-9_]{2,63}"
-    r"|verdict=(?:DECLINED|HANDLED_SUCCESS|HANDLED_FAILURE)))"
+    r"|verdict=(?:DECLINED|HANDLED_SUCCESS|HANDLED_FAILURE"
+    r"(?: reason=(?:handler_returned_failure|handler_exception|invalid_result|post_handler_timeout))?)))"
 )
 
 

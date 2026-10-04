@@ -13,7 +13,10 @@ from unittest.mock import patch
 
 from Survey.autofix.failure_diagnosis import _attempt_real_dispatch_replay
 from Survey.autofix.live_validator import _ACTION_RUNNER_SCRIPT as _LIVE_ACTION_RUNNER_SCRIPT
-from Survey.autofix.patch_replay import _ACTION_RUNNER_SCRIPT as _PATCH_ACTION_RUNNER_SCRIPT
+from Survey.autofix.patch_replay import (
+    _ACTION_RUNNER_SCRIPT as _PATCH_ACTION_RUNNER_SCRIPT,
+    PreconditionResult, replay_patch,
+)
 from Survey.autofix.patch_commit import _find_existing_case_commit
 from Survey.autofix.replay_browser import _ACTION_REPLAY_EXECUTE_SCRIPTS, _capture_dispatcher_steps, _safe_target_log
 from Survey.autofix.replay_browser import summarize_action_target_shapes
@@ -22,6 +25,74 @@ from Survey.log_utils import log_debug, log_info
 
 
 class AutofixSubprocessEncodingTests(unittest.TestCase):
+    def _synthetic_patch_replay(self, stage: str, after: dict):
+        pre = PreconditionResult(
+            satisfied=True, case_id="synthetic_case", stage=stage,
+            worktree={"worktree_path": "synthetic_worktree", "branch": "synthetic_branch", "base_sha": "abc"},
+            diagnosis={"replay": {"verdict": "REPRODUIT"},
+                       "real_dispatch_replay": {"validation_comparison": {"outcome": "BUG_PERSISTANT"}}},
+        )
+        with (
+            patch("Survey.autofix.patch_replay.check_preconditions", return_value=pre),
+            patch("Survey.autofix.patch_replay._resolve_worktree_package_root",
+                  return_value=(Path("synthetic_package"), None)),
+            patch("Survey.autofix.patch_replay._run_replay_subprocess", return_value=(after, None)),
+        ):
+            return replay_patch(
+                failure_case_dir="synthetic_case", diagnosis_dir="synthetic_diagnosis",
+                worktree_manifest_path="synthetic_worktree.json",
+                validation_static_path="synthetic_validation.json",
+            )
+
+    def test_patch_replay_marks_only_unverifiable_handler_failure_inconclusive(self) -> None:
+        comparison = {"outcome": "BUG_PERSISTANT", "verdict": "REPRODUIT", "reasons": []}
+        selected = "action_fix selected fix_id=fix_radio_qt"
+        handler_failure = "action_fix verdict=HANDLED_FAILURE reason=handler_returned_failure"
+        base = {"status": "FAILURE", "execute_scripts": False, "validation_comparison": comparison,
+                "dispatcher_steps": [selected, handler_failure]}
+        result = self._synthetic_patch_replay("action", base)
+        self.assertEqual(result.outcome, "NON_CONCLUANT")
+        self.assertFalse(result.patch_validated)
+        self.assertEqual(result.after_replay["validation_comparison"], comparison)
+        self.assertEqual(result.as_dict()["outcome_reason"],
+                         "correctif d'action non vérifiable sans les scripts de la page")
+
+        unchanged = (
+            {**base, "dispatcher_steps": [selected, "action_fix verdict=HANDLED_FAILURE reason=handler_exception"]},
+            {**base, "dispatcher_steps": [selected, "action_fix verdict=HANDLED_FAILURE reason=invalid_result"]},
+            {**base, "dispatcher_steps": [selected, "action_fix verdict=HANDLED_FAILURE reason=post_handler_timeout"]},
+            {**base, "dispatcher_steps": [handler_failure]},
+            {**base, "dispatcher_steps": [selected, "strategy=target_id attempted", handler_failure]},
+            {**base, "dispatcher_steps": [selected, "action_fix verdict=HANDLED_FAILURE"]},
+            {**base, "dispatcher_steps": [selected, "action_fix verdict=HANDLED_FAILURE reason=unknown"]},
+            {**base, "dispatcher_steps": [selected, "action_fix verdict=HANDLED_SUCCESS"]},
+            {**base, "dispatcher_steps": [selected, handler_failure,
+                                           "action_fix selected fix_id=fix_second",
+                                           "action_fix verdict=HANDLED_FAILURE reason=handler_exception"]},
+            {**base, "dispatcher_steps": [selected, handler_failure,
+                                           "action_fix selected fix_id=fix_second"]},
+            {**base, "dispatcher_steps": None},
+            {**base, "dispatcher_steps": [selected, handler_failure, "capture=truncated"]},
+            {**base, "dispatcher_steps": [selected, handler_failure] + ["apply ok=false"] * 23},
+            {**base, "execute_scripts": True},
+            {key: value for key, value in base.items() if key != "execute_scripts"},
+            {**base, "status": "SUCCESS"},
+            {**base, "validation_comparison": {"outcome": "NON_CONCLUANT"}},
+        )
+        for index, after in enumerate(unchanged):
+            with self.subTest(index=index):
+                result = self._synthetic_patch_replay("action", after)
+                self.assertEqual(result.outcome, after["validation_comparison"]["outcome"])
+                self.assertFalse(result.patch_validated)
+                self.assertNotIn("outcome_reason", result.as_dict())
+
+        extraction = self._synthetic_patch_replay("extraction", {
+            "verdict": "REPRODUIT", "execute_scripts": False,
+            "dispatcher_steps": [selected, handler_failure],
+        })
+        self.assertEqual(extraction.outcome, "BUG_PERSISTANT")
+        self.assertNotIn("outcome_reason", extraction.as_dict())
+
     def test_action_target_shapes_follow_registry_group_payload_and_remove_literals(self) -> None:
         def payload(target: str) -> dict:
             locator = (
@@ -118,6 +189,27 @@ class AutofixSubprocessEncodingTests(unittest.TestCase):
         self.assertIn('execute_scripts=_ACTION_REPLAY_EXECUTE_SCRIPTS', _PATCH_ACTION_RUNNER_SCRIPT)
         self.assertIn('"execute_scripts": _ACTION_REPLAY_EXECUTE_SCRIPTS', _PATCH_ACTION_RUNNER_SCRIPT)
 
+    def test_diagnostic_outcome_is_not_reclassified_by_patch_replay_rule(self) -> None:
+        comparison = {"outcome": "BUG_PERSISTANT", "verdict": "REPRODUIT"}
+        execution = SimpleNamespace(
+            status="FAILURE", reason=None, dispatcher_success=False, duration_s=0.2,
+            budget_s=30.0, validation_comparison=comparison, validation_error=None,
+            trace_replay=None, dispatcher_steps=[
+                "action_fix selected fix_id=fix_radio_qt",
+                "action_fix verdict=HANDLED_FAILURE reason=handler_returned_failure",
+            ],
+        )
+        with (
+            patch("Survey.autofix.replay_browser.IsolatedReplayBrowser"),
+            patch("Survey.autofix.replay_browser.extract_case_blocks",
+                  return_value=SimpleNamespace(blocks=[], error=None, targets={})),
+            patch("Survey.autofix.replay_browser.execute_case_action", return_value=execution),
+        ):
+            result = _attempt_real_dispatch_replay(Path("synthetic_case"), {"stage": "action"})
+        self.assertEqual(result["validation_comparison"], comparison)
+        self.assertEqual(result["validation_comparison"]["outcome"], "BUG_PERSISTANT")
+        self.assertNotIn("outcome_reason", result)
+
     def test_dispatcher_capture_is_bounded_sanitized_and_independent_of_log_level(self) -> None:
         output = io.StringIO()
         with patch.dict(os.environ, {"LOG_LEVEL": "INFO"}), redirect_stdout(output):
@@ -212,14 +304,25 @@ class AutofixSubprocessEncodingTests(unittest.TestCase):
             with _capture_dispatcher_steps() as steps:
                 log_debug("[ACTION_FIX]", "selected fix_id=fix_radio_qt")
                 log_debug("[ACTION_FIX]", "verdict=HANDLED_FAILURE")
+                log_debug("[ACTION_FIX]", "verdict=HANDLED_FAILURE reason=handler_returned_failure")
+                log_debug("[ACTION_FIX]", "verdict=HANDLED_FAILURE reason=handler_exception")
+                log_debug("[ACTION_FIX]", "verdict=HANDLED_FAILURE reason=invalid_result")
+                log_debug("[ACTION_FIX]", "verdict=HANDLED_FAILURE reason=post_handler_timeout")
                 log_debug("[ACTION_FIX]", "selected fix_id=bad-id")
                 log_debug("[ACTION_FIX]", "verdict=DECLINED value=secret_answer")
                 log_debug("[ACTION_FIX]", "verdict=UNKNOWN")
+                log_debug("[ACTION_FIX]", "verdict=HANDLED_FAILURE reason=unknown")
+                log_debug("[ACTION_FIX]", "verdict=HANDLED_SUCCESS reason=handler_returned_failure")
+                log_debug("[ACTION_FIX]", "verdict=HANDLED_FAILURE reason=handler_returned_failure value=secret")
                 log_debug("[OTHER]", "selected fix_id=fix_radio_qt")
         self.assertEqual(output.getvalue(), "")
         self.assertEqual(steps, [
             "action_fix selected fix_id=fix_radio_qt",
             "action_fix verdict=HANDLED_FAILURE",
+            "action_fix verdict=HANDLED_FAILURE reason=handler_returned_failure",
+            "action_fix verdict=HANDLED_FAILURE reason=handler_exception",
+            "action_fix verdict=HANDLED_FAILURE reason=invalid_result",
+            "action_fix verdict=HANDLED_FAILURE reason=post_handler_timeout",
         ])
 
     def test_utf8_output_outside_cp1252_is_preserved(self) -> None:

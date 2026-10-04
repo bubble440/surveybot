@@ -210,17 +210,28 @@ class PromptGeneratorSpcaTests(unittest.TestCase):
         diagnosis["real_dispatch_replay"] = {"dispatcher_steps": [
             "action_fix selected fix_id=fix_radio_qt",
             "action_fix verdict=HANDLED_FAILURE",
+            "action_fix verdict=HANDLED_FAILURE reason=handler_returned_failure",
+            "action_fix verdict=HANDLED_FAILURE reason=handler_exception",
+            "action_fix verdict=HANDLED_FAILURE reason=invalid_result",
+            "action_fix verdict=HANDLED_FAILURE reason=post_handler_timeout",
             "action_fix selected fix_id=bad-id",
             "action_fix verdict=UNKNOWN",
             "action_fix verdict=DECLINED value=secret_answer",
+            "action_fix verdict=HANDLED_FAILURE reason=unknown",
+            "action_fix verdict=HANDLED_SUCCESS reason=handler_returned_failure",
+            "action_fix verdict=HANDLED_FAILURE reason=handler_returned_failure value=secret_answer",
         ]}
         path.write_text(json.dumps(diagnosis), encoding="utf-8")
         enriched = generate_prompt(diag_dir, selection_dir).content
         self.assertIn("- action_fix selected fix_id=fix_radio_qt", enriched)
         self.assertIn("- action_fix verdict=HANDLED_FAILURE", enriched)
+        for reason in ("handler_returned_failure", "handler_exception", "invalid_result", "post_handler_timeout"):
+            self.assertIn(f"- action_fix verdict=HANDLED_FAILURE reason={reason}", enriched)
         self.assertNotIn("bad-id", enriched)
         self.assertNotIn("UNKNOWN", enriched)
         self.assertNotIn("secret_answer", enriched)
+        self.assertNotIn("reason=unknown", enriched)
+        self.assertNotIn("HANDLED_SUCCESS reason=", enriched)
 
         diagnosis["real_dispatch_replay"].pop("dispatcher_steps")
         path.write_text(json.dumps(diagnosis), encoding="utf-8")

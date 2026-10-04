@@ -97,6 +97,7 @@ rejoue que le case ciblé par le worktree.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -401,6 +402,7 @@ class PatchReplayResult:
     after_replay: Optional[dict] = None
     after_replay_error: Optional[str] = None
     outcome: Optional[str] = None
+    outcome_reason: Optional[str] = None
     patch_validated: bool = False
     worktree_path: Optional[str] = None
     branch: Optional[str] = None
@@ -408,7 +410,7 @@ class PatchReplayResult:
     warnings: List[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
-        return {
+        result = {
             "schema_version": SCHEMA_VERSION,
             "case_id": self.case_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -427,6 +429,9 @@ class PatchReplayResult:
             },
             "warnings": self.warnings,
         }
+        if self.outcome_reason is not None:
+            result["outcome_reason"] = self.outcome_reason
+        return result
 
 
 def replay_patch(
@@ -533,6 +538,30 @@ def replay_patch(
                     "même si trace_replay porte un signal favorable (jamais une confirmation active, "
                     "cf. Phase 3D)"
                 )
+        steps = (after or {}).get("dispatcher_steps")
+        decision_steps = (
+            steps if isinstance(steps, list) and len(steps) <= 24 and "capture=truncated" not in steps else []
+        )
+        last_decision = next(
+            (index for index in range(len(decision_steps) - 1, -1, -1)
+             if isinstance(decision_steps[index], str)
+             and decision_steps[index].startswith("action_fix ")),
+            None,
+        )
+        if (
+            status == "FAILURE"
+            and (after or {}).get("execute_scripts") is False
+            and outcome == OUTCOME_BUG_PERSISTS
+            and last_decision is not None and last_decision > 0
+            and isinstance(decision_steps[last_decision - 1], str)
+            and re.fullmatch(
+                r"action_fix selected fix_id=[a-z][a-z0-9_]{2,63}", decision_steps[last_decision - 1]
+            )
+            and decision_steps[last_decision]
+            == "action_fix verdict=HANDLED_FAILURE reason=handler_returned_failure"
+        ):
+            outcome = OUTCOME_INCONCLUSIVE
+            result.outcome_reason = "correctif d'action non vérifiable sans les scripts de la page"
 
     result.outcome = outcome
     result.patch_validated = outcome == OUTCOME_FIX_CONFIRMED

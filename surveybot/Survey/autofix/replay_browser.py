@@ -914,7 +914,11 @@ def _safe_target_log(tag: Any, msg: Any) -> Optional[str]:
     if tag == "[ACTION_FIX]":
         if re.fullmatch(r"selected fix_id=[a-z][a-z0-9_]{2,63}", msg):
             return f"action_fix {msg}"
-        if re.fullmatch(r"verdict=(?:DECLINED|HANDLED_SUCCESS|HANDLED_FAILURE)", msg):
+        if re.fullmatch(
+            r"verdict=(?:DECLINED|HANDLED_SUCCESS|HANDLED_FAILURE"
+            r"(?: reason=(?:handler_returned_failure|handler_exception|invalid_result|post_handler_timeout))?)",
+            msg,
+        ):
             return f"action_fix {msg}"
     return None
 

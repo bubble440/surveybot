@@ -98,23 +98,30 @@ class ActionFixHookTests(unittest.TestCase):
                 self.assertEqual(
                     [call.args for call in debug.call_args_list],
                     [("[ACTION_FIX]", f"selected fix_id={fix_id}"),
-                     ("[ACTION_FIX]", f"verdict={returned.name}")],
+                     ("[ACTION_FIX]", f"verdict={returned.name}"
+                      + (" reason=handler_returned_failure" if returned is ActionFixOutcome.HANDLED_FAILURE else ""))],
                 )
 
         self.registry = ExternalFixRegistry(root=self.root)
         self._register("fix_log_failure", Mock(return_value=ActionFixOutcome.HANDLED_SUCCESS))
         with patch("Survey.action_fix_hook.log_debug", side_effect=OSError("journal indisponible")):
             self.assertIs(self._run(FakeDom((self.selector,))), ActionFixOutcome.HANDLED_SUCCESS)
+        self.registry = ExternalFixRegistry(root=self.root)
+        self._register("fix_failure_log_failure", Mock(return_value=ActionFixOutcome.HANDLED_FAILURE))
+        with patch("Survey.action_fix_hook.log_debug", side_effect=OSError("journal indisponible")):
+            self.assertIs(self._run(FakeDom((self.selector,))), ActionFixOutcome.HANDLED_FAILURE)
+        with patch("Survey.action_fix_hook.log_debug", side_effect=[None, OSError("verdict indisponible")]):
+            self.assertIs(self._run(FakeDom((self.selector,))), ActionFixOutcome.HANDLED_FAILURE)
 
     def test_selected_fix_exception_invalid_result_and_late_budget_log_decision(self) -> None:
         def broken_handler(*_args: object) -> ActionFixOutcome:
             raise RuntimeError("answer=secret")
 
         cases = (
-            ("fix_invalid_logged", lambda *_: True),
-            ("fix_exception_logged", broken_handler),
+            ("fix_invalid_logged", lambda *_: True, "invalid_result"),
+            ("fix_exception_logged", broken_handler, "handler_exception"),
         )
-        for fix_id, handler in cases:
+        for fix_id, handler, reason in cases:
             with self.subTest(fix_id=fix_id):
                 self.registry = ExternalFixRegistry(root=self.root)
                 self._register(fix_id, handler)
@@ -123,7 +130,7 @@ class ActionFixHookTests(unittest.TestCase):
                 self.assertIs(returned, ActionFixOutcome.HANDLED_FAILURE)
                 decisions = [call.args[1] for call in debug.call_args_list
                              if call.args[1].startswith(("selected fix_id=", "verdict="))]
-                self.assertEqual(decisions, [f"selected fix_id={fix_id}", "verdict=HANDLED_FAILURE"])
+                self.assertEqual(decisions, [f"selected fix_id={fix_id}", f"verdict=HANDLED_FAILURE reason={reason}"])
                 self.assertNotIn("answer=secret", str(debug.call_args_list))
 
         now = [0.0]
@@ -142,7 +149,25 @@ class ActionFixHookTests(unittest.TestCase):
         self.assertIs(returned, ActionFixOutcome.HANDLED_FAILURE)
         decisions = [call.args[1] for call in debug.call_args_list
                      if call.args[1].startswith(("selected fix_id=", "verdict="))]
-        self.assertEqual(decisions, ["selected fix_id=fix_late_budget", "verdict=HANDLED_FAILURE"])
+        self.assertEqual(decisions, ["selected fix_id=fix_late_budget", "verdict=HANDLED_FAILURE reason=post_handler_timeout"])
+
+        now[0] = 0.0
+
+        def late_failure(*_args: object) -> ActionFixOutcome:
+            now[0] = 1.0
+            return ActionFixOutcome.HANDLED_FAILURE
+
+        self.registry = ExternalFixRegistry(root=self.root)
+        self._register("fix_late_failure", late_failure)
+        with (
+            patch("Survey.action_fix_hook.time.monotonic", side_effect=lambda: now[0]),
+            patch("Survey.action_fix_hook.log_debug") as debug,
+        ):
+            returned = self._run(FakeDom((self.selector,)))
+        self.assertIs(returned, ActionFixOutcome.HANDLED_FAILURE)
+        decisions = [call.args[1] for call in debug.call_args_list
+                     if call.args[1].startswith(("selected fix_id=", "verdict="))]
+        self.assertEqual(decisions, ["selected fix_id=fix_late_failure", "verdict=HANDLED_FAILURE reason=post_handler_timeout"])
 
     def test_context_exit_exception_logs_the_final_returned_failure(self) -> None:
         class BrokenContext:
@@ -161,7 +186,7 @@ class ActionFixHookTests(unittest.TestCase):
         self.assertIs(returned, ActionFixOutcome.HANDLED_FAILURE)
         decisions = [call.args[1] for call in debug.call_args_list
                      if call.args[1].startswith(("selected fix_id=", "verdict="))]
-        self.assertEqual(decisions, ["selected fix_id=fix_context_exit", "verdict=HANDLED_FAILURE"])
+        self.assertEqual(decisions, ["selected fix_id=fix_context_exit", "verdict=HANDLED_FAILURE reason=handler_exception"])
 
     def test_action_after_is_rejected_and_ambiguity_runs_no_handler(self) -> None:
         handler = Mock(return_value=ActionFixOutcome.HANDLED_SUCCESS)

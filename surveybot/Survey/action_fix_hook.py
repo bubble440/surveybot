@@ -66,14 +66,15 @@ def successful_action_fixes(driver: Any) -> tuple[tuple[Any, ...], ...]:
     return tuple(record[1:] for record in records or () if record[0] is driver)
 
 
-def _log_selected_decision(fix: Any, outcome: ActionFixOutcome) -> None:
+def _log_selected_decision(fix: Any, outcome: ActionFixOutcome, failure_reason: str | None = None) -> None:
     """Journal best-effort : un échec d'écriture ne change jamais le verdict."""
     try:
         fix_id = fix.fix_id
         if not isinstance(fix_id, str) or re.fullmatch(r"[a-z][a-z0-9_]{2,63}", fix_id) is None:
             fix_id = "unknown"
         log_debug(_TAG, f"selected fix_id={fix_id}")
-        log_debug(_TAG, f"verdict={outcome.name}")
+        suffix = f" reason={failure_reason}" if outcome is ActionFixOutcome.HANDLED_FAILURE and failure_reason else ""
+        log_debug(_TAG, f"verdict={outcome.name}{suffix}")
     except BaseException:
         pass
 
@@ -155,6 +156,7 @@ def run_action_fix_hook(
     handler_started = False
     selected_fix = None
     returned_outcome = None
+    failure_reason = None
     try:
         context = switch_to_frame_chain(driver, list(chain)) if chain else nullcontext(True)
         with context as frame_ok:
@@ -194,17 +196,25 @@ def run_action_fix_hook(
             outcome = matched.handler(driver, dom, action)
             if not isinstance(outcome, ActionFixOutcome):
                 _debug("résultat de handler invalide")
+                failure_reason = "invalid_result"
                 returned_outcome = ActionFixOutcome.HANDLED_FAILURE
                 return returned_outcome
             if time.monotonic() >= deadline:
                 _debug("budget dépassé après handler")
+                if outcome is ActionFixOutcome.HANDLED_FAILURE:
+                    failure_reason = "post_handler_timeout"
                 if outcome is ActionFixOutcome.DECLINED:
+                    failure_reason = "post_handler_timeout"
                     returned_outcome = ActionFixOutcome.HANDLED_FAILURE
                     return returned_outcome
+            if outcome is ActionFixOutcome.HANDLED_FAILURE and failure_reason is None:
+                failure_reason = "handler_returned_failure"
             returned_outcome = outcome
             return returned_outcome
     except Exception as exc:
         _debug(f"hook indisponible : {type(exc).__name__}")
+        if handler_started:
+            failure_reason = "handler_exception"
         returned_outcome = ActionFixOutcome.HANDLED_FAILURE if handler_started else ActionFixOutcome.DECLINED
         return returned_outcome
     finally:
@@ -218,4 +228,4 @@ def run_action_fix_hook(
                         ))))
                 except Exception:
                     pass
-            _log_selected_decision(selected_fix, returned_outcome)
+            _log_selected_decision(selected_fix, returned_outcome, failure_reason)
