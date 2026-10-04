@@ -183,10 +183,9 @@ d. Phase 12 (Survey.autofix.confidence_score.write_patch_confidence),
    automatiquement par ce module — exige un humain avec un vrai navigateur,
    structurellement hors de portée ici, cf. demande d'origine).
 e. confidence="HIGH" -> Phase 13 (Survey.autofix.human_review.send_review_request).
-   Toute autre valeur (MEDIUM/REJECT) arrête la chaîne ici, sans notification
-   — ces cases restent visibles via confidence_scores/<case_id>/
-   confidence_score.json (rapports déjà existants), conformément à la Phase
-   13 elle-même ("MEDIUM/REJECT ne déclenchent jamais de notification").
+   MEDIUM/REJECT arrêtent la chaîne ici. Un MEDIUM dont seule la validation
+   live manque déclenche un message de statut après la dernière tentative ;
+   les autres restent visibles via confidence_scores/<case_id>/confidence_score.json.
 Un verdict statique ACCEPTED avec changed_files=[] s'arrête avant b. à
 NO_CHANGES ; une notification simple signale l'issue à l'opérateur.
 L'orchestrateur peut ouvrir une nouvelle session dans le même worktree après
@@ -596,6 +595,7 @@ _MAX_RAW_OUTPUT_CHARS = 200_000
 # (8 000 caractères maximum) ; la raison courte garde ses 240 premiers caractères.
 _MAX_AGENT_FINAL_TEXT_CHARS = 8_000
 _MAX_NO_CHANGES_REASON_CHARS = 240
+_MAX_LIVE_STATUS_CHARS = 1000
 _MAX_AGENT_FINAL_SUMMARY_CHARS = 200
 _AGENT_SUMMARY_TAIL_LINES = 10
 _AGENT_SUMMARY_RE = re.compile(r"^\s*r\s*[eé]\s*s\s*u\s*m\s*[eé]\s*:\s*(.*)$", re.IGNORECASE)
@@ -629,7 +629,7 @@ STAGE_UPSTREAM_WORKTREE = "worktree"
 STAGE_DOWNSTREAM_COMMIT = "commit"
 STAGE_DOWNSTREAM_MERGE = "merge"
 
-# Clés d'état pour la garde anti-doublon de notification (point 5) — quatre
+# Clés d'état pour la garde anti-doublon de notification (point 5) — cinq
 # catégories seulement, au niveau du CASE entier, pas par raison précise de
 # blocage : un premier blocage (ex. dépôt non propre) puis un second blocage
 # d'une autre nature (ex. commit refusé) partagent la même clé "blocked" et ne
@@ -643,6 +643,7 @@ NOTIFY_STATE_MERGED = "merged"
 NOTIFY_STATE_CONFLICT = "conflict"
 NOTIFY_STATE_BLOCKED = "blocked"
 NOTIFY_STATE_NO_CHANGES = "no_changes"
+NOTIFY_STATE_LIVE_VALIDATION_PENDING = "live_validation_pending"
 
 # Composant de chemin unique, allowlist conservatrice — même garde-fou que
 # Survey/autofix/autofix_worktree.py::_CASE_ID_RE, dupliqué volontairement (modules
@@ -905,11 +906,11 @@ def _maybe_notify(
     alors PAS marqué notifié (cf. appelant), pour qu'une invocation future
     retente plutôt que de perdre silencieusement la notification. Limite
     assumée et documentée plutôt que masquée (cf. NOTIFY_STATE_*, docstring
-    du module) : trois états seulement, au niveau du case entier — un
+    du module) : cinq états au niveau du case entier — un
     changement de RAISON précise à l'intérieur du même état (ex. deux
     blocages non terminaux successifs pour des raisons différentes) ne
     déclenche pas une seconde notification tant que l'état lui-même
-    (merged/conflict/blocked/no_changes) ne change pas."""
+    (merged/conflict/blocked/no_changes/live_validation_pending) ne change pas."""
     if notify_state == previous_notified_state:
         return False, []
     try:
@@ -2134,6 +2135,7 @@ class CaseRunSummary:
     artifacts: "dict[str, str]" = field(default_factory=dict)
     confidence: Optional[str] = None
     notified: bool = False
+    notified_state: Optional[str] = None
     warnings: "list[str]" = field(default_factory=list)
     attempt_count: Optional[int] = None
     attempts: "list[dict] | None" = None
@@ -2155,6 +2157,8 @@ class CaseRunSummary:
         if self.attempt_count is not None:
             result["attempt_count"] = self.attempt_count
             result["attempts"] = self.attempts or []
+        if self.notified_state is not None:
+            result["notified_state"] = self.notified_state
         return result
 
 
@@ -2182,6 +2186,107 @@ def write_pipeline_run_summary(
         f"notified={summary.notified} is_error={summary.is_error} -> {out_file}",
     )
     return out_file
+
+
+def _maybe_notify_live_validation(summary: CaseRunSummary, *, pipeline_runs_root: Path) -> None:
+    """Signale une seule fois le score MEDIUM qui attend uniquement la Phase 10."""
+    if summary.stopped_at != STAGE_CONFIDENCE_SCORE or summary.is_error or summary.confidence != CONFIDENCE_MEDIUM:
+        return
+    score_path = summary.artifacts.get(STAGE_CONFIDENCE_SCORE)
+    replay_path = summary.artifacts.get(STAGE_PATCH_REPLAY)
+    if not isinstance(score_path, str) or not score_path or not isinstance(replay_path, str) or not replay_path:
+        return
+    score, _ = _load_json(Path(score_path))
+    criteria = score.get("criteria") if isinstance(score, dict) and score.get("confidence") == CONFIDENCE_MEDIUM else None
+    expected = {
+        "static_validation": "PASS", "extractor_integrity": "PASS",
+        "fix_confirmed": "INCONCLUSIVE", "live_validation": "NOT_RUN",
+    }
+    if not isinstance(criteria, dict) or any(
+        not isinstance(criteria.get(name), dict) or criteria[name].get("value") != value
+        for name, value in expected.items()
+    ):
+        return
+
+    previous, _ = _load_json(pipeline_runs_root / summary.case_id / "pipeline_run.json")
+    previous_state = (
+        NOTIFY_STATE_LIVE_VALIDATION_PENDING
+        if isinstance(previous, dict) and previous.get("notified_state") == NOTIFY_STATE_LIVE_VALIDATION_PENDING
+        else None
+    )
+    run_path = summary.artifacts.get(STAGE_CLAUDE_INVOCATION)
+    run, _ = _load_json(Path(run_path)) if isinstance(run_path, str) and run_path else (None, None)
+    agent_summary = run.get("agent_final_summary") if isinstance(run, dict) else None
+    if not isinstance(agent_summary, str) or not agent_summary.strip():
+        agent_summary = run.get("agent_final_text") if isinstance(run, dict) else None
+    excerpt = " ".join(agent_summary.split())[:_MAX_NO_CHANGES_REASON_CHARS] if isinstance(agent_summary, str) else ""
+    excerpt = re.sub(
+        r"(?:[A-Za-z][A-Za-z0-9+.-]*://|www\.)\S+|\b(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?:/\S*)?",
+        "<URL>", excerpt,
+    )
+    if re.search(r"\b(?:question|libellé|option|réponse|answer|value|qid|target_id)\b", excerpt, re.IGNORECASE):
+        excerpt = "[résumé masqué : contenu de sondage possible]"
+    message = (
+        f"Autofix case={summary.case_id} : correctif en attente de validation live.\n"
+        f"Résumé : {excerpt or 'indisponible'}\n"
+        f"Rejeu de patch : {replay_path}\n"
+        "Validation live : une seule page à l'URL du case, rechargée à l'état de l'incident. "
+        "Guide d'exploitation autofix, §4.3 « Hors chaîne automatique (usage manuel) » (Phase 10)."
+    )
+    if len(message) > _MAX_LIVE_STATUS_CHARS:
+        return
+    try:
+        notified, warnings = _maybe_notify(
+            summary.case_id, notify_state=NOTIFY_STATE_LIVE_VALIDATION_PENDING,
+            previous_notified_state=previous_state, message=message,
+        )
+    except Exception:
+        notified, warnings = False, ["notification indisponible"]
+    summary.notified = notified
+    summary.notified_state = NOTIFY_STATE_LIVE_VALIDATION_PENDING if notified else previous_state
+    if warnings:
+        summary.warnings.append("notification Telegram échouée (avertissement, jamais un arrêt)")
+
+
+def _retry_pending_live_notifications(pipeline_runs_root: Path, *, processed_case_ids: set[str]) -> None:
+    """Retente les notifications échouées sans rejouer un case terminé."""
+    if not pipeline_runs_root.is_dir():
+        return
+    try:
+        entries = sorted(pipeline_runs_root.iterdir())
+    except OSError:
+        return
+    for entry in entries:
+        if not entry.is_dir() or entry.name in processed_case_ids or not _is_safe_case_id(entry.name):
+            continue
+        previous, _ = _load_json(entry / "pipeline_run.json")
+        if (not isinstance(previous, dict) or previous.get("case_id") != entry.name
+                or previous.get("stopped_at") != STAGE_CONFIDENCE_SCORE
+                or previous.get("confidence") != CONFIDENCE_MEDIUM
+                or previous.get("is_error") is not False
+                or previous.get("deferred") is not False
+                or previous.get("notified_state") == NOTIFY_STATE_LIVE_VALIDATION_PENDING):
+            continue
+        artifacts = previous.get("artifacts")
+        if not isinstance(artifacts, dict):
+            continue
+        prior_warnings = previous.get("warnings") if isinstance(previous.get("warnings"), list) else []
+        summary = CaseRunSummary(
+            case_id=entry.name, deferred=False, stopped_at=STAGE_CONFIDENCE_SCORE,
+            stop_reason=previous.get("stop_reason"), is_error=previous.get("is_error") is True,
+            artifacts=artifacts, confidence=CONFIDENCE_MEDIUM,
+            warnings=prior_warnings.copy(),
+            attempt_count=previous.get("attempt_count"), attempts=previous.get("attempts"),
+        )
+        _maybe_notify_live_validation(summary, pipeline_runs_root=pipeline_runs_root)
+        if summary.notified or any(warning not in prior_warnings for warning in summary.warnings):
+            summary.warnings = summary.warnings[-20:]
+            try:
+                (entry / "pipeline_run.json").write_text(
+                    json.dumps(summary.as_dict(), ensure_ascii=False, indent=2), encoding="utf-8",
+                )
+            except OSError:
+                pass
 
 
 # ═══════════════════════ Traitement d'un case ═════════════════════════════════
@@ -2884,8 +2989,13 @@ def run_autofix_pipeline(
                 pipeline_runs_root=pipeline_runs_root,
                 core_change_candidates_root=core_change_candidates_root,
             )
+            _maybe_notify_live_validation(summary, pipeline_runs_root=pipeline_runs_root)
             write_pipeline_run_summary(summary, out_root=pipeline_runs_root)
             summaries.append(summary)
+
+        _retry_pending_live_notifications(
+            pipeline_runs_root, processed_case_ids={case.case_id for case in batch},
+        )
 
         return downstream_summaries, upstream_summaries, summaries
     finally:

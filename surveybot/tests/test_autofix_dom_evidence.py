@@ -13,13 +13,13 @@ from unittest.mock import patch
 
 from Survey.autofix.autofix_worktree import dom_evidence_relative_dir, prepare_autofix_worktree
 from Survey.autofix.autofix_orchestrator import (
-    AutofixOrchestratorError, ClaudeInvocationResult, DEFAULT_MAX_BUDGET_USD,
+    AutofixOrchestratorError, CaseRunSummary, ClaudeInvocationResult, DEFAULT_MAX_BUDGET_USD,
     DEFAULT_MAX_ATTEMPTS, DEFAULT_MAX_CASE_BUDGET_USD,
     EligibleCase, SafetyOutcome, STATUS_FAILURE, STATUS_SUCCESS,
     STAGE_CLAUDE_INVOCATION, STAGE_CONFIDENCE_SCORE, STAGE_NO_CHANGES,
     STAGE_STATIC_VALIDATION, _MAX_AGENT_FINAL_TEXT_CHARS,
     STAGE_UPSTREAM_DIAGNOSIS, STAGE_UPSTREAM_HISTORY_DUPLICATE, UpstreamCaseSummary,
-    _diagnosis_signature, _worktree_terminal_state,
+    _diagnosis_signature, _maybe_notify_live_validation, _worktree_terminal_state,
     _extract_agent_final_summary, _informative_static_rejection,
     invoke_claude_headless, process_case,
     run_autofix_pipeline, run_upstream_stage,
@@ -155,11 +155,13 @@ class AutofixHeadlessInvocationTests(unittest.TestCase):
 
     def test_pipeline_forwards_invocation_options(self) -> None:
         case = EligibleCase("synthetic", Path("manifest.json"), Path("prompt.txt"))
-        summary = SimpleNamespace(case_id="synthetic")
+        summary = CaseRunSummary("synthetic", False, STAGE_STATIC_VALIDATION, None, False)
         with patch("Survey.autofix.autofix_orchestrator.acquire_lock", return_value=object()), \
              patch("Survey.autofix.autofix_orchestrator.release_lock"), \
              patch("Survey.autofix.autofix_orchestrator.discover_eligible_cases", return_value=[case]), \
              patch("Survey.autofix.autofix_orchestrator.process_case", return_value=summary) as process, \
+             patch("Survey.autofix.autofix_orchestrator._maybe_notify_live_validation") as pending, \
+             patch("Survey.autofix.autofix_orchestrator._retry_pending_live_notifications"), \
              patch("Survey.autofix.autofix_orchestrator.write_pipeline_run_summary"):
             _, _, results = run_autofix_pipeline(
                 run_upstream=False, run_downstream=False, restricted=False, max_budget_usd=2.5,
@@ -167,6 +169,7 @@ class AutofixHeadlessInvocationTests(unittest.TestCase):
         self.assertEqual(results, [summary])
         self.assertFalse(process.call_args.kwargs["restricted"])
         self.assertEqual(process.call_args.kwargs["max_budget_usd"], 2.5)
+        pending.assert_called_once_with(summary, pipeline_runs_root=Path("autofix_pipeline_runs"))
 
 
 class AutofixDomEvidenceTests(unittest.TestCase):
@@ -1000,6 +1003,157 @@ class AutofixDomEvidenceTests(unittest.TestCase):
         integrity.assert_called_once()
         confidence.assert_called_once()
         notify.assert_not_called()
+
+    def _pending_live_summary(self, case_id: str, score: dict | None, *,
+                              agent_summary: str | None = "Correctif d'action ajouté") -> CaseRunSummary:
+        score_path = self.root / "confidence" / case_id / "confidence_score.json"
+        score_path.parent.mkdir(parents=True, exist_ok=True)
+        score_path.write_text(json.dumps(score) if score is not None else "{broken", encoding="utf-8")
+        run_path = self.root / "runs" / case_id / "run_result.json"
+        run_path.parent.mkdir(parents=True, exist_ok=True)
+        run_path.write_text(json.dumps({
+            "agent_final_summary": agent_summary,
+            "agent_final_text": "Correction prête pour vérification live.",
+        }), encoding="utf-8")
+        return CaseRunSummary(
+            case_id=case_id, deferred=False, stopped_at=STAGE_CONFIDENCE_SCORE,
+            stop_reason="confidence='MEDIUM' (\"HIGH\" requis pour notifier)", is_error=False,
+            artifacts={STAGE_CONFIDENCE_SCORE: str(score_path),
+                       STAGE_PATCH_REPLAY: str(self.root / "replays" / case_id / "patch_replay.json"),
+                       STAGE_CLAUDE_INVOCATION: str(run_path)},
+            confidence="MEDIUM",
+        )
+
+    def test_pending_live_notification_is_single_status_and_deduplicated(self) -> None:
+        criteria = {name: {"value": value} for name, value in (
+            ("static_validation", "PASS"), ("extractor_integrity", "PASS"),
+            ("fix_confirmed", "INCONCLUSIVE"), ("live_validation", "NOT_RUN"),
+        )}
+        score = {"confidence": "MEDIUM", "criteria": criteria,
+                 "detail": "Question secrète, réponse secrète, https://survey.invalid/secret"}
+        case_id = "synthetic_pending_live"
+        summary = self._pending_live_summary(case_id, score)
+        with patch("Survey.autofix.autofix_orchestrator.send_status_notification") as notify:
+            _maybe_notify_live_validation(summary, pipeline_runs_root=self.root / "pipeline")
+        notify.assert_called_once()
+        message = notify.call_args.args[0]
+        for expected in (case_id, "validation live", "Correctif d'action ajouté",
+                         summary.artifacts[STAGE_PATCH_REPLAY], "une seule page", "URL du case",
+                         "rechargée à l'état de l'incident", "§4.3", "Phase 10"):
+            self.assertIn(expected, message)
+        for secret in ("Question secrète", "réponse secrète", "https://survey.invalid/secret"):
+            self.assertNotIn(secret, message)
+        self.assertLessEqual(len(message), 1000)
+        self.assertTrue(summary.notified)
+        self.assertEqual(summary.as_dict()["notified_state"], "live_validation_pending")
+        write_pipeline_run_summary(summary, out_root=self.root / "pipeline")
+
+        repeated = self._pending_live_summary(case_id, score)
+        with patch("Survey.autofix.autofix_orchestrator.send_status_notification") as notify:
+            _maybe_notify_live_validation(repeated, pipeline_runs_root=self.root / "pipeline")
+        notify.assert_not_called()
+        self.assertFalse(repeated.notified)
+        self.assertEqual(repeated.notified_state, "live_validation_pending")
+        with (patch("Survey.autofix.autofix_orchestrator.acquire_lock", return_value=object()),
+              patch("Survey.autofix.autofix_orchestrator.release_lock"),
+              patch("Survey.autofix.autofix_orchestrator.discover_eligible_cases", return_value=[]),
+              patch("Survey.autofix.autofix_orchestrator.send_status_notification") as notify):
+            run_autofix_pipeline(run_upstream=False, run_downstream=False,
+                                 pipeline_runs_root=self.root / "pipeline")
+        notify.assert_not_called()
+
+    def test_pending_live_notification_failure_warns_and_remains_retryable(self) -> None:
+        score = {"confidence": "MEDIUM", "criteria": {name: {"value": value} for name, value in (
+            ("static_validation", "PASS"), ("extractor_integrity", "PASS"),
+            ("fix_confirmed", "INCONCLUSIVE"), ("live_validation", "NOT_RUN"),
+        )}}
+        summary = self._pending_live_summary("synthetic_pending_failure", score,
+                                             agent_summary=None)
+        with patch("Survey.autofix.autofix_orchestrator.send_status_notification",
+                   side_effect=HumanReviewError("envoi indisponible")) as notify:
+            _maybe_notify_live_validation(summary, pipeline_runs_root=self.root / "pipeline")
+        notify.assert_called_once()
+        self.assertIn("Correction prête pour vérification live", notify.call_args.args[0])
+        self.assertFalse(summary.notified)
+        self.assertNotIn("notified_state", summary.as_dict())
+        self.assertEqual(len(summary.warnings), 1)
+        self.assertIn("notification Telegram échouée", summary.warnings[0])
+        write_pipeline_run_summary(summary, out_root=self.root / "pipeline")
+        with (patch("Survey.autofix.autofix_orchestrator.acquire_lock", return_value=object()),
+              patch("Survey.autofix.autofix_orchestrator.release_lock"),
+              patch("Survey.autofix.autofix_orchestrator.discover_eligible_cases", return_value=[]),
+              patch("Survey.autofix.autofix_orchestrator.process_case") as process,
+              patch("Survey.autofix.autofix_orchestrator.write_patch_confidence") as score,
+              patch("Survey.autofix.autofix_orchestrator.send_status_notification") as notify):
+            run_autofix_pipeline(run_upstream=False, run_downstream=False,
+                                 pipeline_runs_root=self.root / "pipeline")
+        process.assert_not_called()
+        score.assert_not_called()
+        notify.assert_called_once()
+        recorded = json.loads((self.root / "pipeline" / summary.case_id / "pipeline_run.json").read_text(encoding="utf-8"))
+        self.assertTrue(recorded["notified"])
+        self.assertEqual(recorded["notified_state"], "live_validation_pending")
+
+        unexpected = self._pending_live_summary("synthetic_pending_oserror", score)
+        with patch("Survey.autofix.autofix_orchestrator.send_status_notification",
+                   side_effect=OSError("réponse secrète")):
+            _maybe_notify_live_validation(unexpected, pipeline_runs_root=self.root / "pipeline")
+        self.assertFalse(unexpected.notified)
+        self.assertNotIn("notified_state", unexpected.as_dict())
+        self.assertNotIn("réponse secrète", str(unexpected.warnings))
+
+    def test_pending_live_notification_masks_survey_words_and_urls_in_summary(self) -> None:
+        score = {"confidence": "MEDIUM", "criteria": {name: {"value": value} for name, value in (
+            ("static_validation", "PASS"), ("extractor_integrity", "PASS"),
+            ("fix_confirmed", "INCONCLUSIVE"), ("live_validation", "NOT_RUN"),
+        )}}
+        summary = self._pending_live_summary(
+            "synthetic_private_summary", score,
+            agent_summary="Libellé secret https://survey.invalid/secret",
+        )
+        with patch("Survey.autofix.autofix_orchestrator.send_status_notification") as notify:
+            _maybe_notify_live_validation(summary, pipeline_runs_root=self.root / "pipeline")
+        message = notify.call_args.args[0]
+        self.assertIn("résumé masqué", message)
+        self.assertNotIn("Libellé secret", message)
+        self.assertNotIn("https://survey.invalid/secret", message)
+
+    def test_pending_live_notification_requires_exact_final_score_criteria(self) -> None:
+        expected = {name: {"value": value} for name, value in (
+            ("static_validation", "PASS"), ("extractor_integrity", "PASS"),
+            ("fix_confirmed", "INCONCLUSIVE"), ("live_validation", "NOT_RUN"),
+        )}
+        cases = (
+            ("high", {"confidence": "HIGH", "criteria": expected}, "HIGH", STAGE_CONFIDENCE_SCORE),
+            ("reject", {"confidence": "REJECT", "criteria": expected}, "REJECT", STAGE_CONFIDENCE_SCORE),
+            ("live_run", {"confidence": "MEDIUM", "criteria": {**expected, "live_validation": {"value": "PASS"}}}, "MEDIUM", STAGE_CONFIDENCE_SCORE),
+            ("static_fail", {"confidence": "MEDIUM", "criteria": {**expected, "static_validation": {"value": "FAIL"}}}, "MEDIUM", STAGE_CONFIDENCE_SCORE),
+            ("integrity_missing", {"confidence": "MEDIUM", "criteria": {**expected, "extractor_integrity": {"value": "MISSING"}}}, "MEDIUM", STAGE_CONFIDENCE_SCORE),
+            ("unknown", {"confidence": "MEDIUM", "criteria": {**expected, "fix_confirmed": {"value": "UNKNOWN"}}}, "MEDIUM", STAGE_CONFIDENCE_SCORE),
+            ("missing_criteria", {"confidence": "MEDIUM", "criteria": {}}, "MEDIUM", STAGE_CONFIDENCE_SCORE),
+            ("unreadable", None, "MEDIUM", STAGE_CONFIDENCE_SCORE),
+            ("before_score", {"confidence": "MEDIUM", "criteria": expected}, "MEDIUM", STAGE_STATIC_VALIDATION),
+        )
+        for suffix, score, confidence, stopped_at in cases:
+            with self.subTest(suffix=suffix):
+                summary = self._pending_live_summary("synthetic_no_pending_" + suffix, score)
+                summary.confidence = confidence
+                summary.stopped_at = stopped_at
+                original = summary.as_dict()
+                with patch("Survey.autofix.autofix_orchestrator.send_status_notification") as notify:
+                    _maybe_notify_live_validation(summary, pipeline_runs_root=self.root / "pipeline")
+                notify.assert_not_called()
+                self.assertEqual(summary.as_dict(), original)
+
+        oversized = self._pending_live_summary("synthetic_oversized_status", {
+            "confidence": "MEDIUM", "criteria": expected,
+        })
+        oversized.artifacts[STAGE_PATCH_REPLAY] = "x" * 1001
+        original = oversized.as_dict()
+        with patch("Survey.autofix.autofix_orchestrator.send_status_notification") as notify:
+            _maybe_notify_live_validation(oversized, pipeline_runs_root=self.root / "pipeline")
+        notify.assert_not_called()
+        self.assertEqual(oversized.as_dict(), original)
 
     def test_existing_terminal_decisions_remain_unchanged(self) -> None:
         case_id = "synthetic_terminal_states"
