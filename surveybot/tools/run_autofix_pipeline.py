@@ -84,6 +84,8 @@ from Survey.autofix.autofix_orchestrator import (  # noqa: E402
     DEFAULT_CLAUDE_TIMEOUT_S,
     DEFAULT_LOCK_STALE_AFTER_S,
     DEFAULT_MAX_BUDGET_USD,
+    DEFAULT_MAX_ATTEMPTS,
+    DEFAULT_MAX_CASE_BUDGET_USD,
     DEFAULT_MAX_CASES,
     DEFAULT_MAX_UPSTREAM_CASES,
     DEFAULT_PERMISSION_MODE,
@@ -122,6 +124,8 @@ def main(argv: "list[str] | None" = None) -> int:
     parser.add_argument("--permission-mode", default=DEFAULT_PERMISSION_MODE, help=f"Mode de permission Claude Code (--permission-mode), défaut={DEFAULT_PERMISSION_MODE!r}")
     parser.add_argument("--no-restricted", dest="restricted", action="store_false", default=True, help="Désactive --restricted pour l'invocation Claude Code (actif par défaut)")
     parser.add_argument("--max-budget-usd", type=float, default=DEFAULT_MAX_BUDGET_USD, help=f"Plafond de dépense Claude Code en dollars par session (défaut : {DEFAULT_MAX_BUDGET_USD:g} USD ; 0 désactive le plafond)")
+    parser.add_argument("--max-attempts", type=int, default=DEFAULT_MAX_ATTEMPTS, help=f"Nombre maximal de sessions par case (défaut : {DEFAULT_MAX_ATTEMPTS}, maximum : 3 ; 1 rétablit le traitement unique)")
+    parser.add_argument("--max-case-budget-usd", type=float, default=DEFAULT_MAX_CASE_BUDGET_USD, help=f"Plafond cumulé par case en dollars (défaut : {DEFAULT_MAX_CASE_BUDGET_USD:g} USD ; 0 désactive ce plafond)")
     parser.add_argument("--force", action="store_true", help="Régénère un artefact déjà existant pour un case traité dans cette invocation (jamais un écrasement silencieux)")
     parser.add_argument("--no-upstream", dest="upstream", action="store_false", default=True, help="Désactive l'étape amont (failure_cases -> worktree) — restaure le comportement d'avant cette étape (worktree.json/prompt.txt déjà présents restent une précondition manuelle)")
     parser.add_argument("--import-fleet", action="store_true", help="Avant l'étape amont, importe les failure_cases disponibles côté stockage fleet (Survey/autofix/fleet_case_import.py) — désactivé par défaut, exige FLEET_R2_* dans l'environnement ; un échec est un avertissement, jamais un arrêt")
@@ -155,6 +159,8 @@ def main(argv: "list[str] | None" = None) -> int:
             permission_mode=args.permission_mode,
             restricted=args.restricted,
             max_budget_usd=args.max_budget_usd,
+            max_attempts=args.max_attempts,
+            max_case_budget_usd=args.max_case_budget_usd,
             force=args.force,
             run_upstream=args.upstream,
             import_fleet=args.import_fleet,

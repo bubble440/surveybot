@@ -53,11 +53,9 @@ accepté explicitement, cf. Survey/autofix/parallel_safety.py ("l'ordre de trait
 ── Conséquence disclosée de la règle d'éligibilité ────────────────────────────
 run_result.json, une fois écrit (succès OU échec de l'invocation Claude
 Code), rend le case définitivement non éligible à une reprise AUTOMATIQUE par
-une future invocation de ce module — conforme à la lettre de la règle
-d'éligibilité ci-dessus, et cohérent avec la RÈGLE STRICTE "jamais de retry
-automatique sur échec [...] attend la prochaine invocation planifiée" (une
-invocation planifiée reprend un NOUVEAU case, jamais silencieusement le même
-en boucle). Une reprise du même case reste possible mais MANUELLE : soit un
+une future invocation de ce module. La seconde tentative bornée d'un échec
+informatif se déroule dans la même invocation, avant sa synthèse finale.
+Une reprise du même case lors d'une invocation ultérieure reste MANUELLE : soit un
 humain supprime codex_runs/<case_id>/ après investigation, soit — si
 l'invocation Claude Code avait réussi mais qu'une phase suivante a échoué ou
 que ce process a été interrompu en cours de chaîne — un humain relance
@@ -156,8 +154,8 @@ environnement, version 2.1.283) AVANT d'écrire ce module, jamais supposée :
   - --permission-prompts none : refuse les demandes sans attente interactive.
   - --max-budget-usd 5 : plafond par session ; 0 omet cette option.
 
-Un seul mécanisme d'invocation, un seul essai (subprocess.run avec
-timeout=claude_timeout_s explicite) — jamais de retry automatique. Un
+Un seul mécanisme d'invocation, un seul essai par session (subprocess.run avec
+timeout=claude_timeout_s explicite) — jamais de reprise de session. Un
 dépassement de budget (TimeoutExpired) ou un code de sortie non nul arrête la
 chaîne ICI pour ce case, jamais les phases suivantes pour LUI, et jamais les
 autres cases de cette même invocation (chaque case est indépendant). Le
@@ -191,6 +189,11 @@ e. confidence="HIGH" -> Phase 13 (Survey.autofix.human_review.send_review_reques
    13 elle-même ("MEDIUM/REJECT ne déclenchent jamais de notification").
 Un verdict statique ACCEPTED avec changed_files=[] s'arrête avant b. à
 NO_CHANGES ; une notification simple signale l'issue à l'opérateur.
+L'orchestrateur peut ouvrir une nouvelle session dans le même worktree après
+un rejet statique imputable au patch ou un rejeu BUG_PERSISTANT exploitable :
+--max-attempts=2 par défaut (3 maximum, 1 pour le traitement historique) et
+--max-case-budget-usd=8 par défaut (0 désactive ce plafond cumulé). Un coût
+inconnu ou moins de 1 USD restant interdit une autre session.
 
 ── Sortie : résumé par case ───────────────────────────────────────────────────
 Pour CHAQUE case retenu dans cette invocation (traité OU reporté),
@@ -490,6 +493,7 @@ conflit/bloqués, et les cases amont fusionnés dans un groupe, point 4 de la
 section amont).
 """
 
+import hashlib
 import json
 import math
 import os
@@ -508,6 +512,7 @@ from Survey.autofix.autofix_worktree import (
 from Survey.autofix.case_grouping import CaseGroupingError, write_case_groups
 from Survey.autofix.confidence_score import (
     CONFIDENCE_HIGH,
+    CONFIDENCE_MEDIUM,
     CONFIDENCE_REJECT,
     ConfidenceScoreError,
     write_patch_confidence,
@@ -553,6 +558,14 @@ DEFAULT_CLAUDE_TIMEOUT_S = 600.0
 DEFAULT_ALLOWED_TOOLS = "Read Edit Write Grep Glob"
 DEFAULT_PERMISSION_MODE = "acceptEdits"
 DEFAULT_MAX_BUDGET_USD = 5.0
+DEFAULT_MAX_ATTEMPTS = 2
+DEFAULT_MAX_CASE_BUDGET_USD = 8.0
+_MAX_ATTEMPTS = 3
+_MIN_NEXT_ATTEMPT_BUDGET_USD = 1.0
+_MAX_FEEDBACK_CHARS = 1200
+_MAX_PATCH_FINGERPRINT_FILES = 128
+_MAX_PATCH_FINGERPRINT_FILE_BYTES = 1_000_000
+_MAX_ATTEMPT_ARTIFACT_BYTES = 8_000_000
 
 # Borne conservatrice, distincte de DEFAULT_MAX_CASES : la Phase 4 (diagnostic)
 # lance un vrai Chromium isolé pour tout case stage="action" avec
@@ -1931,7 +1944,7 @@ def invoke_claude_headless(
     restricted: bool = True,
     max_budget_usd: float = DEFAULT_MAX_BUDGET_USD,
 ) -> ClaudeInvocationResult:
-    """Un seul mécanisme, un seul essai — jamais de retry. cf. docstring du
+    """Un seul mécanisme, un seul essai par session. cf. docstring du
     module (Point 2) pour la justification de chaque flag, vérifiée avant
     d'écrire cette fonction (claude --help + appels réels)."""
     if (isinstance(max_budget_usd, bool) or not isinstance(max_budget_usd, (int, float))
@@ -2122,9 +2135,11 @@ class CaseRunSummary:
     confidence: Optional[str] = None
     notified: bool = False
     warnings: "list[str]" = field(default_factory=list)
+    attempt_count: Optional[int] = None
+    attempts: "list[dict] | None" = None
 
     def as_dict(self) -> dict:
-        return {
+        result = {
             "schema_version": SCHEMA_VERSION,
             "case_id": self.case_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -2137,6 +2152,10 @@ class CaseRunSummary:
             "notified": self.notified,
             "warnings": self.warnings,
         }
+        if self.attempt_count is not None:
+            result["attempt_count"] = self.attempt_count
+            result["attempts"] = self.attempts or []
+        return result
 
 
 def _pipeline_run_paths(out_root: Path, case_id: str) -> "tuple[Path, Path]":
@@ -2168,7 +2187,7 @@ def write_pipeline_run_summary(
 # ═══════════════════════ Traitement d'un case ═════════════════════════════════
 
 
-def process_case(
+def _process_case_once(
     case: EligibleCase,
     *,
     failure_cases_root: Path,
@@ -2192,6 +2211,10 @@ def process_case(
     expected_core_changes_root: "Path | None" = None,
     pipeline_runs_root: "Path | None" = None,
     core_change_candidates_root: "Path | None" = None,
+    prompt_override: "str | None" = None,
+    skip_parallel_safety: bool = False,
+    attempt_state: "dict | None" = None,
+    attempt_number: int = 1,
 ) -> CaseRunSummary:
     """Traite UN case, du contrôle de parallélisme jusqu'à la notification
     humaine (ou l'arrêt contrôlé le plus loin possible dans cet ordre).
@@ -2233,7 +2256,7 @@ def process_case(
         static_validations_root=static_validations_root,
         codex_runs_root=codex_runs_root,
         pipeline_runs_root=pipeline_runs_root,
-    )
+    ) if not skip_parallel_safety else SafetyOutcome(checked=True, safe=True, reason=None)
     if not safety.safe:
         return CaseRunSummary(
             case_id=case_id, deferred=True, stopped_at=STAGE_PARALLEL_SAFETY,
@@ -2241,11 +2264,16 @@ def process_case(
         )
 
     # ── Point 2 ────────────────────────────────────────────────────────────
-    prompt_text = case.prompt_path.read_text(encoding="utf-8")
-    evidence_relative_dir = dom_evidence_relative_dir(case_id)
-    prompt_text = add_dom_evidence_context(
-        prompt_text, case_id, worktree_path / evidence_relative_dir, evidence_relative_dir,
-    )
+    if prompt_override is None:
+        prompt_text = case.prompt_path.read_text(encoding="utf-8")
+        evidence_relative_dir = dom_evidence_relative_dir(case_id)
+        prompt_text = add_dom_evidence_context(
+            prompt_text, case_id, worktree_path / evidence_relative_dir, evidence_relative_dir,
+        )
+    else:
+        prompt_text = prompt_override
+    if attempt_state is not None:
+        attempt_state["prompt_text"] = prompt_text
     invocation = invoke_claude_headless(
         case_id=case_id, branch=branch, worktree_path=worktree_path,
         prompt_text=prompt_text, allowed_tools=allowed_tools,
@@ -2253,6 +2281,8 @@ def process_case(
         restricted=restricted, max_budget_usd=max_budget_usd,
     )
     run_result_path = write_run_result(invocation, out_root=codex_runs_root, force=force)
+    if attempt_state is not None:
+        attempt_state["invocation"] = invocation
     artifacts[STAGE_CLAUDE_INVOCATION] = str(run_result_path)
     agent_text_start = " ".join((invocation.agent_final_text or "").split())[:_MAX_NO_CHANGES_REASON_CHARS]
     agent_summary = invocation.agent_final_summary or agent_text_start
@@ -2323,7 +2353,8 @@ def process_case(
                 case_id, notify_state=NOTIFY_STATE_NO_CHANGES,
                 previous_notified_state=None,
                 message=(
-                    f"Autofix case={case_id} : aucun changement. {reason}\n"
+                    f"Autofix case={case_id} : aucun changement"
+                    f"{f' (tentative {attempt_number})' if attempt_number > 1 else ''}. {reason}\n"
                     f"Artefact : {artifacts.get(STAGE_CORE_CHANGE_CANDIDATE, str(run_result_path))}"
                 ),
             )
@@ -2418,6 +2449,284 @@ def process_case(
     )
 
 
+def _informative_static_rejection(data: Any) -> bool:
+    """Relance seulement un contrôle de patch reconnu, jamais un outil indisponible."""
+    if not isinstance(data, dict) or data.get("verdict") != "REJECTED":
+        return False
+    checks = data.get("checks")
+    if not isinstance(checks, dict) or len(checks) > 6:
+        return False
+    failed = [(name, check) for name, check in checks.items()
+              if isinstance(check, dict) and check.get("ok") is False]
+    if not failed:
+        return False
+    environment_tokens = (
+        "introuvable sur path", "indisponible", "budget dépassé",
+        "dépassé son budget", "exécution impossible", "sortie ruff illisible",
+        "aucune sortie exploitable", "résultat du contrôle d'activation illisible",
+        "modulenotfounderror", "no module named", "no such file or directory",
+    )
+    for name, check in failed:
+        error = check.get("error")
+        if (name not in {"compile", "import", "lint", "tests", "activation", "root_files"}
+                or check.get("timed_out") is True):
+            return False
+        if name in {"compile", "import"}:
+            files = check.get("files")
+            bad = [row for row in files if isinstance(row, dict) and row.get("ok") is False] if isinstance(files, list) and len(files) <= _MAX_PATCH_FINGERPRINT_FILES else []
+            if not bad or any(
+                row.get("timed_out") is True or not isinstance(row.get("error"), str)
+                or any(token in row["error"].lower() for token in environment_tokens)
+                for row in bad
+            ):
+                return False
+        elif name == "lint" and (not isinstance(check.get("violations"), list)
+                                  or not check["violations"] or error is not None):
+            return False
+        elif name == "tests" and (not isinstance(error, str)
+                                   or any(token in error.lower() for token in environment_tokens)
+                                   or (not check.get("executed") and "test associé absent" not in error)):
+            return False
+        elif name == "activation" and (
+            check.get("skipped") is not False or not isinstance(error, str)
+            or any(token in error.lower() for token in environment_tokens)
+        ):
+            return False
+        elif name == "root_files" and (not check.get("files") or not isinstance(error, str)):
+            return False
+    return True
+
+
+def _patch_fingerprint(static_data: Any, worktree_path: Path) -> Optional[str]:
+    """Empreinte bornée des fichiers contrôlés par la validation statique."""
+    files = static_data.get("changed_files") if isinstance(static_data, dict) else None
+    checks = static_data.get("checks") if isinstance(static_data, dict) else None
+    root_check = checks.get("root_files") if isinstance(checks, dict) else None
+    root_files = root_check.get("files", []) if isinstance(root_check, dict) else []
+    if not isinstance(files, list) or not isinstance(root_files, list):
+        return None
+    names = files + root_files
+    if not 0 < len(names) <= _MAX_PATCH_FINGERPRINT_FILES or any(not isinstance(name, str) for name in names):
+        return None
+    digest = hashlib.sha256()
+    root = worktree_path.resolve()
+    total_bytes = 0
+    try:
+        for name in sorted(set(names)):
+            path = Path(name)
+            path = (path if path.is_absolute() else root / path).resolve()
+            if not path.is_relative_to(root) or not path.is_file():
+                return None
+            size = path.stat().st_size
+            total_bytes += size
+            if total_bytes > _MAX_ATTEMPT_ARTIFACT_BYTES or size > _MAX_PATCH_FINGERPRINT_FILE_BYTES:
+                return None
+            digest.update(str(path.relative_to(root)).encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(path.read_bytes())
+            digest.update(b"\0")
+    except (OSError, ValueError):
+        return None
+    return digest.hexdigest()
+
+
+_SAFE_FAILURE_TYPES = frozenset({
+    "missing_block", "invalid_block_shape", "missing_target_id", "registry_target_missing",
+    "choice_without_options", "duplicate_options", "invalid_selection_limits",
+    "max_select_exceeds_options", "question_text_is_help", "dispatcher_false_negative",
+    "action_fix_success_unconfirmed", "invalid_action_shape", "action_missing_target_id",
+    "action_target_missing", "action_value_not_in_registry_options", "dispatcher_reported_failure",
+})
+
+
+def _retry_evidence(summary: CaseRunSummary, worktree_path: Path, *, candidate_declared: bool) -> Optional[dict]:
+    if summary.is_error or summary.deferred or summary.stopped_at == STAGE_NO_CHANGES:
+        return None
+    run_data, _ = _load_json(Path(summary.artifacts.get(STAGE_CLAUDE_INVOCATION, "")))
+    if not isinstance(run_data, dict) or run_data.get("status") != STATUS_SUCCESS:
+        return None
+    if candidate_declared:
+        return None
+    static_data, _ = _load_json(Path(summary.artifacts.get(STAGE_STATIC_VALIDATION, "")))
+    fingerprint = _patch_fingerprint(static_data, worktree_path)
+    if fingerprint is None:
+        return None
+    if summary.stopped_at == STAGE_STATIC_VALIDATION:
+        if not _informative_static_rejection(static_data):
+            return None
+        reasons = static_data.get("reasons")
+        first = reasons[0] if isinstance(reasons, list) and reasons else None
+        if not isinstance(first, str) or not first.strip() or len(first) > 4000:
+            return None
+        checks = static_data["checks"]
+        kinds = [name for name in ("compile", "import", "lint", "tests", "activation", "root_files")
+                 if isinstance(checks.get(name), dict) and checks[name].get("ok") is False][:3]
+        cause = (STAGE_STATIC_VALIDATION, hashlib.sha256(" ".join(first.split()).encode("utf-8")).hexdigest())
+        # Les détails libres des contrôles peuvent citer une réponse du sondage.
+        return {"fingerprint": fingerprint, "cause": cause,
+                "feedback": [f"- {name} : échec (détail masqué)" for name in kinds]}
+    if summary.stopped_at != STAGE_CONFIDENCE_SCORE or summary.confidence not in (CONFIDENCE_MEDIUM, CONFIDENCE_REJECT):
+        return None
+    integrity, _ = _load_json(Path(summary.artifacts.get(STAGE_EXTRACTOR_INTEGRITY, "")))
+    replay, _ = _load_json(Path(summary.artifacts.get(STAGE_PATCH_REPLAY, "")))
+    if (not isinstance(integrity, dict) or integrity.get("verdict") != "ACCEPTED"
+            or not isinstance(replay, dict) or replay.get("refused") is not False
+            or replay.get("after_replay_error") is not None or replay.get("outcome") != "BUG_PERSISTANT"):
+        return None
+    after = replay.get("after_replay")
+    if not isinstance(after, dict):
+        return None
+    if replay.get("stage") == "action" and (
+        after.get("status") not in ("SUCCESS", "FAILURE") or after.get("validation_error") is not None
+    ):
+        return None
+    if replay.get("stage") == "extraction" and after.get("verdict") != "REPRODUIT":
+        return None
+    if replay.get("stage") not in ("action", "extraction"):
+        return None
+    steps = after.get("dispatcher_steps") if isinstance(after, dict) else None
+    if steps is not None and (not isinstance(steps, list) or len(steps) > 24
+                              or "capture=truncated" in steps
+                              or any(not isinstance(step, str) or not _DISPATCH_STEP_RE.fullmatch(step)
+                                     for step in steps)):
+        return None
+    steps = steps or []
+    comparison = after.get("validation_comparison") if isinstance(after, dict) else None
+    types = comparison.get("replayed_failure_types") if isinstance(comparison, dict) else None
+    safe_types = [item for item in types[:6] if isinstance(item, str) and item in _SAFE_FAILURE_TYPES] if isinstance(types, list) else []
+    feedback = ["- rejeu : BUG_PERSISTANT"]
+    if safe_types:
+        feedback.append("- types d'échec : " + ", ".join(safe_types))
+    feedback.extend("- étape : " + step for step in steps[:12])
+    return {"fingerprint": fingerprint, "cause": (STAGE_PATCH_REPLAY, tuple(steps)),
+            "feedback": feedback}
+
+
+def _archive_case_attempt(summary: CaseRunSummary, root: Path, number: int) -> bool:
+    """Copie les artefacts terminés avant toute régénération au même chemin."""
+    archive = root / summary.case_id / "attempts" / f"attempt_{number}"
+    if len(summary.artifacts) > 8:
+        return False
+    try:
+        for stage, name in summary.artifacts.items():
+            source = Path(name)
+            if not source.is_file() or source.stat().st_size > _MAX_ATTEMPT_ARTIFACT_BYTES:
+                return False
+            destination = archive / stage
+            destination.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination / source.name)
+    except OSError:
+        return False
+    return True
+
+
+def process_case(
+    case: EligibleCase, *, failure_cases_root: Path, diagnoses_root: Path,
+    context_selections_root: Path, worktrees_root: Path, codex_runs_root: Path,
+    static_validations_root: Path, patch_replays_root: Path,
+    extractor_integrity_checks_root: Path, confidence_scores_root: Path,
+    human_reviews_root: Path, merge_results_root: Path, merge_reviews_root: Path,
+    claude_timeout_s: float, allowed_tools: str, permission_mode: str, force: bool,
+    restricted: bool = True, max_budget_usd: float = DEFAULT_MAX_BUDGET_USD,
+    expected_core_changes_root: "Path | None" = None,
+    pipeline_runs_root: "Path | None" = None,
+    core_change_candidates_root: "Path | None" = None,
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+    max_case_budget_usd: float = DEFAULT_MAX_CASE_BUDGET_USD,
+) -> CaseRunSummary:
+    """Une tentative inchangée ou, sur échec informatif, N sessions distinctes."""
+    if not isinstance(max_attempts, int) or isinstance(max_attempts, bool) or not 1 <= max_attempts <= _MAX_ATTEMPTS:
+        raise AutofixOrchestratorError(f"--max-attempts doit être entre 1 et {_MAX_ATTEMPTS}")
+    if (isinstance(max_case_budget_usd, bool) or not isinstance(max_case_budget_usd, (int, float))
+            or max_case_budget_usd < 0 or not math.isfinite(max_case_budget_usd)):
+        raise AutofixOrchestratorError("--max-case-budget-usd doit être un nombre fini >= 0")
+    options = dict(
+        failure_cases_root=failure_cases_root, diagnoses_root=diagnoses_root,
+        context_selections_root=context_selections_root, worktrees_root=worktrees_root,
+        codex_runs_root=codex_runs_root, static_validations_root=static_validations_root,
+        patch_replays_root=patch_replays_root,
+        extractor_integrity_checks_root=extractor_integrity_checks_root,
+        confidence_scores_root=confidence_scores_root, human_reviews_root=human_reviews_root,
+        merge_results_root=merge_results_root, merge_reviews_root=merge_reviews_root,
+        claude_timeout_s=claude_timeout_s, allowed_tools=allowed_tools,
+        permission_mode=permission_mode, force=force, restricted=restricted,
+        max_budget_usd=max_budget_usd, expected_core_changes_root=expected_core_changes_root,
+        pipeline_runs_root=pipeline_runs_root, core_change_candidates_root=core_change_candidates_root,
+    )
+    if max_attempts == 1:
+        return _process_case_once(case, **options)
+    attempts: "list[dict]" = []
+    previous: Optional[dict] = None
+    spent = 0.0
+    prompt_override = None
+    base_prompt = None
+    archive_root = pipeline_runs_root or codex_runs_root.parent / "autofix_pipeline_runs"
+    worktree_data, _ = _load_json(case.worktree_manifest_path)
+    worktree_path = Path(str((worktree_data or {}).get("worktree_path") or ""))
+    for number in range(1, max_attempts + 1):
+        state: dict = {}
+        if max_case_budget_usd > 0:
+            remaining = max_case_budget_usd - spent
+            options["max_budget_usd"] = min(max_budget_usd, remaining) if max_budget_usd > 0 else remaining
+        summary = _process_case_once(
+            case, **{**options, "force": force if number == 1 else True},
+            prompt_override=prompt_override, skip_parallel_safety=number > 1,
+            attempt_state=state, attempt_number=number,
+        )
+        invocation = state.get("invocation")
+        if invocation is None:
+            return summary
+        cost = invocation.total_cost_usd if invocation is not None else None
+        # La ligne libre de l'agent peut contenir des données du sondage.
+        attempts.append({"number": number, "stopped_at": summary.stopped_at,
+                         "cost_usd": cost, "num_turns": invocation.num_turns if invocation is not None else None,
+                         "summary": f"tentative {number} : arrêt {summary.stopped_at or 'indéterminé'}"})
+        summary.attempt_count = len(attempts)
+        summary.attempts = attempts.copy()
+        archived = _archive_case_attempt(summary, archive_root, number)
+        evidence = _retry_evidence(
+            summary, worktree_path,
+            candidate_declared=bool(invocation and invocation.declares_core_change_candidate),
+        ) if archived and number < max_attempts else None
+        if not archived:
+            summary.warnings.append("archivage de tentative incomplet"
+                                    + (" ; aucune relance" if number < max_attempts else ""))
+            log_debug(_TAG, f"case={case.case_id} tentative={number} archivage incomplet ; arrêt")
+        if (evidence is None or not isinstance(cost, (int, float)) or isinstance(cost, bool)
+                or cost < 0 or not math.isfinite(cost)):
+            return summary
+        if previous is not None and (previous["fingerprint"] == evidence["fingerprint"]
+                                     or previous["cause"] == evidence["cause"]):
+            log_debug(_TAG, f"case={case.case_id} tentative={number} sans progrès ; arrêt")
+            return summary
+        spent += cost
+        if max_case_budget_usd > 0 and max_case_budget_usd - spent < _MIN_NEXT_ATTEMPT_BUDGET_USD:
+            log_debug(_TAG, f"case={case.case_id} tentative={number} budget restant insuffisant ; arrêt")
+            return summary
+        interim_dir, interim_file = _pipeline_run_paths(archive_root, summary.case_id)
+        try:
+            interim_dir.mkdir(parents=True, exist_ok=True)
+            interim_file.write_text(json.dumps(summary.as_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError:
+            summary.warnings.append("synthèse intermédiaire indisponible ; aucune relance")
+            log_debug(_TAG, f"case={case.case_id} tentative={number} synthèse intermédiaire indisponible ; arrêt")
+            return summary
+        log_debug(_TAG, f"case={case.case_id} tentative={number} état terminal conservé avant relance")
+        previous = evidence
+        if base_prompt is None:
+            base_prompt = state["prompt_text"]
+        instruction = "\nCorrige le patch présent dans ce worktree ; ne le réécris pas depuis zéro.\n"
+        feedback = (f"\n\n## Retour des contrôles — tentative {number + 1}\n"
+                    f"RÉSUMÉ : {attempts[-1]['summary']}")
+        for line in evidence["feedback"][:16]:
+            if len(feedback) + len(line) + len(instruction) + 1 > _MAX_FEEDBACK_CHARS:
+                break
+            feedback += "\n" + line
+        prompt_override = base_prompt + feedback + instruction
+        log_debug(_TAG, f"case={case.case_id} tentative={number + 1}/{max_attempts} après échec informatif")
+    return summary
+
+
 # ═══════════════════════ Orchestration de l'invocation complète ══════════════
 
 
@@ -2446,6 +2755,8 @@ def run_autofix_pipeline(
     permission_mode: str = DEFAULT_PERMISSION_MODE,
     restricted: bool = True,
     max_budget_usd: float = DEFAULT_MAX_BUDGET_USD,
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+    max_case_budget_usd: float = DEFAULT_MAX_CASE_BUDGET_USD,
     force: bool = False,
     run_upstream: bool = True,
     import_fleet: bool = False,
@@ -2473,6 +2784,11 @@ def run_autofix_pipeline(
             or max_budget_usd < 0
             or (isinstance(max_budget_usd, float) and not math.isfinite(max_budget_usd))):
         raise AutofixOrchestratorError(f"--max-budget-usd doit être un nombre fini >= 0 ({max_budget_usd!r} fourni)")
+    if not isinstance(max_attempts, int) or isinstance(max_attempts, bool) or not 1 <= max_attempts <= _MAX_ATTEMPTS:
+        raise AutofixOrchestratorError(f"--max-attempts doit être entre 1 et {_MAX_ATTEMPTS}")
+    if (isinstance(max_case_budget_usd, bool) or not isinstance(max_case_budget_usd, (int, float))
+            or max_case_budget_usd < 0 or not math.isfinite(max_case_budget_usd)):
+        raise AutofixOrchestratorError("--max-case-budget-usd doit être un nombre fini >= 0")
     if lock_stale_after_s <= 0:
         raise AutofixOrchestratorError(f"--lock-stale-after-s doit être > 0 ({lock_stale_after_s} fourni)")
 
@@ -2561,6 +2877,8 @@ def run_autofix_pipeline(
                 permission_mode=permission_mode,
                 restricted=restricted,
                 max_budget_usd=max_budget_usd,
+                max_attempts=max_attempts,
+                max_case_budget_usd=max_case_budget_usd,
                 force=force,
                 expected_core_changes_root=expected_core_changes_root,
                 pipeline_runs_root=pipeline_runs_root,

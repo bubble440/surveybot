@@ -14,12 +14,14 @@ from unittest.mock import patch
 from Survey.autofix.autofix_worktree import dom_evidence_relative_dir, prepare_autofix_worktree
 from Survey.autofix.autofix_orchestrator import (
     AutofixOrchestratorError, ClaudeInvocationResult, DEFAULT_MAX_BUDGET_USD,
+    DEFAULT_MAX_ATTEMPTS, DEFAULT_MAX_CASE_BUDGET_USD,
     EligibleCase, SafetyOutcome, STATUS_FAILURE, STATUS_SUCCESS,
     STAGE_CLAUDE_INVOCATION, STAGE_CONFIDENCE_SCORE, STAGE_NO_CHANGES,
     STAGE_STATIC_VALIDATION, _MAX_AGENT_FINAL_TEXT_CHARS,
     STAGE_UPSTREAM_DIAGNOSIS, STAGE_UPSTREAM_HISTORY_DUPLICATE, UpstreamCaseSummary,
     _diagnosis_signature, _worktree_terminal_state,
-    _extract_agent_final_summary, invoke_claude_headless, process_case,
+    _extract_agent_final_summary, _informative_static_rejection,
+    invoke_claude_headless, process_case,
     run_autofix_pipeline, run_upstream_stage,
     write_pipeline_run_summary, write_run_result,
 )
@@ -113,11 +115,16 @@ class AutofixHeadlessInvocationTests(unittest.TestCase):
             self.assertEqual(main([]), 0)
             self.assertTrue(run.call_args.kwargs["restricted"])
             self.assertEqual(run.call_args.kwargs["max_budget_usd"], DEFAULT_MAX_BUDGET_USD)
+            self.assertEqual(run.call_args.kwargs["max_attempts"], DEFAULT_MAX_ATTEMPTS)
+            self.assertEqual(run.call_args.kwargs["max_case_budget_usd"], DEFAULT_MAX_CASE_BUDGET_USD)
             self.assertEqual(main(["--no-restricted", "--max-budget-usd", "0"]), 0)
             self.assertFalse(run.call_args.kwargs["restricted"])
             self.assertEqual(run.call_args.kwargs["max_budget_usd"], 0)
             self.assertEqual(main(["--max-budget-usd", "2.5"]), 0)
             self.assertEqual(run.call_args.kwargs["max_budget_usd"], 2.5)
+            self.assertEqual(main(["--max-attempts", "3", "--max-case-budget-usd", "0"]), 0)
+            self.assertEqual(run.call_args.kwargs["max_attempts"], 3)
+            self.assertEqual(run.call_args.kwargs["max_case_budget_usd"], 0)
 
         for invalid in ("-1", "nan", "inf"):
             with self.subTest(invalid=invalid), redirect_stderr(io.StringIO()) as stderr:
@@ -136,6 +143,15 @@ class AutofixHeadlessInvocationTests(unittest.TestCase):
                     case_id="synthetic", branch="synthetic", worktree_path=Path("worktree"),
                     prompt_text="synthetic prompt", max_budget_usd=invalid,
                 )
+        for args, message in (
+            (["--max-attempts", "0"], "--max-attempts doit être"),
+            (["--max-attempts", "4"], "--max-attempts doit être"),
+            (["--max-case-budget-usd", "-1"], "--max-case-budget-usd doit être"),
+            (["--max-case-budget-usd", "nan"], "--max-case-budget-usd doit être"),
+        ):
+            with self.subTest(args=args), redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(main(["--no-upstream", "--no-downstream", *args]), 1)
+                self.assertIn(message, stderr.getvalue())
 
     def test_pipeline_forwards_invocation_options(self) -> None:
         case = EligibleCase("synthetic", Path("manifest.json"), Path("prompt.txt"))
@@ -223,7 +239,7 @@ class AutofixDomEvidenceTests(unittest.TestCase):
             result.worktree_path / relative, relative,
         )
 
-    def _process_prepared_case(self, result, *, force: bool = False):
+    def _process_prepared_case(self, result, *, force: bool = False, **options):
         return process_case(
             EligibleCase(result.case_id, result.manifest_path, result.prompt_path),
             failure_cases_root=self.root / "inputs", diagnoses_root=self.root / "diagnoses",
@@ -236,7 +252,7 @@ class AutofixDomEvidenceTests(unittest.TestCase):
             pipeline_runs_root=self.root / "pipeline",
             core_change_candidates_root=self.root / "core_change_candidates",
             claude_timeout_s=1, allowed_tools="Read Edit Write Grep Glob",
-            permission_mode="acceptEdits", force=force,
+            permission_mode="acceptEdits", force=force, **options,
         )
 
     def _write_synthetic_static(self, case_id: str, changed_files: list[str]) -> Path:
@@ -473,6 +489,335 @@ class AutofixDomEvidenceTests(unittest.TestCase):
         self.assertEqual(_extract_agent_final_summary("RÉSUMÉ : " + "x" * 205), "x" * 200)
         self.assertIsNone(_extract_agent_final_summary("aucune ligne conforme"))
         self.assertIsNone(_extract_agent_final_summary("RÉSUMÉ : ancien\n" + "bruit\n" * 10))
+
+    def _synthetic_attempts(
+        self, case_id: str, *, static_artifacts: list[dict],
+        replay_artifacts: "list[dict] | None" = None,
+        integrity_artifacts: "list[dict] | None" = None,
+        confidence_artifacts: "list[dict] | None" = None,
+        costs: "list[float | None] | None" = None,
+        patch_contents: "list[str] | None" = None,
+        statuses: "list[str] | None" = None,
+        candidates: "list[bool] | None" = None,
+        **options,
+    ):
+        prepared, _ = self._prepare(case_id, {})
+        fix_path = prepared.worktree_path / "surveybot" / "fix.py"
+        costs = costs or [1.0] * len(static_artifacts)
+        patch_contents = patch_contents or [f"patch {i}" for i in range(len(costs))]
+        statuses = statuses or [STATUS_SUCCESS] * len(costs)
+        candidates = candidates or [False] * len(costs)
+        calls: "list[dict]" = []
+        counts = {"static": 0, "replay": 0, "integrity": 0, "confidence": 0}
+
+        def invoke(**kwargs):
+            index = len(calls)
+            calls.append(kwargs)
+            fix_path.write_text(patch_contents[index], encoding="utf-8")
+            return ClaudeInvocationResult(
+                case_id=case_id, branch=prepared.branch,
+                worktree_path=str(prepared.worktree_path), status=statuses[index],
+                exit_code=0 if statuses[index] == STATUS_SUCCESS else 1,
+                timed_out=False, session_id=f"session_{index}", is_error=statuses[index] != STATUS_SUCCESS,
+                subtype="success" if statuses[index] == STATUS_SUCCESS else "error",
+                command=[], raw_stdout="{}", raw_stderr="", error="synthetic failure" if statuses[index] != STATUS_SUCCESS else None,
+                agent_final_text="RÉSUMÉ : libellé secret https://example.invalid/?value=secret",
+                agent_final_summary="libellé secret https://example.invalid/?value=secret",
+                declares_core_change_candidate=candidates[index],
+                total_cost_usd=costs[index], num_turns=index + 2,
+            )
+
+        def write_artifact(kind: str, filename: str, records: "list[dict] | None"):
+            index = counts[kind]
+            counts[kind] += 1
+            if records is None or index >= len(records):
+                raise AssertionError(f"unexpected {kind} call")
+            path = self.root / kind / case_id / filename
+            path.parent.mkdir(parents=True, exist_ok=True)
+            artifact = dict(records[index])
+            if kind == "static":
+                artifact["changed_files"] = [str(fix_path)] if artifact.get("changed_files") != [] else []
+            path.write_text(json.dumps(artifact), encoding="utf-8")
+            return path
+
+        def request_review(**_kwargs):
+            path = self.root / "reviews" / case_id / "pending.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}", encoding="utf-8")
+            return SimpleNamespace(pending_path=path)
+
+        with (
+            patch("Survey.autofix.autofix_orchestrator._check_case_parallel_safety",
+                  return_value=SafetyOutcome(checked=True, safe=True, reason=None)) as safety,
+            patch("Survey.autofix.autofix_orchestrator.invoke_claude_headless", side_effect=invoke),
+            patch("Survey.autofix.autofix_orchestrator.write_static_validation",
+                  side_effect=lambda *_a, **_k: write_artifact("static", "validation_static.json", static_artifacts)),
+            patch("Survey.autofix.autofix_orchestrator.write_patch_replay",
+                  side_effect=lambda **_k: write_artifact("replay", "patch_replay.json", replay_artifacts)),
+            patch("Survey.autofix.autofix_orchestrator.write_extractor_integrity_check",
+                  side_effect=lambda *_a, **_k: write_artifact("integrity", "extractor_integrity_check.json", integrity_artifacts)),
+            patch("Survey.autofix.autofix_orchestrator.write_patch_confidence",
+                  side_effect=lambda **_k: write_artifact("confidence", "confidence_score.json", confidence_artifacts)),
+            patch("Survey.autofix.autofix_orchestrator.send_review_request",
+                  side_effect=request_review) as review,
+            patch("Survey.autofix.autofix_orchestrator.send_status_notification") as notify,
+        ):
+            summary = self._process_prepared_case(prepared, **options)
+            summary._test_notifications = [call.args[0] for call in notify.call_args_list]
+        return summary, calls, counts, safety.call_count, review.call_count, notify.call_count
+
+    def test_informative_static_rejection_retries_and_archives_both_attempts(self) -> None:
+        rejected = {"verdict": "REJECTED", "reasons": ["tests : 1 failed — libellé secret"],
+                    "checks": {"tests": {"ok": False, "executed": ["test_fix.py"],
+                                         "timed_out": False, "error": "1 failed — libellé secret"}}}
+        accepted = {"verdict": "ACCEPTED", "reasons": [], "checks": {}}
+        replay = {"stage": "action", "refused": False, "after_replay_error": None,
+                  "outcome": "CORRECTIF_CONFIRME", "after_replay": {"status": "SUCCESS"}}
+        summary, calls, counts, safety, review, notify = self._synthetic_attempts(
+            "synthetic_retry_static", static_artifacts=[rejected, accepted],
+            replay_artifacts=[replay], integrity_artifacts=[{"verdict": "ACCEPTED"}],
+            confidence_artifacts=[{"confidence": "HIGH"}], costs=[1.0, 2.0],
+        )
+        self.assertEqual((len(calls), counts, safety, review, notify),
+                         (2, {"static": 2, "replay": 1, "integrity": 1, "confidence": 1}, 1, 1, 0))
+        self.assertEqual(summary.attempt_count, 2)
+        self.assertEqual([item["cost_usd"] for item in summary.attempts], [1.0, 2.0])
+        self.assertEqual([item["num_turns"] for item in summary.attempts], [2, 3])
+        relative = dom_evidence_relative_dir(summary.case_id)
+        expected_first_prompt = add_dom_evidence_context(
+            (self.root / "prompts" / summary.case_id / "prompt.txt").read_text(encoding="utf-8"),
+            summary.case_id, calls[0]["worktree_path"] / relative, relative,
+        )
+        self.assertEqual(calls[0]["prompt_text"], expected_first_prompt)
+        self.assertNotEqual(calls[0]["prompt_text"], calls[1]["prompt_text"])
+        self.assertIn("tests : échec (détail masqué)", calls[1]["prompt_text"])
+        self.assertIn("Corrige le patch présent dans ce worktree", calls[1]["prompt_text"])
+        self.assertNotIn("libellé secret", calls[1]["prompt_text"])
+        self.assertNotIn("example.invalid", calls[1]["prompt_text"])
+        self.assertEqual(calls[0]["max_budget_usd"], DEFAULT_MAX_BUDGET_USD)
+        archive = self.root / "pipeline" / summary.case_id / "attempts"
+        first = json.loads((archive / "attempt_1" / "static_validation" / "validation_static.json").read_text(encoding="utf-8"))
+        second = json.loads((archive / "attempt_2" / "static_validation" / "validation_static.json").read_text(encoding="utf-8"))
+        latest = json.loads((self.root / "static" / summary.case_id / "validation_static.json").read_text(encoding="utf-8"))
+        self.assertEqual((first["verdict"], second["verdict"], latest["verdict"]),
+                         ("REJECTED", "ACCEPTED", "ACCEPTED"))
+        first_run = json.loads((archive / "attempt_1" / "claude_invocation" / "run_result.json").read_text(encoding="utf-8"))
+        second_run = json.loads((archive / "attempt_2" / "claude_invocation" / "run_result.json").read_text(encoding="utf-8"))
+        self.assertEqual((first_run["session_id"], second_run["session_id"]), ("session_0", "session_1"))
+        self.assertEqual(summary.as_dict()["attempt_count"], 2)
+        self.assertEqual(len(summary.as_dict()["attempts"]), 2)
+        interim = json.loads((self.root / "pipeline" / summary.case_id / "pipeline_run.json").read_text(encoding="utf-8"))
+        self.assertEqual((interim["attempt_count"], interim["stopped_at"]), (1, STAGE_STATIC_VALIDATION))
+        pipeline = write_pipeline_run_summary(summary, out_root=self.root / "pipeline")
+        self.assertEqual(json.loads(pipeline.read_text(encoding="utf-8"))["attempt_count"], 2)
+
+    def test_static_retry_classifies_only_patch_failures(self) -> None:
+        informative = (
+            {"compile": {"ok": False, "files": [{"ok": False, "error": "SyntaxError"}]}},
+            {"import": {"ok": False, "files": [{"ok": False, "timed_out": False,
+                                                  "error": "ImportError: broken export"}]}},
+            {"lint": {"ok": False, "violations": [{"code": "F821"}], "error": None}},
+            {"tests": {"ok": False, "executed": ["test_fix.py"], "error": "1 failed"}},
+            {"activation": {"ok": False, "skipped": False, "error": "ValueError: invalid registration"}},
+        )
+        for checks in informative:
+            with self.subTest(checks=checks):
+                self.assertTrue(_informative_static_rejection({"verdict": "REJECTED", "checks": checks}))
+        environmental = (
+            {"lint": {"ok": False, "violations": [], "error": "ruff introuvable sur PATH"}},
+            {"tests": {"ok": False, "executed": [], "error": "pytest indisponible"}},
+            {"tests": {"ok": False, "executed": ["test_fix.py"], "timed_out": True,
+                       "error": "budget dépassé"}},
+            {"import": {"ok": False, "files": [{"ok": False,
+                                                  "error": "ModuleNotFoundError: No module named dependency"}]}},
+        )
+        for checks in environmental:
+            with self.subTest(checks=checks):
+                self.assertFalse(_informative_static_rejection({"verdict": "REJECTED", "checks": checks}))
+
+    def test_persistent_replay_retries_after_integrity_and_score(self) -> None:
+        accepted = {"verdict": "ACCEPTED", "reasons": [], "checks": {}}
+        persistent = {"stage": "action", "refused": False, "after_replay_error": None,
+                      "outcome": "BUG_PERSISTANT", "after_replay": {
+                          "status": "FAILURE", "validation_error": None,
+                          "validation_comparison": {"replayed_failure_types": ["dispatcher_reported_failure"]},
+                          "dispatcher_steps": ["strategy=radio_main attempted"],
+                      }}
+        confirmed = {**persistent, "outcome": "CORRECTIF_CONFIRME"}
+        summary, calls, counts, safety, review, notify = self._synthetic_attempts(
+            "synthetic_retry_replay", static_artifacts=[accepted, accepted],
+            replay_artifacts=[persistent, confirmed],
+            integrity_artifacts=[{"verdict": "ACCEPTED"}, {"verdict": "ACCEPTED"}],
+            confidence_artifacts=[{"confidence": "REJECT"}, {"confidence": "HIGH"}],
+        )
+        self.assertEqual((len(calls), counts, safety, review, notify),
+                         (2, {"static": 2, "replay": 2, "integrity": 2, "confidence": 2}, 1, 1, 0))
+        self.assertIn("rejeu : BUG_PERSISTANT", calls[1]["prompt_text"])
+        self.assertIn("dispatcher_reported_failure", calls[1]["prompt_text"])
+        self.assertIn("strategy=radio_main attempted", calls[1]["prompt_text"])
+        self.assertEqual(summary.attempt_count, 2)
+        self.assertEqual(json.loads((self.root / "pipeline" / summary.case_id / "attempts" / "attempt_1"
+                                     / "patch_replay" / "patch_replay.json").read_text(encoding="utf-8"))["outcome"],
+                         "BUG_PERSISTANT")
+
+    def test_noninformative_results_do_not_retry(self) -> None:
+        accepted = {"verdict": "ACCEPTED", "reasons": [], "checks": {}}
+        rejected_environment = {"verdict": "REJECTED", "reasons": ["lint : ruff introuvable sur PATH"],
+                                "checks": {"lint": {"ok": False, "violations": [],
+                                                    "timed_out": False, "error": "ruff introuvable sur PATH"}}}
+        rejected_timeout = {"verdict": "REJECTED", "reasons": ["tests : budget dépassé"],
+                            "checks": {"tests": {"ok": False, "executed": ["test_fix.py"],
+                                                 "timed_out": True, "error": "budget dépassé"}}}
+        replay = {"stage": "action", "refused": False, "after_replay_error": None,
+                  "outcome": "BUG_PERSISTANT", "after_replay": {"status": "FAILURE", "validation_error": None,
+                      "dispatcher_steps": [], "validation_comparison": {}}}
+        scenarios = (
+            ("env", [rejected_environment], None, None, None, None, None),
+            ("timeout", [rejected_timeout], None, None, None, None, None),
+            ("empty", [{**accepted, "changed_files": []}], None, None, None, None, None),
+            ("session", [accepted], None, None, None, [STATUS_FAILURE], None),
+            ("candidate", [accepted], [replay], [{"verdict": "ACCEPTED"}], [{"confidence": "REJECT"}], None, [True]),
+            ("inconclusive", [accepted], [{**replay, "outcome": "NON_CONCLUANT"}],
+             [{"verdict": "ACCEPTED"}], [{"confidence": "REJECT"}], None, None),
+            ("confirmed", [accepted], [{**replay, "outcome": "CORRECTIF_CONFIRME"}],
+             [{"verdict": "ACCEPTED"}], [{"confidence": "REJECT"}], None, None),
+            ("refused", [accepted], [{**replay, "refused": True}],
+             [{"verdict": "ACCEPTED"}], [{"confidence": "REJECT"}], None, None),
+            ("replay_error", [accepted], [{**replay, "after_replay_error": "synthetic error"}],
+             [{"verdict": "ACCEPTED"}], [{"confidence": "REJECT"}], None, None),
+            ("high", [accepted], [replay],
+             [{"verdict": "ACCEPTED"}], [{"confidence": "HIGH"}], None, None),
+            ("integrity", [accepted], [replay], [{"verdict": "REJECTED"}],
+             [{"confidence": "REJECT"}], None, None),
+        )
+        for suffix, static, replays, integrity, confidence, statuses, candidates in scenarios:
+            with self.subTest(suffix=suffix):
+                summary, calls, _, _, _, notify = self._synthetic_attempts(
+                    "synthetic_no_retry_" + suffix, static_artifacts=static,
+                    replay_artifacts=replays, integrity_artifacts=integrity,
+                    confidence_artifacts=confidence, statuses=statuses, candidates=candidates,
+                )
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(summary.attempt_count, 1)
+                self.assertEqual(notify, 1 if suffix == "empty" else 0)
+
+    def test_cost_limits_unknown_cost_and_single_attempt_option(self) -> None:
+        rejected = {"verdict": "REJECTED", "reasons": ["tests : 1 failed"],
+                    "checks": {"tests": {"ok": False, "executed": ["test_fix.py"],
+                                         "timed_out": False, "error": "1 failed"}}}
+        summary, calls, _, _, _, _ = self._synthetic_attempts(
+            "synthetic_unknown_cost", static_artifacts=[rejected], costs=[None],
+        )
+        self.assertEqual((len(calls), summary.attempt_count), (1, 1))
+        summary, calls, _, _, _, _ = self._synthetic_attempts(
+            "synthetic_cost_exhausted", static_artifacts=[rejected], costs=[4.5],
+            max_case_budget_usd=5,
+        )
+        self.assertEqual(len(calls), 1)
+        summary, calls, _, _, _, _ = self._synthetic_attempts(
+            "synthetic_cost_reduced", static_artifacts=[rejected, rejected], costs=[5.0, 1.0],
+            max_case_budget_usd=7,
+        )
+        self.assertEqual([call["max_budget_usd"] for call in calls], [5.0, 2.0])
+        summary, calls, _, _, _, _ = self._synthetic_attempts(
+            "synthetic_one_attempt", static_artifacts=[rejected], costs=[1.0],
+            max_attempts=1, max_case_budget_usd=3,
+        )
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["max_budget_usd"], DEFAULT_MAX_BUDGET_USD)
+        self.assertNotIn("attempt_count", summary.as_dict())
+        self.assertFalse((self.root / "pipeline" / summary.case_id / "attempts").exists())
+
+        with patch("Survey.autofix.autofix_orchestrator._archive_case_attempt", return_value=False):
+            summary, calls, _, _, _, _ = self._synthetic_attempts(
+                "synthetic_archive_failure", static_artifacts=[rejected], costs=[1.0],
+            )
+        self.assertEqual(len(calls), 1)
+        self.assertIn("archivage de tentative incomplet", summary.warnings[0])
+
+    def test_same_patch_or_same_first_failure_stops_before_third_attempt(self) -> None:
+        def rejected(reason: str) -> dict:
+            return {"verdict": "REJECTED", "reasons": [f"tests : {reason}"],
+                    "checks": {"tests": {"ok": False, "executed": ["test_fix.py"],
+                                         "timed_out": False, "error": reason}}}
+        for suffix, reasons, patches in (
+            ("same_patch", ["1 failed", "2 failed"], ["same patch", "same patch"]),
+            ("same_cause", ["1 failed", "1 failed"], ["first patch", "second patch"]),
+        ):
+            with self.subTest(suffix=suffix):
+                summary, calls, _, _, _, _ = self._synthetic_attempts(
+                    "synthetic_no_progress_" + suffix,
+                    static_artifacts=[rejected(reason) for reason in reasons],
+                    patch_contents=patches, costs=[1.0, 1.0], max_attempts=3,
+                )
+                self.assertEqual(len(calls), 2)
+                self.assertEqual(summary.attempt_count, 2)
+
+        summary, calls, _, _, _, _ = self._synthetic_attempts(
+            "synthetic_max_three",
+            static_artifacts=[rejected("1 failed"), rejected("2 failed"), rejected("3 failed")],
+            patch_contents=["first patch", "second patch", "third patch"],
+            costs=[1.0, 1.0, 1.0], max_attempts=3,
+        )
+        self.assertEqual((len(calls), summary.attempt_count), (3, 3))
+
+        accepted = {"verdict": "ACCEPTED", "reasons": [], "checks": {}}
+        persistent = {"stage": "action", "refused": False, "after_replay_error": None,
+                      "outcome": "BUG_PERSISTANT", "after_replay": {
+                          "status": "FAILURE", "validation_error": None,
+                          "dispatcher_steps": ["strategy=radio_main attempted"],
+                          "validation_comparison": {},
+                      }}
+        summary, calls, _, _, _, _ = self._synthetic_attempts(
+            "synthetic_same_replay_steps", static_artifacts=[accepted, accepted],
+            replay_artifacts=[persistent, persistent],
+            integrity_artifacts=[{"verdict": "ACCEPTED"}, {"verdict": "ACCEPTED"}],
+            confidence_artifacts=[{"confidence": "REJECT"}, {"confidence": "REJECT"}],
+            patch_contents=["first patch", "second patch"], costs=[1.0, 1.0], max_attempts=3,
+        )
+        self.assertEqual((len(calls), summary.attempt_count), (2, 2))
+
+    def test_second_attempt_no_changes_notifies_once_with_attempt_number(self) -> None:
+        rejected = {"verdict": "REJECTED", "reasons": ["tests : 1 failed"],
+                    "checks": {"tests": {"ok": False, "executed": ["test_fix.py"],
+                                         "timed_out": False, "error": "1 failed"}}}
+        empty = {"verdict": "ACCEPTED", "reasons": [], "checks": {}, "changed_files": []}
+        summary, calls, _, _, review, notify = self._synthetic_attempts(
+            "synthetic_second_empty", static_artifacts=[rejected, empty], costs=[1.0, 1.0],
+        )
+        self.assertEqual((len(calls), review, notify), (2, 0, 1))
+        self.assertEqual(summary.stopped_at, STAGE_NO_CHANGES)
+        self.assertIn("tentative 2", summary._test_notifications[0])
+
+    def test_feedback_is_bounded_and_drops_unrecognized_replay_lines(self) -> None:
+        accepted = {"verdict": "ACCEPTED", "reasons": [], "checks": {}}
+        step = "apply ok=false strategy=" + "s" * 60 + " reason=" + "r" * 60
+        replay = {"stage": "action", "refused": False, "after_replay_error": None,
+                  "outcome": "BUG_PERSISTANT", "after_replay": {"status": "FAILURE", "validation_error": None,
+                      "dispatcher_steps": [step] * 20,
+                      "validation_comparison": {"replayed_failure_types": [
+                          "dispatcher_reported_failure", "libellé secret", "https://example.invalid",
+                      ]}}}
+        summary, calls, _, _, _, _ = self._synthetic_attempts(
+            "synthetic_feedback_bound", static_artifacts=[accepted, accepted],
+            replay_artifacts=[replay, {**replay, "outcome": "NON_CONCLUANT"}],
+            integrity_artifacts=[{"verdict": "ACCEPTED"}, {"verdict": "ACCEPTED"}],
+            confidence_artifacts=[{"confidence": "REJECT"}, {"confidence": "REJECT"}],
+        )
+        self.assertEqual(len(calls), 2)
+        addition = calls[1]["prompt_text"][len(calls[0]["prompt_text"]):]
+        self.assertLessEqual(len(addition), 1200)
+        self.assertNotIn("libellé secret", addition)
+        self.assertNotIn("example.invalid", addition)
+        self.assertTrue(addition.endswith("ne le réécris pas depuis zéro.\n"))
+        unsafe = {**replay, "after_replay": {**replay["after_replay"],
+                   "dispatcher_steps": ["question=libellé secret"]}}
+        summary, calls, _, _, _, _ = self._synthetic_attempts(
+            "synthetic_feedback_unsafe", static_artifacts=[accepted],
+            replay_artifacts=[unsafe], integrity_artifacts=[{"verdict": "ACCEPTED"}],
+            confidence_artifacts=[{"confidence": "REJECT"}],
+        )
+        self.assertEqual(len(calls), 1)
 
     def test_static_rejection_reason_uses_first_bounded_reason_only_when_readable(self) -> None:
         base = 'validation_static.json.verdict=\'REJECTED\' ("ACCEPTED" requis)'
