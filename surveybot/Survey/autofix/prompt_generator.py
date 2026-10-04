@@ -171,7 +171,21 @@ _STAGE_GUIDANCE = {
         "Survey/action_fix_hook.py, et son contrat ActionFixOutcome : `DECLINED` garantit "
         "aucun effet, `HANDLED_SUCCESS` arrête le chemin historique, `HANDLED_FAILURE` "
         "ou une exception après tentative arrêtent l'action sans fallback ni second clic. "
-        "Respecte CTA_INTERCEPT_ONLY et vérifie l'état réel de l'action."
+        "Respecte CTA_INTERCEPT_ONLY et vérifie l'état réel de l'action. "
+        "Une hypothèse que les artefacts ne confirment pas n'est pas un motif d'abstention : "
+        "implémente-la comme un correctif qui ne déclare un succès qu'après avoir observé "
+        "lui-même l'état réel de la page (les mêmes signaux que le chemin historique exige), "
+        "de sorte qu'une hypothèse fausse aboutisse à un échec et jamais à un faux succès. "
+        "Le rejeu s'exécute sans les scripts de la page : un échec que le correctif rend "
+        "lui-même dans ce rejeu est classé non concluant et ouvre une validation live, ce "
+        "n'est pas un rejet. "
+        "Teste dans le correctif la condition d'échec observée dans les étapes techniques et "
+        "décline (`DECLINED`, sans effet) lorsqu'elle n'est pas réunie ; les sélecteurs de "
+        "garde décrivent la structure présente avant le geste, jamais un état d'après-geste. "
+        "Ne t'abstiens que si aucune preuve de succès indépendante ne peut être codée ou si "
+        "la correction exige de modifier le cœur (candidat de changement du cœur, à documenter "
+        "avec les preuves). "
+        "Signale dans ta réponse finale toute hypothèse sur laquelle repose le correctif."
     ),
 }
 _UNKNOWN_STAGE_GUIDANCE = (

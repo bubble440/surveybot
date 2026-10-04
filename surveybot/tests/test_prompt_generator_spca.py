@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -102,6 +103,57 @@ class PromptGeneratorSpcaTests(unittest.TestCase):
         self.assertIn("liste explicite de Survey/external_fix_loader.py", result.content)
         self.assertIn("Titre de commit suggéré", result.content)
         self.assertIn("Termine ta réponse finale par une dernière ligne unique « RÉSUMÉ : <conclusion> »", result.content)
+
+    def test_action_prompt_says_an_unconfirmed_hypothesis_is_not_a_reason_to_abstain(self) -> None:
+        diag_dir, selection_dir = self._case("synthetic_action_hypothesis", stage="action")
+        result = generate_prompt(diag_dir, selection_dir)
+
+        self.assertTrue(result.eligible)
+        for fragment in (
+            "n'est pas un motif d'abstention",
+            "jamais à un faux succès",
+            "est classé non concluant et ouvre une validation live",
+            "ce n'est pas un rejet",
+            "décline (`DECLINED`, sans effet)",
+            "jamais un état d'après-geste",
+            "Ne t'abstiens que si aucune preuve de succès indépendante ne peut être codée",
+            "candidat de changement du cœur",
+            "toute hypothèse sur laquelle repose le correctif",
+        ):
+            self.assertIn(fragment, result.content)
+        # Les règles existantes ne sont ni affaiblies ni contredites.
+        self.assertIn("sans modifier cette baseline", result.content)
+        self.assertIn("ne déclare pas un succès non vérifié", result.content)
+        self.assertIn("sans fallback ni second clic", result.content)
+
+    def test_action_stage_guidance_addition_is_short_generic_and_after_the_existing_text(self) -> None:
+        from Survey.autofix.prompt_generator import _STAGE_GUIDANCE
+
+        guidance = _STAGE_GUIDANCE["action"]
+        existing = (
+            "Respecte CTA_INTERCEPT_ONLY et vérifie l'état réel de l'action. "
+        )
+        head, _, addition = guidance.partition(existing)
+        self.assertTrue(head.startswith("Stage action : seul un correctif `before` est admissible"))
+        self.assertTrue(addition)
+        sentences = [part for part in re.split(r"(?<=[.!?])\s+", addition.strip()) if part]
+        self.assertLessEqual(len(sentences), 5)
+        lowered = addition.lower()
+        for forbidden in (
+            "metrixlab", "toluna", "qualtrics", "radioqt", "checkboxqt", "q1001",
+            "group_", "input_on", "option_radio", "20261", "provider",
+        ):
+            self.assertNotIn(forbidden, lowered)
+
+    def test_action_hypothesis_guidance_does_not_leak_into_other_stages(self) -> None:
+        extraction_dir, extraction_sel = self._case("synthetic_extraction_hypothesis", stage="extraction")
+        unknown_dir, unknown_sel = self._case("synthetic_unknown_hypothesis", stage="unknown")
+        extraction = generate_prompt(extraction_dir, extraction_sel)
+        unknown = generate_prompt(unknown_dir, unknown_sel)
+        for result in (extraction, unknown):
+            self.assertNotIn("n'est pas un motif d'abstention", result.content)
+            self.assertNotIn("ouvre une validation live", result.content)
+            self.assertNotIn("Ne t'abstiens que si", result.content)
 
     def test_action_dispatcher_steps_are_optional_bounded_facts_in_prompt(self) -> None:
         diag_dir, selection_dir = self._case("synthetic_dispatch_steps", stage="action")
