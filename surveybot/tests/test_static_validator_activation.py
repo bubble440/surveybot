@@ -130,3 +130,34 @@ class StaticValidatorActivationTests(unittest.TestCase):
         result = self._validate()
         self.assertEqual(result.verdict, "REJECTED")
         self.assertIn("test associé absent", result.checks["tests"]["error"])
+
+    def test_empty_patch_leaves_fix_gestures_successful_and_empty(self) -> None:
+        result = self._validate()
+        self.assertEqual(result.verdict, "ACCEPTED", result.reasons)
+        self.assertEqual(result.checks["fix_gestures"],
+                          {"ok": True, "files": [], "defects": [], "limit_ms": 2000, "error": None})
+
+    def test_unrelated_change_leaves_fix_gestures_successful_and_empty(self) -> None:
+        (self.survey / "ordinary.py").write_text("VALUE = 1\n", encoding="utf-8")
+        result = self._validate()
+        self.assertEqual(result.verdict, "ACCEPTED", result.reasons)
+        self.assertEqual(result.checks["fix_gestures"],
+                          {"ok": True, "files": [], "defects": [], "limit_ms": 2000, "error": None})
+
+    def test_fix_module_with_unbounded_gesture_is_rejected(self) -> None:
+        self._add_fix()
+        sample = self.survey / "external_fix_sample.py"
+        sample.write_text(
+            sample.read_text(encoding="utf-8") + "\ndef gesture(dom):\n    dom.click()\n",
+            encoding="utf-8",
+        )
+        result = self._validate()
+        self.assertEqual(result.verdict, "REJECTED")
+        self.assertFalse(result.checks["fix_gestures"]["ok"])
+        self.assertEqual(result.checks["fix_gestures"]["files"], ["Survey/external_fix_sample.py"])
+        defect = result.checks["fix_gestures"]["defects"][0]
+        self.assertEqual(defect["method"], "click")
+        self.assertEqual(defect["kind"], "missing_timeout")
+        self.assertEqual(result.reasons, ["fix_gestures : échec"])
+        self.assertTrue(all(result.checks[name]["ok"] for name in
+                            ("compile", "import", "lint", "tests", "activation", "root_files")))

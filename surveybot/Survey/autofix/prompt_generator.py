@@ -185,7 +185,9 @@ _STAGE_GUIDANCE = {
         "Ne t'abstiens que si aucune preuve de succès indépendante ne peut être codée ou si "
         "la correction exige de modifier le cœur (candidat de changement du cœur, à documenter "
         "avec les preuves). "
-        "Signale dans ta réponse finale toute hypothèse sur laquelle repose le correctif."
+        "Signale dans ta réponse finale toute hypothèse sur laquelle repose le correctif. "
+        "Chaque geste du correctif (clic, survol, saisie…) est borné par un délai explicite "
+        "d'au plus 2000 millisecondes."
     ),
 }
 _UNKNOWN_STAGE_GUIDANCE = (

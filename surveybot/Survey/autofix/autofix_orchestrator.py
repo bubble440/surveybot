@@ -538,7 +538,7 @@ from Survey.autofix.merge_executor import (
 )
 from Survey.autofix.parallel_safety import ParallelSafetyError, check_pre_launch_safety
 from Survey.autofix.patch_commit import PatchCommitError, commit_patch
-from Survey.autofix.patch_replay import PatchReplayError, write_patch_replay
+from Survey.autofix.patch_replay import GUARD_CHECK_FAILED, PatchReplayError, write_patch_replay
 from Survey.autofix.prompt_generator import (
     MANUAL_REVIEW_FILENAME,
     PROMPT_FILENAME,
@@ -2554,12 +2554,34 @@ def _process_case_once(
     )
 
 
+# Même liste fermée que Survey/autofix/static_validator.py::_GESTURE_METHODS /
+# GESTURE_DEFECT_*, dupliquée ici à dessein : revalidation indépendante d'un
+# JSON déjà écrit sur disque (validation_static.json), jamais une confiance
+# aveugle dans son contenu.
+_FIX_GESTURE_METHODS = frozenset({
+    "click", "dblclick", "hover", "tap", "check", "uncheck", "set_checked",
+    "fill", "type", "press", "select_option", "drag_to",
+})
+_FIX_GESTURE_KINDS = frozenset({"missing_timeout", "non_positive_timeout", "timeout_too_large"})
+_MAX_FIX_GESTURE_DEFECTS = 5
+
+
+def _valid_fix_gesture_defect(defect: Any) -> bool:
+    return (
+        isinstance(defect, dict)
+        and isinstance(defect.get("file"), str) and 0 < len(defect["file"]) <= 500
+        and type(defect.get("line")) is int and 0 < defect["line"] <= 10 ** 7
+        and defect.get("method") in _FIX_GESTURE_METHODS
+        and defect.get("kind") in _FIX_GESTURE_KINDS
+    )
+
+
 def _informative_static_rejection(data: Any) -> bool:
     """Relance seulement un contrôle de patch reconnu, jamais un outil indisponible."""
     if not isinstance(data, dict) or data.get("verdict") != "REJECTED":
         return False
     checks = data.get("checks")
-    if not isinstance(checks, dict) or len(checks) > 6:
+    if not isinstance(checks, dict) or len(checks) > 7:
         return False
     failed = [(name, check) for name, check in checks.items()
               if isinstance(check, dict) and check.get("ok") is False]
@@ -2573,7 +2595,7 @@ def _informative_static_rejection(data: Any) -> bool:
     )
     for name, check in failed:
         error = check.get("error")
-        if (name not in {"compile", "import", "lint", "tests", "activation", "root_files"}
+        if (name not in {"compile", "import", "lint", "tests", "activation", "root_files", "fix_gestures"}
                 or check.get("timed_out") is True):
             return False
         if name in {"compile", "import"}:
@@ -2598,6 +2620,13 @@ def _informative_static_rejection(data: Any) -> bool:
         ):
             return False
         elif name == "root_files" and (not check.get("files") or not isinstance(error, str)):
+            return False
+        elif name == "fix_gestures" and (
+            error is not None
+            or not isinstance(check.get("defects"), list) or not check["defects"]
+            or len(check["defects"]) > _MAX_FIX_GESTURE_DEFECTS
+            or any(not _valid_fix_gesture_defect(d) for d in check["defects"])
+        ):
             return False
     return True
 
@@ -2664,19 +2693,47 @@ def _retry_evidence(summary: CaseRunSummary, worktree_path: Path, *, candidate_d
         if not isinstance(first, str) or not first.strip() or len(first) > 4000:
             return None
         checks = static_data["checks"]
-        kinds = [name for name in ("compile", "import", "lint", "tests", "activation", "root_files")
+        kinds = [name for name in ("compile", "import", "lint", "tests", "activation", "root_files", "fix_gestures")
                  if isinstance(checks.get(name), dict) and checks[name].get("ok") is False][:3]
         cause = (STAGE_STATIC_VALIDATION, hashlib.sha256(" ".join(first.split()).encode("utf-8")).hexdigest())
-        # Les détails libres des contrôles peuvent citer une réponse du sondage.
-        return {"fingerprint": fingerprint, "cause": cause,
-                "feedback": [f"- {name} : échec (détail masqué)" for name in kinds]}
+        # Les détails libres des autres contrôles peuvent citer une réponse du
+        # sondage, donc restent masqués. Seul fix_gestures (chemin relatif,
+        # ligne, méthode, nature — jamais de contenu de sondage) est détaillé.
+        feedback: "list[str]" = []
+        for name in kinds:
+            if name == "fix_gestures":
+                defects = [d for d in (checks[name].get("defects") or [])
+                           if _valid_fix_gesture_defect(d)][:_MAX_FIX_GESTURE_DEFECTS]
+                if defects:
+                    detail = "; ".join(f"{d['file']}:{d['line']} {d['method']}() [{d['kind']}]" for d in defects)
+                    feedback.append(f"- fix_gestures : échec — {detail}")
+                    continue
+            feedback.append(f"- {name} : échec (détail masqué)")
+        return {"fingerprint": fingerprint, "cause": cause, "feedback": feedback}
     if summary.stopped_at != STAGE_CONFIDENCE_SCORE or summary.confidence not in (CONFIDENCE_MEDIUM, CONFIDENCE_REJECT):
         return None
     integrity, _ = _load_json(Path(summary.artifacts.get(STAGE_EXTRACTOR_INTEGRITY, "")))
     replay, _ = _load_json(Path(summary.artifacts.get(STAGE_PATCH_REPLAY, "")))
     if (not isinstance(integrity, dict) or integrity.get("verdict") != "ACCEPTED"
             or not isinstance(replay, dict) or replay.get("refused") is not False
-            or replay.get("after_replay_error") is not None or replay.get("outcome") != "BUG_PERSISTANT"):
+            or replay.get("after_replay_error") is not None):
+        return None
+    guard_check = replay.get("guard_check")
+    if isinstance(guard_check, dict) and guard_check.get("state") == GUARD_CHECK_FAILED:
+        # Échec informatif distinct du rejeu "bug persistant" ci-dessous : la
+        # garde du correctif a pris la main alors que la cible du chemin
+        # historique était actionnable, même si l'issue du rejeu n'est pas
+        # elle-même BUG_PERSISTANT.
+        return {
+            "fingerprint": fingerprint,
+            "cause": (STAGE_PATCH_REPLAY, "guard_check_echec"),
+            "feedback": [
+                "- garde du correctif trop large : il a pris la main alors que la cible du "
+                "chemin historique était actionnable ; teste la condition d'échec observée et "
+                "décline (sans effet) lorsqu'elle n'est pas réunie"
+            ],
+        }
+    if replay.get("outcome") != "BUG_PERSISTANT":
         return None
     after = replay.get("after_replay")
     if not isinstance(after, dict):

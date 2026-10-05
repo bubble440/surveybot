@@ -93,6 +93,29 @@ preuve certaine (cf. Phase 3D, Utils/SURVEYBOT_AUTOFIX_PLAN.md).
 Rejouer en plus des cas historiques voisins déjà validés (suite de
 non-régression DOM) : sous-chantier différé, pas traité ici. Cette phase ne
 rejoue que le case ciblé par le worktree.
+
+── Contrôle de garde d'un correctif d'action (clé facultative guard_check) ───
+Un correctif d'action gardé par la seule présence d'une structure (sans
+sélecteur exclu, sans test de la condition d'échec observée) prendrait la main
+sur tout bloc de cette structure, y compris ceux où le chemin historique
+fonctionnerait — rien ne le détectait jusqu'ici. Applicable seulement pour
+stage="action" quand le diagnostic (Phase 4) montre la cause confirmée "cible
+non visible" (une étape technique du dispatcher avec reason=not_visible ET un
+fait DOM mesuré de l'option demandée avec visible=false) ; sinon
+guard_check={"state": "non_applicable", ...}. Quand applicable, une
+réexécution INDÉPENDANTE (son propre sous-processus, même mécanisme que
+ci-dessus : document pré-action, extraction, scripts désactivés) résout
+l'élément de la SEULE option demandée via le même registre, neutralise
+uniquement ce qui le masque sur lui-même et ses ancêtres (bornée en nombre
+d'éléments touchés), vérifie sa visibilité avec ElementHandle.is_visible()
+(même test que celui qui produit "not_visible" dans la capture des étapes),
+puis exécute l'action normalement (execute_case_action, non modifié) et lit
+ses dispatcher_steps. État "echec" si un correctif externe a été sélectionné
+ET a rendu un verdict traité (succès ou échec) ; "reussi" s'il n'a pas été
+retenu ou a décliné ; "non_concluant" pour toute résolution/visibilité/erreur
+indéterminée — jamais "echec" en cas de doute. N'affecte jamais outcome/
+patch_validated ci-dessus : c'est une mesure strictement additive, calculée
+même si le rejeu principal échoue, et absente pour stage="extraction".
 """
 
 import json
@@ -189,6 +212,186 @@ except Exception as exc:
 
 print(json.dumps(result))
 """
+
+# Neutralise uniquement l'élément et ses ancêtres (bornés) : jamais un autre
+# nœud. Aucune donnée de page retournée — seulement un booléen de succès.
+_GUARD_CHECK_UNHIDE_JS = r"""(el) => {
+    try {
+        const MAX_ANCESTORS = 30;
+        let node = el;
+        let steps = 0;
+        while (node && node.nodeType === 1 && steps < MAX_ANCESTORS) {
+            const computed = window.getComputedStyle(node);
+            if (computed.display === 'none') node.style.setProperty('display', 'block', 'important');
+            if (computed.visibility === 'hidden') node.style.setProperty('visibility', 'visible', 'important');
+            node = node.parentElement;
+            steps++;
+        }
+        return true;
+    } catch (e) {
+        return false;
+    }
+}"""
+
+# Réexécution INDÉPENDANTE du contrôle de garde : même mécanisme (document
+# pré-action, extraction, scripts désactivés), mais résout et neutralise la
+# SEULE option demandée avant d'exécuter l'action normalement. N'affecte
+# jamais le rejeu principal (sous-processus séparé, page séparée).
+_GUARD_CHECK_RUNNER_SCRIPT = """
+import json
+import sys
+from pathlib import Path
+
+worktree_root, case_dir, budget_s = sys.argv[1], sys.argv[2], float(sys.argv[3])
+sys.path.insert(0, worktree_root)
+
+UNHIDE_JS = %s
+
+result = {"resolved": False, "visible_after_unhide": None, "dispatcher_steps": None,
+          "status": None, "error": None}
+try:
+    from Survey.action_validator import _checkbox_radio_option_xpath
+    from Survey.autofix.replay_browser import (
+        _ACTION_REPLAY_EXECUTE_SCRIPTS,
+        IsolatedReplayBrowser,
+        execute_case_action,
+        extract_case_blocks,
+    )
+
+    def _load(path):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
+    actions = _load(Path(case_dir) / "artifacts" / "actions_requested.json")
+    target_id = value = None
+    for action in actions if isinstance(actions, list) else []:
+        if not isinstance(action, dict):
+            continue
+        tid, val = action.get("target_id"), action.get("value")
+        if isinstance(tid, str) and tid and isinstance(val, str) and val:
+            target_id, value = tid, val
+            break
+
+    if target_id is not None:
+        with IsolatedReplayBrowser() as browser:
+            page = browser.load_case_document(
+                case_dir, pre_action=True, execute_scripts=_ACTION_REPLAY_EXECUTE_SCRIPTS,
+            )
+            extraction = extract_case_blocks(page, case_dir)
+            payload = extraction.targets.get(target_id)
+            xpath = None
+            if (
+                isinstance(payload, dict) and not payload.get("frame_chain")
+                and payload.get("kind") == "group" and payload.get("itype") in ("radio", "checkbox")
+            ):
+                xpath = _checkbox_radio_option_xpath(payload, value)
+            element = page.query_selector("xpath=" + xpath) if xpath else None
+            if element is not None:
+                result["resolved"] = True
+                try:
+                    unhidden = bool(element.evaluate(UNHIDE_JS))
+                except Exception:
+                    unhidden = False
+                result["visible_after_unhide"] = bool(unhidden and element.is_visible())
+                if result["visible_after_unhide"]:
+                    execution = execute_case_action(
+                        page, case_dir, budget_s=budget_s, question_blocks=extraction.blocks,
+                    )
+                    result["status"] = execution.status
+                    result["dispatcher_steps"] = execution.dispatcher_steps
+except Exception as exc:
+    result = {"resolved": False, "visible_after_unhide": None, "dispatcher_steps": None,
+              "status": None, "error": f"{type(exc).__name__}: {exc}"}
+
+print(json.dumps(result))
+""" % json.dumps(_GUARD_CHECK_UNHIDE_JS)
+
+GUARD_CHECK_PASSED = "reussi"
+GUARD_CHECK_FAILED = "echec"
+GUARD_CHECK_INCONCLUSIVE = "non_concluant"
+GUARD_CHECK_NOT_APPLICABLE = "non_applicable"
+
+# Liste fermée de codes de raison, sans texte libre ni contenu de sondage.
+GUARD_CHECK_REASON_NOT_APPLICABLE = "cause_non_confirmee"
+GUARD_CHECK_REASON_UNRESOLVED = "cible_non_resolue"
+GUARD_CHECK_REASON_STILL_HIDDEN = "toujours_non_visible"
+GUARD_CHECK_REASON_ERROR = "erreur"
+GUARD_CHECK_REASON_FIX_TOOK_OVER = "correctif_pris_la_main"
+GUARD_CHECK_REASON_HISTORICAL_PATH = "chemin_historique_disponible"
+
+_NOT_VISIBLE_STEP_RE = re.compile(r"click=(?:native_failed|hover_failed) reason=not_visible")
+_GUARD_SELECTED_RE = re.compile(r"action_fix selected fix_id=[a-z][a-z0-9_]{2,63}")
+_GUARD_HANDLED_RE = re.compile(r"action_fix verdict=(?:HANDLED_SUCCESS|HANDLED_FAILURE(?: reason=[a-z_]+)?)")
+
+
+def _guard_check_applicable(diagnosis: Any) -> bool:
+    """Applicabilité stricte (cf. docstring du module) : une étape technique
+    "non visible" ET un fait DOM mesuré "non visible" pour l'option demandée,
+    tous deux déjà établis par le diagnostic (Phase 4) — jamais recalculés ici."""
+    if not isinstance(diagnosis, dict):
+        return False
+    real_dispatch = diagnosis.get("real_dispatch_replay")
+    if not isinstance(real_dispatch, dict):
+        return False
+    steps = real_dispatch.get("dispatcher_steps")
+    if not isinstance(steps, list) or not any(
+        isinstance(s, str) and _NOT_VISIBLE_STEP_RE.fullmatch(s) for s in steps
+    ):
+        return False
+    facts = real_dispatch.get("requested_option_dom_facts")
+    if not isinstance(facts, list) or not facts:
+        return False
+    return any(
+        isinstance(f, dict) and isinstance(f.get("element"), dict) and f["element"].get("visible") is False
+        for f in facts
+    )
+
+
+def _classify_guard_check(raw: Optional[dict], err: Optional[str]) -> Tuple[str, str]:
+    """Traduit le résultat brut du sous-processus de garde en (état, raison).
+    En cas de doute sur la forme ou une erreur quelconque : NON_CONCLUANT,
+    jamais ECHEC — seule une prise de main avérée du correctif rend ECHEC."""
+    if err or not isinstance(raw, dict) or raw.get("error"):
+        return GUARD_CHECK_INCONCLUSIVE, GUARD_CHECK_REASON_ERROR
+    if raw.get("resolved") is not True:
+        return GUARD_CHECK_INCONCLUSIVE, GUARD_CHECK_REASON_UNRESOLVED
+    if raw.get("visible_after_unhide") is not True:
+        return GUARD_CHECK_INCONCLUSIVE, GUARD_CHECK_REASON_STILL_HIDDEN
+    steps = raw.get("dispatcher_steps")
+    if not isinstance(steps, list) or len(steps) > 24 or "capture=truncated" in steps:
+        return GUARD_CHECK_INCONCLUSIVE, GUARD_CHECK_REASON_ERROR
+    for index, step in enumerate(steps):
+        if not (isinstance(step, str) and _GUARD_SELECTED_RE.fullmatch(step)):
+            continue
+        following = steps[index + 1] if index + 1 < len(steps) else None
+        if isinstance(following, str) and _GUARD_HANDLED_RE.fullmatch(following):
+            return GUARD_CHECK_FAILED, GUARD_CHECK_REASON_FIX_TOOK_OVER
+    return GUARD_CHECK_PASSED, GUARD_CHECK_REASON_HISTORICAL_PATH
+
+
+def _run_guard_check(
+    diagnosis: Any, package_root: Optional[Path], case_dir_str: str, budget_s: float,
+) -> dict:
+    """Stage="action" uniquement (appelant). None d'applicabilité impossible :
+    retourne toujours un état, jamais une exception — abandon contrôlé en
+    NON_CONCLUANT pour toute forme/erreur inattendue."""
+    try:
+        if not _guard_check_applicable(diagnosis):
+            return {"state": GUARD_CHECK_NOT_APPLICABLE, "reason": GUARD_CHECK_REASON_NOT_APPLICABLE}
+        if package_root is None:
+            return {"state": GUARD_CHECK_INCONCLUSIVE, "reason": GUARD_CHECK_REASON_ERROR}
+        raw, err = _run_replay_subprocess(
+            _GUARD_CHECK_RUNNER_SCRIPT,
+            [str(package_root), case_dir_str, str(budget_s)],
+            budget_s + _ACTION_SUBPROCESS_MARGIN_S,
+        )
+        state, reason = _classify_guard_check(raw, err)
+        return {"state": state, "reason": reason}
+    except Exception as exc:
+        log_debug(_TAG, f"contrôle de garde abandonné : {type(exc).__name__}: {exc}")
+        return {"state": GUARD_CHECK_INCONCLUSIVE, "reason": GUARD_CHECK_REASON_ERROR}
 
 
 class PatchReplayError(Exception):
@@ -408,6 +611,10 @@ class PatchReplayResult:
     branch: Optional[str] = None
     base_sha: Optional[str] = None
     warnings: List[str] = field(default_factory=list)
+    # Facultatif : stage="action" seulement (cf. docstring du module). None
+    # pour stage="extraction" ou un refus — jamais sérialisé dans ce cas, sortie
+    # strictement identique à avant ce contrôle.
+    guard_check: Optional[dict] = None
 
     def as_dict(self) -> dict:
         result = {
@@ -429,6 +636,8 @@ class PatchReplayResult:
             },
             "warnings": self.warnings,
         }
+        if self.guard_check is not None:
+            result["guard_check"] = self.guard_check
         if self.outcome_reason is not None:
             result["outcome_reason"] = self.outcome_reason
         return result
@@ -508,6 +717,12 @@ def replay_patch(
         branch=worktree.get("branch"),
         base_sha=worktree.get("base_sha"),
     )
+
+    if stage == "action":
+        # Mesure additive, indépendante du rejeu principal ci-dessus (sa propre
+        # page/sous-processus) : calculée même si ce dernier échoue ou dépasse
+        # son budget — n'affecte jamais outcome/patch_validated.
+        result.guard_check = _run_guard_check(diagnosis, package_root, case_dir_str, budget_s)
 
     if err:
         result.after_replay_error = err

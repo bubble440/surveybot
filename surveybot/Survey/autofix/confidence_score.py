@@ -54,7 +54,14 @@ normale et attendue, cf. Phase 10, ne doit jamais être confondue avec un
   2. intégrité des fonctions gelées (Phase 11-A) : PASS seulement pour un
      artefact v2 complet ACCEPTED ; un ancien artefact ou une absence vaut
      MISSING, un rejet ou une incohérence vaut FAIL.
-  3. correctif confirmé sur le case ciblé : dérivé par défaut de
+  3. correctif confirmé sur le case ciblé : AVANT toute autre évaluation de ce
+     critère, patch_replay.json.guard_check.state="echec" (Phase 9, contrôle de
+     garde d'un correctif d'action — cf. Survey/autofix/patch_replay.py) vaut FAIL,
+     même si l'outcome du rejeu est NON_CONCLUANT et même si une validation
+     live confirmée existerait par ailleurs : la garde a pris la main alors que
+     la cible du chemin historique était actionnable, jamais réexaminé. Les
+     états "reussi"/"non_concluant"/"non_applicable" (ou l'absence de la clé)
+     ne changent rien à ce qui suit. Sinon, dérivé par défaut de
      patch_replay.json (Phase 9) — PASS si outcome=CORRECTIF_CONFIRME, FAIL
      si outcome=BUG_PERSISTANT, INCONCLUSIVE sinon (y compris refused=true),
      MISSING si patch_replay.json absent/illisible. SI et seulement si cet
@@ -107,6 +114,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from Survey.log_utils import log_debug, log_info
+from Survey.autofix.patch_replay import GUARD_CHECK_FAILED
 from Survey.autofix.replay_browser import (
     OUTCOME_BUG_PERSISTS,
     OUTCOME_FIX_CONFIRMED,
@@ -219,6 +227,17 @@ def _fix_confirmed_criterion(
     (CORRECTIF_CONFIRME/BUG_PERSISTANT) n'est jamais réexaminé."""
     if pr_err or not isinstance(patch_replay, dict):
         return CRITERION_MISSING, pr_err or "patch_replay.json ne contient pas un objet JSON", "patch_replay.json"
+
+    guard_check = patch_replay.get("guard_check")
+    if isinstance(guard_check, dict) and guard_check.get("state") == GUARD_CHECK_FAILED:
+        return (
+            CRITERION_FAIL,
+            f"patch_replay.json.guard_check.state={guard_check.get('state')!r} reason="
+            f"{guard_check.get('reason')!r} — la garde du correctif a pris la main alors que la "
+            "cible du chemin historique était actionnable (prioritaire sur toute autre évaluation "
+            "de ce critère, y compris un rejeu non concluant ou une validation live confirmée)",
+            "patch_replay.json",
+        )
 
     if patch_replay.get("refused") is True:
         return (

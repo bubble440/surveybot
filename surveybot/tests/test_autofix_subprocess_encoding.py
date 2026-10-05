@@ -16,7 +16,11 @@ from Survey.autofix.failure_diagnosis import _attempt_real_dispatch_replay
 from Survey.autofix.live_validator import _ACTION_RUNNER_SCRIPT as _LIVE_ACTION_RUNNER_SCRIPT
 from Survey.autofix.patch_replay import (
     _ACTION_RUNNER_SCRIPT as _PATCH_ACTION_RUNNER_SCRIPT,
-    PreconditionResult, replay_patch,
+    _GUARD_CHECK_RUNNER_SCRIPT,
+    GUARD_CHECK_FAILED, GUARD_CHECK_INCONCLUSIVE, GUARD_CHECK_NOT_APPLICABLE, GUARD_CHECK_PASSED,
+    GUARD_CHECK_REASON_ERROR, GUARD_CHECK_REASON_FIX_TOOK_OVER, GUARD_CHECK_REASON_HISTORICAL_PATH,
+    GUARD_CHECK_REASON_NOT_APPLICABLE, GUARD_CHECK_REASON_STILL_HIDDEN, GUARD_CHECK_REASON_UNRESOLVED,
+    PreconditionResult, _classify_guard_check, _guard_check_applicable, replay_patch,
 )
 from Survey.autofix.patch_commit import _find_existing_case_commit
 from Survey.autofix.replay_browser import _ACTION_REPLAY_EXECUTE_SCRIPTS, _capture_dispatcher_steps, _safe_target_log
@@ -56,24 +60,44 @@ class _FakePage:
 
 
 class AutofixSubprocessEncodingTests(unittest.TestCase):
-    def _synthetic_patch_replay(self, stage: str, after: dict):
+    def _synthetic_patch_replay(
+        self, stage: str, after: dict, *,
+        diagnosis: "dict | None" = None, guard_raw: "dict | None" = None, guard_err: "str | None" = None,
+    ):
         pre = PreconditionResult(
             satisfied=True, case_id="synthetic_case", stage=stage,
             worktree={"worktree_path": "synthetic_worktree", "branch": "synthetic_branch", "base_sha": "abc"},
-            diagnosis={"replay": {"verdict": "REPRODUIT"},
-                       "real_dispatch_replay": {"validation_comparison": {"outcome": "BUG_PERSISTANT"}}},
+            diagnosis=diagnosis if diagnosis is not None else {
+                "replay": {"verdict": "REPRODUIT"},
+                "real_dispatch_replay": {"validation_comparison": {"outcome": "BUG_PERSISTANT"}},
+            },
         )
+
+        def _dispatch(script, _args, _timeout_s):
+            if script == _GUARD_CHECK_RUNNER_SCRIPT:
+                return guard_raw, guard_err
+            return after, None
+
         with (
             patch("Survey.autofix.patch_replay.check_preconditions", return_value=pre),
             patch("Survey.autofix.patch_replay._resolve_worktree_package_root",
                   return_value=(Path("synthetic_package"), None)),
-            patch("Survey.autofix.patch_replay._run_replay_subprocess", return_value=(after, None)),
+            patch("Survey.autofix.patch_replay._run_replay_subprocess", side_effect=_dispatch),
         ):
             return replay_patch(
                 failure_case_dir="synthetic_case", diagnosis_dir="synthetic_diagnosis",
                 worktree_manifest_path="synthetic_worktree.json",
                 validation_static_path="synthetic_validation.json",
             )
+
+    _GUARD_CHECK_APPLICABLE_DIAGNOSIS = {
+        "replay": {"verdict": "REPRODUIT"},
+        "real_dispatch_replay": {
+            "validation_comparison": {"outcome": "BUG_PERSISTANT"},
+            "dispatcher_steps": ["click=native_failed reason=not_visible"],
+            "requested_option_dom_facts": [{"element": {"visible": False}, "siblings": []}],
+        },
+    }
 
     def test_patch_replay_marks_only_unverifiable_handler_failure_inconclusive(self) -> None:
         comparison = {"outcome": "BUG_PERSISTANT", "verdict": "REPRODUIT", "reasons": []}
@@ -123,6 +147,145 @@ class AutofixSubprocessEncodingTests(unittest.TestCase):
         })
         self.assertEqual(extraction.outcome, "BUG_PERSISTANT")
         self.assertNotIn("outcome_reason", extraction.as_dict())
+        self.assertIsNone(extraction.guard_check)
+        self.assertNotIn("guard_check", extraction.as_dict())
+
+    def test_guard_check_applicable_requires_a_not_visible_step_and_an_invisible_fact(self) -> None:
+        steps = ["click=native_failed reason=not_visible"]
+        facts = [{"element": {"visible": False}, "siblings": []}]
+        self.assertTrue(_guard_check_applicable(
+            {"real_dispatch_replay": {"dispatcher_steps": steps, "requested_option_dom_facts": facts}}
+        ))
+        self.assertTrue(_guard_check_applicable(
+            {"real_dispatch_replay": {"dispatcher_steps": ["click=hover_failed reason=not_visible"],
+                                       "requested_option_dom_facts": facts}}
+        ))
+        missing_cases = (
+            {"real_dispatch_replay": {"dispatcher_steps": [], "requested_option_dom_facts": facts}},
+            {"real_dispatch_replay": {"dispatcher_steps": steps, "requested_option_dom_facts": []}},
+            {"real_dispatch_replay": {"dispatcher_steps": steps,
+                                       "requested_option_dom_facts": [{"element": {"visible": True}, "siblings": []}]}},
+            {"real_dispatch_replay": {"dispatcher_steps": ["click=native_failed reason=intercepted"],
+                                       "requested_option_dom_facts": facts}},
+            {"real_dispatch_replay": None},
+            {},
+            "not-a-dict",
+            None,
+        )
+        for case in missing_cases:
+            with self.subTest(case=case):
+                self.assertFalse(_guard_check_applicable(case))
+
+    def test_classify_guard_check_is_closed_and_defaults_to_inconclusive(self) -> None:
+        cases = (
+            (None, "sous-processus indisponible", (GUARD_CHECK_INCONCLUSIVE, GUARD_CHECK_REASON_ERROR)),
+            ("not-a-dict", None, (GUARD_CHECK_INCONCLUSIVE, GUARD_CHECK_REASON_ERROR)),
+            ({"error": "TimeoutError: x"}, None, (GUARD_CHECK_INCONCLUSIVE, GUARD_CHECK_REASON_ERROR)),
+            ({"resolved": False}, None, (GUARD_CHECK_INCONCLUSIVE, GUARD_CHECK_REASON_UNRESOLVED)),
+            ({"resolved": True, "visible_after_unhide": False}, None,
+             (GUARD_CHECK_INCONCLUSIVE, GUARD_CHECK_REASON_STILL_HIDDEN)),
+            ({"resolved": True, "visible_after_unhide": True, "dispatcher_steps": None}, None,
+             (GUARD_CHECK_INCONCLUSIVE, GUARD_CHECK_REASON_ERROR)),
+            ({"resolved": True, "visible_after_unhide": True, "dispatcher_steps": ["capture=truncated"]}, None,
+             (GUARD_CHECK_INCONCLUSIVE, GUARD_CHECK_REASON_ERROR)),
+            ({"resolved": True, "visible_after_unhide": True, "dispatcher_steps": [
+                "action_fix selected fix_id=fix_radio_qt", "action_fix verdict=DECLINED"]}, None,
+             (GUARD_CHECK_PASSED, GUARD_CHECK_REASON_HISTORICAL_PATH)),
+            ({"resolved": True, "visible_after_unhide": True, "dispatcher_steps": [
+                "strategy=radio_main attempted", "strategy=radio_main result=success"]}, None,
+             (GUARD_CHECK_PASSED, GUARD_CHECK_REASON_HISTORICAL_PATH)),
+            ({"resolved": True, "visible_after_unhide": True, "dispatcher_steps": []}, None,
+             (GUARD_CHECK_PASSED, GUARD_CHECK_REASON_HISTORICAL_PATH)),
+            ({"resolved": True, "visible_after_unhide": True, "dispatcher_steps": [
+                "action_fix selected fix_id=fix_radio_qt", "action_fix verdict=HANDLED_SUCCESS"]}, None,
+             (GUARD_CHECK_FAILED, GUARD_CHECK_REASON_FIX_TOOK_OVER)),
+            ({"resolved": True, "visible_after_unhide": True, "dispatcher_steps": [
+                "action_fix selected fix_id=fix_radio_qt",
+                "action_fix verdict=HANDLED_FAILURE reason=handler_returned_failure"]}, None,
+             (GUARD_CHECK_FAILED, GUARD_CHECK_REASON_FIX_TOOK_OVER)),
+        )
+        for raw, err, expected in cases:
+            with self.subTest(raw=raw, err=err):
+                self.assertEqual(_classify_guard_check(raw, err), expected)
+
+    def test_replay_patch_guard_check_is_not_applicable_without_confirmed_cause(self) -> None:
+        result = self._synthetic_patch_replay("action", {
+            "status": "FAILURE", "dispatcher_steps": [],
+            "validation_comparison": {"outcome": "BUG_PERSISTANT"},
+        })
+        self.assertEqual(result.guard_check,
+                          {"state": GUARD_CHECK_NOT_APPLICABLE, "reason": GUARD_CHECK_REASON_NOT_APPLICABLE})
+
+    def test_replay_patch_guard_check_echec_never_changes_the_replay_outcome(self) -> None:
+        primary_after = {
+            "status": "FAILURE", "execute_scripts": False,
+            "validation_comparison": {"outcome": "BUG_PERSISTANT", "verdict": "REPRODUIT", "reasons": []},
+            "dispatcher_steps": ["action_fix selected fix_id=fix_radio_qt",
+                                  "action_fix verdict=HANDLED_FAILURE reason=handler_returned_failure"],
+        }
+        guard_raw = {
+            "resolved": True, "visible_after_unhide": True, "status": "SUCCESS",
+            "dispatcher_steps": ["action_fix selected fix_id=fix_radio_qt", "action_fix verdict=HANDLED_SUCCESS"],
+            "error": None,
+        }
+        result = self._synthetic_patch_replay(
+            "action", primary_after, diagnosis=self._GUARD_CHECK_APPLICABLE_DIAGNOSIS, guard_raw=guard_raw,
+        )
+        self.assertEqual(result.guard_check, {"state": GUARD_CHECK_FAILED, "reason": GUARD_CHECK_REASON_FIX_TOOK_OVER})
+        # Même "non concluant" (durcissement du 4 octobre 2026 ci-dessus) : guard_check
+        # n'est jamais mélangé au calcul de l'issue du rejeu.
+        self.assertEqual(result.outcome, "NON_CONCLUANT")
+        self.assertFalse(result.patch_validated)
+        self.assertEqual(result.as_dict()["guard_check"], result.guard_check)
+
+    def test_replay_patch_guard_check_reussi_when_fix_is_not_selected(self) -> None:
+        primary_after = {
+            "status": "SUCCESS", "dispatcher_steps": [],
+            "validation_comparison": {"outcome": "CORRECTIF_CONFIRME", "verdict": "NON_REPRODUIT", "reasons": []},
+        }
+        guard_raw = {
+            "resolved": True, "visible_after_unhide": True, "status": "SUCCESS",
+            "dispatcher_steps": ["strategy=radio_main attempted", "strategy=radio_main result=success"],
+            "error": None,
+        }
+        result = self._synthetic_patch_replay(
+            "action", primary_after, diagnosis=self._GUARD_CHECK_APPLICABLE_DIAGNOSIS, guard_raw=guard_raw,
+        )
+        self.assertEqual(result.guard_check, {"state": GUARD_CHECK_PASSED, "reason": GUARD_CHECK_REASON_HISTORICAL_PATH})
+        self.assertEqual(result.outcome, "CORRECTIF_CONFIRME")
+        self.assertTrue(result.patch_validated)
+
+    def test_replay_patch_guard_check_non_concluant_on_subprocess_error(self) -> None:
+        primary_after = {
+            "status": "FAILURE", "dispatcher_steps": [],
+            "validation_comparison": {"outcome": "BUG_PERSISTANT", "verdict": "REPRODUIT", "reasons": []},
+        }
+        result = self._synthetic_patch_replay(
+            "action", primary_after, diagnosis=self._GUARD_CHECK_APPLICABLE_DIAGNOSIS,
+            guard_raw=None, guard_err="sous-processus de rejeu expiré après 90.0s (budget dépassé)",
+        )
+        self.assertEqual(result.guard_check, {"state": GUARD_CHECK_INCONCLUSIVE, "reason": GUARD_CHECK_REASON_ERROR})
+        self.assertEqual(result.outcome, "BUG_PERSISTANT")
+
+    def test_replay_patch_guard_check_inconclusive_when_package_root_unresolved(self) -> None:
+        pre = PreconditionResult(
+            satisfied=True, case_id="synthetic_case", stage="action",
+            worktree={"worktree_path": "synthetic_worktree", "branch": "b", "base_sha": "abc"},
+            diagnosis=self._GUARD_CHECK_APPLICABLE_DIAGNOSIS,
+        )
+        with (
+            patch("Survey.autofix.patch_replay.check_preconditions", return_value=pre),
+            patch("Survey.autofix.patch_replay._resolve_worktree_package_root",
+                  return_value=(None, "racine introuvable")),
+        ):
+            result = replay_patch(
+                failure_case_dir="synthetic_case", diagnosis_dir="synthetic_diagnosis",
+                worktree_manifest_path="synthetic_worktree.json",
+                validation_static_path="synthetic_validation.json",
+            )
+        self.assertEqual(result.guard_check, {"state": GUARD_CHECK_INCONCLUSIVE, "reason": GUARD_CHECK_REASON_ERROR})
+        self.assertEqual(result.outcome, "NON_CONCLUANT")
+        self.assertEqual(result.after_replay_error, "racine introuvable")
 
     def test_action_target_shapes_follow_registry_group_payload_and_remove_literals(self) -> None:
         def payload(target: str) -> dict:

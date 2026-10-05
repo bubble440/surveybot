@@ -137,7 +137,8 @@ class PromptGeneratorSpcaTests(unittest.TestCase):
         self.assertTrue(head.startswith("Stage action : seul un correctif `before` est admissible"))
         self.assertTrue(addition)
         sentences = [part for part in re.split(r"(?<=[.!?])\s+", addition.strip()) if part]
-        self.assertLessEqual(len(sentences), 5)
+        self.assertLessEqual(len(sentences), 6)
+        self.assertIn("borné par un délai explicite d'au plus 2000 millisecondes", addition)
         lowered = addition.lower()
         for forbidden in (
             "metrixlab", "toluna", "qualtrics", "radioqt", "checkboxqt", "q1001",

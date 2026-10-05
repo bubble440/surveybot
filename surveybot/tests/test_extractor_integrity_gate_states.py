@@ -9,8 +9,8 @@ from pathlib import Path
 
 from Survey.extractor_integrity import _hash_function
 from Survey.autofix.confidence_score import (
-    CONFIDENCE_HIGH, CONFIDENCE_MEDIUM, CRITERION_MISSING,
-    _confidence_and_reason, _integrity_criterion, score_patch_confidence,
+    CONFIDENCE_HIGH, CONFIDENCE_MEDIUM, CRITERION_FAIL, CRITERION_MISSING, CRITERION_PASS,
+    _confidence_and_reason, _fix_confirmed_criterion, _integrity_criterion, score_patch_confidence,
 )
 from Survey.autofix.extractor_integrity_gate import (
     BASELINE_MISMATCH, EXPECTED_CHANGE, UNCHANGED, UNEXPECTED_CHANGE,
@@ -255,6 +255,36 @@ class IntegrityStatesTests(unittest.TestCase):
             patch_replay_path=evidence["patch_replay_path"], extractor_integrity_check_path=integrity,
         )
         self.assertEqual(missing.confidence, CONFIDENCE_MEDIUM)
+
+    def test_fix_confirmed_criterion_fails_on_guard_check_echec_before_anything_else(self) -> None:
+        confirmed = {"outcome": "CORRECTIF_CONFIRME"}
+        guard_failed = {**confirmed, "guard_check": {"state": "echec", "reason": "correctif_pris_la_main"}}
+        value, detail, source = _fix_confirmed_criterion(guard_failed, None, None, False, None)
+        self.assertEqual(value, CRITERION_FAIL)
+        self.assertIn("guard_check", detail)
+        self.assertEqual(source, "patch_replay.json")
+
+        # Même rejeu NON_CONCLUANT et validation live favorable : guard_check="echec"
+        # est prioritaire sur toute autre évaluation de ce critère.
+        inconclusive_with_guard = {
+            "outcome": "NON_CONCLUANT",
+            "guard_check": {"state": "echec", "reason": "correctif_pris_la_main"},
+        }
+        live_confirmed = {"refused": False, "outcome": "CORRECTIF_CONFIRME"}
+        value, _, _ = _fix_confirmed_criterion(inconclusive_with_guard, None, live_confirmed, True, None)
+        self.assertEqual(value, CRITERION_FAIL)
+
+        # Les autres états de guard_check (ou son absence) ne changent rien au critère.
+        unaffected = (
+            {**confirmed, "guard_check": {"state": "reussi", "reason": "chemin_historique_disponible"}},
+            {**confirmed, "guard_check": {"state": "non_concluant", "reason": "erreur"}},
+            {**confirmed, "guard_check": {"state": "non_applicable", "reason": "cause_non_confirmee"}},
+            confirmed,
+        )
+        for replay in unaffected:
+            with self.subTest(replay=replay):
+                value, _, _ = _fix_confirmed_criterion(replay, None, None, False, None)
+                self.assertEqual(value, CRITERION_PASS)
 
 
 if __name__ == "__main__":

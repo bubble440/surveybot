@@ -60,6 +60,8 @@ ajoutés directement à la racine du paquet sont contrôlés séparément.
    sous-processus borné, un registre neuf enregistre chaque déclaration et
    vérifie sa candidature pour l'ancrage et la position déclarés.
 6. Rejet des nouveaux fichiers placés directement à la racine du paquet.
+7. Gestes non bornés d'un module de correctif externe (fix_gestures, cf.
+   bloc dédié ci-dessous) : analyse par arbre syntaxique, sans exécution.
 
 Chaque sous-processus a un budget de temps explicite ; un dépassement est
 traité comme un échec de la vérification concernée, avec une raison
@@ -74,6 +76,7 @@ détail et la raison d'échec de chaque vérification. Ne modifie jamais le
 worktree, la branche autofix, ni aucun artefact d'une phase précédente.
 """
 
+import ast
 import json
 import os
 import shutil
@@ -453,6 +456,127 @@ def _check_lint(files: "list[Path]", *, timeout: float) -> dict:
     }
 
 
+# ─────────────────────────── Gestes non bornés (fix_gestures) ───────────────
+# Analyse par arbre syntaxique uniquement, sans import ni exécution. Une seule
+# règle, déterministe, appliquée aux seuls modules de correctif externe
+# modifiés/ajoutés (fix_modules, déjà identifiés par validate_patch_static).
+# Un module qui ne s'analyse pas (SyntaxError) n'est pas un défaut de ce
+# contrôle : la compilation (point 1) le signale déjà.
+FIX_GESTURES_TIMEOUT_LIMIT_MS = 2000
+_MAX_FIX_GESTURE_DEFECTS = 5
+
+# Liste fermée des gestes de la bibliothèque d'automatisation qui acceptent un
+# délai explicite en millisecondes (mot-clé "timeout", toujours nommé dans
+# cette bibliothèque — jamais positionnel).
+_GESTURE_METHODS = frozenset({
+    "click", "dblclick", "hover", "tap", "check", "uncheck", "set_checked",
+    "fill", "type", "press", "select_option", "drag_to",
+})
+
+GESTURE_DEFECT_MISSING_TIMEOUT = "missing_timeout"
+GESTURE_DEFECT_NON_POSITIVE_TIMEOUT = "non_positive_timeout"
+GESTURE_DEFECT_TIMEOUT_TOO_LARGE = "timeout_too_large"
+
+
+def _literal_number(node: ast.AST) -> "Optional[float]":
+    """Nombre littéral (y compris signé) ; None si non résoluble statiquement."""
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        inner = _literal_number(node.operand)
+        if inner is None:
+            return None
+        return -inner if isinstance(node.op, ast.USub) else inner
+    if (
+        isinstance(node, ast.Constant) and isinstance(node.value, (int, float))
+        and not isinstance(node.value, bool)
+    ):
+        return float(node.value)
+    return None
+
+
+def _module_level_numeric_constants(tree: ast.Module) -> "dict[str, float]":
+    """name -> valeur, pour chaque assignation simple au niveau du module dont
+    la valeur est un nombre littéral (la dernière assignation l'emporte)."""
+    constants: "dict[str, float]" = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            value = _literal_number(node.value)
+            if value is not None:
+                constants[node.targets[0].id] = value
+    return constants
+
+
+def _resolve_timeout_ms(node: ast.AST, constants: "dict[str, float]") -> "Optional[float]":
+    direct = _literal_number(node)
+    if direct is not None:
+        return direct
+    if isinstance(node, ast.Name) and node.id in constants:
+        return constants[node.id]
+    return None
+
+
+def _gesture_defects_in_source(source: str, rel_path: str) -> "list[dict]":
+    """Défauts d'un seul module (SyntaxError = aucun défaut, cf. point 1)."""
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return []
+    constants = _module_level_numeric_constants(tree)
+    defects: "list[dict]" = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr in _GESTURE_METHODS):
+            continue
+        timeout_kw = next((kw for kw in node.keywords if kw.arg == "timeout"), None)
+        if timeout_kw is None:
+            if any(kw.arg is None for kw in node.keywords):
+                continue  # **kwargs peut porter un délai : en cas de doute, ne rien signaler
+            kind = GESTURE_DEFECT_MISSING_TIMEOUT
+        else:
+            value = _resolve_timeout_ms(timeout_kw.value, constants)
+            if value is None:
+                continue  # délai non résoluble statiquement : en cas de doute, ne rien signaler
+            if value <= 0:
+                kind = GESTURE_DEFECT_NON_POSITIVE_TIMEOUT
+            elif value > FIX_GESTURES_TIMEOUT_LIMIT_MS:
+                kind = GESTURE_DEFECT_TIMEOUT_TOO_LARGE
+            else:
+                continue
+        defects.append({
+            "file": rel_path, "line": getattr(node, "lineno", 0),
+            "method": node.func.attr, "kind": kind,
+        })
+    return defects
+
+
+def _check_fix_gestures(fix_modules: "tuple[Path, ...]", *, package_root: Path) -> dict:
+    files: "list[str]" = []
+    defects: "list[dict]" = []
+    error = None
+    try:
+        for f in fix_modules:
+            try:
+                rel = f.relative_to(package_root).as_posix()
+            except ValueError:
+                rel = f.as_posix()
+            files.append(rel)
+            try:
+                source = f.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            defects.extend(_gesture_defects_in_source(source, rel))
+    except Exception as exc:
+        log_debug(_TAG, f"fix_gestures : analyse abandonnée ({type(exc).__name__})")
+        error = "analyse des gestes du correctif impossible"
+    bounded = defects[:_MAX_FIX_GESTURE_DEFECTS]
+    return {
+        "ok": error is None and not bounded,
+        "files": files,
+        "defects": bounded,
+        "limit_ms": FIX_GESTURES_TIMEOUT_LIMIT_MS,
+        "error": error,
+    }
+
+
 # ──────────────────────────────────── Tests ─────────────────────────────────
 
 def _find_associated_tests(source_file: Path, package_root: Path) -> "list[Path]":
@@ -648,6 +772,7 @@ def validate_patch_static(
             },
             "root_files": root_check,
             "activation": {"ok": True, "skipped": True, "registered": [], "timed_out": False, "error": None},
+            "fix_gestures": {"ok": True, "files": [], "defects": [], "limit_ms": FIX_GESTURES_TIMEOUT_LIMIT_MS, "error": None},
         }
         return StaticValidationResult(
             case_id=case_id, branch=branch, base_sha=base_sha,
@@ -670,10 +795,11 @@ def validate_patch_static(
         "activation": _check_activation(changed_rel, worktree_path=worktree_path,
                                         package_root=package_root, timeout=import_timeout_s),
         "root_files": root_check,
+        "fix_gestures": _check_fix_gestures(fix_modules, package_root=package_root),
     }
 
     reasons: "list[str]" = []
-    for name in ("compile", "import", "lint", "tests", "activation", "root_files"):
+    for name in ("compile", "import", "lint", "tests", "activation", "root_files", "fix_gestures"):
         if not checks[name]["ok"]:
             reasons.append(f"{name} : {checks[name].get('error') or 'échec'}")
 

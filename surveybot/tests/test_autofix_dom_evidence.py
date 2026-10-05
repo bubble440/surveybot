@@ -16,7 +16,7 @@ from Survey.autofix.autofix_orchestrator import (
     AutofixOrchestratorError, CaseRunSummary, ClaudeInvocationResult, DEFAULT_MAX_BUDGET_USD,
     DEFAULT_MAX_ATTEMPTS, DEFAULT_MAX_CASE_BUDGET_USD,
     EligibleCase, SafetyOutcome, STATUS_FAILURE, STATUS_SUCCESS,
-    STAGE_CLAUDE_INVOCATION, STAGE_CONFIDENCE_SCORE, STAGE_NO_CHANGES,
+    STAGE_CLAUDE_INVOCATION, STAGE_CONFIDENCE_SCORE, STAGE_NO_CHANGES, STAGE_PATCH_REPLAY,
     STAGE_STATIC_VALIDATION, _MAX_AGENT_FINAL_TEXT_CHARS,
     STAGE_UPSTREAM_DIAGNOSIS, STAGE_UPSTREAM_HISTORY_DUPLICATE, UpstreamCaseSummary,
     _diagnosis_signature, _maybe_notify_live_validation, _worktree_terminal_state,
@@ -614,6 +614,89 @@ class AutofixDomEvidenceTests(unittest.TestCase):
         pipeline = write_pipeline_run_summary(summary, out_root=self.root / "pipeline")
         self.assertEqual(json.loads(pipeline.read_text(encoding="utf-8"))["attempt_count"], 2)
 
+    def test_fix_gestures_rejection_shows_unmasked_detail_while_others_stay_masked(self) -> None:
+        rejected = {
+            "verdict": "REJECTED", "reasons": ["fix_gestures : échec"],
+            "checks": {"fix_gestures": {
+                "ok": False, "files": ["Survey/external_fix_sample.py"], "limit_ms": 2000, "error": None,
+                "defects": [
+                    {"file": "Survey/external_fix_sample.py", "line": 12, "method": "click",
+                     "kind": "missing_timeout"},
+                    {"file": "Survey/external_fix_sample.py", "line": 14, "method": "hover",
+                     "kind": "timeout_too_large"},
+                ],
+            }},
+        }
+        accepted = {"verdict": "ACCEPTED", "reasons": [], "checks": {}}
+        replay = {"stage": "action", "refused": False, "after_replay_error": None,
+                  "outcome": "CORRECTIF_CONFIRME", "after_replay": {"status": "SUCCESS"}}
+        summary, calls, counts, safety, review, notify = self._synthetic_attempts(
+            "synthetic_retry_fix_gestures", static_artifacts=[rejected, accepted],
+            replay_artifacts=[replay], integrity_artifacts=[{"verdict": "ACCEPTED"}],
+            confidence_artifacts=[{"confidence": "HIGH"}],
+        )
+        self.assertEqual(len(calls), 2)
+        self.assertIn("fix_gestures : échec — Survey/external_fix_sample.py:12 click() [missing_timeout]; "
+                       "Survey/external_fix_sample.py:14 hover() [timeout_too_large]", calls[1]["prompt_text"])
+        self.assertNotIn("fix_gestures : échec (détail masqué)", calls[1]["prompt_text"])
+        self.assertEqual(summary.attempt_count, 2)
+
+    def test_fix_gestures_with_unexploitable_defects_stays_masked_and_does_not_retry(self) -> None:
+        rejected = {"verdict": "REJECTED", "reasons": ["fix_gestures : échec"],
+                    "checks": {"fix_gestures": {"ok": False, "files": [], "defects": [],
+                                                 "limit_ms": 2000, "error": None}}}
+        summary, calls, _, _, _, _ = self._synthetic_attempts(
+            "synthetic_no_retry_fix_gestures_illisible", static_artifacts=[rejected],
+        )
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(summary.attempt_count, 1)
+
+    def test_guard_check_echec_retries_with_distinct_cause_even_when_replay_is_inconclusive(self) -> None:
+        accepted = {"verdict": "ACCEPTED", "reasons": [], "checks": {}}
+        guard_failed = {
+            "stage": "action", "refused": False, "after_replay_error": None,
+            "outcome": "NON_CONCLUANT",
+            "guard_check": {"state": "echec", "reason": "correctif_pris_la_main"},
+        }
+        confirmed = {
+            "stage": "action", "refused": False, "after_replay_error": None,
+            "outcome": "CORRECTIF_CONFIRME",
+            "guard_check": {"state": "reussi", "reason": "chemin_historique_disponible"},
+        }
+        summary, calls, counts, safety, review, notify = self._synthetic_attempts(
+            "synthetic_retry_guard_check", static_artifacts=[accepted, accepted],
+            replay_artifacts=[guard_failed, confirmed],
+            integrity_artifacts=[{"verdict": "ACCEPTED"}, {"verdict": "ACCEPTED"}],
+            confidence_artifacts=[{"confidence": "REJECT"}, {"confidence": "HIGH"}],
+        )
+        self.assertEqual(len(calls), 2)
+        self.assertIn("garde du correctif trop large", calls[1]["prompt_text"])
+        self.assertIn("teste la condition d'échec observée", calls[1]["prompt_text"])
+        self.assertIn("décline (sans effet)", calls[1]["prompt_text"])
+        self.assertEqual(summary.attempt_count, 2)
+
+    def test_guard_check_reussi_or_absent_does_not_retry_on_its_own(self) -> None:
+        accepted = {"verdict": "ACCEPTED", "reasons": [], "checks": {}}
+        bug_persists_guard_reussi = {
+            "stage": "action", "refused": False, "after_replay_error": None,
+            "outcome": "NON_CONCLUANT",
+            "guard_check": {"state": "reussi", "reason": "chemin_historique_disponible"},
+        }
+        bug_persists_no_guard = {
+            "stage": "action", "refused": False, "after_replay_error": None,
+            "outcome": "NON_CONCLUANT",
+        }
+        for suffix, replay in (("reussi", bug_persists_guard_reussi), ("absent", bug_persists_no_guard)):
+            with self.subTest(suffix=suffix):
+                summary, calls, _, _, _, _ = self._synthetic_attempts(
+                    "synthetic_no_retry_guard_" + suffix, static_artifacts=[accepted],
+                    replay_artifacts=[replay],
+                    integrity_artifacts=[{"verdict": "ACCEPTED"}],
+                    confidence_artifacts=[{"confidence": "REJECT"}],
+                )
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(summary.attempt_count, 1)
+
     def test_static_retry_classifies_only_patch_failures(self) -> None:
         informative = (
             {"compile": {"ok": False, "files": [{"ok": False, "error": "SyntaxError"}]}},
@@ -622,6 +705,11 @@ class AutofixDomEvidenceTests(unittest.TestCase):
             {"lint": {"ok": False, "violations": [{"code": "F821"}], "error": None}},
             {"tests": {"ok": False, "executed": ["test_fix.py"], "error": "1 failed"}},
             {"activation": {"ok": False, "skipped": False, "error": "ValueError: invalid registration"}},
+            {"fix_gestures": {"ok": False, "files": ["Survey/external_fix_sample.py"], "error": None,
+                              "limit_ms": 2000, "defects": [
+                                  {"file": "Survey/external_fix_sample.py", "line": 12,
+                                   "method": "click", "kind": "missing_timeout"},
+                              ]}},
         )
         for checks in informative:
             with self.subTest(checks=checks):
@@ -633,6 +721,15 @@ class AutofixDomEvidenceTests(unittest.TestCase):
                        "error": "budget dépassé"}},
             {"import": {"ok": False, "files": [{"ok": False,
                                                   "error": "ModuleNotFoundError: No module named dependency"}]}},
+            {"fix_gestures": {"ok": False, "files": [], "defects": [], "limit_ms": 2000,
+                              "error": "analyse des gestes du correctif impossible"}},
+            {"fix_gestures": {"ok": False, "files": ["Survey/external_fix_sample.py"], "error": None,
+                              "limit_ms": 2000, "defects": []}},
+            {"fix_gestures": {"ok": False, "files": ["Survey/external_fix_sample.py"], "error": None,
+                              "limit_ms": 2000, "defects": [
+                                  {"file": "Survey/external_fix_sample.py", "line": 12,
+                                   "method": "click", "kind": "unknown_kind"},
+                              ]}},
         )
         for checks in environmental:
             with self.subTest(checks=checks):
@@ -1004,6 +1101,11 @@ class AutofixDomEvidenceTests(unittest.TestCase):
         confidence.assert_called_once()
         notify.assert_not_called()
 
+    @staticmethod
+    def _without_created_at(data: dict) -> dict:
+        # as_dict() embarque l'horodatage de l'appel : le comparer tel quel échoue par construction.
+        return {key: value for key, value in data.items() if key != "created_at"}
+
     def _pending_live_summary(self, case_id: str, score: dict | None, *,
                               agent_summary: str | None = "Correctif d'action ajouté") -> CaseRunSummary:
         score_path = self.root / "confidence" / case_id / "confidence_score.json"
@@ -1083,12 +1185,12 @@ class AutofixDomEvidenceTests(unittest.TestCase):
               patch("Survey.autofix.autofix_orchestrator.release_lock"),
               patch("Survey.autofix.autofix_orchestrator.discover_eligible_cases", return_value=[]),
               patch("Survey.autofix.autofix_orchestrator.process_case") as process,
-              patch("Survey.autofix.autofix_orchestrator.write_patch_confidence") as score,
+              patch("Survey.autofix.autofix_orchestrator.write_patch_confidence") as score_mock,
               patch("Survey.autofix.autofix_orchestrator.send_status_notification") as notify):
             run_autofix_pipeline(run_upstream=False, run_downstream=False,
                                  pipeline_runs_root=self.root / "pipeline")
         process.assert_not_called()
-        score.assert_not_called()
+        score_mock.assert_not_called()
         notify.assert_called_once()
         recorded = json.loads((self.root / "pipeline" / summary.case_id / "pipeline_run.json").read_text(encoding="utf-8"))
         self.assertTrue(recorded["notified"])
@@ -1139,21 +1241,21 @@ class AutofixDomEvidenceTests(unittest.TestCase):
                 summary = self._pending_live_summary("synthetic_no_pending_" + suffix, score)
                 summary.confidence = confidence
                 summary.stopped_at = stopped_at
-                original = summary.as_dict()
+                original = self._without_created_at(summary.as_dict())
                 with patch("Survey.autofix.autofix_orchestrator.send_status_notification") as notify:
                     _maybe_notify_live_validation(summary, pipeline_runs_root=self.root / "pipeline")
                 notify.assert_not_called()
-                self.assertEqual(summary.as_dict(), original)
+                self.assertEqual(self._without_created_at(summary.as_dict()), original)
 
         oversized = self._pending_live_summary("synthetic_oversized_status", {
             "confidence": "MEDIUM", "criteria": expected,
         })
         oversized.artifacts[STAGE_PATCH_REPLAY] = "x" * 1001
-        original = oversized.as_dict()
+        original = self._without_created_at(oversized.as_dict())
         with patch("Survey.autofix.autofix_orchestrator.send_status_notification") as notify:
             _maybe_notify_live_validation(oversized, pipeline_runs_root=self.root / "pipeline")
         notify.assert_not_called()
-        self.assertEqual(oversized.as_dict(), original)
+        self.assertEqual(self._without_created_at(oversized.as_dict()), original)
 
     def test_existing_terminal_decisions_remain_unchanged(self) -> None:
         case_id = "synthetic_terminal_states"
