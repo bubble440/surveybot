@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import subprocess
 import sys
@@ -19,9 +20,39 @@ from Survey.autofix.patch_replay import (
 )
 from Survey.autofix.patch_commit import _find_existing_case_commit
 from Survey.autofix.replay_browser import _ACTION_REPLAY_EXECUTE_SCRIPTS, _capture_dispatcher_steps, _safe_target_log
-from Survey.autofix.replay_browser import summarize_action_target_shapes
+from Survey.autofix.replay_browser import _dom_fact_from_raw, _sanitize_classes
+from Survey.autofix.replay_browser import summarize_action_target_shapes, summarize_requested_option_dom_facts
 from Survey.autofix.static_validator import _run
 from Survey.log_utils import log_debug, log_info
+
+
+class _FakeElement:
+    """Simule un ElementHandle Playwright : evaluate() renvoie un objet figé."""
+
+    def __init__(self, raw) -> None:
+        self._raw = raw
+
+    def evaluate(self, _script: str):
+        return self._raw
+
+
+class _RaisingElement:
+    def evaluate(self, _script: str):
+        raise RuntimeError("private boom")
+
+
+class _FakePage:
+    """Simule une Page Playwright : query_selector("xpath=...") résout depuis une
+    table fixe et journalise chaque sélecteur interrogé (pour vérifier qu'une
+    seule option — la demandée — est jamais interrogée)."""
+
+    def __init__(self, elements_by_xpath: dict) -> None:
+        self._elements = elements_by_xpath
+        self.queried: list = []
+
+    def query_selector(self, selector: str):
+        self.queried.append(selector)
+        return self._elements.get(selector[len("xpath="):])
 
 
 class AutofixSubprocessEncodingTests(unittest.TestCase):
@@ -154,6 +185,209 @@ class AutofixSubprocessEncodingTests(unittest.TestCase):
                 raise RuntimeError("private value")
 
         self.assertIsNone(summarize_action_target_shapes(UnreadableTargets({"target_secret": None})))
+
+    def test_dom_fact_classes_are_sanitized_bounded_and_never_raise(self) -> None:
+        self.assertEqual(
+            _sanitize_classes(["radioQT123", "option_radio", "bad class", "x" * 40, "a", "b", "c"]),
+            ["radioQT<N>", "option_radio", "a"],
+        )
+        self.assertEqual(_sanitize_classes(None), [])
+        self.assertEqual(_sanitize_classes("not-a-list"), [])
+        self.assertEqual(_sanitize_classes([]), [])
+        self.assertEqual(_sanitize_classes([123, None, ""]), [])
+
+    def test_dom_fact_from_raw_is_a_closed_validated_shape(self) -> None:
+        self.assertIsNone(_dom_fact_from_raw(None))
+        self.assertIsNone(_dom_fact_from_raw("not-a-dict"))
+        self.assertIsNone(_dom_fact_from_raw({"tag": 123, "visible": True, "width": 1, "height": 1}))
+        self.assertIsNone(_dom_fact_from_raw({"tag": "input", "visible": "yes", "width": 1, "height": 1}))
+        self.assertIsNone(_dom_fact_from_raw({"tag": "input", "visible": True, "width": "1", "height": 1}))
+        self.assertIsNone(_dom_fact_from_raw({"tag": "input", "visible": True, "width": True, "height": 1}))
+
+        # input_type hors de la liste fermée, ou balise non "input" : ramené à None,
+        # élément quand même conservé (pas d'abandon pour ce seul champ).
+        non_closed = _dom_fact_from_raw(
+            {"tag": "input", "input_type": "private_weird", "visible": True, "width": 1, "height": 1, "classes": []}
+        )
+        self.assertEqual(non_closed, {"tag": "input", "input_type": None, "classes": [],
+                                       "visible": True, "width": 1, "height": 1})
+        non_input = _dom_fact_from_raw(
+            {"tag": "span", "input_type": "radio", "visible": True, "width": 1, "height": 1, "classes": []}
+        )
+        self.assertIsNone(non_input["input_type"])
+
+        valid = _dom_fact_from_raw(
+            {"tag": "input", "input_type": "RADIO", "visible": False, "width": 0.4, "height": -1,
+             "classes": ["stable_class"]}
+        )
+        self.assertEqual(valid, {"tag": "input", "input_type": "radio", "classes": ["stable_class"],
+                                  "visible": False, "width": 0, "height": 0})
+
+    def _group_payload(self, xpath_by_label: dict, *, frame_chain=None) -> dict:
+        return {
+            "kind": "group", "itype": "radio", "frame_chain": frame_chain,
+            "option_xpath_map": dict(xpath_by_label),
+        }
+
+    def _write_actions(self, case_dir: Path, actions: list) -> None:
+        (case_dir / "artifacts").mkdir(parents=True, exist_ok=True)
+        (case_dir / "artifacts" / "actions_requested.json").write_text(json.dumps(actions), encoding="utf-8")
+
+    def test_requested_option_dom_facts_measures_only_requested_option_and_its_siblings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            case_dir = Path(directory) / "case"
+            self._write_actions(case_dir, [{"target_id": "t1", "itype": "radio", "value": "private Oui", "qid": "q1"}])
+            payload = self._group_payload({
+                "private Oui": "//input[@id='radio_oui']", "private Non": "//input[@id='radio_non']",
+            })
+            raw = {
+                "target": {"tag": "input", "input_type": "radio", "classes": ["input_radioQT2"],
+                           "visible": False, "width": 0, "height": 0},
+                "siblings": [
+                    {"tag": "span", "input_type": None, "classes": ["option_radio"],
+                     "visible": True, "width": 16, "height": 16},
+                    {"tag": "span", "input_type": None, "classes": ["option_label", "input_label_on"],
+                     "visible": True, "width": 120, "height": 20},
+                ],
+            }
+            page = _FakePage({"//input[@id='radio_oui']": _FakeElement(raw)})
+            result = summarize_requested_option_dom_facts(page, case_dir, {"t1": payload})
+        self.assertEqual(result, [{
+            "element": {"tag": "input", "input_type": "radio", "classes": ["input_radioQT<N>"],
+                        "visible": False, "width": 0, "height": 0},
+            "siblings": [
+                {"tag": "span", "input_type": None, "classes": ["option_radio"],
+                 "visible": True, "width": 16, "height": 16},
+                {"tag": "span", "input_type": None, "classes": ["option_label", "input_label_on"],
+                 "visible": True, "width": 120, "height": 20},
+            ],
+        }])
+        self.assertEqual(page.queried, ["xpath=//input[@id='radio_oui']"])
+        self.assertNotIn("private", str(result))
+
+    def test_requested_option_dom_facts_bounds_targets_and_siblings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            case_dir = Path(directory) / "case"
+            actions = [{"target_id": f"t{i}", "value": "Oui"} for i in range(5)]
+            self._write_actions(case_dir, actions)
+            targets = {
+                f"t{i}": self._group_payload({"Oui": f"//input[@id='radio_{i}']"}) for i in range(5)
+            }
+            raw = {
+                "target": {"tag": "input", "input_type": "radio", "classes": [],
+                           "visible": False, "width": 0, "height": 0},
+                "siblings": [
+                    {"tag": "span", "input_type": None, "classes": [], "visible": True, "width": 1, "height": 1}
+                    for _ in range(10)
+                ],
+            }
+            elements = {f"//input[@id='radio_{i}']": _FakeElement(raw) for i in range(5)}
+            page = _FakePage(elements)
+            result = summarize_requested_option_dom_facts(page, case_dir, targets)
+        self.assertEqual(len(result), 3)
+        self.assertEqual(len(result[0]["siblings"]), 6)
+
+    def test_requested_option_dom_facts_skips_target_in_a_frame_without_querying(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            case_dir = Path(directory) / "case"
+            self._write_actions(case_dir, [{"target_id": "t1", "value": "Oui"}])
+            payload = self._group_payload({"Oui": "//input[@id='radio_oui']"}, frame_chain=[2])
+            page = _FakePage({"//input[@id='radio_oui']": _FakeElement({"target": {}, "siblings": []})})
+            result = summarize_requested_option_dom_facts(page, case_dir, {"t1": payload})
+        self.assertIsNone(result)
+        self.assertEqual(page.queried, [])
+
+    def test_requested_option_dom_facts_skips_unresolved_element_without_error(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            case_dir = Path(directory) / "case"
+            self._write_actions(case_dir, [{"target_id": "t1", "value": "Oui"}])
+            payload = self._group_payload({"Oui": "//input[@id='radio_oui']"})
+            page = _FakePage({})
+            result = summarize_requested_option_dom_facts(page, case_dir, {"t1": payload})
+        self.assertIsNone(result)
+
+    def test_requested_option_dom_facts_skips_on_evaluate_error_without_raising(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            case_dir = Path(directory) / "case"
+            self._write_actions(case_dir, [{"target_id": "t1", "value": "Oui"}])
+            payload = self._group_payload({"Oui": "//input[@id='radio_oui']"})
+            page = _FakePage({"//input[@id='radio_oui']": _RaisingElement()})
+            result = summarize_requested_option_dom_facts(page, case_dir, {"t1": payload})
+        self.assertIsNone(result)
+
+    def test_requested_option_dom_facts_skips_unexpected_evaluate_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            case_dir = Path(directory) / "case"
+            self._write_actions(case_dir, [{"target_id": "t1", "value": "Oui"}])
+            payload = self._group_payload({"Oui": "//input[@id='radio_oui']"})
+            page = _FakePage({"//input[@id='radio_oui']": _FakeElement("not-a-dict")})
+            result = summarize_requested_option_dom_facts(page, case_dir, {"t1": payload})
+        self.assertIsNone(result)
+
+    def test_requested_option_dom_facts_ignores_non_group_or_frameless_shape_mismatches(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            case_dir = Path(directory) / "case"
+            self._write_actions(case_dir, [
+                {"target_id": "t_single", "value": "Oui"},
+                {"target_id": "t_missing_value"},
+                {"target_id": "t1", "value": "Oui"},
+            ])
+            targets = {
+                "t_single": {"kind": "single", "itype": "text", "frame_chain": []},
+                "t_missing_value": self._group_payload({"Oui": "//input[@id='other']"}),
+                "t1": self._group_payload({"Oui": "//input[@id='radio_oui']"}),
+            }
+            raw = {"target": {"tag": "input", "input_type": "radio", "classes": [],
+                               "visible": True, "width": 10, "height": 10}, "siblings": []}
+            page = _FakePage({"//input[@id='radio_oui']": _FakeElement(raw)})
+            result = summarize_requested_option_dom_facts(page, case_dir, targets)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(page.queried, ["xpath=//input[@id='radio_oui']"])
+
+    def test_requested_option_dom_facts_without_actions_file_is_none(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            case_dir = Path(directory) / "case"
+            case_dir.mkdir(parents=True)
+            result = summarize_requested_option_dom_facts(_FakePage({}), case_dir, {})
+        self.assertIsNone(result)
+
+    def test_attempt_real_dispatch_replay_adds_requested_option_dom_facts(self) -> None:
+        raw = {
+            "target": {"tag": "input", "input_type": "radio", "classes": ["input_radioQT"],
+                       "visible": False, "width": 0, "height": 0},
+            "siblings": [
+                {"tag": "span", "input_type": None, "classes": ["option_radio"],
+                 "visible": True, "width": 16, "height": 16},
+            ],
+        }
+        page = _FakePage({"//input[@id='radio_oui']": _FakeElement(raw)})
+        execution = SimpleNamespace(
+            status="FAILURE", reason=None, dispatcher_success=False, duration_s=0.1,
+            budget_s=30.0, validation_comparison=None, validation_error=None,
+            trace_replay=None, dispatcher_steps=None,
+        )
+        extraction = SimpleNamespace(blocks=[], error=None, targets={
+            "t1": self._group_payload({"Oui": "//input[@id='radio_oui']"}),
+        })
+        with tempfile.TemporaryDirectory() as directory:
+            case_dir = Path(directory) / "synthetic_case"
+            self._write_actions(case_dir, [{"target_id": "t1", "value": "Oui"}])
+            with (
+                patch("Survey.autofix.replay_browser.IsolatedReplayBrowser") as browser_type,
+                patch("Survey.autofix.replay_browser.extract_case_blocks", return_value=extraction),
+                patch("Survey.autofix.replay_browser.execute_case_action", return_value=execution),
+            ):
+                browser_type.return_value.__enter__.return_value.load_case_document.return_value = page
+                result = _attempt_real_dispatch_replay(case_dir, {"stage": "action"})
+        self.assertEqual(result["requested_option_dom_facts"], [{
+            "element": {"tag": "input", "input_type": "radio", "classes": ["input_radioQT"],
+                        "visible": False, "width": 0, "height": 0},
+            "siblings": [
+                {"tag": "span", "input_type": None, "classes": ["option_radio"],
+                 "visible": True, "width": 16, "height": 16},
+            ],
+        }])
+        self.assertEqual(page.queried, ["xpath=//input[@id='radio_oui']"])
 
     def test_not_executed_reason_is_preserved_in_action_replay_outputs(self) -> None:
         execution = SimpleNamespace(

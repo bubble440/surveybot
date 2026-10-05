@@ -346,6 +346,7 @@ def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[di
             execute_case_action,
             extract_case_blocks,
             summarize_action_target_shapes,
+            summarize_requested_option_dom_facts,
         )
     except Exception as exc:
         log_debug(_TAG, f"Survey.autofix.replay_browser indisponible — réexécution réelle non tentée : {exc}")
@@ -358,6 +359,11 @@ def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[di
             )
             extraction = extract_case_blocks(page, case_dir)
             target_shapes = summarize_action_target_shapes(getattr(extraction, "targets", {}))
+            # Avant execute_case_action (qui mute l'état de la page) : la page est
+            # encore dans son état pré-action.
+            requested_option_dom_facts = summarize_requested_option_dom_facts(
+                page, case_dir, getattr(extraction, "targets", {})
+            )
             execution = execute_case_action(
                 page, case_dir, budget_s=_DEFAULT_DISPATCH_BUDGET_S, question_blocks=extraction.blocks,
             )
@@ -387,6 +393,8 @@ def _attempt_real_dispatch_replay(case_dir: Path, manifest: dict) -> Optional[di
     }
     if target_shapes is not None:
         result["target_shapes"] = target_shapes
+    if requested_option_dom_facts is not None:
+        result["requested_option_dom_facts"] = requested_option_dom_facts
     return result
 
 

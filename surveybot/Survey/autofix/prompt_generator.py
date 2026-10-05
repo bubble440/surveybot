@@ -312,6 +312,66 @@ def _render_target_shapes(real_replay: dict) -> list[str]:
     return lines if len("\n".join(lines)) <= 3000 else []
 
 
+_DOM_FACT_TAG_RE = re.compile(r"[a-z][a-z0-9]{0,30}")
+_DOM_FACT_CLASS_RE = re.compile(r"[A-Za-z_-][A-Za-z0-9_-]*(?:<N>)?")
+# Même liste fermée que Survey/autofix/replay_browser.py::_DOM_FACT_INPUT_TYPES,
+# dupliquée ici à dessein (revalidation indépendante, jamais une confiance
+# aveugle dans ce que diagnosis.json contient).
+_DOM_FACT_INPUT_TYPES = frozenset({
+    "text", "radio", "checkbox", "button", "submit", "reset", "hidden",
+    "email", "number", "tel", "url", "search", "date", "range", "file",
+    "password", "color", "month", "week", "time", "datetime-local", "image",
+})
+
+
+def _valid_dom_fact_element(item: Any) -> bool:
+    """Même format fermé que Survey/autofix/replay_browser.py::_dom_fact_from_raw —
+    revalidé ici indépendamment, jamais une confiance aveugle dans diagnosis.json."""
+    if not isinstance(item, dict):
+        return False
+    tag, input_type = item.get("tag"), item.get("input_type")
+    classes, visible = item.get("classes"), item.get("visible")
+    width, height = item.get("width"), item.get("height")
+    return (
+        isinstance(tag, str) and _DOM_FACT_TAG_RE.fullmatch(tag) is not None
+        and (input_type is None or input_type in _DOM_FACT_INPUT_TYPES)
+        and isinstance(classes, list) and len(classes) <= 3
+        and all(isinstance(c, str) and 0 < len(c) <= 35 and _DOM_FACT_CLASS_RE.fullmatch(c) for c in classes)
+        and isinstance(visible, bool)
+        and type(width) is int and type(height) is int and 0 <= width <= 100000 and 0 <= height <= 100000
+    )
+
+
+def _describe_dom_fact(fact: dict) -> str:
+    classes = ", ".join(fact["classes"]) if fact["classes"] else "aucune"
+    type_part = f", type={fact['input_type']}" if fact["input_type"] else ""
+    return (
+        f"balise={fact['tag']}{type_part}, classes={classes}, visible={fact['visible']}, "
+        f"taille={fact['width']}x{fact['height']}"
+    )
+
+
+def _render_requested_option_dom_facts(real_replay: dict) -> list[str]:
+    facts = real_replay.get("requested_option_dom_facts")
+    if not isinstance(facts, list) or not 0 < len(facts) <= 3:
+        return []
+    lines: list[str] = []
+    for entry in facts:
+        if not isinstance(entry, dict):
+            return []
+        element, siblings = entry.get("element"), entry.get("siblings")
+        if (
+            not _valid_dom_fact_element(element)
+            or not isinstance(siblings, list) or len(siblings) > 6
+            or not all(_valid_dom_fact_element(s) for s in siblings)
+        ):
+            return []
+        lines.append(f"- option demandée : {_describe_dom_fact(element)}")
+        for sibling in siblings:
+            lines.append(f"  - frère : {_describe_dom_fact(sibling)}")
+    return lines if len("\n".join(lines)) <= 3000 else []
+
+
 def _build_bug_identifie(diagnosis: dict, code_files: "list[str]") -> str:
     stage = diagnosis.get("stage")
     itype = diagnosis.get("itype")
@@ -405,6 +465,15 @@ def _build_bug_identifie(diagnosis: dict, code_files: "list[str]") -> str:
             lines.append("")
             lines.append("Forme des cibles observée dans le registre après extraction du rejeu réel :")
             lines.extend(shape_lines)
+        dom_fact_lines = _render_requested_option_dom_facts(real_replay) if isinstance(real_replay, dict) else []
+        if dom_fact_lines:
+            lines.append("")
+            lines.append(
+                "Faits DOM mesurés pour l'élément de l'option demandée et ses frères, sur le "
+                "document figé rejoué sans scripts de la page — ne disent rien d'un effet "
+                "produit par le JavaScript du site :"
+            )
+            lines.extend(dom_fact_lines)
 
     lines.append("")
     lines.append("Fichiers probablement concernés :")

@@ -837,6 +837,183 @@ def summarize_action_target_shapes(targets: Dict[str, Optional[Dict[str, Any]]])
     return summary
 
 
+# ── Faits DOM de l'option demandée (diagnostic stage="action" uniquement) ─────
+# Appelée entre extract_case_blocks et execute_case_action : la page est encore
+# dans son état pré-action. Résout, pour chaque action du plan (trois au plus),
+# le même localisateur option_xpath_map que action_validator.py (réutilisé tel
+# quel, non modifié) pour la SEULE option demandée, puis mesure cet élément et
+# ses frères (six au plus, enfants du parent immédiat hors lui-même) : balise,
+# type de champ de saisie (liste fermée), au plus trois classes CSS assainies,
+# visibilité, taille arrondie. Aucun texte, identifiant, valeur ni URL. Cible
+# dans une frame, non résolue, ou forme inattendue -> aucune mesure pour cette
+# cible, sans erreur (jamais de levée hors de cette fonction). La mesure JS ne
+# fait que lire le DOM (aucune attente) ; l'assainissement (classes, type,
+# bornes) est fait côté Python, jamais une confiance aveugle dans evaluate().
+_MAX_DOM_FACT_TARGETS = 3
+_MAX_DOM_FACT_SIBLINGS = 6
+_MAX_DOM_FACT_CLASSES = 3
+_MAX_DOM_FACT_CLASS_CHARS = 32
+_DOM_FACT_INPUT_TYPES = frozenset({
+    "text", "radio", "checkbox", "button", "submit", "reset", "hidden",
+    "email", "number", "tel", "url", "search", "date", "range", "file",
+    "password", "color", "month", "week", "time", "datetime-local", "image",
+})
+_DOM_FACT_TAG_RE = re.compile(r"[a-z][a-z0-9]{0,30}")
+_DOM_FACT_CLASS_CHARS_RE = re.compile(r"[A-Za-z_-][A-Za-z0-9_-]*")
+_DOM_FACT_TRAILING_DIGITS_RE = re.compile(r"(.*[^0-9])([0-9]+)")
+
+# Lecture synchrone uniquement (query_selector/evaluate n'attendent jamais) ;
+# MAX_SIBLINGS borne déjà ce qui traverse la frontière JS/Python avant que
+# Python ne retronque/valide (_dom_fact_from_raw, _sanitize_classes).
+_MEASURE_DOM_FACTS_JS = r"""(el) => {
+    const MAX_SIBLINGS = %d;
+    function rawFactsOf(node) {
+        if (!node || node.nodeType !== 1) return null;
+        const tag = node.tagName.toLowerCase();
+        const style = window.getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        return {
+            tag: tag,
+            input_type: tag === 'input' ? (node.getAttribute('type') || '') : null,
+            classes: Array.from(node.classList || []),
+            visible: !!style && style.display !== 'none' && style.visibility !== 'hidden',
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+        };
+    }
+    const target = rawFactsOf(el);
+    if (!target) return null;
+    const siblings = [];
+    const parent = el.parentElement;
+    if (parent) {
+        for (const child of parent.children) {
+            if (siblings.length >= MAX_SIBLINGS) break;
+            if (child === el) continue;
+            const fact = rawFactsOf(child);
+            if (fact) siblings.push(fact);
+        }
+    }
+    return {target: target, siblings: siblings};
+}""" % (_MAX_DOM_FACT_SIBLINGS,)
+
+
+def _sanitize_classes(raw: Any) -> list:
+    """Au plus trois classes CSS structurelles : suffixe numérique final remplacé
+    par <N> (il peut porter un identifiant de question), noms trop longs ou hors
+    de l'alphabet d'un nom de classe écartés (pas d'abandon de l'élément entier)."""
+    if not isinstance(raw, list):
+        return []
+    out: list = []
+    for name in raw:
+        if len(out) >= _MAX_DOM_FACT_CLASSES:
+            break
+        if (
+            not isinstance(name, str) or not name or len(name) > _MAX_DOM_FACT_CLASS_CHARS
+            or _DOM_FACT_CLASS_CHARS_RE.fullmatch(name) is None
+        ):
+            continue
+        m = _DOM_FACT_TRAILING_DIGITS_RE.fullmatch(name)
+        out.append(f"{m.group(1)}<N>" if m else name)
+    return out
+
+
+def _dom_fact_from_raw(raw: Any) -> Optional[dict]:
+    """Valide et assainit un fait DOM brut (sorti de _MEASURE_DOM_FACTS_JS, ou
+    simulé par un test). En cas de doute sur la balise, la visibilité ou la
+    taille, l'élément entier n'est pas conservé."""
+    if not isinstance(raw, dict):
+        return None
+    tag = raw.get("tag")
+    visible = raw.get("visible")
+    width, height = raw.get("width"), raw.get("height")
+    if (
+        not isinstance(tag, str) or _DOM_FACT_TAG_RE.fullmatch(tag) is None
+        or not isinstance(visible, bool)
+        or isinstance(width, bool) or not isinstance(width, (int, float))
+        or isinstance(height, bool) or not isinstance(height, (int, float))
+    ):
+        return None
+    raw_type = raw.get("input_type")
+    input_type = raw_type.lower() if isinstance(raw_type, str) and raw_type else None
+    if tag != "input" or input_type not in _DOM_FACT_INPUT_TYPES:
+        input_type = None
+    return {
+        "tag": tag,
+        "input_type": input_type,
+        "classes": _sanitize_classes(raw.get("classes")),
+        "visible": visible,
+        "width": max(0, int(width)),
+        "height": max(0, int(height)),
+    }
+
+
+def summarize_requested_option_dom_facts(
+    page: Any,
+    case_dir: Union[str, Path],
+    targets: Dict[str, Optional[Dict[str, Any]]],
+) -> Optional[list]:
+    """Faits DOM bornés de l'élément résolu pour l'option demandée par chaque
+    action du plan (trois au plus, groupes radio/checkbox uniquement) et de ses
+    frères (six au plus) ; jamais les autres options du groupe. Ne lève jamais —
+    toute erreur ou forme inattendue abandonne la seule cible concernée."""
+    try:
+        from Survey.action_validator import _checkbox_radio_option_xpath
+    except Exception as exc:
+        log_debug(_TAG, f"mesure DOM de l'option demandée abandonnée : résolution indisponible ({type(exc).__name__})")
+        return None
+
+    try:
+        actions, aerr = _load_json(Path(case_dir) / "artifacts" / "actions_requested.json")
+        actions = [a for a in actions if isinstance(a, dict)] if isinstance(actions, list) and not aerr else []
+
+        out: list = []
+        seen: set = set()
+        for action in actions:
+            if len(out) >= _MAX_DOM_FACT_TARGETS:
+                break
+            target_id = action.get("target_id")
+            value = action.get("value")
+            if not isinstance(target_id, str) or not target_id or target_id in seen:
+                continue
+            seen.add(target_id)
+            if not isinstance(value, str) or not value:
+                continue
+            payload = targets.get(target_id) if hasattr(targets, "get") else None
+            if (
+                not isinstance(payload, dict)
+                or payload.get("frame_chain")
+                or payload.get("kind") != "group"
+                or payload.get("itype") not in ("radio", "checkbox")
+            ):
+                continue
+            xpath = _checkbox_radio_option_xpath(payload, value)
+            if not xpath:
+                continue
+            try:
+                element = page.query_selector("xpath=" + xpath)
+                raw = element.evaluate(_MEASURE_DOM_FACTS_JS) if element is not None else None
+            except Exception as exc:
+                log_debug(_TAG, f"mesure DOM abandonnée pour une cible ({type(exc).__name__})")
+                continue
+            if not isinstance(raw, dict):
+                continue
+            element_fact = _dom_fact_from_raw(raw.get("target"))
+            if element_fact is None:
+                continue
+            siblings_raw = raw.get("siblings")
+            siblings: list = []
+            if isinstance(siblings_raw, list):
+                for item in siblings_raw[:_MAX_DOM_FACT_SIBLINGS]:
+                    sibling_fact = _dom_fact_from_raw(item)
+                    if sibling_fact is not None:
+                        siblings.append(sibling_fact)
+            out.append({"element": element_fact, "siblings": siblings})
+        return out or None
+    except Exception as exc:
+        log_debug(_TAG, f"mesure DOM de l'option demandée abandonnée : {type(exc).__name__}")
+        return None
+
+
 # ── Dispatcher réel (3C.4) ────────────────────────────────────────────────────
 STATUS_SUCCESS = "SUCCESS"
 STATUS_FAILURE = "FAILURE"

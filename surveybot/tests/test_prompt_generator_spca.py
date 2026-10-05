@@ -241,6 +241,49 @@ class PromptGeneratorSpcaTests(unittest.TestCase):
         path.write_text(json.dumps(diagnosis), encoding="utf-8")
         self.assertEqual(generate_prompt(diag_dir, selection_dir).content, extraction_with_key)
 
+    def test_requested_option_dom_facts_enrich_only_action_prompt(self) -> None:
+        diag_dir, selection_dir = self._case("synthetic_action_dom_facts", stage="action")
+        original = generate_prompt(diag_dir, selection_dir).content
+        path = diag_dir / "diagnosis.json"
+        diagnosis = json.loads(path.read_text(encoding="utf-8"))
+        diagnosis["real_dispatch_replay"] = {"requested_option_dom_facts": [{
+            "element": {"tag": "input", "input_type": "radio", "classes": ["input_radioQT<N>"],
+                        "visible": False, "width": 0, "height": 0},
+            "siblings": [
+                {"tag": "span", "input_type": None, "classes": ["option_radio"],
+                 "visible": True, "width": 16, "height": 16},
+                {"tag": "span", "input_type": None, "classes": ["option_label", "input_label_on"],
+                 "visible": True, "width": 120, "height": 20},
+            ],
+        }]}
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        enriched = generate_prompt(diag_dir, selection_dir).content
+        self.assertIn("Faits DOM mesurés pour l'élément de l'option demandée", enriched)
+        self.assertIn("document figé rejoué sans scripts de la page", enriched)
+        self.assertIn("ne disent rien d'un effet produit par le JavaScript du site", enriched)
+        self.assertIn(
+            "- option demandée : balise=input, type=radio, classes=input_radioQT<N>, "
+            "visible=False, taille=0x0", enriched,
+        )
+        self.assertIn(
+            "  - frère : balise=span, classes=option_radio, visible=True, taille=16x16", enriched,
+        )
+        self.assertNotIn("Faits DOM mesurés", original)
+
+        # Clé présente mais forme inattendue (type invalide) : prompt strictement identique.
+        diagnosis["real_dispatch_replay"]["requested_option_dom_facts"][0]["element"]["width"] = "zero"
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        self.assertEqual(generate_prompt(diag_dir, selection_dir).content, original)
+
+        # Un autre stage que action n'affiche jamais ce bloc, clé présente ou non.
+        diagnosis["real_dispatch_replay"]["requested_option_dom_facts"][0]["element"]["width"] = 0
+        diagnosis["stage"] = "extraction"
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        extraction_with_key = generate_prompt(diag_dir, selection_dir).content
+        diagnosis["real_dispatch_replay"].pop("requested_option_dom_facts")
+        path.write_text(json.dumps(diagnosis), encoding="utf-8")
+        self.assertEqual(generate_prompt(diag_dir, selection_dir).content, extraction_with_key)
+
     def test_dispatcher_steps_do_not_change_extraction_prompt(self) -> None:
         diag_dir, selection_dir = self._case("synthetic_extraction_dispatch_steps")
         original = generate_prompt(diag_dir, selection_dir).content
