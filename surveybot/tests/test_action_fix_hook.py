@@ -150,6 +150,7 @@ class ActionFixHookTests(unittest.TestCase):
         decisions = [call.args[1] for call in debug.call_args_list
                      if call.args[1].startswith(("selected fix_id=", "verdict="))]
         self.assertEqual(decisions, ["selected fix_id=fix_late_budget", "verdict=HANDLED_FAILURE reason=post_handler_timeout"])
+        self.assertTrue(any("budget dépassé après handler" in str(call) for call in debug.call_args_list))
 
         now[0] = 0.0
 
@@ -165,9 +166,78 @@ class ActionFixHookTests(unittest.TestCase):
         ):
             returned = self._run(FakeDom((self.selector,)))
         self.assertIs(returned, ActionFixOutcome.HANDLED_FAILURE)
+        # Un échec rendu par le handler garde sa raison même si le budget est
+        # dépassé après son retour (déterminisme indépendant du temps d'exécution) :
+        # seule une déclinaison tardive (cas late_handler ci-dessus) est convertie
+        # avec la raison de dépassement de budget.
         decisions = [call.args[1] for call in debug.call_args_list
                      if call.args[1].startswith(("selected fix_id=", "verdict="))]
-        self.assertEqual(decisions, ["selected fix_id=fix_late_failure", "verdict=HANDLED_FAILURE reason=post_handler_timeout"])
+        self.assertEqual(decisions, ["selected fix_id=fix_late_failure", "verdict=HANDLED_FAILURE reason=handler_returned_failure"])
+        self.assertTrue(any("budget dépassé après handler" in str(call) for call in debug.call_args_list))
+
+    def test_handler_returned_failure_reason_does_not_depend_on_handler_duration(self) -> None:
+        """Même handler (retourne HANDLED_FAILURE) dans le budget puis hors budget :
+        même raison journalisée dans les deux cas — le classement du rejeu de patch
+        (Survey/autofix/patch_replay.py) ne doit pas dépendre de la vitesse de la machine.
+        """
+        def failing_handler(*_args: object) -> ActionFixOutcome:
+            return ActionFixOutcome.HANDLED_FAILURE
+
+        now = [0.0]
+        self._register("fix_on_time", failing_handler)
+        with (
+            patch("Survey.action_fix_hook.time.monotonic", side_effect=lambda: now[0]),
+            patch("Survey.action_fix_hook.log_debug") as debug_on_time,
+        ):
+            returned_on_time = self._run(FakeDom((self.selector,)))
+        self.assertIs(returned_on_time, ActionFixOutcome.HANDLED_FAILURE)
+        decisions_on_time = [call.args[1] for call in debug_on_time.call_args_list
+                              if call.args[1].startswith(("selected fix_id=", "verdict="))]
+        self.assertEqual(
+            decisions_on_time,
+            ["selected fix_id=fix_on_time", "verdict=HANDLED_FAILURE reason=handler_returned_failure"],
+        )
+        self.assertFalse(any("budget dépassé après handler" in str(call) for call in debug_on_time.call_args_list))
+
+        def failing_handler_over_budget(*_args: object) -> ActionFixOutcome:
+            now[0] = 1.0
+            return ActionFixOutcome.HANDLED_FAILURE
+
+        now[0] = 0.0
+        self.registry = ExternalFixRegistry(root=self.root)
+        self._register("fix_over_budget", failing_handler_over_budget)
+        with (
+            patch("Survey.action_fix_hook.time.monotonic", side_effect=lambda: now[0]),
+            patch("Survey.action_fix_hook.log_debug") as debug_over_budget,
+        ):
+            returned_over_budget = self._run(FakeDom((self.selector,)))
+        self.assertIs(returned_over_budget, ActionFixOutcome.HANDLED_FAILURE)
+        decisions_over_budget = [call.args[1] for call in debug_over_budget.call_args_list
+                                  if call.args[1].startswith(("selected fix_id=", "verdict="))]
+        self.assertEqual(
+            decisions_over_budget,
+            ["selected fix_id=fix_over_budget", "verdict=HANDLED_FAILURE reason=handler_returned_failure"],
+        )
+        self.assertTrue(any("budget dépassé après handler" in str(call) for call in debug_over_budget.call_args_list))
+
+    def test_late_handled_success_is_unaffected_by_post_handler_budget(self) -> None:
+        now = [0.0]
+
+        def late_success(*_args: object) -> ActionFixOutcome:
+            now[0] = 1.0
+            return ActionFixOutcome.HANDLED_SUCCESS
+
+        self._register("fix_late_success", late_success)
+        with (
+            patch("Survey.action_fix_hook.time.monotonic", side_effect=lambda: now[0]),
+            patch("Survey.action_fix_hook.log_debug") as debug,
+        ):
+            returned = self._run(FakeDom((self.selector,)))
+        self.assertIs(returned, ActionFixOutcome.HANDLED_SUCCESS)
+        decisions = [call.args[1] for call in debug.call_args_list
+                     if call.args[1].startswith(("selected fix_id=", "verdict="))]
+        self.assertEqual(decisions, ["selected fix_id=fix_late_success", "verdict=HANDLED_SUCCESS"])
+        self.assertTrue(any("budget dépassé après handler" in str(call) for call in debug.call_args_list))
 
     def test_context_exit_exception_logs_the_final_returned_failure(self) -> None:
         class BrokenContext:

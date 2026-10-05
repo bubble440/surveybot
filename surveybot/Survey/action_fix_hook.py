@@ -201,8 +201,6 @@ def run_action_fix_hook(
                 return returned_outcome
             if time.monotonic() >= deadline:
                 _debug("budget dépassé après handler")
-                if outcome is ActionFixOutcome.HANDLED_FAILURE:
-                    failure_reason = "post_handler_timeout"
                 if outcome is ActionFixOutcome.DECLINED:
                     failure_reason = "post_handler_timeout"
                     returned_outcome = ActionFixOutcome.HANDLED_FAILURE
