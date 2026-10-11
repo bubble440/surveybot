@@ -1101,16 +1101,29 @@ SurveyBot attendue (voir §20 bis). Livrable hors du core, versionné,
 
 ## BDL-2 --- Corpus d'évaluation et mode collecte
 
-**Statut : À FAIRE (prompt d'indexation préparé, lecture seule)**
+**Statut : 2a FAIT (2026-10-11) ; 2b À FAIRE**
 
-Le corpus passe AVANT les oracles. État réel constaté : 14 identifiants
-répartis sur trois emplacements sans index unique, environ 8 cas
-indépendants (6 des 8 cas ACTION portent sur la même question rejouée),
-vérité terrain documentée pour 4 cas seulement, aucun cas CTA, aucun cas
-où le validateur a conclu à tort à un succès.
+Le corpus passe AVANT les oracles. État réel constaté par l'indexation
+(2a) : 38 cas répartis sur cinq emplacements non unifiés. Le dossier
+`snapshots/`, hors dépôt Git, est le sur-ensemble strict des autres ; 24
+cas n'existent que là (jamais promus, diagnostiqués ni classés). La
+promotion vers `failure_cases/` est un geste manuel, cas par cas, sans
+critère trouvé dans le code ; aucune politique automatique de rétention.
+
+Plusieurs cas sont des captures quasi simultanées de la même page dans la
+même session (vérifié par comparaison de contenu pour deux paires). Le
+regroupement par provider et cible ramène les 38 cas à environ 21
+situations indépendantes (estimation, non vérifiée au niveau DOM).
+
+La vérité terrain n'est documentée que pour 4 cas (ACTION, une même
+question MetrixLab). Aucun cas CTA, aucun cas où le validateur a conclu à
+tort à un succès.
 
 Conséquence : le corpus actuel est une **suite de non-régression**, pas un
 benchmark. Aucun taux de precision ou de recall n'est calculable avec lui.
+Le corpus de pages saines évoqué par le plan (phase 11-B) n'existe qu'à
+l'état d'une copie manuelle d'un seul cas ; le mode collecte (2b) est ce
+qui le constituera.
 
 Deux volets :
 
@@ -1317,8 +1330,14 @@ Procédure :
    verdicts de l'oracle
 5. Retrait uniquement si aucune régression ; une règle par patch ;
    diff minimal ; validation explicite avant patch
-6. Mise à jour de la mémoire des extracteurs
+6. Adoption humaine du retrait, puis mise à jour de la mémoire des
+   extracteurs et de la baseline d'intégrité (l'agent qui écrit le patch
+   ne met jamais lui-même la baseline à jour)
 ```
+
+Un retrait de fonction protégée apparaît comme un changement attendu
+pour le contrôle d'intégrité : la décision d'adoption précède toute
+actualisation de la baseline.
 
 Ordre de retrait : d'abord les règles à faible risque et bien couvertes
 par le corpus. La règle « Autre » viendra probablement tard car elle
@@ -1424,24 +1443,69 @@ appels ; le batch de ces appels est une optimisation séparée.
 
 ## 7. Points restés non vérifiés
 
--   Politique de rétention des failure cases ; deux diagnostics n'ont pas
-    de dossier d'origine.
--   Deux cas d'extraction Qualtrics du 23 septembre : même cas ou cas
-    distincts.
--   Vérité terrain de la plupart des cas, sauf 4 cas ACTION MetrixLab.
--   Tailles réelles des artefacts, nombre réel de frames, latence réelle
+-   Deux diagnostics existent sans dossier `failure_cases/` d'origine :
+    soit l'outil de diagnostic accepte un dossier `snapshots/` brut, soit
+    un dossier a été supprimé à la main. Non tranché.
+-   Critère de sélection des 10 cas promus sur 38 : aucun critère trouvé
+    dans le code, vraisemblablement une décision de l'opérateur.
+-   Les groupes de cas de même cible n'ont pas été comparés au niveau DOM :
+    captures quasi simultanées ou occurrences indépendantes, non tranché.
+-   Aucune frame capturée sur les 38 cas : « aucune iframe » ou « iframes
+    sous le seuil de rétention », non distingué.
+-   Absence des artefacts `external_*` sur la majorité des cas : cause non
+    vérifiée (aucune ressource, budget, erreur).
+-   Vérité terrain de 34 cas sur 38.
+-   Fréquence d'appel d'`execute_actions_plan` par parcours, latence réelle
     des appels, fréquence d'atteinte du plafond d'attente de 6 s.
--   Statut du document d'architecture protégé du cœur
-    (`Utils/SURVEYBOT_PROTECTED_CORE_ARCHITECTURE.md`) et sa relation avec
-    la référence `PROJECT_ARCHITECTURE.md`, qui n'existe pas sous ce nom.
-    Le template de prompt doit être corrigé après vérification.
+-   Calcul exact de `target_shapes` et `requested_option_dom_facts` dans
+    le module de replay (non ouvert).
 
 ## 8. Tâches distinctes du BDL
 
 -   Correction des coquilles de `_sanitize_instruction_with_page_context`
     (prompt de correction séparé).
 -   Décision sur le sort de `question_block_analyzer.py`.
--   Correction de la référence d'architecture dans le template de prompt.
+-   Avant de committer l'index du corpus dans un dépôt public : retirer de
+    ce livrable le jeton de session et l'identifiant de répondant cités
+    dans sa comparaison des deux cas Qualtrics.
+-   Les dossiers `snapshots/` bruts contiennent des URLs avec jetons de
+    session : ne pas les copier tels quels dans le dépôt.
+
+## 9. Corpus réel et mesures de taille (indexation BDL-2a)
+
+Mesures sur les 38 cas de `snapshots/` :
+
+``` text
+capture d'écran      médiane ~35 Ko   maximum ~136 Ko
+DOM HTML             médiane ~33 Ko   maximum ~274 Ko
+MHTML (8 cas)        médiane ~405 Ko  maximum ~546 Ko
+external_scripts     médiane ~731 Ko  maximum ~952 Ko (12 cas)
+external_stylesheets maximum ~162 Ko  (11 cas)
+external_requests    maximum ~139 Ko  (9 cas)
+frames capturées     0 sur 38
+```
+
+Aucun cas n'atteint le plafond théorique de 4 Mio de scripts. Les
+scripts externes dominent le poids des snapshots, mais un oracle d'action
+n'en a pas besoin : faits runtime et DOM post-action suffisent.
+
+## 10. Règles du document d'architecture du cœur protégé
+
+Le document `Utils/SURVEYBOT_PROTECTED_CORE_ARCHITECTURE.md` existe et
+définit la séparation des responsabilités. Règles pertinentes pour le
+BDL :
+
+-   le bot de production détecte et enregistre ; diagnostic, patch,
+    replay, validation et consolidation relèvent du worker local/dev ;
+-   production sans retry ni auto-correction passive ;
+-   les validators vérifient les incohérences fortes sans devenir un
+    second analyseur DOM (cohérent avec le principe d'indépendance de
+    l'oracle) ;
+-   quatre niveaux de preuve non interchangeables pour attribuer une
+    fonction à un incident : `involved`, `suspected`,
+    `root_cause_confirmed`, `patched` ;
+-   l'agent qui écrit un patch ne met jamais à jour la baseline
+    d'intégrité ; la décision d'adoption précède toute actualisation.
 
 ------------------------------------------------------------------------
 
@@ -1622,3 +1686,19 @@ BDL-4 (CTA)         → BDL-5 (CTA : observabilité v1)
 BDL-5 (extraction)  → BDL-4 (extraction)
 BDL-2 (corpus)      → BDL-2 (index + mode collecte)
 ```
+
+## 2026-10-11 --- Indexation du corpus (BDL-2a) et correction d'une erreur
+
+1.  BDL-2a terminée : 38 cas sur cinq emplacements, `snapshots/` hors
+    dépôt est le sur-ensemble ; environ 21 situations indépendantes ;
+    vérité terrain connue pour 4 cas seulement (voir §20 quinquies,
+    point 9).
+2.  Les deux cas Qualtrics du 23 septembre sont deux captures de la même
+    session et de la même page, pas deux occurrences indépendantes.
+3.  Le document d'architecture du cœur protégé existe sous un autre nom
+    (`Utils/SURVEYBOT_PROTECTED_CORE_ARCHITECTURE.md`). La référence à un
+    fichier nommé autrement venait d'un prompt de travail, pas du
+    template de prompt du projet : la mention antérieure d'une correction
+    de template était erronée et a été retirée du §20 quinquies.
+4.  Le retrait de règles (BDL-9) est soumis à la règle de la baseline
+    d'intégrité : adoption humaine avant toute mise à jour.
