@@ -1,7 +1,7 @@
 # BUG DETECTION LAYER --- SUIVI DU CHANTIER
 
 **Projet :** SurveyBot\
-**Statut :** CONCEPTION --- chantier non implémenté\
+**Statut :** CONCEPTION --- chantier non implémenté (feuille de route révisée le 2026-10-11, voir §25)\
 **Périmètre :** détection indépendante et évaluation des anomalies
 d'exécution avant déclenchement de l'AutoFix\
 **Relation avec l'AutoFix :** amont direct du pipeline de failure cases
@@ -374,6 +374,10 @@ uniquement parce qu'elle complique la détection.
 
 Si une règle est réellement devenue obsolète, sa suppression relève
 d'une décision séparée sur le core.
+
+Cette décision séparée est désormais cadrée : voir §20 ter (retrait des
+règles parasites, phase BDL-9) et §20 bis (contrat de représentation
+attendue).
 
 ------------------------------------------------------------------------
 
@@ -1030,11 +1034,24 @@ Le critère le plus important reste :
 
 ------------------------------------------------------------------------
 
-# 20. Roadmap proposée
+# 20. Roadmap (révisée)
 
-## BDL-0 --- Cartographie
+Principe d'ordonnancement : on mesure avant de construire (corpus avant
+oracles), on commence par la famille la plus déterministe (ACTION), et on
+termine par la famille la plus exposée aux faux positifs (EXTRACTION, à
+cause des règles historiques).
 
-**Statut : À FAIRE**
+``` text
+BDL-0 → BDL-1 → BDL-2 → BDL-3 (ACTION) → BDL-4 (CTA) → BDL-5 (EXTRACTION)
+      → BDL-6 → BDL-7 → BDL-8 (optionnel) → BDL-9 (retrait des règles)
+```
+
+## BDL-0 --- Cartographie + taxonomie minimale
+
+**Statut : À FAIRE (prompt Claude Code préparé, lecture seule)**
+
+Fusion des anciennes BDL-0 (cartographie) et BDL-1 (taxonomie) : la
+taxonomie découle directement de l'inventaire des signaux existants.
 
 Inventorier les signaux déjà disponibles dans :
 
@@ -1048,40 +1065,46 @@ Inventorier les signaux déjà disponibles dans :
 -   `dom_analyzer.py`
 -   générateur de prompts et représentation des `question_blocks`.
 
-Objectif : ne pas reconstruire ce qui existe déjà.
+Livrable (un fichier Markdown d'inventaire, aucune modification du code) :
+
+1.  tableau des signaux existants (producteur, ce qu'il prouve réellement,
+    famille, persisté ou non dans les artefacts d'un failure case) ;
+2.  artefacts disponibles / manquants en entrée d'un oracle, par famille ;
+3.  signaux trompeurs comme preuve (ex. succès/échec du dispatcher) ;
+4.  taxonomie minimale et stable par famille (EXTRACTION / ACTION / CTA) ;
+5.  lacunes d'observabilité priorisées : ACTION, puis CTA, puis EXTRACTION ;
+6.  **inventaire des règles qui altèrent volontairement l'extraction ou
+    l'action** (normalisation, ignorance, regroupement, réécriture,
+    filtrage, dont la règle « Autre »), recensées sans jugement :
+    fichier/fonction, transformation, finalité (documentée vs déduite),
+    sources/DOM déclencheurs, observabilité dans un failure case.
+
+Objectif : ne pas reconstruire ce qui existe déjà, et rendre BDL-9
+possible.
 
 ------------------------------------------------------------------------
 
-## BDL-1 --- Taxonomie minimale
+## BDL-1 --- Contrat de représentation attendue
 
-**Statut : À FAIRE**
+**Statut : À FAIRE (après BDL-0)**
 
-Définir une taxonomie courte et stable couvrant :
-
-``` text
-EXTRACTION
-ACTION
-CTA
-```
-
-avec un nombre volontairement limité de catégories.
+Rédiger une courte spécification, par `itype`, de la représentation
+SurveyBot attendue (voir §20 bis). Livrable hors du core, versionné,
+écrit une seule fois.
 
 ------------------------------------------------------------------------
 
-## BDL-2 --- Oracle d'extraction
+## BDL-2 --- Corpus minimal d'évaluation
 
 **Statut : À FAIRE**
 
-Ajouter des signaux indépendants permettant de détecter les
-contradictions fortes entre :
+Constituer un premier corpus à partir des failure cases et snapshots
+déjà capturés (et non d'un benchmark parfait), avec `TP / FN / FP / TN`
+pour les trois familles. Le corpus passe AVANT les oracles : sans lui, on
+ne peut mesurer ni faux positifs ni faux négatifs sur les règles écrites.
 
-``` text
-DOM observable
-vs
-représentation SurveyBot
-```
-
-sans transformer l'oracle en second extracteur.
+Il doit aussi couvrir les sources touchées par des règles historiques
+(préparation de BDL-9).
 
 ------------------------------------------------------------------------
 
@@ -1089,10 +1112,10 @@ sans transformer l'oracle en second extracteur.
 
 **Statut : À FAIRE**
 
-Exploiter les états avant / après action et les signaux DOM déjà
-capturés.
+Première famille implémentée : la plus déterministe, avec une preuve
+indépendante déjà disponible (`pre_action_dom.html`, DOM post-action).
 
-Objectif particulier :
+Exploiter les états avant / après action :
 
 ``` text
 dispatcher failure
@@ -1101,6 +1124,7 @@ dispatcher failure
 ```
 
 et identifier les cas où le dispatcher annonce un succès non confirmé.
+Le cas IFOP zip2city sert de premier cas de référence.
 
 ------------------------------------------------------------------------
 
@@ -1108,37 +1132,27 @@ et identifier les cas où le dispatcher annonce un succès non confirmé.
 
 **Statut : À FAIRE**
 
-Intégrer explicitement :
+Intégrer explicitement : plusieurs modèles de CTA, CTA texte / icône /
+structurels, iframes, navigation classique, transitions internes,
+sliders, `CTA_INTERCEPT_ONLY`.
 
--   plusieurs modèles de CTA ;
--   CTA texte ;
--   CTA icône ;
--   CTA structurels ;
--   iframes ;
--   navigation classique ;
--   transitions internes ;
--   sliders ;
--   `CTA_INTERCEPT_ONLY`.
-
-Le détecteur doit chercher la transition attendue plutôt que supposer
-qu'une navigation URL est obligatoire.
+Règle v1 (liste fermée de signaux de changement, voir §20 quater) :
+l'absence de tous les signaux produit `SUSPECTED`, jamais
+`BUG_CONFIRMED`, sauf CTA introuvable alors qu'un bouton de type CTA est
+visible. En mode `CTA_INTERCEPT_ONLY`, l'absence de navigation donne
+`PASS`.
 
 ------------------------------------------------------------------------
 
-## BDL-5 --- Corpus d'évaluation
+## BDL-5 --- Oracle d'extraction
 
 **Statut : À FAIRE**
 
-Constituer un corpus de cas réels comprenant :
-
-``` text
-TP
-FN
-FP
-TN
-```
-
-pour les trois familles.
+Famille traitée en dernier car la plus exposée aux faux positifs (règles
+historiques de représentation). Ajouter des signaux indépendants pour
+détecter les contradictions FORTES entre DOM observable et représentation
+SurveyBot, jugées par rapport au contrat de BDL-1, sans transformer
+l'oracle en second extracteur.
 
 ------------------------------------------------------------------------
 
@@ -1155,7 +1169,8 @@ false positive rate
 false negative rate
 ```
 
-avec une attention particulière au taux de faux négatifs.
+avec une attention particulière au taux de faux négatifs. Les seuils
+atteints conditionnent le lancement de BDL-9.
 
 ------------------------------------------------------------------------
 
@@ -1163,10 +1178,8 @@ avec une attention particulière au taux de faux négatifs.
 
 **Statut : À FAIRE**
 
-Mettre en place une vérification humaine limitée sur un échantillon de
-`PASS` afin de rechercher les bugs silencieux.
-
-Objectif :
+Vérification humaine limitée sur un échantillon de `PASS` pour rechercher
+les bugs silencieux.
 
 ``` text
 ne plus dépendre uniquement des bugs que l'humain a déjà vus.
@@ -1179,10 +1192,120 @@ ne plus dépendre uniquement des bugs que l'humain a déjà vus.
 **Statut : OPTIONNEL / APRÈS VALIDATION DU SOCLE**
 
 N'envisager une IA spécialisée que si les signaux déterministes laissent
-un volume significatif de cas ambigus.
+un volume significatif de cas ambigus. L'IA reçoit des preuves
+structurées et produit une interprétation, elle ne devient pas l'oracle
+unique.
 
-L'IA doit recevoir des preuves structurées et produire une
-interprétation, pas devenir l'oracle unique.
+------------------------------------------------------------------------
+
+## BDL-9 --- Retrait des règles parasites
+
+**Statut : LONG TERME / APRÈS BDL-2 et BDL-6**
+
+Prérequis : corpus (BDL-2), mesure de qualité (BDL-6) et contrat de
+représentation attendue (BDL-1) en place.
+
+Un retrait = une règle, une preuve par replay avec / sans, une validation
+explicite. Procédure détaillée en §20 ter.
+
+------------------------------------------------------------------------
+
+# 20 bis. Contrat de représentation attendue
+
+Pour juger qu'une règle historique est « parasite », ou qu'une
+représentation est « incorrecte », il faut savoir ce que l'extraction
+DEVRAIT produire. Tant que ce choix reste implicite et enfoui dans le
+code, l'oracle ne peut pas être indépendant : il risquerait de tolérer des
+écarts uniquement parce que des règles les produisent (circularité).
+
+Décision : rédiger une courte spécification, par `itype`, de la
+représentation attendue (ex. pour « Autre » : l'option et son champ texte
+associé sont-ils exposés ou absorbés ?).
+
+Propriétés du contrat :
+
+-   court, stable, versionné ;
+-   situé hors du core (il ne dépend pas de l'implémentation) ;
+-   source de vérité pour l'oracle d'extraction (BDL-5) et pour le
+    classement des règles historiques (BDL-9) ;
+-   toute décision de produit (ce que le modèle de réponse doit voir)
+    y est explicite, et non cachée dans une règle.
+
+Classement des règles historiques par rapport au contrat :
+
+``` text
+conforme au contrat                     → conservée
+contournement d'un ancien bug           → candidate au retrait
+contradiction avec le contrat           → retrait ou décision produit
+incertaine                              → conservée, à réévaluer
+```
+
+------------------------------------------------------------------------
+
+# 20 ter. Retrait des règles parasites (cap long terme)
+
+Cap : à moyen ou long terme, le Bug Detection Layer doit permettre de
+retirer en sécurité les règles historiques qui altèrent l'extraction ou
+l'action (règle « Autre » et autres) lorsqu'elles sont obsolètes ou
+parasites.
+
+Précision de rôle : le BDL ne remplace pas ces règles, il rend leur
+suppression évaluable. Il détecte, il ne produit rien. Une règle de
+normalisation volontaire (éviter de polluer le prompt du modèle de
+réponse) n'est pas un bug.
+
+Conflit à gérer avec la règle projet « zéro modification d'extracteur
+existant » : supprimer une règle est une modification d'un existant. Le
+retrait suit donc une procédure d'exception explicite et rare.
+
+Procédure :
+
+``` text
+1. Inventaire des règles qui altèrent extraction/action (BDL-0, point 6)
+2. Classement par rapport au contrat de représentation (§20 bis)
+3. Couverture corpus : pas de cas réels sur les sources concernées
+   → pas de retrait
+4. Replay hors ligne du corpus AVEC et SANS la règle, comparaison des
+   verdicts de l'oracle
+5. Retrait uniquement si aucune régression ; une règle par patch ;
+   diff minimal ; validation explicite avant patch
+6. Mise à jour de la mémoire des extracteurs
+```
+
+Ordre de retrait : d'abord les règles à faible risque et bien couvertes
+par le corpus. La règle « Autre » viendra probablement tard car elle
+touche beaucoup de sources.
+
+------------------------------------------------------------------------
+
+# 20 quater. Décisions d'architecture complémentaires
+
+## Oracle = fonction pure sur artefacts capturés
+
+L'oracle prend en entrée des artefacts déjà capturés (DOM avant/après,
+résultat du bot, état du CTA) et renvoie un verdict avec ses preuves. Il
+n'appelle jamais le navigateur. Conséquences :
+
+-   rejouable hors ligne sur le corpus, donc mesurable ;
+-   observation passive garantie ;
+-   aucun coût navigateur supplémentaire dans le flux normal.
+
+Forme de sortie conceptuelle : `famille, niveau, preuves[], règle`.
+
+## Devenir d'un SUSPECTED
+
+Pour la v1 : aucune promotion automatique. Les `SUSPECTED` sont
+journalisés et relus lors de l'échantillonnage (BDL-7). Une promotion par
+récurrence ajouterait des branches avant d'avoir des données. Un
+`SUSPECTED` ne déclenche jamais d'AutoFix.
+
+## CTA : signaux de changement en liste fermée (v1)
+
+Signaux : URL, document, empreinte du conteneur principal, indicateur de
+page. Absence de tous les signaux → `SUSPECTED`. `BUG_CONFIRMED`
+uniquement si le CTA est introuvable alors qu'un bouton de type CTA est
+visible. `CTA_INTERCEPT_ONLY` actif → l'absence de navigation donne
+`PASS`.
 
 ------------------------------------------------------------------------
 
@@ -1253,6 +1376,8 @@ Mesure FN/FP              À mettre en place
 Échantillonnage PASS      À concevoir
 IA d'interprétation       NON NÉCESSAIRE À CE STADE
 Intégration AutoFix       CONCEPTUELLEMENT DÉFINIE
+Contrat de représentation À RÉDIGER (BDL-1)
+Retrait règles parasites  CAP LONG TERME (BDL-9)
 ```
 
 La Phase 1B existante reste utile et constitue le socle expérimental de
@@ -1296,3 +1421,43 @@ CTA
 
 et d'améliorer progressivement sa propre fiabilité à partir des cas
 réels rencontrés en production/test.
+
+------------------------------------------------------------------------
+
+# 25. Journal des décisions
+
+## 2026-10-11 --- Révision de la feuille de route
+
+Décisions issues de la discussion de revue :
+
+1.  Le corpus passe avant les oracles (ancienne BDL-5 devenue BDL-2).
+2.  Ordre d'implémentation des oracles : ACTION → CTA → EXTRACTION
+    (extraction en dernier : plus fort risque de faux positifs lié aux
+    règles historiques).
+3.  Fusion de l'ancienne BDL-0 (cartographie) et de l'ancienne BDL-1
+    (taxonomie).
+4.  Ajout de l'inventaire des règles altérant extraction/action dans
+    BDL-0.
+5.  Ajout du contrat de représentation attendue (BDL-1) pour éviter la
+    circularité de l'oracle.
+6.  Ajout de BDL-9 : retrait des règles parasites (cap long terme),
+    procédure en §20 ter, avec procédure d'exception à la règle « zéro
+    modification d'extracteur existant ».
+7.  Oracle défini comme fonction pure sur artefacts capturés.
+8.  SUSPECTED : journalisé uniquement en v1, sans promotion automatique.
+9.  CTA v1 : liste fermée de signaux de changement.
+10. Précision de rôle : le BDL ne remplace pas les règles historiques, il
+    rend leur retrait évaluable.
+
+Correspondance de numérotation (ancienne → nouvelle) :
+
+``` text
+ancienne BDL-0 + BDL-1  → BDL-0
+(nouveau)               → BDL-1 (contrat)
+ancienne BDL-5 (corpus) → BDL-2
+ancienne BDL-3 (action) → BDL-3
+ancienne BDL-4 (CTA)    → BDL-4
+ancienne BDL-2 (extr.)  → BDL-5
+ancienne BDL-6, 7, 8    → BDL-6, 7, 8
+(nouveau)               → BDL-9
+```
