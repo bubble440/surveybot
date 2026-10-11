@@ -1,7 +1,7 @@
 # BUG DETECTION LAYER --- SUIVI DU CHANTIER
 
 **Projet :** SurveyBot\
-**Statut :** CONCEPTION --- chantier non implémenté (feuille de route révisée le 2026-10-11, voir §25)\
+**Statut :** CONCEPTION --- chantier non implémenté (feuille de route révisée deux fois le 2026-10-11, voir §25 ; BDL-0 terminée)\
 **Périmètre :** détection indépendante et évaluation des anomalies
 d'exécution avant déclenchement de l'AutoFix\
 **Relation avec l'AutoFix :** amont direct du pipeline de failure cases
@@ -1038,17 +1038,22 @@ Le critère le plus important reste :
 
 Principe d'ordonnancement : on mesure avant de construire (corpus avant
 oracles), on commence par la famille la plus déterministe (ACTION), et on
-termine par la famille la plus exposée aux faux positifs (EXTRACTION, à
-cause des règles historiques).
+enchaîne sur l'extraction, et termine par le CTA, qui n'a aujourd'hui
+aucun chemin de capture (voir §20 quinquies).
 
 ``` text
-BDL-0 → BDL-1 → BDL-2 → BDL-3 (ACTION) → BDL-4 (CTA) → BDL-5 (EXTRACTION)
-      → BDL-6 → BDL-7 → BDL-8 (optionnel) → BDL-9 (retrait des règles)
+BDL-0 (FAIT) → BDL-1 → BDL-2 → BDL-3 (ACTION) → BDL-4 (EXTRACTION)
+             → BDL-5 (CTA : observabilité v1) → BDL-6 → BDL-7
+             → BDL-8 (optionnel) → BDL-9 (retrait des règles)
 ```
 
 ## BDL-0 --- Cartographie + taxonomie minimale
 
-**Statut : À FAIRE (prompt Claude Code préparé, lecture seule)**
+**Statut : FAIT (2026-10-11)**
+
+Livrables produits en lecture seule : un inventaire des signaux et des
+règles, puis un livrable de vérifications préalables et de recensement du
+corpus. Constats principaux consignés en §20 quinquies.
 
 Fusion des anciennes BDL-0 (cartographie) et BDL-1 (taxonomie) : la
 taxonomie découle directement de l'inventaire des signaux existants.
@@ -1094,26 +1099,54 @@ SurveyBot attendue (voir §20 bis). Livrable hors du core, versionné,
 
 ------------------------------------------------------------------------
 
-## BDL-2 --- Corpus minimal d'évaluation
+## BDL-2 --- Corpus d'évaluation et mode collecte
 
-**Statut : À FAIRE**
+**Statut : À FAIRE (prompt d'indexation préparé, lecture seule)**
 
-Constituer un premier corpus à partir des failure cases et snapshots
-déjà capturés (et non d'un benchmark parfait), avec `TP / FN / FP / TN`
-pour les trois familles. Le corpus passe AVANT les oracles : sans lui, on
-ne peut mesurer ni faux positifs ni faux négatifs sur les règles écrites.
+Le corpus passe AVANT les oracles. État réel constaté : 14 identifiants
+répartis sur trois emplacements sans index unique, environ 8 cas
+indépendants (6 des 8 cas ACTION portent sur la même question rejouée),
+vérité terrain documentée pour 4 cas seulement, aucun cas CTA, aucun cas
+où le validateur a conclu à tort à un succès.
 
-Il doit aussi couvrir les sources touchées par des règles historiques
-(préparation de BDL-9).
+Conséquence : le corpus actuel est une **suite de non-régression**, pas un
+benchmark. Aucun taux de precision ou de recall n'est calculable avec lui.
+
+Deux volets :
+
+-   **2a --- Index unique du corpus** : un seul fichier d'index (famille,
+    provider, cible, types d'échec, verdict replay, vérité terrain
+    documentée uniquement, doublons). Aucun cas déplacé ni supprimé.
+-   **2b --- Mode collecte** : un flag d'environnement, activé dans les
+    runs de test, qui persiste les faits runtime avant/après pour TOUS
+    les plans d'actions (y compris les `PASS`). Il alimente le corpus en
+    TN et en faux négatifs potentiels sans coût en production.
+
+Le corpus doit aussi couvrir les sources touchées par des règles
+historiques (préparation de BDL-9).
 
 ------------------------------------------------------------------------
 
 ## BDL-3 --- Oracle d'action
 
-**Statut : À FAIRE**
+**Statut : À FAIRE (décisions validées, voir §25)**
 
 Première famille implémentée : la plus déterministe, avec une preuve
-indépendante déjà disponible (`pre_action_dom.html`, DOM post-action).
+indépendante déjà disponible (faits runtime avant/après, DOM post-action).
+
+Prérequis d'observabilité (ajouts purement additifs, sans changer le type
+de retour du dispatcher ni le comportement du bot) :
+
+-   un statut par action individuelle d'un plan (aujourd'hui seul
+    l'agrégat `dispatcher_success`, un OR sur tout le plan, survit) ;
+-   la valeur réellement utilisée pour chaque action, après toute
+    substitution (voir §20 quinquies, point 1) ;
+-   les faits runtime « après » disponibles pour l'oracle sans dépendre
+    d'un échec préalable du validateur.
+
+Ces ajouts touchent `action_dispatcher.py` : ils nécessitent une
+validation explicite et un diff minimal (décision 3 du 2026-10-11,
+validée).
 
 Exploiter les états avant / après action :
 
@@ -1128,31 +1161,46 @@ Le cas IFOP zip2city sert de premier cas de référence.
 
 ------------------------------------------------------------------------
 
-## BDL-4 --- Oracle CTA
+## BDL-4 --- Oracle d'extraction
 
 **Statut : À FAIRE**
 
-Intégrer explicitement : plusieurs modèles de CTA, CTA texte / icône /
+Deuxième famille. Plus exposée aux faux positifs que l'action (règles
+historiques de représentation), donc jugée par rapport au contrat de
+BDL-1. Ajouter des signaux indépendants pour détecter les contradictions
+FORTES entre DOM observable et représentation SurveyBot, sans transformer
+l'oracle en second extracteur.
+
+Prérequis : trace passive des déclenchements de règles (identifiant de la
+règle, effet, blocs concernés), afin de distinguer « absent » de
+« absorbé par la règle X ». Les validateurs d'extraction existants et
+leurs artefacts constituent déjà une base.
+
+------------------------------------------------------------------------
+
+## BDL-5 --- CTA : observabilité v1
+
+**Statut : À FAIRE (périmètre v1 réduit, décision 2 du 2026-10-11)**
+
+Il n'existe aujourd'hui aucun chemin de capture pour un échec CTA : ni
+stage dédié, ni hook d'observation (voir §20 quinquies, point 3). Un oracle
+CTA suppose donc d'abord une infrastructure.
+
+Périmètre v1 : un résultat CTA structuré, conservé en mémoire, sans
+oracle ni failure case tant qu'un hook d'observation n'existe pas.
+Contenu à couvrir : plusieurs modèles de CTA, CTA texte / icône /
 structurels, iframes, navigation classique, transitions internes,
 sliders, `CTA_INTERCEPT_ONLY`.
 
-Règle v1 (liste fermée de signaux de changement, voir §20 quater) :
+Règle cible de l'oracle (liste fermée de signaux, voir §20 quater) :
 l'absence de tous les signaux produit `SUSPECTED`, jamais
 `BUG_CONFIRMED`, sauf CTA introuvable alors qu'un bouton de type CTA est
 visible. En mode `CTA_INTERCEPT_ONLY`, l'absence de navigation donne
 `PASS`.
 
-------------------------------------------------------------------------
-
-## BDL-5 --- Oracle d'extraction
-
-**Statut : À FAIRE**
-
-Famille traitée en dernier car la plus exposée aux faux positifs (règles
-historiques de représentation). Ajouter des signaux indépendants pour
-détecter les contradictions FORTES entre DOM observable et représentation
-SurveyBot, jugées par rapport au contrat de BDL-1, sans transformer
-l'oracle en second extracteur.
+Point à neutraliser avant de bâtir dessus : `_did_progress` retourne
+`True` sans aucun signal réel quand les marqueurs avant et après sont
+tous deux vides (faux positif construit par conception).
 
 ------------------------------------------------------------------------
 
@@ -1226,7 +1274,7 @@ Propriétés du contrat :
 
 -   court, stable, versionné ;
 -   situé hors du core (il ne dépend pas de l'implémentation) ;
--   source de vérité pour l'oracle d'extraction (BDL-5) et pour le
+-   source de vérité pour l'oracle d'extraction (BDL-4) et pour le
     classement des règles historiques (BDL-9) ;
 -   toute décision de produit (ce que le modèle de réponse doit voir)
     y est explicite, et non cachée dans une règle.
@@ -1309,6 +1357,94 @@ visible. `CTA_INTERCEPT_ONLY` actif → l'absence de navigation donne
 
 ------------------------------------------------------------------------
 
+# 20 quinquies. Constats de la phase BDL-0 (2026-10-11)
+
+## 1. Substitution silencieuse de la valeur de réponse
+
+`_sanitize_instruction_with_page_context` (`action_dispatcher.py`) peut
+remplacer la valeur de réponse elle-même avant la recherche de l'élément,
+dans le chemin de repli historique (radio, checkbox, dropdown). La valeur
+substituée reste locale à l'appel : seule la valeur demandée est
+persistée dans les artefacts.
+
+Conséquences pour le BDL :
+
+-   un oracle d'action doit comparer l'état observé à la valeur
+    RÉELLEMENT utilisée, sinon il produit de faux signaux ;
+-   c'est une règle de politique de réponse, pas d'extraction : elle ne
+    relève ni de BDL-9 ni du contrat de représentation ; le BDL se
+    contente de l'observer ;
+-   deux coquilles dans ses listes de mots (`prfère`, `rgulièrement`)
+    empêchent ces entrées de correspondre : bug latent à traiter
+    séparément, hors BDL.
+
+## 2. Code non intégré
+
+`question_block_analyzer.py` n'est importé ni appelé nulle part dans le
+dépôt (code, tests, outils). Une seule forme de bloc circule dans le
+pipeline réel : le `dict` issu de `analyze_dom`. Le BDL ne doit pas
+s'appuyer sur ce module. Sa suppression éventuelle est une décision
+indépendante.
+
+## 3. Absence de chemin de capture CTA
+
+Les clics CTA sont appelés depuis `survey_executor.py` et depuis des
+handlers d'écran, en dehors de `execute_actions_plan`. Les deux seuls
+observateurs de la phase 1A (extraction et action) ne les voient donc
+jamais. Aucun stage `cta` n'existe dans le vocabulaire des failure cases.
+
+## 4. Artefacts conditionnés à l'échec
+
+Les artefacts avant/après ne sont écrits que si le validateur a déjà
+conclu à un échec. Un oracle placé après le validateur ne peut donc pas
+voir les bugs que celui-ci a validés à tort. Le corpus actuel est lui
+aussi biaisé : il ne contient que des cas déjà signalés.
+
+## 5. Coût de la capture
+
+Déjà payé à chaque exécution de plan : environ 42 appels navigateur (une
+capture DOM, jusqu'à 40 `evaluate()` de faits runtime non batchés, un
+observateur de mutations). La partie lourde ne doit rester réservée qu'aux
+échecs : jusqu'à environ 12 MiB, environ 180 appels CDP, jusqu'à 6 s
+d'attente bloquante. Pour l'oracle d'action, les faits runtime avant/après
+suffisent. Rendre la capture « après » inconditionnelle ajoute environ 40
+appels ; le batch de ces appels est une optimisation séparée.
+
+## 6. Règles historiques (rappel pour BDL-9)
+
+-   La règle « Autre » est en réalité une famille d'au moins quatre
+    règles (détection inline, élagage FocusVision, élagage générique
+    trailing, opt-out companion).
+-   La plupart des règles d'extraction inventoriées sont des nettoyages de
+    sur-génération des extracteurs, documentés et gardés par un DOM précis.
+-   Leur effet est généralement absent des artefacts persistés : une trace
+    passive des déclenchements est nécessaire avant tout retrait.
+-   Le seuil `score>=3` de l'heuristique de champ générique est documenté
+    (docstring).
+
+## 7. Points restés non vérifiés
+
+-   Politique de rétention des failure cases ; deux diagnostics n'ont pas
+    de dossier d'origine.
+-   Deux cas d'extraction Qualtrics du 23 septembre : même cas ou cas
+    distincts.
+-   Vérité terrain de la plupart des cas, sauf 4 cas ACTION MetrixLab.
+-   Tailles réelles des artefacts, nombre réel de frames, latence réelle
+    des appels, fréquence d'atteinte du plafond d'attente de 6 s.
+-   Statut du document d'architecture protégé du cœur
+    (`Utils/SURVEYBOT_PROTECTED_CORE_ARCHITECTURE.md`) et sa relation avec
+    la référence `PROJECT_ARCHITECTURE.md`, qui n'existe pas sous ce nom.
+    Le template de prompt doit être corrigé après vérification.
+
+## 8. Tâches distinctes du BDL
+
+-   Correction des coquilles de `_sanitize_instruction_with_page_context`
+    (prompt de correction séparé).
+-   Décision sur le sort de `question_block_analyzer.py`.
+-   Correction de la référence d'architecture dans le template de prompt.
+
+------------------------------------------------------------------------
+
 # 21. Philosophie de développement
 
 Le Bug Detection Layer doit respecter les mêmes principes que le reste
@@ -1366,12 +1502,12 @@ ajoutée.
 À la création de ce document :
 
 ``` text
-Bug Detection Layer       CONCEPTION
-Extraction oracle         À CONCEVOIR
-Action oracle             À CONCEVOIR / s'appuyer sur l'observabilité existante
-CTA oracle                À CONCEVOIR
+Bug Detection Layer       CONCEPTION (BDL-0 terminée)
+Extraction oracle         À CONCEVOIR (BDL-4, après l'action)
+Action oracle             À CONCEVOIR (BDL-3, prérequis d'observabilité validés)
+CTA oracle                APRÈS OBSERVABILITÉ v1 (BDL-5), aucun chemin de capture
 CTA slider handling       À intégrer explicitement
-Corpus de référence       À constituer progressivement
+Corpus de référence       14 cas indexables, suite de non-régression (BDL-2)
 Mesure FN/FP              À mettre en place
 Échantillonnage PASS      À concevoir
 IA d'interprétation       NON NÉCESSAIRE À CE STADE
@@ -1460,4 +1596,29 @@ ancienne BDL-4 (CTA)    → BDL-4
 ancienne BDL-2 (extr.)  → BDL-5
 ancienne BDL-6, 7, 8    → BDL-6, 7, 8
 (nouveau)               → BDL-9
+```
+
+## 2026-10-11 --- Seconde révision après la phase BDL-0
+
+Décisions validées après lecture de l'inventaire et des vérifications :
+
+1.  Ordre des oracles : ACTION → EXTRACTION → CTA (remplace la décision 2
+    de la première révision).
+2.  CTA en v1 : observabilité uniquement (résultat CTA structuré en
+    mémoire), sans oracle ni failure case tant qu'aucun hook n'existe.
+3.  Enregistrer la valeur réellement utilisée et un statut par action,
+    par ajout purement additif dans la trace existante (touche
+    `action_dispatcher.py` : diff minimal, validation explicite).
+4.  Mode collecte par flag d'environnement pour récolter des cas `PASS`
+    en test ; en production, seuls les faits runtime avant/après sont
+    capturés.
+5.  Le corpus actuel est une suite de non-régression ; les taux de
+    precision et de recall attendent les données du mode collecte.
+
+Correspondance de numérotation par rapport à la première révision :
+
+``` text
+BDL-4 (CTA)         → BDL-5 (CTA : observabilité v1)
+BDL-5 (extraction)  → BDL-4 (extraction)
+BDL-2 (corpus)      → BDL-2 (index + mode collecte)
 ```
