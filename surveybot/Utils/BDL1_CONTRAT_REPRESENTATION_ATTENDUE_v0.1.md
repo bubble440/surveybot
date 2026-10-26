@@ -1,6 +1,6 @@
 # SurveyBot — Contrat de représentation attendue
-Version : 0.2 — brouillon de cadrage BDL-1
-Statut : PARTIEL — décisions produit encore nécessaires
+Version : 0.3 — cartographie statique élargie du pipeline
+Statut : PARTIEL — types cartographiés, contrat sémantique encore à compléter
 Portée : contrat indépendant de l'implémentation, destiné à l'oracle d'extraction BDL-4 et au classement des règles historiques BDL-9.
 
 ## 1. Rôle du contrat
@@ -97,6 +97,70 @@ Les types ci-dessous sont ceux attestés dans les documents de vérification dis
 **Non concluants à eux seuls**
 - Proximité d'options, présence d'un placeholder générique ou absence d'un attribut `required`, pris isolément.
 
+### 3.6 `matrix`
+
+**Représentation attendue**
+- La consigne ou question globale est exposée, ainsi que les libellés des lignes et des colonnes nécessaires à l'interprétation.
+- La structure ligne × colonne est préservée : une valeur choisie doit pouvoir être rattachée à la bonne ligne et à la bonne échelle/colonne.
+- Les contraintes de réponse (choix unique ou multiple par ligne, réponses obligatoires) sont conservées lorsqu'elles sont établies.
+
+**Contradictions fortes**
+- La grille est réduite à une liste plate qui ne permet plus de relier les choix aux lignes concernées.
+- Une ligne ou une option répondable est omise alors que son rôle est confirmé.
+
+**Non concluants à eux seuls**
+- Nombre de cellules DOM, nombre de blocs produits ou présence de cellules cachées sans preuve qu'elles sont des réponses actives.
+
+### 3.7 `number`
+
+**Représentation attendue**
+- La demande numérique et son contexte sont exposés ; les contraintes de valeur (minimum, maximum, unité, précision) sont conservées lorsqu'elles sont disponibles.
+- Le champ reste distingué d'un champ texte libre si le type numérique affecte la réponse attendue.
+
+**Contradictions fortes**
+- Un champ numérique répondable est omis ou représenté comme une réponse textuelle générique alors que cette différence change les contraintes de réponse.
+
+**Non concluants à eux seuls**
+- L'absence d'une contrainte min/max dans le DOM observé ne prouve pas que toute valeur numérique est valide.
+
+### 3.8 `select`
+
+**Représentation attendue**
+- Même intention fonctionnelle que `dropdown` : le champ, son contexte et les options réellement répondables sont exposés.
+- Le type brut `select` est conservé dans les traces tant qu'une règle de normalisation explicite ne le ramène pas à une famille commune.
+- Le caractère unique ou multiple de la sélection est établi à partir du contrôle et du contexte, pas seulement du nom du type.
+
+**Contradictions fortes**
+- Le champ actif ou ses options répondables sont absents sans exclusion justifiée.
+
+**Non concluants à eux seuls**
+- Une liste vide dans la sortie ne prouve pas à elle seule qu'aucune option n'est disponible : certains widgets nécessitent une ouverture ou un état DOM particulier.
+
+### 3.9 `select_rps`
+
+**Représentation attendue**
+- Le contrôle de sélection spécialisé est représenté avec son libellé, ses options et ses contraintes de sélection disponibles.
+- Ce type est distinct dans le code actuel de `select` et `dropdown` ; l'oracle ne doit pas les fusionner silencieusement sans vérifier les différences sémantiques.
+
+**Contradictions fortes**
+- Le contrôle est absent, ou ses choix répondables sont omis/inventés, alors que le DOM confirme leur disponibilité.
+
+**Non concluants à eux seuls**
+- Le suffixe technique du type ne suffit pas à inférer une différence de comportement fonctionnel. Celle-ci doit être documentée à partir du widget concerné.
+
+### 3.10 `button`
+
+**Rôle dans le pipeline**
+- Le type `button` est émis par le chemin `sliderpoints_extractor` pour un contrôle de type CTA. Sa présence dans la sortie d'analyse ne signifie donc pas automatiquement qu'il s'agit d'une question répondable.
+- Il doit être traité comme un contrôle d'action/navigation, sauf preuve explicite qu'il représente une option de réponse.
+- Son observation et son résultat relèvent prioritairement du contrat CTA/action (BDL-5/BDL-3), et non de l'oracle d'extraction de questions.
+
+**Contradictions fortes**
+- Un CTA nécessaire au parcours est introuvable ou son état/résultat est mal déclaré par la couche d'action.
+
+**Non concluants à eux seuls**
+- La présence d'un bloc `button` ne constitue ni une question manquante ni une réponse d'enquête supplémentaire.
+
 ## 4. Cas « Autre / AUTRE » — décision produit requise
 
 Les documents de vérification signalent plusieurs règles distinctes autour des champs « Autre, précisez » et des champs texte auxiliaires. Le contrat ne doit pas reprendre implicitement leur comportement actuel.
@@ -131,43 +195,59 @@ Cette règle s'applique uniquement lorsque l'association est établie par le con
 
 Ce contrat n'autorise pas l'oracle à réimplémenter les extracteurs ni à inférer la représentation attendue à partir de la sortie actuelle du bot.
 
-## 7. Vérification de `dom_analyzer.py`
+## 7. Cartographie statique du pipeline d'extraction
 
-Lecture du fichier `Survey/dom_analyzer.py` fourni pour cette étape.
+Cette vérification porte sur la branche `feature/phase-1a-observability` du dépôt, en distinguant les blocs de questions retournés au pipeline des types internes au registre et des types produits par un analyseur séparé.
 
-### Types identifiables dans ce fichier
+### 7.1 Types confirmés dans les blocs du pipeline principal
 
-Les valeurs suivantes sont visibles dans les blocs produits, dans les branches de traitement ou dans les commentaires explicites :
+La lecture croisée de `Survey/dom_analyzer.py`, `Survey/dom_utils.py`, `Survey/dom_extractors_misc.py`, `Survey/dom_extractors_decipher.py`, `Survey/dom_extractors_areyounet.py` et `Survey/sliderpoints_extractor.py` confirme les valeurs suivantes dans les blocs construits ou ajoutés au résultat du pipeline :
+
 - `radio`
 - `checkbox`
 - `dropdown`
 - `text`
 - `textarea`
-- `hidden` (type reconnu dans la boucle des champs simples, puis ignoré)
-- `unknown` (valeur de détection intermédiaire, parfois réévaluée localement)
-- `button` (type traité spécifiquement dans la boucle des champs simples)
-- `matrix` (type explicitement émis par l'extracteur Nfield drag-and-drop)
+- `matrix`
+- `number`
+- `select`
+- `select_rps`
+- `button`
 
-`multi_text` apparaît comme valeur de `kind`/contexte et de registre, pas comme valeur explicitement attribuée à `itype` dans les passages vérifiés ; il ne faut donc pas le compter comme un `itype` confirmé sur cette seule base.
+Les valeurs `radio` et `checkbox` peuvent être déterminées par `_detect_itype`, par des extracteurs spécialisés ou par `_block_itype` (ce dernier ne produit que `radio` ou `checkbox`). `_detect_itype` dans `Survey/dom_utils.py` retourne directement `radio`, `checkbox`, `dropdown`, `text`, `textarea` ou `unknown`. `dom_analyzer.py` comporte aussi une réclassification locale de certains champs `input[type=search]` vers `text`, sous garde-fou DOM spécifique.
 
-### Limite de cette vérification
+Les extracteurs spécialisés ajoutent des types que la détection générique ne couvre pas à elle seule : notamment `matrix`, `number`, `select` et `select_rps`. Le chemin `sliderpoints_extractor` émet aussi `button` pour un contrôle CTA et `dropdown` pour des options de sélection liées au widget.
 
-**Cette liste n'est pas prouvée exhaustive par `dom_analyzer.py` seul.** Le fichier importe `_detect_itype` depuis `Survey.dom_utils`, et plusieurs extracteurs spécialisés transmettent des variables calculées (`itype`, `_block_itype`) dont l'ensemble des valeurs ne peut pas être déterminé en lisant uniquement ce fichier. Le fichier fourni permet donc d'établir une liste provisoire, pas de certifier tous les types effectivement émis à l'exécution.
+### 7.2 Valeurs qui ne doivent pas être confondues avec des types de question confirmés
 
-Pour confirmer l'exhaustivité, il faut également vérifier la fonction `_detect_itype` dans `Survey/dom_utils.py` et les valeurs de `_block_itype` produites par les extracteurs appelés. Je ne complète pas ces éléments par supposition.
+- `unknown` est une valeur de détection intermédiaire. La lecture du chemin générique montre qu'elle est normalement écartée, mais certains extracteurs spécialisés peuvent décider autrement ; elle n'est pas retenue ici comme type de question effectivement exposé au modèle.
+- `hidden` et `button` apparaissent dans des branches ou commentaires de traitement, mais cela ne suffit pas à les considérer comme types de question. `button` est toutefois confirmé séparément comme type de bloc CTA par `sliderpoints_extractor` ; il doit donc être traité comme contrôle d'action, pas automatiquement comme question.
+- `rtype` apparaît dans un payload de registre d'un extracteur CMix. La valeur a été trouvée dans le registre, mais pas confirmée comme valeur d'un bloc de question retourné ; elle n'est donc pas ajoutée à la liste des types de représentation confirmés.
+- `multi_text` apparaît comme `kind`/contexte dans certains chemins, et non comme valeur littérale confirmée de `itype` dans les passages vérifiés.
+- `Survey/question_block_analyzer.py` possède un `_infer_itype` distinct (dont `button`) ; ses sorties ne doivent pas être mélangées sans preuve au contrat de sortie de `analyze_dom`.
+
+### 7.3 Niveau de confiance et limite d'exhaustivité
+
+La liste ci-dessus est **confirmée par inspection statique des modules principaux et des modules spécialisés importés dans `dom_analyzer.py`**, mais elle ne constitue pas une garantie absolue d'exhaustivité à l'exécution. Certains blocs sont construits via des variables calculées, des branches conditionnelles ou des extracteurs ajoutés ultérieurement ; le dépôt peut évoluer et un test exhaustif sur sorties réelles n'a pas été exécuté dans cette étape.
+
+En conséquence :
+- la liste est suffisante pour étendre le contrat aux types supplémentaires confirmés ;
+- BDL-1 ne doit pas être déclaré définitivement exhaustif tant qu'un inventaire automatisé ou des tests représentatifs ne vérifient pas les `itype` réellement retournés par le pipeline ;
+- tout type inconnu rencontré à l'exécution doit être classé « type non documenté / verdict indéterminé », et non transformé en contradiction forte par défaut.
 
 ## 8. Points à vérifier avant de déclarer BDL-1 terminé
 
 - [x] Décider le traitement de « Autre » et de son champ texte associé : option A, réponse composée avec association explicite.
 - [x] Examiner `dom_analyzer.py` et relever les types visibles dans ce fichier.
-- [ ] Vérifier `_detect_itype` dans `Survey/dom_utils.py`.
-- [ ] Confirmer les valeurs produites par les variables de type `_block_itype` dans les extracteurs spécialisés.
-- [ ] Ajouter une entrée de contrat pour chaque `itype` effectivement émis qui n'est pas encore couvert.
-- [ ] Vérifier les champs obligatoires, les limites de sélection et les options placeholder.
+- [x] Vérifier `_detect_itype` dans `Survey/dom_utils.py`.
+- [x] Vérifier les types émis par les principaux extracteurs spécialisés appelés par `dom_analyzer.py`.
+- [x] Ajouter des sections de contrat pour les types supplémentaires confirmés (`matrix`, `number`, `select`, `select_rps`) et distinguer le CTA `button` des questions.
+- [ ] Vérifier les champs obligatoires, les limites de sélection et les options placeholder pour chaque famille/type.
+- [ ] Ajouter un inventaire automatisé ou des tests de contrat sur les blocs réellement retournés par le pipeline, afin de confirmer l'exhaustivité à l'exécution.
 - [ ] Versionner ce contrat hors du core et faire référencer cette version par l'oracle BDL-4.
 
 ## 9. Statut de cette version
 
-**BDL-1 reste en cours.** La règle produit « Autre » est maintenant fixée. L'examen de `dom_analyzer.py` identifie les types listés ci-dessus, mais ne suffit pas à garantir l'exhaustivité puisque la détection et une partie des types de blocs sont définies ou calculées ailleurs.
+**BDL-1 reste en cours.** La règle produit « Autre » est fixée et la cartographie statique a été étendue aux modules principaux et spécialisés. Dix valeurs `itype` sont confirmées dans les blocs du pipeline inspecté. L’exhaustivité à l’exécution et les contraintes détaillées de certains types restent à valider.
 
 Aucune fonction du core n'est modifiée par ce document.
