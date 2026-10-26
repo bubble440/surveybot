@@ -1,5 +1,5 @@
 # SurveyBot — Contrat de représentation attendue
-Version : 0.1 — brouillon de cadrage BDL-1
+Version : 0.2 — brouillon de cadrage BDL-1
 Statut : PARTIEL — décisions produit encore nécessaires
 Portée : contrat indépendant de l'implémentation, destiné à l'oracle d'extraction BDL-4 et au classement des règles historiques BDL-9.
 
@@ -101,14 +101,15 @@ Les types ci-dessous sont ceux attestés dans les documents de vérification dis
 
 Les documents de vérification signalent plusieurs règles distinctes autour des champs « Autre, précisez » et des champs texte auxiliaires. Le contrat ne doit pas reprendre implicitement leur comportement actuel.
 
-**Question à trancher explicitement :** lorsqu'une option « Autre » est accompagnée d'un champ texte permettant de préciser la réponse, que doit recevoir le modèle ?
+**Décision produit validée : option A — représentation liée.**
 
-Choix produit à valider :
-- **A — représentation liée :** exposer l'option « Autre » et son champ texte comme une réponse composée, en préservant explicitement leur association ;
-- **B — représentation séparée :** exposer l'option et le champ texte comme éléments distincts, avec un lien explicite entre eux ;
-- **C — autre règle documentée :** préciser le comportement attendu et les conditions DOM exactes qui le justifient.
+Lorsqu'une option « Autre / Other / Précisez » est associée à un champ texte de précision, la représentation attendue est une **réponse composée** :
+- l'option « Autre » reste un choix disponible du groupe radio/checkbox ;
+- le champ de précision reste explicitement associé à cette option ;
+- le modèle doit pouvoir comprendre que le texte est la précision de l'option « Autre », et non une question texte autonome sans relation ;
+- cette association ne doit pas faire disparaître l'option du groupe, ni dupliquer le champ de précision comme une question indépendante parasite.
 
-Aucune de ces options n'est considérée comme validée dans cette version. Jusqu'à décision, les cas concernés ne doivent pas servir à confirmer un faux positif ou un faux négatif de l'oracle d'extraction.
+Cette règle s'applique uniquement lorsque l'association est établie par le contexte fonctionnel et/ou des indices DOM suffisants. La simple proximité entre un champ texte et un groupe de choix ne suffit pas à établir le lien. Les différents motifs DOM spécifiques déjà présents dans le code sont des indices de détection, pas à eux seuls la définition complète du contrat.
 
 ## 5. Questions, instructions et champs auxiliaires
 
@@ -130,17 +131,43 @@ Aucune de ces options n'est considérée comme validée dans cette version. Jusq
 
 Ce contrat n'autorise pas l'oracle à réimplémenter les extracteurs ni à inférer la représentation attendue à partir de la sortie actuelle du bot.
 
-## 7. Points à vérifier avant de déclarer BDL-1 terminé
+## 7. Vérification de `dom_analyzer.py`
 
-- [ ] Comparer cette liste aux valeurs `itype` effectivement émises par `dom_analyzer.analyze_dom`.
-- [ ] Ajouter une entrée pour chaque type réellement émis et définir sa représentation attendue.
-- [ ] Décider explicitement le traitement de « Autre » et du champ texte associé.
-- [ ] Vérifier le traitement des champs obligatoires, des limites de sélection et des options placeholder.
-- [ ] Faire valider les décisions produit ambiguës avant de les utiliser comme vérité terrain.
+Lecture du fichier `Survey/dom_analyzer.py` fourni pour cette étape.
+
+### Types identifiables dans ce fichier
+
+Les valeurs suivantes sont visibles dans les blocs produits, dans les branches de traitement ou dans les commentaires explicites :
+- `radio`
+- `checkbox`
+- `dropdown`
+- `text`
+- `textarea`
+- `hidden` (type reconnu dans la boucle des champs simples, puis ignoré)
+- `unknown` (valeur de détection intermédiaire, parfois réévaluée localement)
+- `button` (type traité spécifiquement dans la boucle des champs simples)
+- `matrix` (type explicitement émis par l'extracteur Nfield drag-and-drop)
+
+`multi_text` apparaît comme valeur de `kind`/contexte et de registre, pas comme valeur explicitement attribuée à `itype` dans les passages vérifiés ; il ne faut donc pas le compter comme un `itype` confirmé sur cette seule base.
+
+### Limite de cette vérification
+
+**Cette liste n'est pas prouvée exhaustive par `dom_analyzer.py` seul.** Le fichier importe `_detect_itype` depuis `Survey.dom_utils`, et plusieurs extracteurs spécialisés transmettent des variables calculées (`itype`, `_block_itype`) dont l'ensemble des valeurs ne peut pas être déterminé en lisant uniquement ce fichier. Le fichier fourni permet donc d'établir une liste provisoire, pas de certifier tous les types effectivement émis à l'exécution.
+
+Pour confirmer l'exhaustivité, il faut également vérifier la fonction `_detect_itype` dans `Survey/dom_utils.py` et les valeurs de `_block_itype` produites par les extracteurs appelés. Je ne complète pas ces éléments par supposition.
+
+## 8. Points à vérifier avant de déclarer BDL-1 terminé
+
+- [x] Décider le traitement de « Autre » et de son champ texte associé : option A, réponse composée avec association explicite.
+- [x] Examiner `dom_analyzer.py` et relever les types visibles dans ce fichier.
+- [ ] Vérifier `_detect_itype` dans `Survey/dom_utils.py`.
+- [ ] Confirmer les valeurs produites par les variables de type `_block_itype` dans les extracteurs spécialisés.
+- [ ] Ajouter une entrée de contrat pour chaque `itype` effectivement émis qui n'est pas encore couvert.
+- [ ] Vérifier les champs obligatoires, les limites de sélection et les options placeholder.
 - [ ] Versionner ce contrat hors du core et faire référencer cette version par l'oracle BDL-4.
 
-## 8. Statut de cette version
+## 9. Statut de cette version
 
-**BDL-1 n'est pas encore déclaré terminé.** Cette version établit une base explicite pour les cinq types attestés (`radio`, `checkbox`, `dropdown`, `text`, `textarea`), mais l'exhaustivité des `itype` et la décision sur « Autre » restent à confirmer à partir du code et d'une décision produit explicite.
+**BDL-1 reste en cours.** La règle produit « Autre » est maintenant fixée. L'examen de `dom_analyzer.py` identifie les types listés ci-dessus, mais ne suffit pas à garantir l'exhaustivité puisque la détection et une partie des types de blocs sont définies ou calculées ailleurs.
 
 Aucune fonction du core n'est modifiée par ce document.
