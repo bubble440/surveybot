@@ -637,57 +637,6 @@ fusionnées avec `Extractor Integrity`.
 
 ------------------------------------------------------------------------
 
-# 12 bis. Faisabilité du Bug Detection Layer
-
-La faisabilité du chantier doit être évaluée séparément de la faisabilité
-générale de l'AutoFix. Le BDL ne nécessite pas de comprendre 100 % des
-sites ni de reconstruire le moteur SurveyBot. Son objectif est plus limité :
-identifier avec suffisamment de fiabilité les contradictions observables
-et refuser de conclure lorsque la preuve est insuffisante.
-
-Évaluation initiale :
-
-| Domaine | Faisabilité estimée |
-|---|---|
-| Détection des anomalies d'extraction | Élevée |
-| Détection des anomalies d'action | Élevée |
-| Détection des anomalies CTA | Moyenne à élevée |
-| Vérification d'un état attendu | Élevée pour les cas déterministes |
-| Replay extraction | Déjà largement couvert par l'infrastructure existante |
-| Replay action | Déjà largement couvert sur le périmètre retenu |
-| Replay CTA | À étendre selon les transitions réellement observées |
-| Détection automatique de 100 % des bugs | Non réaliste |
-| Objectif stable de 80–90 % | Réaliste sous réserve de mesure sur cas réels |
-
-La principale difficulté n'est donc pas de détecter une anomalie simple.
-Elle est de construire des preuves suffisamment fortes pour distinguer :
-
-``` text
-comportement réellement incorrect
-vs
-comportement inhabituel mais valide
-vs
-comportement dont la preuve est insuffisante
-```
-
-Le BDL doit rester indépendant sans devenir un second SurveyBot. C'est cette
-contrainte qui doit limiter le nombre de règles, de branches et de fallbacks.
-
-Le critère de faisabilité n'est donc pas « détecter tous les bugs », mais
-plutôt :
-
-``` text
-réduire significativement les bugs silencieux
-+
-maintenir les faux positifs à un niveau acceptable
-+
-refuser explicitement les cas non prouvables
-```
-
-Une première implémentation déterministe est donc suffisamment crédible
-pour être développée et mesurée avant d'envisager une couche IA.
-
-
 # 10. Oracle CTA : principe avant / action / transition
 
 Pour les CTA, l'observation doit être adaptée au type de transition
@@ -787,6 +736,56 @@ Les cas historiques de SurveyBot constituent le point de départ naturel
 de cette base d'évaluation.
 
 ------------------------------------------------------------------------
+
+# 12 bis. Faisabilité du Bug Detection Layer
+
+La faisabilité du chantier doit être évaluée séparément de la faisabilité
+générale de l'AutoFix. Le BDL ne nécessite pas de comprendre 100 % des
+sites ni de reconstruire le moteur SurveyBot. Son objectif est plus limité :
+identifier avec suffisamment de fiabilité les contradictions observables
+et refuser de conclure lorsque la preuve est insuffisante.
+
+Évaluation initiale :
+
+| Domaine | Faisabilité estimée |
+|---|---|
+| Détection des anomalies d'extraction | Élevée |
+| Détection des anomalies d'action | Élevée |
+| Détection des anomalies CTA | Moyenne à élevée |
+| Vérification d'un état attendu | Élevée pour les cas déterministes |
+| Replay extraction | Déjà largement couvert par l'infrastructure existante |
+| Replay action | Déjà largement couvert sur le périmètre retenu |
+| Replay CTA | À étendre selon les transitions réellement observées |
+| Détection automatique de 100 % des bugs | Non réaliste |
+| Objectif stable de 80–90 % | Réaliste sous réserve de mesure sur cas réels |
+
+La principale difficulté n'est donc pas de détecter une anomalie simple.
+Elle est de construire des preuves suffisamment fortes pour distinguer :
+
+``` text
+comportement réellement incorrect
+vs
+comportement inhabituel mais valide
+vs
+comportement dont la preuve est insuffisante
+```
+
+Le BDL doit rester indépendant sans devenir un second SurveyBot. C'est cette
+contrainte qui doit limiter le nombre de règles, de branches et de fallbacks.
+
+Le critère de faisabilité n'est donc pas « détecter tous les bugs », mais
+plutôt :
+
+``` text
+réduire significativement les bugs silencieux
++
+maintenir les faux positifs à un niveau acceptable
++
+refuser explicitement les cas non prouvables
+```
+
+Une première implémentation déterministe est donc suffisamment crédible
+pour être développée et mesurée avant d'envisager une couche IA.
 
 # 13. Benchmark de détection
 
