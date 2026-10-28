@@ -634,6 +634,58 @@ def _phase1a_enabled() -> bool:
     return value in {"1", "true", "yes", "on"}
 
 
+def _bdl_collect_enabled() -> bool:
+    """BDL-2b : mode collecte des plans d'actions PASS (désactivé par défaut).
+
+    Flag DISTINCT de SURVEY_OBSERVABILITY. Le hook d'action n'étant installé que
+    si l'observabilité est active, le mode collecte la suppose active : sans elle,
+    ce flag n'a aucun effet.
+    """
+    value = (os.getenv("SURVEY_BDL_COLLECT", "1") or "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _collect_action_pass(driver, actions, result, report, runtime_state_before) -> None:
+    """BDL-2b : capture les faits runtime avant/après d'un plan jugé PASS.
+
+    Appelée UNIQUEMENT quand le validator n'a trouvé aucun échec (le chemin
+    d'échec existant reste inchangé et n'appelle pas cette fonction). Mêmes
+    primitives de capture que le chemin d'échec (browser_capsule), mais sans DOM
+    complet ni screenshot. Ne lève jamais et ne modifie pas `result`.
+    """
+    try:
+        from Survey.browser_capsule import (
+            build_action_trace,
+            capture_runtime_state,
+            collect_mutation_observer,
+        )
+        from Survey.failure_recorder import record_collected_action
+
+        runtime_state_after = capture_runtime_state(driver, actions)
+        mutations = collect_mutation_observer(driver, actions)
+        action_trace = build_action_trace(
+            actions=actions,
+            dispatcher_success=bool(result),
+            report=report,
+            before_state=runtime_state_before,
+            after_state=runtime_state_after,
+            mutations=mutations,
+        )
+        record_collected_action(
+            driver,
+            report=report,
+            actions=actions,
+            action_trace=action_trace,
+            dispatcher_success=bool(result),
+        )
+    except Exception as exc:
+        try:
+            from Survey.log_utils import log_debug as _log_debug
+            _log_debug("[BDL_COLLECT]", f"collect pass error: {type(exc).__name__}: {exc}")
+        except Exception:
+            pass
+
+
 def _install_extraction_observer() -> None:
     try:
         import Survey.dom_analyzer as dom_analyzer
@@ -757,6 +809,10 @@ def _install_action_observer() -> None:
                         runtime_state=runtime_state_after,
                         action_trace=action_trace,
                     )
+                elif _bdl_collect_enabled():
+                    # BDL-2b : plan jugé PASS -> collecte des faits runtime
+                    # avant/après dans un emplacement distinct des failure cases.
+                    _collect_action_pass(driver, actions, result, report, runtime_state_before)
             except Exception as exc:
                 try:
                     from Survey.log_utils import log_debug

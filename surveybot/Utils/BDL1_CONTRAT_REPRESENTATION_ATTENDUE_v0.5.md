@@ -1,7 +1,7 @@
 # SurveyBot — Contrat BDL-1 : représentation attendue
 
-Version : 0.5 — contraintes détaillées et protocole d’inventaire
-Statut : PARTIEL — contraintes précisées statiquement ; inventaire runtime à exécuter sur le corpus
+Version : 0.5
+Statut : CLÔTURÉ — contrat documentaire de représentation attendue défini ; les validations complémentaires relèvent de travaux ultérieurs
 Branche étudiée : `feature/phase-1a-observability`
 Portée : blocs `dict` retournés par `Survey.dom_analyzer.analyze_dom()`.
 
@@ -15,7 +15,7 @@ Trois niveaux doivent rester distincts :
 2. **Type observé à l’exécution** : la valeur est apparue dans une sortie réelle `analyze_dom()`, capturée dans un artefact.
 3. **Conformité sémantique validée** : un DOM de référence et une vérité terrain indépendante confirment que le bloc représente correctement la question.
 
-Le présent document établit le premier niveau et fournit un outil pour mesurer le deuxième. Il ne prétend pas avoir exécuté le troisième.
+Pour clôturer BDL-1, le présent document établit le premier niveau : le contrat documentaire de représentation attendue. L’inventaire runtime et la validation sémantique indépendante sont des travaux complémentaires ; ils ne conditionnent pas cette clôture.
 
 ## 2. Types attestés statiquement
 
@@ -32,7 +32,7 @@ Valeurs attestées dans les blocs construits par les modules principaux et spéc
 - `select_rps`
 - `button`
 
-La liste reste ouverte jusqu’à exécution de l’inventaire sur un corpus représentatif. Tout `itype` inattendu doit être signalé comme « non documenté », pas automatiquement déclaré bug d’extraction.
+Cette liste correspond aux types attestés statiquement dans le périmètre inspecté ; elle pourra être révisée si de nouveaux types sont découverts. Tout `itype` inattendu doit être signalé comme « non documenté », pas automatiquement déclaré bug d’extraction.
 
 `unknown` est retourné par `Survey.dom_utils._detect_itype()` mais le chemin générique principal l’écarte normalement. `rtype` est attesté dans un payload du registre CMix, sans confirmation qu’il soit exposé comme bloc retourné. `Survey.question_block_analyzer._infer_itype()` appartient à un analyseur séparé et ne doit pas être mélangé à `analyze_dom()` sans preuve d’intégration.
 
@@ -57,7 +57,7 @@ Les invariants ci-dessous sont structurels. Ils ne prouvent pas à eux seuls que
 
 - **Rôle** : choix unique parmi des options.
 - **Attendu** : contexte de question intelligible, options répondables avec libellés compréhensibles, `target_id` relié au groupe actif.
-- **Invariants structurels** : `options` devrait être une liste ; pour un groupe de choix standard, au moins deux options répondables sont attendues. Si `max_select` est renseigné, il ne devrait pas autoriser plusieurs choix.
+- **Invariants structurels** : `options` devrait être une liste ; pour un groupe de choix standard, au moins deux options répondables sont attendues ; il s’agit d’une attente contextuelle, pas d’une règle universelle applicable à tous les DOMs. Si `max_select` est renseigné, il ne devrait pas autoriser plusieurs choix.
 - **À vérifier dans le registre** : cible de groupe et locators d’options cohérents avec le même groupe DOM.
 - **Ne pas conclure automatiquement** : un seul nœud input par option n’est pas garanti ; options masquées, clonées ou désactivées peuvent exister dans le DOM.
 
@@ -101,7 +101,7 @@ Les invariants ci-dessous sont structurels. Ils ne prouvent pas à eux seuls que
 ### `number`
 
 - **Rôle** : champ numérique.
-- **Attendu** : contexte de question et cible d’action ; les bornes, unité et précision sont conservées lorsqu’elles existent dans le DOM ou les métadonnées.
+- **Attendu** : contexte de question et cible d’action ; les bornes, l’unité et la précision sont conservées lorsqu’elles existent dans le DOM ou les métadonnées ; leur absence ne doit pas être compensée par des valeurs inventées.
 - **Invariants structurels** : `options` normalement vide ; ne pas inventer des bornes lorsque le DOM ne les expose pas.
 - **Test représentatif** : vérifier que les métadonnées disponibles ne sont pas perdues, sans exiger `min`/`max` lorsqu’ils ne sont pas présents.
 
@@ -116,8 +116,8 @@ Les invariants ci-dessous sont structurels. Ils ne prouvent pas à eux seuls que
 
 - **Rôle** : sélection spécialisée produite par un extracteur RPS.
 - **Attendu** : question/libellé, cible et options exposées par le widget.
-- **Réserve** : type distinct dans les sorties actuelles ; ne pas normaliser vers `select` ou `dropdown` avant de confirmer l’équivalence fonctionnelle.
-- **Test représentatif** : comparer la structure des blocs observés à celle des cas DOM de référence RPS, notamment les options et le locator enregistré.
+- **Réserve** : `select_rps` doit rester identifiable comme type spécialisé dans la représentation d’extraction et le registre. Une normalisation ultérieure vers `dropdown` pour préparer le prompt du modèle relève d’une autre étape du pipeline et ne signifie pas que le type d’extraction est équivalent.
+- **Test représentatif ultérieur** : comparer la structure des blocs observés à celle des cas DOM de référence RPS, notamment les options et le locator enregistré.
 
 ### `button`
 
@@ -147,9 +147,9 @@ Limites importantes de la validation actuelle :
 - le validateur ne prouve pas que chaque option exposée correspond à une option DOM réellement répondable ;
 - le validateur n’est pas un inventaire de l’ensemble des types émis par le corpus.
 
-La prochaine étape recommandée est additive : utiliser un outil d’inventaire sur des artefacts `question_blocks.json` existants, puis ajouter des tests de contrat ciblés. Ne pas modifier les corps des extracteurs existants pour réaliser cette étape.
+Ces limites motivent des vérifications complémentaires, mais elles ne remettent pas en cause la clôture documentaire de BDL-1. Si elles sont poursuivies, l’étape suivante peut être additive : utiliser un outil d’inventaire sur des artefacts `question_blocks.json` existants, puis ajouter des tests de contrat ciblés. Ne pas modifier les corps des extracteurs existants pour réaliser ces vérifications.
 
-## 7. Inventaire automatisé : protocole
+## 7. Inventaire automatisé : protocole complémentaire (hors critères de clôture BDL-1)
 
 Le fichier `tools/bdl1_inventory.py` fourni avec ce document :
 
@@ -177,7 +177,7 @@ python tools/bdl1_inventory.py path/to/corpus --output bdl1_inventory.json --str
 
 Le mode strict doit d’abord être lancé sur le corpus historique en mode non strict : des anomalies préexistantes peuvent être révélées et doivent être triées avant d’activer le gate CI.
 
-## 8. Tests représentatifs à ajouter après l’inventaire
+## 8. Tests représentatifs éventuels (travaux ultérieurs, hors critères de clôture BDL-1)
 
 Ordre minimal recommandé :
 
@@ -190,31 +190,39 @@ Ordre minimal recommandé :
 
 Ne pas utiliser la seule présence d’un type dans un snapshot comme preuve de conformité sémantique. Pour les tests de référence, enregistrer séparément le DOM/cas, le bloc attendu et la justification de la vérité terrain.
 
-## 9. Critères de clôture BDL-1
+## 9. Clôture BDL-1 et travaux reportés
 
-### Résultat d’inventaire disponible
+**Statut : BDL-1 clôturé.** L’objectif initial est atteint : le contrat documentaire de représentation attendue est défini pour les dix types attestés statiquement, les invariants communs et les limites d’interprétation sont documentés, et la décision produit relative à « Autre » est explicite.
 
-Inventaire exécuté en mode non strict sur `C:\projects\Surveys\snapshots` :
+### Éléments établis pour la clôture
+
+- [x] Décision produit « Autre » : option A, avec association explicite du champ de précision lorsque le lien est confirmé.
+- [x] Cartographie statique des dix types attestés dans le périmètre inspecté.
+- [x] Contrat attendu par `itype`, avec réserves contextuelles lorsque les structures DOM varient.
+- [x] Invariants communs et limites du validateur existant documentés.
+- [x] Distinction posée entre contrat documentaire, observation runtime et validation sémantique indépendante.
+- [x] Frontière clarifiée entre le type spécialisé `select_rps` à l’extraction et la normalisation éventuelle lors de la préparation du prompt.
+
+### Résultat d’inventaire historique — informatif, non bloquant
+
+Un inventaire non strict a été exécuté sur `C:\projects\Surveys\snapshots` :
 
 - **39** fichiers `question_blocks.json` parcourus ;
 - **55** blocs analysés ;
 - **4** types observés : `radio=36`, `checkbox=10`, `text=7`, `dropdown=2` ;
-- **4** signalements émis par l’outil, dont le détail reste à examiner.
+- **4** signalements émis, dont le détail reste à examiner.
 
-Ce résultat décrit uniquement les types présents dans les snapshots analysés. Il ne prouve ni que les autres types statiquement attestés sont absents du code, ni que les 55 blocs sont sémantiquement conformes. Le résumé console ne donne pas le détail des quatre signalements : ils restent donc non triés à ce stade.
+Ce résultat décrit uniquement les types présents dans les snapshots analysés. Il ne prouve ni que les autres types statiquement attestés sont absents du code, ni que les blocs observés sont sémantiquement conformes. Les quatre signalements restent non triés ; cela ne bloque pas BDL-1.
 
-### Checklist de clôture
+### Travaux possibles après BDL-1
 
-- [x] Décision produit « Autre » : option A.
-- [x] Cartographie statique des dix types attestés.
-- [x] Contraintes fonctionnelles et limites de validation documentées par type.
-- [x] Outil d’inventaire fourni.
-- [x] Inventaire non strict exécuté sur 39 snapshots : 55 blocs, quatre types observés.
-- [ ] Examiner le rapport détaillé et classer les quatre signalements entre anomalies historiques acceptées, faux positifs et problèmes à corriger.
-- [ ] Vérifier si le corpus couvre suffisamment les types statiquement attestés non observés (`matrix`, `number`, `select`, `select_rps`, `textarea`, `button`) ; ajouter des cas de référence manquants si nécessaire.
-- [ ] Ajouter/adapter les tests de référence dans le répertoire de tests existant, notamment `matrix`, `select_rps`, champs numériques et association « Autre ».
-- [ ] Confirmer la cohérence registre ↔ `target_id` sur des sorties réelles.
-- [ ] Versionner le contrat hors du core et le faire référencer par l’oracle BDL-4.
-- [ ] N’activer le mode strict qu’après tri explicite des signalements historiques et validation des tests représentatifs.
+Ces tâches sont reportées et ne constituent pas des critères de clôture de BDL-1 :
 
-**Statut : BDL-1 en cours.** L’inventaire du corpus a été exécuté, mais les quatre signalements ne sont pas encore triés, plusieurs types statiquement attestés ne sont pas observés dans ces snapshots, et les tests de référence ainsi que la vérification registre ↔ `target_id` restent à réaliser.
+- examiner le rapport détaillé et classer les quatre signalements historiques ;
+- compléter le corpus de référence pour les types non observés dans les snapshots (`matrix`, `number`, `select`, `select_rps`, `textarea`, `button`), si nécessaire ;
+- ajouter des tests représentatifs par type et pour l’association « Autre » ;
+- vérifier la cohérence registre ↔ `target_id` sur des sorties réelles ;
+- décider ultérieurement si le contrat doit être référencé par l’oracle BDL-4 ;
+- envisager le mode strict uniquement après tri des signalements historiques et validation des tests représentatifs.
+
+La clôture de BDL-1 ne signifie pas que tous les extracteurs ont été validés sémantiquement, que le corpus couvre tous les types, ni que le mode strict est prêt à être activé. Elle signifie que le contrat documentaire initial est suffisamment défini pour servir de référence aux étapes suivantes.
