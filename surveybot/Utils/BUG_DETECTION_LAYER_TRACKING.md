@@ -1090,7 +1090,9 @@ possible.
 
 ## BDL-1 --- Contrat de représentation attendue
 
-**Statut : À FAIRE (après BDL-0)**
+**Statut : PARTIEL --- contrat v0.5 rédigé
+(`Utils/BDL1_CONTRAT_REPRESENTATION_ATTENDUE_v0.5.md`) ; inventaire runtime
+à exécuter sur le corpus**
 
 Rédiger une courte spécification, par `itype`, de la représentation
 SurveyBot attendue (voir §20 bis). Livrable hors du core, versionné,
@@ -1100,7 +1102,8 @@ SurveyBot attendue (voir §20 bis). Livrable hors du core, versionné,
 
 ## BDL-2 --- Corpus d'évaluation et mode collecte
 
-**Statut : 2a FAIT (2026-10-11) ; 2b À FAIRE**
+**Statut : 2a FAIT (2026-10-11) ; 2b IMPLÉMENTÉ (2026-10-28), famille ACTION
+uniquement ; validation par un run local À FAIRE**
 
 Le corpus passe AVANT les oracles. État réel constaté par l'indexation
 (2a) : 38 cas répartis sur cinq emplacements non unifiés. Le dossier
@@ -1133,6 +1136,20 @@ Deux volets :
     runs de test, qui persiste les faits runtime avant/après pour TOUS
     les plans d'actions (y compris les `PASS`). Il alimente le corpus en
     TN et en faux négatifs potentiels sans coût en production.
+
+    *Implémentation (2026-10-28, famille ACTION uniquement)* : flag
+    `SURVEY_BDL_COLLECT` (désactivé par défaut, distinct de
+    `SURVEY_OBSERVABILITY` qu'il suppose actif). Pour un plan jugé `PASS`,
+    `meta.json`, `pass_report.json` et `action_trace.json` (faits runtime
+    avant/après et mutations) sont écrits dans une racine distincte de
+    `snapshots/` (`SURVEY_BDL_COLLECT_DIR`, défaut `./bdl_collect`), jamais
+    de DOM complet ni de screenshot. Plafond de 200 cas par racine
+    (`SURVEY_BDL_COLLECT_MAX`). Un `PASS` sans faits « après »
+    exploitables n'est pas écrit. Le chemin d'échec existant est inchangé.
+    Limites : les CTA ne passent pas par ce hook (BDL-5) ; l'extraction
+    n'est pas couverte ; le surcoût de capture sur un run réel n'est pas
+    mesuré ; aucune annotation des `PASS` collectés n'est prévue à ce stade
+    (voir §25, entrée du 2026-10-28).
 
 Le corpus doit aussi couvrir les sources touchées par des règles
 historiques (préparation de BDL-9).
@@ -1701,3 +1718,33 @@ BDL-2 (corpus)      → BDL-2 (index + mode collecte)
     de template était erronée et a été retirée du §20 quinquies.
 4.  Le retrait de règles (BDL-9) est soumis à la règle de la baseline
     d'intégrité : adoption humaine avant toute mise à jour.
+
+## 2026-10-28 --- BDL-2b : mode collecte des plans d'actions PASS
+
+1.  Mode collecte implémenté pour la famille ACTION (hook d'action de
+    `page_snapshot.py`, enregistrement dans `failure_recorder.py`). Voir
+    §20, BDL-2, volet 2b, pour le détail du fonctionnement.
+2.  Décisions de conception : flag distinct de `SURVEY_OBSERVABILITY` ;
+    racine de collecte distincte de `snapshots/` ; rapport collecté nommé
+    `pass_report.json` (et non `validation_report.json`), pour qu'un
+    dossier collecté présenté par erreur au `failure_case_builder` soit
+    vu comme un case incomplet et non comme un échec réel ; pas de DOM ni
+    de screenshot sur un `PASS` (coût, §20 quinquies point 5) ; plafond
+    par racine incluant les dossiers déjà présents.
+3.  Vérifications : 14 tests synthétiques ajoutés
+    (`tests/test_bdl_collect_action.py`) ; ils échouent sans le patch.
+    Suite complète : 225 tests avant, 239 après ; 14 échecs identiques
+    avant et après, présents sur la branche sans le patch (vérifié sur une
+    copie propre). Parmi eux, 2 (`test_static_validator_activation`)
+    s'expliquent par l'absence de `pytest` dans l'environnement de test
+    et disparaissent une fois installé ; 12
+    (`test_action_validator_qt_native_checked_exclusion`) subsistent, de
+    cause non déterminée et sans lien établi avec 2b (même résultat sous
+    Python 3.11, version du Dockerfile). Registre d'intégrité : 58/58.
+4.  Restant à faire : mesurer le surcoût d'un run local avec le flag
+    actif ; définir une règle d'échantillonnage et d'annotation des `PASS`
+    collectés avant que le volume n'augmente (sans vérité terrain, le
+    corpus collecté ne permet aucune mesure de précision ou de recall,
+    voir BDL-6/BDL-7) ; instruire séparément les 12 échecs préexistants.
+5.  Hors périmètre, non modifié : la section 23 (état de départ à la
+    création du document) conserve son contenu d'origine.
