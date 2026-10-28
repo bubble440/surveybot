@@ -1,6 +1,6 @@
 # SurveyBot — Contrat BDL-1 : représentation attendue
 
-Version : 0.4 — contraintes détaillées et protocole d’inventaire
+Version : 0.5 — contraintes détaillées et protocole d’inventaire
 Statut : PARTIEL — contraintes précisées statiquement ; inventaire runtime à exécuter sur le corpus
 Branche étudiée : `feature/phase-1a-observability`
 Portée : blocs `dict` retournés par `Survey.dom_analyzer.analyze_dom()`.
@@ -192,13 +192,29 @@ Ne pas utiliser la seule présence d’un type dans un snapshot comme preuve de 
 
 ## 9. Critères de clôture BDL-1
 
+### Résultat d’inventaire disponible
+
+Inventaire exécuté en mode non strict sur `C:\projects\Surveys\snapshots` :
+
+- **39** fichiers `question_blocks.json` parcourus ;
+- **55** blocs analysés ;
+- **4** types observés : `radio=36`, `checkbox=10`, `text=7`, `dropdown=2` ;
+- **4** signalements émis par l’outil, dont le détail reste à examiner.
+
+Ce résultat décrit uniquement les types présents dans les snapshots analysés. Il ne prouve ni que les autres types statiquement attestés sont absents du code, ni que les 55 blocs sont sémantiquement conformes. Le résumé console ne donne pas le détail des quatre signalements : ils restent donc non triés à ce stade.
+
+### Checklist de clôture
+
 - [x] Décision produit « Autre » : option A.
 - [x] Cartographie statique des dix types attestés.
 - [x] Contraintes fonctionnelles et limites de validation documentées par type.
 - [x] Outil d’inventaire fourni.
-- [ ] Exécuter l’inventaire sur le corpus de snapshots du dépôt et examiner les types observés.
-- [ ] Ajouter/adapter les tests pytest représentatifs dans le dépôt.
-- [ ] Confirmer la cohérence registre ↔ `target_id` sur les sorties réelles.
+- [x] Inventaire non strict exécuté sur 39 snapshots : 55 blocs, quatre types observés.
+- [ ] Examiner le rapport détaillé et classer les quatre signalements entre anomalies historiques acceptées, faux positifs et problèmes à corriger.
+- [ ] Vérifier si le corpus couvre suffisamment les types statiquement attestés non observés (`matrix`, `number`, `select`, `select_rps`, `textarea`, `button`) ; ajouter des cas de référence manquants si nécessaire.
+- [ ] Ajouter/adapter les tests de référence dans le répertoire de tests existant, notamment `matrix`, `select_rps`, champs numériques et association « Autre ».
+- [ ] Confirmer la cohérence registre ↔ `target_id` sur des sorties réelles.
 - [ ] Versionner le contrat hors du core et le faire référencer par l’oracle BDL-4.
+- [ ] N’activer le mode strict qu’après tri explicite des signalements historiques et validation des tests représentatifs.
 
-**Statut : BDL-1 en cours.** La cartographie et les invariants de premier niveau sont prêts ; les résultats d’exécution et les cas de référence restent à collecter.
+**Statut : BDL-1 en cours.** L’inventaire du corpus a été exécuté, mais les quatre signalements ne sont pas encore triés, plusieurs types statiquement attestés ne sont pas observés dans ces snapshots, et les tests de référence ainsi que la vérification registre ↔ `target_id` restent à réaliser.
