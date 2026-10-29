@@ -1041,9 +1041,9 @@ enchaîne sur l'extraction, et termine par le CTA, qui n'a aujourd'hui
 aucun chemin de capture (voir §20 quinquies).
 
 ``` text
-BDL-0 (FAIT) → BDL-1 → BDL-2 → BDL-3 (ACTION) → BDL-4 (EXTRACTION)
-             → BDL-5 (CTA : observabilité v1) → BDL-6 → BDL-7
-             → BDL-8 (optionnel) → BDL-9 (retrait des règles)
+BDL-0 (FAIT) → BDL-1 (CLÔTURÉ) → BDL-2 → BDL-3 (ACTION) → BDL-4 (EXTRACTION)
+                         → BDL-5 (CTA : observabilité v1) → BDL-6 → BDL-7
+                         → BDL-8 (optionnel) → BDL-9 (retrait des règles)
 ```
 
 ## BDL-0 --- Cartographie + taxonomie minimale
@@ -1090,13 +1090,16 @@ possible.
 
 ## BDL-1 --- Contrat de représentation attendue
 
-**Statut : PARTIEL --- contrat v0.5 rédigé
-(`Utils/BDL1_CONTRAT_REPRESENTATION_ATTENDUE_v0.5.md`) ; inventaire runtime
-à exécuter sur le corpus**
+**Statut : CLÔTURÉ (2026-10-29) — contrat v0.5 rédigé et validé sur
+son périmètre documentaire**
 
-Rédiger une courte spécification, par `itype`, de la représentation
-SurveyBot attendue (voir §20 bis). Livrable hors du core, versionné,
-écrit une seule fois.
+Livrable : `Utils/BDL1_CONTRAT_REPRESENTATION_ATTENDUE_v0.5.md`.
+Le contrat définit, par `itype`, la représentation SurveyBot attendue
+(voir §20 bis), indépendamment de ce que le code produit actuellement.
+
+La clôture porte sur la définition du contrat. L'inventaire runtime sur le
+corpus, les tests exhaustifs et l'évaluation empirique de la conformité
+restent des travaux ultérieurs ; ils ne sont pas des prérequis à BDL-1.
 
 ------------------------------------------------------------------------
 
@@ -1592,7 +1595,7 @@ Mesure FN/FP              À mettre en place
 Échantillonnage PASS      À concevoir
 IA d'interprétation       NON NÉCESSAIRE À CE STADE
 Intégration AutoFix       CONCEPTUELLEMENT DÉFINIE
-Contrat de représentation À RÉDIGER (BDL-1)
+Contrat de représentation LIVRÉ v0.5 — BDL-1 CLÔTURÉ (2026-10-29)
 Retrait règles parasites  CAP LONG TERME (BDL-9)
 ```
 
