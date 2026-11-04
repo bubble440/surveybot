@@ -72,3 +72,6 @@ python tools\create_failure_case.py <snapshot_dir>
 $env:LOG_LEVEL="debug"; python tools\replay_failure.py failure_cases\<id>
 
 python tools\diagnose_failure.py failure_cases\<cases> --force
+
+# delete a local branch
+git branch -d <branch-name>
