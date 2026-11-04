@@ -670,6 +670,9 @@ def _collect_action_pass(driver, actions, result, report, runtime_state_before) 
             before_state=runtime_state_before,
             after_state=runtime_state_after,
             mutations=mutations,
+            # BDL-3 : le chemin PASS doit porter les mêmes observations par action
+            # que le chemin d'échec (valeur demandée / préparée, statut par action).
+            action_results=getattr(driver, "_bdl_action_results", None),
         )
         record_collected_action(
             driver,
