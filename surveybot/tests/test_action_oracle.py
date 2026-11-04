@@ -20,10 +20,11 @@ def _radio_facts(checked_label: str) -> dict:
     return {f"target:g1:option:{l}": {"checked": l == checked_label, "value": "x"} for l in labels}
 
 
-def _trace(entry: dict, facts) -> dict:
+def _trace(entry: dict, facts, before=None) -> dict:
     return {
         "requested_actions": [entry],
         "dispatcher_success": entry.get("dispatcher_action_success"),
+        "before": None if before is None else {"facts": before},
         "after": None if facts is None else {"facts": facts},
     }
 
@@ -34,8 +35,8 @@ def _radio(claimed: bool, value="Plus de 6 heures", **extra) -> dict:
 
 
 class ActionOracleTests(unittest.TestCase):
-    def _verdict(self, entry, facts):
-        return evaluate_action_trace(_trace(entry, facts))["actions"][0]
+    def _verdict(self, entry, facts, before=None):
+        return evaluate_action_trace(_trace(entry, facts, before))["actions"][0]
 
     def test_radio_confirmed_matches_real_trace_shape(self) -> None:
         r = self._verdict(_radio(True), _radio_facts("plus de 6 heures"))
@@ -71,6 +72,25 @@ class ActionOracleTests(unittest.TestCase):
         facts = {"target:g1:option:plus de 6 heures": {"checked": None, "ariaChecked": "true"}}
         r = self._verdict(_radio(True), facts)
         self.assertEqual((r["verdict"], r["reason"]), (INCONCLUSIVE, "no_checked_state"))
+
+    def test_slide_page_target_gone_after_action_is_flagged(self) -> None:
+        # Cas réel 20261104_133359 : tous les faits « après » absents (None), « avant » mesurés.
+        before = {"target:g1:option:île-de-france": {"tag": "label", "checked": False},
+                  "target:g1:option:grand est": {"tag": "label", "checked": False}}
+        after = {"target:g1:option:île-de-france": None, "target:g1:option:grand est": None}
+        r = self._verdict(_radio(False, value="Île-de-France"), after, before)
+        self.assertEqual((r["verdict"], r["reason"]), (INCONCLUSIVE, "target_gone_after_action"))
+
+    def test_missing_facts_without_before_measure_is_not_target_gone(self) -> None:
+        after = {"target:g1:option:plus de 6 heures": None}
+        r = self._verdict(_radio(True), after, None)
+        self.assertEqual((r["verdict"], r["reason"]), (INCONCLUSIVE, "option_fact_unavailable"))
+
+    def test_text_target_gone_after_action(self) -> None:
+        entry = {"index": 0, "target_id": "t1", "itype": "text", "value": "75001",
+                 "requested_value": "75001", "dispatcher_action_success": True}
+        r = self._verdict(entry, {"target:t1": None}, {"target:t1": {"value": ""}})
+        self.assertEqual((r["verdict"], r["reason"]), (INCONCLUSIVE, "target_gone_after_action"))
 
     def test_text_cases(self) -> None:
         def text(claimed, after_value):

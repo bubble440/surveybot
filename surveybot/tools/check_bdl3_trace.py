@@ -64,6 +64,7 @@ def main(argv: list) -> int:
         return 2
     bad = 0
     totals: dict = {}  # itype -> {verdict: nombre}, pour le critère de clôture BDL-3
+    reasons: dict = {}  # motif d'INCONCLUSIVE -> nombre
     for path in traces:
         problems = _check(path)
         bad += bool(problems)
@@ -72,6 +73,8 @@ def main(argv: list) -> int:
         for act in _oracle_actions(path):
             per_itype = totals.setdefault(str(act.get("itype")), {})
             per_itype[act.get("verdict")] = per_itype.get(act.get("verdict"), 0) + 1
+            if act.get("verdict") == "INCONCLUSIVE":
+                reasons[act.get("reason")] = reasons.get(act.get("reason"), 0) + 1
     print(f"{len(traces) - bad}/{len(traces)} conformes")
     if totals:
         all_actions = sum(sum(v.values()) for v in totals.values())
@@ -79,6 +82,8 @@ def main(argv: list) -> int:
         print(f"oracle par itype ({all_actions} actions, INCONCLUSIVE {inconclusive / all_actions:.0%}) :")
         for itype, counts in sorted(totals.items()):
             print(f"  {itype}: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items(), key=lambda kv: str(kv[0]))))
+        if reasons:
+            print("motifs INCONCLUSIVE : " + ", ".join(f"{k}={v}" for k, v in sorted(reasons.items(), key=lambda kv: str(kv[0]))))
     return 1 if bad else 0
 
 

@@ -1231,8 +1231,8 @@ fiabilité de l'oracle ; il ne décide pas de sa promotion en détecteur
 2.  Revue des verdicts : tout verdict autre que `CONFIRMED` est examiné à
     la main, puis classé vrai positif ou fausse alarme, la trace
     correspondante étant conservée.
-3.  Couverture : le taux d'`INCONCLUSIVE` est relevé (global et par
-    itype). S'il domine (dropdown, matrix), l'oracle est jugé peu
+3.  Couverture : le taux d'`INCONCLUSIVE` est relevé (global, par
+    itype et par motif). S'il domine (dropdown, matrix), l'oracle est jugé peu
     couvrant même sans fausse alarme, et l'extension de la couverture
     devient le chantier suivant.
 4.  Échecs réels : si aucun vrai échec n'apparaît dans la collecte, les
@@ -1244,6 +1244,16 @@ d'`INCONCLUSIVE` admissible) : non fixés, à définir après la première
 collecte. Procédure : lancer le bot avec l'observabilité active (collecte
 BDL-2b par défaut), puis `python tools\check_bdl3_trace.py bdl_collect` ;
 la sortie donne les verdicts par trace et les totaux par itype.
+
+*Cas connu : pages « slide » (2026-11-04)* : sur une page qui avance seule
+après l'action (SPA), la vérification post-clic du dispatcher cherche
+l'option dans la nouvelle page et annonce `dispatcher_reported_failure`
+alors que le clic a très probablement réussi (hypothèse tirée des logs, non
+prouvée). Trace `20261104_133359_action_validation_failure` : faits « après »
+tous absents, mutations observées sur une autre question que la cible.
+L'oracle s'abstient avec le motif `target_gone_after_action` ; ces plans
+partent en `failure_cases` (donc vers AutoFix) et ne produisent jamais de
+`PASS` dans `bdl_collect`. Non traité : décision après la collecte (§25).
 
 ------------------------------------------------------------------------
 
@@ -1855,3 +1865,7 @@ BDL-2 (corpus)      → BDL-2 (index + mode collecte)
     tenant lieu de preuve si aucun vrai échec n'apparaît. Seuils
     d'acceptation non fixés. L'oracle v1 n'exploite que l'état « après »,
     pas la transition avant / après (voir §9).
+8.  Pages « slide » : voir BDL-3 (cas connu). Décision différée : traiter ou
+    non ces faux échecs avant qu'ils n'alimentent AutoFix. La preuve de
+    `FALSE_NEGATIVE` reste insuffisante (une page peut aussi disparaître pour
+    une autre raison) : l'oracle ne fait que relever le motif.
