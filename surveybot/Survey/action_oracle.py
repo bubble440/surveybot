@@ -19,6 +19,11 @@ fallback : un seul signal par famille d'itype.
     différente non vide -> abstention (masque/formatage possible).
   - tout autre itype (dropdown, matrix, ...) : INCONCLUSIVE.
 
+Pages « slide » (SPA qui avance seule après l'action) : l'élément ciblé disparaît du
+DOM, donc tous les faits « après » de la cible sont absents alors qu'ils existaient
+« avant ». Le verdict reste INCONCLUSIVE, avec le motif dédié `target_gone_after_action`
+(distinct d'un état manquant), pour que ces cas soient comptés à part.
+
 Limite connue : la valeur préparée est celle transmise à execute_action, pas
 nécessairement la valeur finale après transformation interne d'une stratégie ;
 d'où le test sur les DEUX valeurs (préparée, demandée) et l'abstention si aucune
@@ -55,9 +60,18 @@ def _candidates(entry: dict) -> list:
     return out
 
 
-def _observe_choice(facts: dict, target_id: str, candidates: list) -> tuple:
+def _has_fact(values) -> bool:
+    return any(isinstance(v, dict) for v in values)
+
+
+def _observe_choice(facts: dict, before_facts: Optional[dict], target_id: str, candidates: list) -> tuple:
     """(observed, reason) pour radio/checkbox : l'option cible est-elle cochée ?"""
     prefix = f"target:{target_id}:option:"
+    # Cible disparue : options mesurées « avant », toutes introuvables « après ».
+    after_opts = [f for k, f in facts.items() if k.startswith(prefix)]
+    before_opts = [f for k, f in (before_facts or {}).items() if k.startswith(prefix)]
+    if after_opts and not _has_fact(after_opts) and _has_fact(before_opts):
+        return "unknown", "target_gone_after_action"
     matches = [
         fact for key, fact in facts.items()
         if key.startswith(prefix) and _norm_lc(key[len(prefix):]) in candidates
@@ -67,16 +81,22 @@ def _observe_choice(facts: dict, target_id: str, candidates: list) -> tuple:
     if len(matches) > 1:
         return "unknown", "ambiguous_option"
     fact = matches[0]
-    checked = fact.get("checked") if isinstance(fact, dict) else None
+    if not isinstance(fact, dict):
+        return "unknown", "option_fact_unavailable"
+    checked = fact.get("checked")
     if not isinstance(checked, bool):
         return "unknown", "no_checked_state"
     return ("applied" if checked else "not_applied"), None
 
 
-def _observe_text(facts: dict, target_id: str, candidates: list) -> tuple:
+def _observe_text(facts: dict, before_facts: Optional[dict], target_id: str, candidates: list) -> tuple:
     """(observed, reason) pour un champ de saisie : valeur présente et attendue ?"""
-    fact = facts.get(f"target:{target_id}")
-    value = fact.get("value") if isinstance(fact, dict) else None
+    key = f"target:{target_id}"
+    fact = facts.get(key)
+    if not isinstance(fact, dict):
+        before = (before_facts or {}).get(key)
+        return "unknown", ("target_gone_after_action" if isinstance(before, dict) else "no_value_state")
+    value = fact.get("value")
     if value is None:
         return "unknown", "no_value_state"
     norm = _norm_lc(value)
@@ -110,6 +130,8 @@ def evaluate_action_trace(trace: Any) -> Optional[dict]:
 
     after = trace.get("after")
     facts = after.get("facts") if isinstance(after, dict) else None
+    before = trace.get("before")
+    before_facts = before.get("facts") if isinstance(before, dict) else None
     results = []
     summary: dict = {}
     for entry in entries:
@@ -123,9 +145,9 @@ def evaluate_action_trace(trace: Any) -> Optional[dict]:
         elif not target_id:
             observed, reason = "unknown", "no_target_id"
         elif itype in _CHOICE_ITYPES:
-            observed, reason = _observe_choice(facts, target_id, _candidates(entry))
+            observed, reason = _observe_choice(facts, before_facts, target_id, _candidates(entry))
         elif itype in _TEXT_ITYPES:
-            observed, reason = _observe_text(facts, target_id, _candidates(entry))
+            observed, reason = _observe_text(facts, before_facts, target_id, _candidates(entry))
         else:
             observed, reason = "unknown", "unsupported_itype"
 

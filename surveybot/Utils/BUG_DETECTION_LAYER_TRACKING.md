@@ -467,6 +467,15 @@ dispatcher = failure
 La capture `pre_action_dom.html` déjà ajoutée à l'observabilité est
 particulièrement utile pour cette approche.
 
+*Implémentation v1 de l'oracle (2026-11-04)* : l'oracle livré (BDL-3)
+compare uniquement l'état « après » au succès annoncé par le dispatcher.
+L'état « avant » est persisté dans `action_trace.json` mais n'entre pas
+dans le verdict : la transition avant / après décrite ci-dessus n'est pas
+encore exploitée. Conséquences : « attendu absent avant et après » n'est
+détecté que s'il aboutit à `FALSE_POSITIVE` (succès annoncé, état non
+atteint), et une action sans effet sur un état déjà conforme avant est
+classée `CONFIRMED`.
+
 ------------------------------------------------------------------------
 
 # 9 bis. Principe commun : état / comportement attendu
@@ -1162,8 +1171,9 @@ historiques (préparation de BDL-9).
 ## BDL-3 --- Oracle d'action
 
 **Statut : EN COURS (2026-11-04) — observabilité par action LIVRÉE et validée
-en run local ; oracle d'observation LIVRÉ (tests synthétiques uniquement) ;
-promotion en détecteur à décider (voir §25, entrée du 2026-11-04)**
+en run local ; oracle d'observation LIVRÉ (tests synthétiques et verdicts `CONFIRMED` sur
+traces réelles) ; clôture subordonnée au critère ci-dessous ; promotion en
+détecteur à décider (voir §25, entrée du 2026-11-04)**
 
 Première famille implémentée : la plus déterministe, avec une preuve
 indépendante déjà disponible (faits runtime avant/après, DOM post-action).
@@ -1172,11 +1182,16 @@ Prérequis d'observabilité (ajouts purement additifs, sans changer le type
 de retour du dispatcher ni le comportement du bot) :
 
 -   un statut par action individuelle d'un plan (aujourd'hui seul
-    l'agrégat `dispatcher_success`, un OR sur tout le plan, survit) ;
+    l'agrégat `dispatcher_success`, un OR sur tout le plan, survit) —
+    **livré** (2026-11-04) ;
 -   la valeur réellement utilisée pour chaque action, après toute
-    substitution (voir §20 quinquies, point 1) ;
+    substitution (voir §20 quinquies, point 1) — **partiel** : la valeur
+    préparée avant `execute_action` est persistée avec la valeur demandée ;
+    la transformation interne d'une stratégie spécialisée n'est pas
+    capturée ;
 -   les faits runtime « après » disponibles pour l'oracle sans dépendre
-    d'un échec préalable du validateur.
+    d'un échec préalable du validateur — **livré** via la collecte BDL-2b
+    (`SURVEY_BDL_COLLECT`, actif seulement si l'observabilité l'est).
 
 Ces ajouts touchent `action_dispatcher.py` : ils nécessitent une
 validation explicite et un diff minimal (décision 3 du 2026-10-11,
@@ -1205,6 +1220,40 @@ par action : `CONFIRMED`, `CONFIRMED_FAILURE`, `FALSE_POSITIVE`,
 abstention sur tout signal ambigu et sur les autres itypes. Observation
 seule : aucun effet sur le bot, le validator, les `failure_cases` ni
 AutoFix. Contrôle d'une trace réelle : `tools/check_bdl3_trace.py`.
+
+*Critère de clôture de BDL-3 (décidé le 2026-11-04)* : BDL-3 est clos
+quand les quatre conditions suivantes sont remplies. Ce critère mesure la
+fiabilité de l'oracle ; il ne décide pas de sa promotion en détecteur
+(décision séparée, voir §25).
+
+1.  Volume : au moins 20 plans `PASS` réels collectés (`bdl_collect`), sur
+    au moins 3 familles de widgets ou plateformes différentes.
+2.  Revue des verdicts : tout verdict autre que `CONFIRMED` est examiné à
+    la main, puis classé vrai positif ou fausse alarme, la trace
+    correspondante étant conservée.
+3.  Couverture : le taux d'`INCONCLUSIVE` est relevé (global, par
+    itype et par motif). S'il domine (dropdown, matrix), l'oracle est jugé peu
+    couvrant même sans fausse alarme, et l'extension de la couverture
+    devient le chantier suivant.
+4.  Échecs réels : si aucun vrai échec n'apparaît dans la collecte, les
+    tests synthétiques tiennent lieu de preuve pour `FALSE_POSITIVE` et
+    `FALSE_NEGATIVE`, et ce fait est consigné comme limite.
+
+Seuils d'acceptation (taux de fausses alarmes toléré, taux
+d'`INCONCLUSIVE` admissible) : non fixés, à définir après la première
+collecte. Procédure : lancer le bot avec l'observabilité active (collecte
+BDL-2b par défaut), puis `python tools\check_bdl3_trace.py bdl_collect` ;
+la sortie donne les verdicts par trace et les totaux par itype.
+
+*Cas connu : pages « slide » (2026-11-04)* : sur une page qui avance seule
+après l'action (SPA), la vérification post-clic du dispatcher cherche
+l'option dans la nouvelle page et annonce `dispatcher_reported_failure`
+alors que le clic a très probablement réussi (hypothèse tirée des logs, non
+prouvée). Trace `20261104_133359_action_validation_failure` : faits « après »
+tous absents, mutations observées sur une autre question que la cible.
+L'oracle s'abstient avec le motif `target_gone_after_action` ; ces plans
+partent en `failure_cases` (donc vers AutoFix) et ne produisent jamais de
+`PASS` dans `bdl_collect`. Non traité : décision après la collecte (§25).
 
 ------------------------------------------------------------------------
 
@@ -1431,6 +1480,13 @@ Conséquences pour le BDL :
     empêchent ces entrées de correspondre : bug latent à traiter
     séparément, hors BDL.
 
+*Mise à jour (2026-11-04)* : la valeur demandée (`requested_value`) et la
+valeur transmise à `execute_action` (`value`) sont désormais persistées par
+action dans `action_trace.json`. La substitution décrite ci-dessus
+s'applique à l'intérieur d'`execute_action`, après ce point d'observation :
+elle n'est donc pas capturée. L'oracle teste les deux valeurs et s'abstient
+si aucune ne correspond à une option ou à une valeur observée.
+
 ## 2. Code non intégré
 
 `question_block_analyzer.py` n'est importé ni appelé nulle part dans le
@@ -1606,7 +1662,7 @@ Action oracle             EN COURS (BDL-3 : observabilité validée, oracle d'ob
 CTA oracle                APRÈS OBSERVABILITÉ v1 (BDL-5), aucun chemin de capture
 CTA slider handling       À intégrer explicitement
 Corpus de référence       14 cas indexables, suite de non-régression (BDL-2)
-Mesure FN/FP              À mettre en place
+Mesure FN/FP              À mettre en place (critère défini dans BDL-3, aucune mesure faite)
 Échantillonnage PASS      À concevoir
 IA d'interprétation       NON NÉCESSAIRE À CE STADE
 Intégration AutoFix       CONCEPTUELLEMENT DÉFINIE
@@ -1790,8 +1846,8 @@ BDL-2 (corpus)      → BDL-2 (index + mode collecte)
     réécrit.
 4.  Oracle (`Survey/action_oracle.py`, branché dans `build_action_trace`) :
     verdict par action comparant le succès annoncé à l'état « après ».
-    Validé par 13 tests synthétiques et appliqué à une trace réelle
-    (`CONFIRMED`). Aucun `FALSE_POSITIVE` / `FALSE_NEGATIVE` réel n'a encore
+    Validé par 13 tests synthétiques et appliqué à des traces réelles
+    (`CONFIRMED` uniquement à ce jour). Aucun `FALSE_POSITIVE` / `FALSE_NEGATIVE` réel n'a encore
     été observé : la précision de l'oracle n'est pas mesurée.
 5.  Vérifications : sur Windows (Python 3.11.9), avant alignement du flag,
     241 tests passés et 1 échec (celui du flag) ; les 12 tests
@@ -1803,3 +1859,13 @@ BDL-2 (corpus)      → BDL-2 (index + mode collecte)
     `PASS` en incident enregistré (cela alimenterait `failure_cases` et donc
     AutoFix : décision explicite requise) ; couvrir dropdown et matrix ;
     obtenir la valeur réellement appliquée si une stratégie la transforme.
+7.  Critère de clôture défini (voir BDL-3) : au moins 20 plans `PASS` réels
+    sur au moins 3 familles, revue manuelle des verdicts autres que
+    `CONFIRMED`, relevé du taux d'`INCONCLUSIVE`, tests synthétiques
+    tenant lieu de preuve si aucun vrai échec n'apparaît. Seuils
+    d'acceptation non fixés. L'oracle v1 n'exploite que l'état « après »,
+    pas la transition avant / après (voir §9).
+8.  Pages « slide » : voir BDL-3 (cas connu). Décision différée : traiter ou
+    non ces faux échecs avant qu'ils n'alimentent AutoFix. La preuve de
+    `FALSE_NEGATIVE` reste insuffisante (une page peut aussi disparaître pour
+    une autre raison) : l'oracle ne fait que relever le motif.
