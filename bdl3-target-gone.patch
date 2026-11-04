@@ -1,0 +1,228 @@
+From 82800e64f8fe6f9a5349d4bb128708c04973f5fa Mon Sep 17 00:00:00 2001
+From: claude <c@x.invalid>
+Date: Wed, 4 Nov 2026 13:18:22 +0000
+Subject: [PATCH] =?UTF-8?q?feat(bdl3):=20motif=20target=5Fgone=5Fafter=5Fa?=
+ =?UTF-8?q?ction=20pour=20les=20pages=20slide=20et=20relev=C3=A9=20des=20m?=
+ =?UTF-8?q?otifs=20d'INCONCLUSIVE?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ surveybot/Survey/action_oracle.py             | 36 +++++++++++++++----
+ .../Utils/BUG_DETECTION_LAYER_TRACKING.md     | 18 ++++++++--
+ surveybot/tests/test_action_oracle.py         | 26 ++++++++++++--
+ surveybot/tools/check_bdl3_trace.py           |  5 +++
+ 4 files changed, 73 insertions(+), 12 deletions(-)
+
+diff --git a/surveybot/Survey/action_oracle.py b/surveybot/Survey/action_oracle.py
+index ab98923..bce57d1 100644
+--- a/surveybot/Survey/action_oracle.py
++++ b/surveybot/Survey/action_oracle.py
+@@ -19,6 +19,11 @@ fallback : un seul signal par famille d'itype.
+     différente non vide -> abstention (masque/formatage possible).
+   - tout autre itype (dropdown, matrix, ...) : INCONCLUSIVE.
+ 
++Pages « slide » (SPA qui avance seule après l'action) : l'élément ciblé disparaît du
++DOM, donc tous les faits « après » de la cible sont absents alors qu'ils existaient
++« avant ». Le verdict reste INCONCLUSIVE, avec le motif dédié `target_gone_after_action`
++(distinct d'un état manquant), pour que ces cas soient comptés à part.
++
+ Limite connue : la valeur préparée est celle transmise à execute_action, pas
+ nécessairement la valeur finale après transformation interne d'une stratégie ;
+ d'où le test sur les DEUX valeurs (préparée, demandée) et l'abstention si aucune
+@@ -55,9 +60,18 @@ def _candidates(entry: dict) -> list:
+     return out
+ 
+ 
+-def _observe_choice(facts: dict, target_id: str, candidates: list) -> tuple:
++def _has_fact(values) -> bool:
++    return any(isinstance(v, dict) for v in values)
++
++
++def _observe_choice(facts: dict, before_facts: Optional[dict], target_id: str, candidates: list) -> tuple:
+     """(observed, reason) pour radio/checkbox : l'option cible est-elle cochée ?"""
+     prefix = f"target:{target_id}:option:"
++    # Cible disparue : options mesurées « avant », toutes introuvables « après ».
++    after_opts = [f for k, f in facts.items() if k.startswith(prefix)]
++    before_opts = [f for k, f in (before_facts or {}).items() if k.startswith(prefix)]
++    if after_opts and not _has_fact(after_opts) and _has_fact(before_opts):
++        return "unknown", "target_gone_after_action"
+     matches = [
+         fact for key, fact in facts.items()
+         if key.startswith(prefix) and _norm_lc(key[len(prefix):]) in candidates
+@@ -67,16 +81,22 @@ def _observe_choice(facts: dict, target_id: str, candidates: list) -> tuple:
+     if len(matches) > 1:
+         return "unknown", "ambiguous_option"
+     fact = matches[0]
+-    checked = fact.get("checked") if isinstance(fact, dict) else None
++    if not isinstance(fact, dict):
++        return "unknown", "option_fact_unavailable"
++    checked = fact.get("checked")
+     if not isinstance(checked, bool):
+         return "unknown", "no_checked_state"
+     return ("applied" if checked else "not_applied"), None
+ 
+ 
+-def _observe_text(facts: dict, target_id: str, candidates: list) -> tuple:
++def _observe_text(facts: dict, before_facts: Optional[dict], target_id: str, candidates: list) -> tuple:
+     """(observed, reason) pour un champ de saisie : valeur présente et attendue ?"""
+-    fact = facts.get(f"target:{target_id}")
+-    value = fact.get("value") if isinstance(fact, dict) else None
++    key = f"target:{target_id}"
++    fact = facts.get(key)
++    if not isinstance(fact, dict):
++        before = (before_facts or {}).get(key)
++        return "unknown", ("target_gone_after_action" if isinstance(before, dict) else "no_value_state")
++    value = fact.get("value")
+     if value is None:
+         return "unknown", "no_value_state"
+     norm = _norm_lc(value)
+@@ -110,6 +130,8 @@ def evaluate_action_trace(trace: Any) -> Optional[dict]:
+ 
+     after = trace.get("after")
+     facts = after.get("facts") if isinstance(after, dict) else None
++    before = trace.get("before")
++    before_facts = before.get("facts") if isinstance(before, dict) else None
+     results = []
+     summary: dict = {}
+     for entry in entries:
+@@ -123,9 +145,9 @@ def evaluate_action_trace(trace: Any) -> Optional[dict]:
+         elif not target_id:
+             observed, reason = "unknown", "no_target_id"
+         elif itype in _CHOICE_ITYPES:
+-            observed, reason = _observe_choice(facts, target_id, _candidates(entry))
++            observed, reason = _observe_choice(facts, before_facts, target_id, _candidates(entry))
+         elif itype in _TEXT_ITYPES:
+-            observed, reason = _observe_text(facts, target_id, _candidates(entry))
++            observed, reason = _observe_text(facts, before_facts, target_id, _candidates(entry))
+         else:
+             observed, reason = "unknown", "unsupported_itype"
+ 
+diff --git a/surveybot/Utils/BUG_DETECTION_LAYER_TRACKING.md b/surveybot/Utils/BUG_DETECTION_LAYER_TRACKING.md
+index d1574b1..700ea23 100644
+--- a/surveybot/Utils/BUG_DETECTION_LAYER_TRACKING.md
++++ b/surveybot/Utils/BUG_DETECTION_LAYER_TRACKING.md
+@@ -1231,8 +1231,8 @@ fiabilité de l'oracle ; il ne décide pas de sa promotion en détecteur
+ 2.  Revue des verdicts : tout verdict autre que `CONFIRMED` est examiné à
+     la main, puis classé vrai positif ou fausse alarme, la trace
+     correspondante étant conservée.
+-3.  Couverture : le taux d'`INCONCLUSIVE` est relevé (global et par
+-    itype). S'il domine (dropdown, matrix), l'oracle est jugé peu
++3.  Couverture : le taux d'`INCONCLUSIVE` est relevé (global, par
++    itype et par motif). S'il domine (dropdown, matrix), l'oracle est jugé peu
+     couvrant même sans fausse alarme, et l'extension de la couverture
+     devient le chantier suivant.
+ 4.  Échecs réels : si aucun vrai échec n'apparaît dans la collecte, les
+@@ -1245,6 +1245,16 @@ collecte. Procédure : lancer le bot avec l'observabilité active (collecte
+ BDL-2b par défaut), puis `python tools\check_bdl3_trace.py bdl_collect` ;
+ la sortie donne les verdicts par trace et les totaux par itype.
+ 
++*Cas connu : pages « slide » (2026-11-04)* : sur une page qui avance seule
++après l'action (SPA), la vérification post-clic du dispatcher cherche
++l'option dans la nouvelle page et annonce `dispatcher_reported_failure`
++alors que le clic a très probablement réussi (hypothèse tirée des logs, non
++prouvée). Trace `20261104_133359_action_validation_failure` : faits « après »
++tous absents, mutations observées sur une autre question que la cible.
++L'oracle s'abstient avec le motif `target_gone_after_action` ; ces plans
++partent en `failure_cases` (donc vers AutoFix) et ne produisent jamais de
++`PASS` dans `bdl_collect`. Non traité : décision après la collecte (§25).
++
+ ------------------------------------------------------------------------
+ 
+ ## BDL-4 --- Oracle d'extraction
+@@ -1855,3 +1865,7 @@ BDL-2 (corpus)      → BDL-2 (index + mode collecte)
+     tenant lieu de preuve si aucun vrai échec n'apparaît. Seuils
+     d'acceptation non fixés. L'oracle v1 n'exploite que l'état « après »,
+     pas la transition avant / après (voir §9).
++8.  Pages « slide » : voir BDL-3 (cas connu). Décision différée : traiter ou
++    non ces faux échecs avant qu'ils n'alimentent AutoFix. La preuve de
++    `FALSE_NEGATIVE` reste insuffisante (une page peut aussi disparaître pour
++    une autre raison) : l'oracle ne fait que relever le motif.
+diff --git a/surveybot/tests/test_action_oracle.py b/surveybot/tests/test_action_oracle.py
+index 41bc50d..869c601 100644
+--- a/surveybot/tests/test_action_oracle.py
++++ b/surveybot/tests/test_action_oracle.py
+@@ -20,10 +20,11 @@ def _radio_facts(checked_label: str) -> dict:
+     return {f"target:g1:option:{l}": {"checked": l == checked_label, "value": "x"} for l in labels}
+ 
+ 
+-def _trace(entry: dict, facts) -> dict:
++def _trace(entry: dict, facts, before=None) -> dict:
+     return {
+         "requested_actions": [entry],
+         "dispatcher_success": entry.get("dispatcher_action_success"),
++        "before": None if before is None else {"facts": before},
+         "after": None if facts is None else {"facts": facts},
+     }
+ 
+@@ -34,8 +35,8 @@ def _radio(claimed: bool, value="Plus de 6 heures", **extra) -> dict:
+ 
+ 
+ class ActionOracleTests(unittest.TestCase):
+-    def _verdict(self, entry, facts):
+-        return evaluate_action_trace(_trace(entry, facts))["actions"][0]
++    def _verdict(self, entry, facts, before=None):
++        return evaluate_action_trace(_trace(entry, facts, before))["actions"][0]
+ 
+     def test_radio_confirmed_matches_real_trace_shape(self) -> None:
+         r = self._verdict(_radio(True), _radio_facts("plus de 6 heures"))
+@@ -72,6 +73,25 @@ class ActionOracleTests(unittest.TestCase):
+         r = self._verdict(_radio(True), facts)
+         self.assertEqual((r["verdict"], r["reason"]), (INCONCLUSIVE, "no_checked_state"))
+ 
++    def test_slide_page_target_gone_after_action_is_flagged(self) -> None:
++        # Cas réel 20261104_133359 : tous les faits « après » absents (None), « avant » mesurés.
++        before = {"target:g1:option:île-de-france": {"tag": "label", "checked": False},
++                  "target:g1:option:grand est": {"tag": "label", "checked": False}}
++        after = {"target:g1:option:île-de-france": None, "target:g1:option:grand est": None}
++        r = self._verdict(_radio(False, value="Île-de-France"), after, before)
++        self.assertEqual((r["verdict"], r["reason"]), (INCONCLUSIVE, "target_gone_after_action"))
++
++    def test_missing_facts_without_before_measure_is_not_target_gone(self) -> None:
++        after = {"target:g1:option:plus de 6 heures": None}
++        r = self._verdict(_radio(True), after, None)
++        self.assertEqual((r["verdict"], r["reason"]), (INCONCLUSIVE, "option_fact_unavailable"))
++
++    def test_text_target_gone_after_action(self) -> None:
++        entry = {"index": 0, "target_id": "t1", "itype": "text", "value": "75001",
++                 "requested_value": "75001", "dispatcher_action_success": True}
++        r = self._verdict(entry, {"target:t1": None}, {"target:t1": {"value": ""}})
++        self.assertEqual((r["verdict"], r["reason"]), (INCONCLUSIVE, "target_gone_after_action"))
++
+     def test_text_cases(self) -> None:
+         def text(claimed, after_value):
+             entry = {"index": 0, "target_id": "t1", "itype": "text", "value": "75001",
+diff --git a/surveybot/tools/check_bdl3_trace.py b/surveybot/tools/check_bdl3_trace.py
+index ddfc6e1..81bd781 100644
+--- a/surveybot/tools/check_bdl3_trace.py
++++ b/surveybot/tools/check_bdl3_trace.py
+@@ -64,6 +64,7 @@ def main(argv: list) -> int:
+         return 2
+     bad = 0
+     totals: dict = {}  # itype -> {verdict: nombre}, pour le critère de clôture BDL-3
++    reasons: dict = {}  # motif d'INCONCLUSIVE -> nombre
+     for path in traces:
+         problems = _check(path)
+         bad += bool(problems)
+@@ -72,6 +73,8 @@ def main(argv: list) -> int:
+         for act in _oracle_actions(path):
+             per_itype = totals.setdefault(str(act.get("itype")), {})
+             per_itype[act.get("verdict")] = per_itype.get(act.get("verdict"), 0) + 1
++            if act.get("verdict") == "INCONCLUSIVE":
++                reasons[act.get("reason")] = reasons.get(act.get("reason"), 0) + 1
+     print(f"{len(traces) - bad}/{len(traces)} conformes")
+     if totals:
+         all_actions = sum(sum(v.values()) for v in totals.values())
+@@ -79,6 +82,8 @@ def main(argv: list) -> int:
+         print(f"oracle par itype ({all_actions} actions, INCONCLUSIVE {inconclusive / all_actions:.0%}) :")
+         for itype, counts in sorted(totals.items()):
+             print(f"  {itype}: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items(), key=lambda kv: str(kv[0]))))
++        if reasons:
++            print("motifs INCONCLUSIVE : " + ", ".join(f"{k}={v}" for k, v in sorted(reasons.items(), key=lambda kv: str(kv[0]))))
+     return 1 if bad else 0
+ 
+ 
+-- 
+2.43.0
+
