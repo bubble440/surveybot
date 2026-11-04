@@ -304,6 +304,7 @@ def build_action_trace(
     before_state: Optional[dict],
     after_state: Optional[dict],
     mutations: Optional[dict],
+    action_results: Optional[list] = None,
 ) -> dict:
     """Assemble un déroulé structuré (requête/avant/après/résultat) à partir de
     faits déjà capturés ou déjà calculés par le validator (report) — aucune
@@ -313,16 +314,34 @@ def build_action_trace(
     if isinstance(report, dict):
         issues = [i for i in (report.get("issues") or []) if isinstance(i, dict)]
 
-    requested = [
-        {
-            "target_id": a.get("target_id"),
-            "itype": a.get("itype"),
-            "value": a.get("value"),
-            "qid": a.get("qid"),
-        }
-        for a in (actions or [])
-        if isinstance(a, dict)
-    ]
+    # Le dispatcher expose les valeurs normalisées transmises à execute_action,
+    # ainsi que le statut par action. Conserver le plan brut si cette observation
+    # n'est pas disponible (compatibilité des appels hors pipeline BDL).
+    if isinstance(action_results, list) and action_results:
+        requested = [
+            {
+                "index": a.get("index"),
+                "target_id": a.get("target_id"),
+                "itype": a.get("itype"),
+                "value": a.get("dispatcher_value"),
+                "requested_value": a.get("requested_value"),
+                "qid": a.get("qid"),
+                "dispatcher_action_success": a.get("dispatcher_action_success"),
+            }
+            for a in action_results
+            if isinstance(a, dict)
+        ]
+    else:
+        requested = [
+            {
+                "target_id": a.get("target_id"),
+                "itype": a.get("itype"),
+                "value": a.get("value"),
+                "qid": a.get("qid"),
+            }
+            for a in (actions or [])
+            if isinstance(a, dict)
+        ]
 
     # Signaux déjà lus/calculés par le validator (ex. dom_signal/observed d'un
     # issue dispatcher_false_negative) — réutilisés tels quels.

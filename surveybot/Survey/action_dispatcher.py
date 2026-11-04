@@ -8980,6 +8980,9 @@ def execute_actions_plan(
     - (NEW) rescan DOM entre actions si risque de re-render (vite xpaths obsolètes)
     """
     success_any = False
+    # BDL-3 : résultats par action pour ne pas confondre l'agrégat du plan avec
+    # le succès de chaque opération. Valeur = instruction préparée juste avant dispatch.
+    driver._bdl_action_results = []
 
     # Mémoire locale par bloc, bornée au plan d'actions courant.
     _init_block_strategy_memory(driver)
@@ -9205,6 +9208,17 @@ def execute_actions_plan(
                 instruction,
                 allow_mx_vertical_carousel_advance=allow_mx_advance,
             )
+            # Observation passive BDL-3 : consigne effectivement transmise au dispatcher
+            # après les normalisations locales (matrice/cartes), et résultat de cette action.
+            driver._bdl_action_results.append({
+                "index": idx,
+                "target_id": tid or None,
+                "itype": itype,
+                "qid": qid or None,
+                "requested_value": act.get("value"),
+                "dispatcher_value": value,
+                "dispatcher_action_success": bool(ok),
+            })
             if ok:
                 success_any = True
             # Wait DOM stable after dropdown (budget borné)
