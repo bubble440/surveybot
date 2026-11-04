@@ -75,3 +75,14 @@ python tools\diagnose_failure.py failure_cases\<cases> --force
 
 # delete a local branch
 git branch -d <branch-name>
+
+# Merge a branch
+git checkout feature/phase-1a-observability # Merge with
+git merge fix//bdl3-tracking-criterion # To merge
+git branch -d fix//bdl3-tracking-criterion # Delete after merged
+
+# Apply a patch files
+cd C:\projects\Surveys
+git checkout feature/phase-1a-observability
+git checkout -b fix/bdl3-tracking-criterion
+git am "C:\projects\Surveys\bdl3-tracking-criterion.patch"
