@@ -7,7 +7,7 @@ produire les résultats par action. La preuve BDL-3 vient donc d'un run réel
 (observabilité active + collecte BDL), puis de ce contrôle.
 
 Usage (depuis surveybot/) :
-    python tools\check_bdl3_trace.py bdl_collect
+    python tools\check_bdl3_trace.py ..\bdl_collect
     python tools\check_bdl3_trace.py ..\snapshots
 Code retour : 0 si toutes les traces sont conformes, 1 sinon, 2 si aucune trace.
 """
