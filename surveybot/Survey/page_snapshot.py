@@ -760,6 +760,9 @@ def _install_action_observer() -> None:
             result = original(driver, actions, *args, **kwargs)
             try:
                 question_blocks = _LAST_EXTRACTED_BLOCKS.get(id(driver))
+                # BDL-3 : conserver l'observation par action fournie par le
+                # dispatcher; son booléen global ne décrit pas chaque action.
+                action_results = getattr(driver, "_bdl_action_results", None)
                 report = validate_actions(
                     actions,
                     dispatcher_success=bool(result),
@@ -789,6 +792,7 @@ def _install_action_observer() -> None:
                             before_state=runtime_state_before,
                             after_state=runtime_state_after,
                             mutations=mutations,
+                            action_results=action_results,
                         )
                     except Exception:
                         runtime_state_after = None
