@@ -1141,7 +1141,7 @@ Deux volets :
     TN et en faux négatifs potentiels sans coût en production.
 
     *Implémentation (2026-10-28, famille ACTION uniquement)* : flag
-    `SURVEY_BDL_COLLECT` (désactivé par défaut, distinct de
+    `SURVEY_BDL_COLLECT` (activé par défaut, `0` le désactive ; distinct de
     `SURVEY_OBSERVABILITY` qu'il suppose actif). Pour un plan jugé `PASS`,
     `meta.json`, `pass_report.json` et `action_trace.json` (faits runtime
     avant/après et mutations) sont écrits dans une racine distincte de
@@ -1161,7 +1161,9 @@ historiques (préparation de BDL-9).
 
 ## BDL-3 --- Oracle d'action
 
-**Statut : À FAIRE (décisions validées, voir §25)**
+**Statut : EN COURS (2026-11-04) — observabilité par action LIVRÉE et validée
+en run local ; oracle d'observation LIVRÉ (tests synthétiques uniquement) ;
+promotion en détecteur à décider (voir §25, entrée du 2026-11-04)**
 
 Première famille implémentée : la plus déterministe, avec une preuve
 indépendante déjà disponible (faits runtime avant/après, DOM post-action).
@@ -1189,7 +1191,20 @@ dispatcher failure
 ```
 
 et identifier les cas où le dispatcher annonce un succès non confirmé.
-Le cas IFOP zip2city sert de premier cas de référence.
+Le cas IFOP zip2city n'est plus un prérequis (page rare, non reproductible
+à la demande) : la validation s'appuie sur les traces réelles du corpus
+`bdl_collect` et sur des cas synthétiques.
+
+*Livré (2026-11-04)* : `action_trace.json` porte, par action, `index`,
+`requested_value`, `value` (valeur préparée pour le dispatcher) et
+`dispatcher_action_success`, y compris sur le chemin `PASS` ; une clé
+`oracle` (module `Survey/action_oracle.py`, fonction pure) donne un verdict
+par action : `CONFIRMED`, `CONFIRMED_FAILURE`, `FALSE_POSITIVE`,
+`FALSE_NEGATIVE` ou `INCONCLUSIVE`. Familles couvertes : radio/checkbox
+(option cible cochée) et text/textarea/number (valeur présente et attendue) ;
+abstention sur tout signal ambigu et sur les autres itypes. Observation
+seule : aucun effet sur le bot, le validator, les `failure_cases` ni
+AutoFix. Contrôle d'une trace réelle : `tools/check_bdl3_trace.py`.
 
 ------------------------------------------------------------------------
 
@@ -1587,7 +1602,7 @@ ajoutée.
 ``` text
 Bug Detection Layer       CONCEPTION (BDL-0 terminée)
 Extraction oracle         À CONCEVOIR (BDL-4, après l'action)
-Action oracle             À CONCEVOIR (BDL-3, prérequis d'observabilité validés)
+Action oracle             EN COURS (BDL-3 : observabilité validée, oracle d'observation livré)
 CTA oracle                APRÈS OBSERVABILITÉ v1 (BDL-5), aucun chemin de capture
 CTA slider handling       À intégrer explicitement
 Corpus de référence       14 cas indexables, suite de non-régression (BDL-2)
@@ -1751,3 +1766,40 @@ BDL-2 (corpus)      → BDL-2 (index + mode collecte)
     voir BDL-6/BDL-7) ; instruire séparément les 12 échecs préexistants.
 5.  Hors périmètre, non modifié : la section 23 (état de départ à la
     création du document) conserve son contenu d'origine.
+
+## 2026-11-04 --- BDL-3 : observabilité par action et oracle d'observation
+
+1.  PR #428 (résultat par action, valeur demandée / préparée) fusionnée
+    dans la branche de travail. Défaut trouvé à la validation : seul le
+    chemin d'échec de `page_snapshot.py` transmettait `action_results` à
+    `build_action_trace` ; les traces `*_action_pass` (collecte BDL-2b)
+    retombaient sur le plan brut. Corrigé (`_collect_action_pass`) avec un
+    test de régression (`tests/test_bdl3_pass_path.py`). Validé en run
+    local sur une trace réelle (radio) avec `tools/check_bdl3_trace.py`.
+2.  Limite connue : `dispatcher_value` est la valeur juste avant
+    `execute_action`, pas la valeur finale après transformation interne
+    d'une stratégie. Sur le cas réel observé, `value` et `requested_value`
+    sont identiques : un cas avec transformation reste à observer.
+3.  Décisions : (a) IFOP zip2city écarté comme prérequis ; (b) le défaut de
+    `SURVEY_BDL_COLLECT` reste `"1"` (usage prévu : mode attach / runs de
+    test ; sans `SURVEY_OBSERVABILITY` actif le hook n'est pas installé, et
+    celui-ci est désactivé par défaut en prod) — le test
+    `test_flag_off_writes_nothing_and_adds_no_capture` et la docstring sont
+    alignés sur le code, un test couvre le défaut ; (c) l'oracle reste en
+    observation seule : aucune cascade de détection, aucun signal existant
+    réécrit.
+4.  Oracle (`Survey/action_oracle.py`, branché dans `build_action_trace`) :
+    verdict par action comparant le succès annoncé à l'état « après ».
+    Validé par 13 tests synthétiques et appliqué à une trace réelle
+    (`CONFIRMED`). Aucun `FALSE_POSITIVE` / `FALSE_NEGATIVE` réel n'a encore
+    été observé : la précision de l'oracle n'est pas mesurée.
+5.  Vérifications : sur Windows (Python 3.11.9), avant alignement du flag,
+    241 tests passés et 1 échec (celui du flag) ; les 12 tests
+    `test_action_validator_qt_native_checked_exclusion` y passent, alors
+    qu'ils échouent dans l'environnement Linux / Python 3.12 utilisé pour
+    préparer le patch (cause non instruite, apparemment liée à
+    l'environnement).
+6.  Restant à décider : promouvoir ou non `FALSE_POSITIVE` sur un plan
+    `PASS` en incident enregistré (cela alimenterait `failure_cases` et donc
+    AutoFix : décision explicite requise) ; couvrir dropdown et matrix ;
+    obtenir la valeur réellement appliquée si une stratégie la transforme.

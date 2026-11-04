@@ -36,6 +36,17 @@ def _check(path: Path) -> list:
     return problems
 
 
+def _oracle_summary(path: Path) -> str:
+    """Résumé informatif du verdict d'oracle (non bloquant : absent sur les anciennes traces)."""
+    try:
+        oracle = json.loads(path.read_text(encoding="utf-8")).get("oracle")
+    except Exception:
+        return "illisible"
+    if not isinstance(oracle, dict):
+        return "absent"
+    return ", ".join(f"{k}={v}" for k, v in sorted((oracle.get("summary") or {}).items())) or "vide"
+
+
 def main(argv: list) -> int:
     root = Path(argv[1]) if len(argv) > 1 else Path("bdl_collect")
     traces = sorted(root.rglob("action_trace.json"))
@@ -47,6 +58,7 @@ def main(argv: list) -> int:
         problems = _check(path)
         bad += bool(problems)
         print(f"{'KO' if problems else 'OK'}  {path.parent.name}  {'; '.join(problems)}")
+        print(f"      oracle : {_oracle_summary(path)}")
     print(f"{len(traces) - bad}/{len(traces)} conformes")
     return 1 if bad else 0
 

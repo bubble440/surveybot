@@ -635,7 +635,7 @@ def _phase1a_enabled() -> bool:
 
 
 def _bdl_collect_enabled() -> bool:
-    """BDL-2b : mode collecte des plans d'actions PASS (désactivé par défaut).
+    """BDL-2b : mode collecte des plans d'actions PASS (activé par défaut ; "0" le désactive).
 
     Flag DISTINCT de SURVEY_OBSERVABILITY. Le hook d'action n'étant installé que
     si l'observabilité est active, le mode collecte la suppose active : sans elle,

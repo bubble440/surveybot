@@ -97,8 +97,14 @@ class BdlCollectActionTests(unittest.TestCase):
 
     # ── 1. flag désactivé : comportement strictement identique ───────────────
 
-    def test_flag_off_writes_nothing_and_adds_no_capture(self) -> None:
+    def test_flag_unset_defaults_to_on(self) -> None:
+        # Décision 2026-11-04 : le défaut reste "1" (usage prévu : mode attach / runs de test).
         self._set_flag(None)
+        self.observed(FakeDriver(), _ACTIONS)
+        self.assertEqual(len(self._collected_dirs()), 1)
+
+    def test_flag_off_writes_nothing_and_adds_no_capture(self) -> None:
+        self._set_flag("0")
         result = self.observed(FakeDriver(), _ACTIONS)
 
         self.assertTrue(result)

@@ -351,7 +351,7 @@ def build_action_trace(
         if i.get("dom_signal") or i.get("observed")
     ]
 
-    return {
+    trace = {
         "requested_actions": requested,
         "dispatcher_success": dispatcher_success,
         "validator_signals": validator_signals,
@@ -359,6 +359,17 @@ def build_action_trace(
         "after": after_state,
         "dom_mutations": mutations,
     }
+    # BDL-3 : verdict d'observation par action (annoncé vs observé). Purement
+    # additif : n'influence ni le validator ni le bot, toute erreur est absorbée.
+    try:
+        from Survey.action_oracle import evaluate_action_trace
+
+        oracle = evaluate_action_trace(trace)
+        if oracle is not None:
+            trace["oracle"] = oracle
+    except Exception as exc:
+        log_debug(_TAG, f"action_oracle indisponible: {type(exc).__name__}: {exc}")
+    return trace
 
 
 # ── Scripts externes (contenu) ────────────────────────────────────────────────
