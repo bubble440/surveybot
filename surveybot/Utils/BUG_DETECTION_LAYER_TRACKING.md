@@ -1172,8 +1172,10 @@ historiques (préparation de BDL-9).
 
 **Statut : EN COURS (2026-11-04) — observabilité par action LIVRÉE et validée
 en run local ; oracle d'observation LIVRÉ (tests synthétiques et verdicts `CONFIRMED` sur
-traces réelles) ; clôture subordonnée au critère ci-dessous ; promotion en
-détecteur à décider (voir §25, entrée du 2026-11-04)**
+traces réelles) ; critère de clôture rempli sur la première collecte (voir
+« Résultats de la première collecte ») ; clôture à prononcer après fixation
+des seuils ; promotion en détecteur à décider (voir §25, entrée du
+2026-11-04)**
 
 Première famille implémentée : la plus déterministe, avec une preuve
 indépendante déjà disponible (faits runtime avant/après, DOM post-action).
@@ -1254,6 +1256,47 @@ tous absents, mutations observées sur une autre question que la cible.
 L'oracle s'abstient avec le motif `target_gone_after_action` ; ces plans
 partent en `failure_cases` (donc vers AutoFix) et ne produisent jamais de
 `PASS` dans `bdl_collect`. Non traité : décision après la collecte (§25).
+
+*Résultats de la première collecte (2026-11-04)* : 51 dossiers dans
+`bdl_collect` ; 47 portent un verdict d'oracle. Les 4 autres sont antérieurs
+à la correction du chemin `PASS` (3 KO de `check_bdl3_trace.py`) ou à
+l'oracle (1 sans clé `oracle`) : c'est attendu.
+
+-   Verdicts, sur 137 actions : 117 `CONFIRMED`, 20 `INCONCLUSIVE`
+    (15 %), aucun `FALSE_POSITIVE` ni `FALSE_NEGATIVE`.
+-   Par itype : radio 65 `CONFIRMED` / 15 `INCONCLUSIVE` ; checkbox 38 / 5 ;
+    text 4 / 0 ; textarea 10 / 0.
+-   Motifs d'`INCONCLUSIVE` : `no_checked_state` 19, `no_matching_option` 1.
+-   Origine des 20 `INCONCLUSIVE` (revue manuelle des traces) :
+    carrousels de cartes (14 actions, dossiers 00029 et 00040), listes
+    repliables de cartes (5 actions, 00027 et 00028), une option absente des
+    faits (1 action, 00012, probablement le plafond de 20 options par cible).
+-   Widgets en `div` sans état natif (`checked` nul) : l'état sélectionné
+    n'apparaît que dans une classe CSS (`mx-color-selected-border`,
+    `mx-card-selected`).
+
+*Limite de capture identifiée* : sur les carrousels, les faits de tous les
+groupes ont les mêmes coordonnées et affichent la même option sélectionnée,
+alors que les valeurs demandées diffèrent (00029 : Q3 et Q5 demandaient
+« Non », tous les groupes affichent « Oui » ; 00040 : un seul choix visible
+pour 8 questions). Hypothèse : la capture mesure la diapo visible, pas la
+diapo propre à chaque question. Un oracle fondé sur la classe CSS produirait
+donc de faux `FALSE_POSITIVE` sur ces pages. Position retenue à ce stade :
+ne pas étendre l'oracle à ce signal (gain de 5 actions sur 137 pour les
+seules listes repliables, au prix d'une branche de détection
+supplémentaire) ; le chantier correspondant est celui de la capture des
+faits sur carrousels, hors oracle.
+
+*État du critère de clôture* : (1) volume atteint, 47 plans `PASS` sur au
+moins 3 familles de widgets (natif, cartes en carrousel, cartes en liste
+repliable ; les plateformes n'ont pas été relevées dans les `meta.json`) ;
+(2) les 20 verdicts non `CONFIRMED` ont été examinés : aucune fausse alarme,
+mais aucun vrai échec non plus ; (3) `INCONCLUSIVE` à 15 %, ne domine pas ;
+(4) aucun échec réel ne s'est produit en `PASS` : les tests synthétiques
+tiennent lieu de preuve pour `FALSE_POSITIVE` et `FALSE_NEGATIVE`, ce qui
+reste une limite (précision de l'oracle sur des échecs réels non mesurée).
+Les seuils d'acceptation ne sont toujours pas fixés : la clôture formelle
+de BDL-3 reste à prononcer.
 
 ------------------------------------------------------------------------
 
@@ -1662,7 +1705,7 @@ Action oracle             EN COURS (BDL-3 : observabilité validée, oracle d'ob
 CTA oracle                APRÈS OBSERVABILITÉ v1 (BDL-5), aucun chemin de capture
 CTA slider handling       À intégrer explicitement
 Corpus de référence       14 cas indexables, suite de non-régression (BDL-2)
-Mesure FN/FP              À mettre en place (critère défini dans BDL-3, aucune mesure faite)
+Mesure FN/FP              À mettre en place (1re collecte BDL-3 : 0 FALSE_POSITIVE / FALSE_NEGATIVE sur 137 actions)
 Échantillonnage PASS      À concevoir
 IA d'interprétation       NON NÉCESSAIRE À CE STADE
 Intégration AutoFix       CONCEPTUELLEMENT DÉFINIE
@@ -1869,3 +1912,11 @@ BDL-2 (corpus)      → BDL-2 (index + mode collecte)
     non ces faux échecs avant qu'ils n'alimentent AutoFix. La preuve de
     `FALSE_NEGATIVE` reste insuffisante (une page peut aussi disparaître pour
     une autre raison) : l'oracle ne fait que relever le motif.
+9.  Première collecte (voir BDL-3, « Résultats de la première collecte ») :
+    47 plans `PASS` avec verdict, 117 `CONFIRMED` / 20 `INCONCLUSIVE` sur 137
+    actions, aucun `FALSE_POSITIVE` ni `FALSE_NEGATIVE`. Critère de clôture
+    rempli aux seuils près, qui restent à fixer. Limite de capture notée sur
+    les carrousels (faits identiques d'un groupe à l'autre) ; position
+    retenue : ne pas étendre l'oracle au signal de classe CSS, traiter la
+    capture séparément. À décider : seuils d'acceptation et clôture de
+    BDL-3 ; traitement des faux échecs des pages « slide » (point 8).
