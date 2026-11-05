@@ -1363,15 +1363,6 @@ La trace passive minimale à obtenir pour chaque déclenchement est :
 concerné, et nombre d'éléments affectés. Elle doit rester indépendante du
 résultat de l'extraction et ne modifier aucun comportement fonctionnel.
 
-**Contrainte de patch :** les points d'instrumentation identifiés se trouvent
-dans les corps de fonctions existantes de `dom_analyzer.py`, notamment des
-fonctions d'élagage et de filtrage. Même si les appels sont additifs et
-passifs, leur insertion modifie le corps d'existants protégés. En conséquence,
-aucune modification de ces fonctions ne doit être faite sans validation
-explicite préalable. Le patch devra être limité aux règles choisies et
-validées individuellement ; aucune instrumentation générale ni réécriture
-d'extracteur n'est autorisée par défaut.
-
 **Décision en attente :** validation explicite de l'instrumentation des sites
 concernés, ou abandon/report de cette étape. Tant que cette décision n'est
 pas prise, l'étape 1 reste non implémentée et l'oracle ne doit pas conclure
