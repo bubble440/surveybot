@@ -23,6 +23,7 @@ import os, re, json
 
 from Survey.log_utils import is_debug, log_debug, log_info
 from Survey.extraction_fix_hook import run_extraction_strategy_with_fixes
+
 from Survey.extraction_rule_trace import note_rule
 
 # Imports des modules DOM
@@ -4171,7 +4172,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if itype in ("text", "textarea") and _is_auxiliary_text_for_choice_group(driver, el, container, question):
                 log_debug("[DOM_DEBUG]", "skip_aux_text_with_choice_group")
                 note_rule("aux_text_choice_group", "removed",
-                    ref=(el.get_attribute("name") or el.get_attribute("id") or None), count=1)
+                          ref=(el.get_attribute("name") or el.get_attribute("id") or None), count=1)
                 continue
 
             if itype in ("text", "textarea") and _is_open_ended_choice_companion(el, container):
@@ -5586,6 +5587,7 @@ def _prune_focusvision_auxiliary_openended_singles(blocks: List[Dict[str, Any]])
             note_rule("prune_fv_aux_openended", "removed", ref=(input_name or input_id or None), count=1)
         else:
             pruned.append(b)
+
     return pruned
 
 
