@@ -23,6 +23,7 @@ import os, re, json
 
 from Survey.log_utils import is_debug, log_debug, log_info
 from Survey.extraction_fix_hook import run_extraction_strategy_with_fixes
+from Survey.extraction_rule_trace import note_rule
 
 # Imports des modules DOM
 try:
@@ -2934,6 +2935,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 group_reject_reasons["checkbox_optout_companion_text"] = (
                     group_reject_reasons.get("checkbox_optout_companion_text", 0) + 1
                 )
+                note_rule("optout_companion", "removed", ref=group_key, count=1)
                 if is_debug():
                     try:
                         log_debug(
@@ -4168,6 +4170,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
             if itype in ("text", "textarea") and _is_auxiliary_text_for_choice_group(driver, el, container, question):
                 log_debug("[DOM_DEBUG]", "skip_aux_text_with_choice_group")
+                note_rule("aux_text_choice_group", "removed",
+                    ref=(el.get_attribute("name") or el.get_attribute("id") or None), count=1)
                 continue
 
             if itype in ("text", "textarea") and _is_open_ended_choice_companion(el, container):
@@ -5253,6 +5257,7 @@ def _merge_nfield_rowpicker_exclusive_radio(blocks: List[Dict[str, Any]]) -> Lis
         merged["context"] = new_ctx
 
         absorbed.add(id(radio_block))
+        note_rule("merge_nfield_rowpicker", "merged", ref=base, count=len(radio_options))
         result.append(merged)
 
         log_debug(
@@ -5428,6 +5433,7 @@ def _dedupe_question_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]
                 merged.get("question") or richer.get("question"),
             )
             dedup_map[sig] = merged
+            note_rule("dedupe_question_blocks", "merged", ref=(sig[1] or None), count=2)
             continue
 
         cur_score = _block_quality_score(cur)
@@ -5439,6 +5445,7 @@ def _dedupe_question_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]
                     f"old_score={cur_score} new_score={new_score}"
                 )
             dedup_map[sig] = b
+            note_rule("dedupe_question_blocks", "removed", ref=(sig[1] or None), count=1)
         elif is_debug():
             print(
                 f"[DOM_DEDUP_DEBUG] discard_duplicate keep=current sig={sig[:2]} "
@@ -5515,7 +5522,9 @@ def _prune_focusvision_fragmented_groups(blocks: List[Dict[str, Any]]) -> List[D
                         drop_fragment = True
                         break
 
-        if not drop_fragment:
+        if drop_fragment:
+            note_rule("prune_fv_fragmented_groups", "removed", ref=(b_group_key or None), count=1)
+        else:
             pruned.append(b)
 
     return pruned
@@ -5573,9 +5582,10 @@ def _prune_focusvision_auxiliary_openended_singles(blocks: List[Dict[str, Any]])
             and not input_id
             and context.get("kind") == "single"
         )
-        if not (drop_named or drop_nameless):
+        if drop_named or drop_nameless:
+            note_rule("prune_fv_aux_openended", "removed", ref=(input_name or input_id or None), count=1)
+        else:
             pruned.append(b)
-
     return pruned
 
 
@@ -5611,6 +5621,7 @@ def _prune_trailing_open_inline_singles(blocks: List[Dict[str, Any]]) -> List[Di
             input_id = _norm((context.get("id") or "")).strip()
             if (input_name and input_name in inline_names) or (input_id and input_id in inline_names):
                 log_debug("[DOM_CONTEXT]", f"prune_trailing_open_inline name={input_name!r} id={input_id!r}")
+                note_rule("prune_trailing_open_inline", "removed", ref=(input_name or input_id or None), count=1)
                 continue
         pruned.append(b)
     return pruned
@@ -5668,6 +5679,7 @@ def _prune_cardrating_focusvision_blocks(blocks: List[Dict[str, Any]]) -> List[D
                         "[DOM_CARDRATING_PRUNE]",
                         f"drop focusvision QA-view block group_key={gk!r}",
                     )
+                    note_rule("prune_cardrating_fv", "removed", ref=(gk_prefix or None), count=1)
                     continue
         pruned.append(b)
     return pruned
@@ -5768,6 +5780,7 @@ def _prune_cardrating_unlabeled_blocks_favor_row_groups(blocks: List[Dict[str, A
                     "[DOM_CARDRATING_PRUNE_UNLABELED]",
                     f"drop unlabeled cardrating block widget_uid={uid!r} question={b.get('question')!r}",
                 )
+                note_rule("prune_cardrating_unlabeled", "removed", ref=(uid or None), count=1)
                 continue
         pruned.append(b)
     return pruned
