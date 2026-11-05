@@ -1346,6 +1346,40 @@ extractions `PASS` est nécessaire. Mêmes principes que BDL-3 : fonction pure
 sur artefacts capturés, observation seule, abstention si le signal est
 ambigu, pas de cascade.
 
+### Étape 1 — Trace passive des déclenchements de règles
+
+**Statut : CADRAGE TERMINÉ — PATCH EN ATTENTE DE VALIDATION EXPLICITE**
+
+L'audit confirme que seules certaines règles laissent déjà une trace
+exploitable dans `question_blocks.json` : fusion nField (`exclusive_options`),
+détection « Autre » inline (`inline_openend_names`), élagage FocusVision
+(`aux_openended_names`) et règles dont l'effet est directement visible dans
+les champs du bloc. Les autres règles recensées en Q2 ne conservent pas de
+trace persistée ; les logs debug ou compteurs non persistés ne suffisent pas
+à distinguer un élément absent d'un élément absorbé.
+
+La trace passive minimale à obtenir pour chaque déclenchement est :
+`rule_id`, effet (`removed` / `merged`), référence de l'élément ou du bloc
+concerné, et nombre d'éléments affectés. Elle doit rester indépendante du
+résultat de l'extraction et ne modifier aucun comportement fonctionnel.
+
+**Contrainte de patch :** les points d'instrumentation identifiés se trouvent
+dans les corps de fonctions existantes de `dom_analyzer.py`, notamment des
+fonctions d'élagage et de filtrage. Même si les appels sont additifs et
+passifs, leur insertion modifie le corps d'existants protégés. En conséquence,
+aucune modification de ces fonctions ne doit être faite sans validation
+explicite préalable. Le patch devra être limité aux règles choisies et
+validées individuellement ; aucune instrumentation générale ni réécriture
+d'extracteur n'est autorisée par défaut.
+
+**Décision en attente :** validation explicite de l'instrumentation des sites
+concernés, ou abandon/report de cette étape. Tant que cette décision n'est
+pas prise, l'étape 1 reste non implémentée et l'oracle ne doit pas conclure
+qu'un élément est « absent » lorsque son absorption par une règle n'est pas
+traçable.
+
+
+
 ------------------------------------------------------------------------
 
 ## BDL-5 --- CTA : observabilité v1
