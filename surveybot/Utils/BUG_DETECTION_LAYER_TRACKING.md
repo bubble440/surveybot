@@ -1050,7 +1050,7 @@ enchaîne sur l'extraction, et termine par le CTA, qui n'a aujourd'hui
 aucun chemin de capture (voir §20 quinquies).
 
 ``` text
-BDL-0 (FAIT) → BDL-1 (CLÔTURÉ) → BDL-2 → BDL-3 (ACTION) → BDL-4 (EXTRACTION)
+BDL-0 (FAIT) → BDL-1 (CLÔTURÉ) → BDL-2 → BDL-3 (ACTION, CLOS) → BDL-4 (EXTRACTION)
                          → BDL-5 (CTA : observabilité v1) → BDL-6 → BDL-7
                          → BDL-8 (optionnel) → BDL-9 (retrait des règles)
 ```
@@ -1170,12 +1170,12 @@ historiques (préparation de BDL-9).
 
 ## BDL-3 --- Oracle d'action
 
-**Statut : EN COURS (2026-11-04) — observabilité par action LIVRÉE et validée
-en run local ; oracle d'observation LIVRÉ (tests synthétiques et verdicts `CONFIRMED` sur
-traces réelles) ; critère de clôture rempli sur la première collecte (voir
-« Résultats de la première collecte ») ; clôture à prononcer après fixation
-des seuils ; promotion en détecteur à décider (voir §25, entrée du
-2026-11-04)**
+**Statut : CLOS (2026-11-05) — observabilité par action et oracle
+d'observation livrés ; critère de clôture rempli sur la première collecte
+(voir « Résultats de la première collecte ») ; clôture prononcée par
+l'utilisateur sans seuil numérique (voir §25, entrée du 2026-11-05). Les
+points ouverts sont listés dans « Reste ouvert après la clôture de
+BDL-3 ».**
 
 Première famille implémentée : la plus déterministe, avec une preuve
 indépendante déjà disponible (faits runtime avant/après, DOM post-action).
@@ -1242,8 +1242,8 @@ fiabilité de l'oracle ; il ne décide pas de sa promotion en détecteur
     `FALSE_NEGATIVE`, et ce fait est consigné comme limite.
 
 Seuils d'acceptation (taux de fausses alarmes toléré, taux
-d'`INCONCLUSIVE` admissible) : non fixés, à définir après la première
-collecte. Procédure : lancer le bot avec l'observabilité active (collecte
+d'`INCONCLUSIVE` admissible) : jamais fixés (BDL-3 a été clos sans seuil
+numérique, voir §25). Procédure : lancer le bot avec l'observabilité active (collecte
 BDL-2b par défaut), puis `python tools\check_bdl3_trace.py bdl_collect` ;
 la sortie donne les verdicts par trace et les totaux par itype.
 
@@ -1295,14 +1295,32 @@ mais aucun vrai échec non plus ; (3) `INCONCLUSIVE` à 15 %, ne domine pas ;
 (4) aucun échec réel ne s'est produit en `PASS` : les tests synthétiques
 tiennent lieu de preuve pour `FALSE_POSITIVE` et `FALSE_NEGATIVE`, ce qui
 reste une limite (précision de l'oracle sur des échecs réels non mesurée).
-Les seuils d'acceptation ne sont toujours pas fixés : la clôture formelle
-de BDL-3 reste à prononcer.
+Les seuils d'acceptation n'ont pas été fixés : BDL-3 a été clos le
+2026-11-05 sans seuil numérique, par décision de l'utilisateur (§25).
+
+*Reste ouvert après la clôture de BDL-3* (hors périmètre BDL-3, aucune
+décision prise) :
+
+-   promotion de `FALSE_POSITIVE` sur un plan `PASS` en incident enregistré
+    (alimenterait `failure_cases`, donc AutoFix) ;
+-   faux échecs des pages « slide » (le dispatcher annonce un échec alors que
+    la cible a disparu après l'action) ;
+-   capture des faits sur les carrousels (faits identiques d'un groupe à
+    l'autre) ;
+-   valeur finale appliquée après transformation interne d'`execute_action`,
+    non capturée ;
+-   couverture des dropdown et matrix ;
+-   précision de l'oracle sur des échecs réels, non mesurée (seuls des cas
+    synthétiques couvrent `FALSE_POSITIVE` et `FALSE_NEGATIVE`) ;
+-   ambiguïtés possibles : checkbox décochée après un succès annoncé, champ
+    texte vide après un succès annoncé.
 
 ------------------------------------------------------------------------
 
 ## BDL-4 --- Oracle d'extraction
 
-**Statut : À FAIRE**
+**Statut : PROCHAINE ÉTAPE (2026-11-05) — audit en lecture seule d'abord ;
+patch minimal ensuite, après validation explicite**
 
 Deuxième famille. Plus exposée aux faux positifs que l'action (règles
 historiques de représentation), donc jugée par rapport au contrat de
@@ -1314,6 +1332,19 @@ Prérequis : trace passive des déclenchements de règles (identifiant de la
 règle, effet, blocs concernés), afin de distinguer « absent » de
 « absorbé par la règle X ». Les validateurs d'extraction existants et
 leurs artefacts constituent déjà une base.
+
+Cadrage de l'audit (aucune modification du dépôt) : établir (1) quels
+artefacts d'extraction existent et s'ils sont disponibles sans échec
+préalable du validateur (§20 quinquies, point 4) ; (2) l'état de la trace
+des déclenchements de règles, pour distinguer « absent » de « absorbé » ;
+(3) quels signaux existants sont réutilisables comme preuve indépendante et
+lesquels sont circulaires ; (4) quelles contradictions fortes entre DOM
+observable et représentation sont détectables par `itype` du contrat sans
+second extracteur ; (5) quel corpus sert de référence et ce qui manque pour
+mesurer faux positifs et faux négatifs ; (6) si un mode collecte des
+extractions `PASS` est nécessaire. Mêmes principes que BDL-3 : fonction pure
+sur artefacts capturés, observation seule, abstention si le signal est
+ambigu, pas de cascade.
 
 ------------------------------------------------------------------------
 
@@ -1700,8 +1731,8 @@ ajoutée.
 
 ``` text
 Bug Detection Layer       CONCEPTION (BDL-0 terminée)
-Extraction oracle         À CONCEVOIR (BDL-4, après l'action)
-Action oracle             EN COURS (BDL-3 : observabilité validée, oracle d'observation livré)
+Extraction oracle         PROCHAINE ÉTAPE (BDL-4 : audit en lecture seule)
+Action oracle             TERMINÉ (BDL-3 clos le 2026-11-05 : oracle d'observation livré, 1re collecte faite)
 CTA oracle                APRÈS OBSERVABILITÉ v1 (BDL-5), aucun chemin de capture
 CTA slider handling       À intégrer explicitement
 Corpus de référence       14 cas indexables, suite de non-régression (BDL-2)
@@ -1920,3 +1951,23 @@ BDL-2 (corpus)      → BDL-2 (index + mode collecte)
     retenue : ne pas étendre l'oracle au signal de classe CSS, traiter la
     capture séparément. À décider : seuils d'acceptation et clôture de
     BDL-3 ; traitement des faux échecs des pages « slide » (point 8).
+
+## 2026-11-05 --- Clôture de BDL-3 et ouverture de BDL-4
+
+1.  BDL-3 est déclaré terminé par l'utilisateur. Base : les quatre
+    conditions du critère de clôture sont remplies sur la première
+    collecte (47 plans `PASS`, 137 actions, 117 `CONFIRMED`, 20
+    `INCONCLUSIVE` soit 15 %, aucun `FALSE_POSITIVE` ni `FALSE_NEGATIVE`).
+    Clôture sans seuil numérique : les seuils d'acceptation n'ont jamais été
+    fixés.
+2.  Livrés : résultat par action et valeurs demandée / préparée dans
+    `action_trace.json` (chemins échec et `PASS`), oracle d'observation
+    (`Survey/action_oracle.py`, motif `target_gone_after_action` pour les
+    pages « slide »), outil de contrôle `tools/check_bdl3_trace.py`,
+    défaut de `SURVEY_BDL_COLLECT` aligné sur le code, isolation du
+    diagnostic manuel hors de pytest.
+3.  Les points ouverts hors BDL-3 sont listés dans la section BDL-3
+    (« Reste ouvert après la clôture de BDL-3 ») ; aucun n'est tranché.
+4.  BDL-4 (oracle d'extraction) est ouvert. Démarrage par un audit en
+    lecture seule (cadrage dans la section BDL-4), puis patch minimal avec
+    validation explicite.
