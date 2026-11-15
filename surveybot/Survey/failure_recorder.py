@@ -335,6 +335,9 @@ def _lighten_block(block: Any) -> dict:
     out["options"] = [
         _light_scalar(o) for o in (options or [])[:100] if _light_scalar(o) is not None
     ] if isinstance(options, list) else []
+    # Total réel avant allègement/plafond : permet à l'oracle (BDL-4 étape 3)
+    # de ne pas confondre « options non sérialisables / tronquées » et « vide ».
+    out["options_count"] = len(options) if isinstance(options, list) else 0
     ctx = block.get("context")
     if isinstance(ctx, dict):
         light_ctx: dict = {}
@@ -379,6 +382,18 @@ def record_collected_extraction(
             "blocks_total": len(blocks),
             "rule_events": events,
         }
+
+        # BDL-4 étape 3 : verdict d'observation calculé sur TOUS les blocs allégés
+        # (avant troncature par budget). Purement additif : n'influence ni le
+        # validateur, ni les failure_cases, ni AutoFix ; toute erreur est absorbée.
+        try:
+            from Survey.extraction_oracle import evaluate_extraction_pass
+
+            oracle = evaluate_extraction_pass(payload)
+            if oracle is not None:
+                payload["oracle"] = oracle
+        except Exception as exc:
+            log_debug("[BDL_COLLECT]", f"extraction_oracle indisponible: {type(exc).__name__}: {exc}")
 
         # Budget de taille : tronque les blocs (jamais les rule_events) si dépassement.
         budget = _bdl_extract_max_bytes()
