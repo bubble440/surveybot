@@ -588,6 +588,21 @@ def snapshot_if_enabled(driver, *, reason: str, question_blocks: Any = None) -> 
     if _phase1a_enabled():
         _install_action_observer()
 
+    # BDL-4 étape 2 : collecte extraction indépendante du snapshot (JSON léger,
+    # pas de DOM). Drain la trace des règles une fois par page analysée.
+    if (
+        reason == "after_dom_analyze"
+        and question_blocks is not None
+        and _bdl_extract_collect_enabled()
+    ):
+        try:
+            from Survey.failure_recorder import bdl_extract_sample_tick
+
+            if bdl_extract_sample_tick():
+                _collect_extraction_pass(driver, question_blocks)
+        except Exception:
+            pass
+
     v = (os.getenv("SURVEY_SNAPSHOT", "1") or "").strip().lower()
     if v in ("1", "true", "all", "on", "yes"):
         return dump_page_snapshot(driver, reason=reason, question_blocks=question_blocks)
@@ -643,6 +658,42 @@ def _bdl_collect_enabled() -> bool:
     """
     value = (os.getenv("SURVEY_BDL_COLLECT", "1") or "").strip().lower()
     return value in {"1", "true", "yes", "on"}
+
+
+def _bdl_extract_collect_enabled() -> bool:
+    """BDL-4 étape 2 : mode collecte extraction (activé par défaut ; "0" le désactive).
+
+    Flag DISTINCT de SURVEY_OBSERVABILITY et de SURVEY_BDL_COLLECT (action).
+    Indépendant de SURVEY_SNAPSHOT : la collecte n'écrit qu'un JSON léger,
+    sans DOM ni screenshot, donc ne dépend pas de la capture lourde.
+    """
+    value = (os.getenv("SURVEY_BDL_EXTRACT_COLLECT", "1") or "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _collect_extraction_pass(driver, question_blocks) -> None:
+    """BDL-4 étape 2 : persiste blocs allégés + déclenchements de règles d'une page analysée.
+
+    Appelée UNIQUEMENT pour reason="after_dom_analyze" avec des blocs disponibles.
+    Drain la trace des règles (extraction_rule_trace) : les événements sont
+    attachés à la page puis le buffer est vidé. Ne lève jamais.
+    """
+    try:
+        from Survey.extraction_rule_trace import drain
+        from Survey.failure_recorder import record_collected_extraction
+
+        rule_events = drain()
+        record_collected_extraction(
+            driver,
+            question_blocks=question_blocks,
+            rule_events=rule_events,
+        )
+    except Exception as exc:
+        try:
+            from Survey.log_utils import log_debug as _log_debug
+            _log_debug("[BDL_COLLECT]", f"collect extraction pass error: {type(exc).__name__}: {exc}")
+        except Exception:
+            pass
 
 
 def _collect_action_pass(driver, actions, result, report, runtime_state_before) -> None:
