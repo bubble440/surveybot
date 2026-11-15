@@ -215,7 +215,7 @@ Le plafond de collecte reste fixé à 200 éléments.
 
 ### Étape 3 — Oracle d'extraction minimal (`Survey/extraction_oracle.py`)
 
-**Statut : IMPLÉMENTÉE — VALIDÉE PAR TESTS SYNTHÉTIQUES**
+**Statut : IMPLÉMENTÉE — VALIDÉE EN CONDITION REELLE**
 
 Fonction pure `evaluate_extraction_pass(payload)` sur les artefacts de l'étape 2, calquée sur `action_oracle.py`. Branchée dans `failure_recorder.record_collected_extraction` : le verdict est écrit dans la clé `oracle` de `extraction_pass.json`, calculé sur tous les blocs allégés avant la troncature par budget. Tests : `tests/test_extraction_oracle.py`.
 
