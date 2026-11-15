@@ -255,7 +255,7 @@ def _bdl_extract_collect_max() -> int:
 
 def _bdl_extract_sample_n() -> int:
     """Échantillonnage déterministe : 1 page analysée collectée sur N."""
-    raw = (os.getenv("SURVEY_BDL_EXTRACT_SAMPLE", "") or "").strip()
+    raw = (os.getenv("SURVEY_BDL_EXTRACT_SAMPLE", "1") or "").strip()
     try:
         value = int(raw)
         return value if value > 1 else 1

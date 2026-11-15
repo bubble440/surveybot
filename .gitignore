@@ -81,6 +81,6 @@ case_groupings/
 parallel_safety_checks/
 function_overlap_checks/
 
-bdl_collect
+bdl_collect_extraction/
 bdl_collect/
 bdl_collect_action/
