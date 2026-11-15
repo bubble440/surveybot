@@ -1328,46 +1328,75 @@ BDL-1. Ajouter des signaux indépendants pour détecter les contradictions
 FORTES entre DOM observable et représentation SurveyBot, sans transformer
 l'oracle en second extracteur.
 
-Prérequis : trace passive des déclenchements de règles (identifiant de la
-règle, effet, blocs concernés), afin de distinguer « absent » de
-« absorbé par la règle X ». Les validateurs d'extraction existants et
-leurs artefacts constituent déjà une base.
+Prérequis désormais implémentés :
+- Trace passive des déclenchements de règles.
+- Collecte des extractions réussies, avec leur trace de règles.
 
-Cadrage de l'audit (aucune modification du dépôt) : établir (1) quels
-artefacts d'extraction existent et s'ils sont disponibles sans échec
-préalable du validateur (§20 quinquies, point 4) ; (2) l'état de la trace
-des déclenchements de règles, pour distinguer « absent » de « absorbé » ;
-(3) quels signaux existants sont réutilisables comme preuve indépendante et
-lesquels sont circulaires ; (4) quelles contradictions fortes entre DOM
-observable et représentation sont détectables par `itype` du contrat sans
-second extracteur ; (5) quel corpus sert de référence et ce qui manque pour
-mesurer faux positifs et faux négatifs ; (6) si un mode collecte des
-extractions `PASS` est nécessaire. Mêmes principes que BDL-3 : fonction pure
-sur artefacts capturés, observation seule, abstention si le signal est
-ambigu, pas de cascade.
+L'audit initial est terminé. Le mode collecte permet désormais de constituer un corpus d'extractions `PASS`, indépendamment d'un échec du validateur.
+La prochaine étape est l'implémentation de l'oracle minimal sur les artefacts collectés.
 
 ### Étape 1 — Trace passive des déclenchements de règles
 
-**Statut : CADRAGE TERMINÉ — PATCH EN ATTENTE DE VALIDATION EXPLICITE**
+**Statut : IMPLÉMENTÉ ET VALIDÉ**
 
-L'audit confirme que seules certaines règles laissent déjà une trace
-exploitable dans `question_blocks.json` : fusion nField (`exclusive_options`),
-détection « Autre » inline (`inline_openend_names`), élagage FocusVision
-(`aux_openended_names`) et règles dont l'effet est directement visible dans
-les champs du bloc. Les autres règles recensées en Q2 ne conservent pas de
-trace persistée ; les logs debug ou compteurs non persistés ne suffisent pas
-à distinguer un élément absent d'un élément absorbé.
+Le module `Survey/extraction_rule_trace.py` fournit une trace passive des déclenchements de règles d'extraction. Les événements sont enregistrés avec les informations nécessaires à leur identification et à leur exploitation.
 
-La trace passive minimale à obtenir pour chaque déclenchement est :
-`rule_id`, effet (`removed` / `merged`), référence de l'élément ou du bloc
-concerné, et nombre d'éléments affectés. Elle doit rester indépendante du
-résultat de l'extraction et ne modifier aucun comportement fonctionnel.
+API disponible :
+- `note_rule(rule_id, effect, ref, count)` : enregistre un événement.
+- `drain()` : récupère et vide les événements accumulés.
+- `count_events()` : expose le nombre d'événements enregistrés.
 
-**Décision en attente :** validation explicite de l'instrumentation des sites
-concernés, ou abandon/report de cette étape. Tant que cette décision n'est
-pas prise, l'étape 1 reste non implémentée et l'oracle ne doit pas conclure
-qu'un élément est « absent » lorsque son absorption par une règle n'est pas
-traçable.
+La trace est passive : elle ne modifie pas le résultat fonctionnel de
+l'extraction. Elle permet notamment de distinguer un élément absent d'un élément retiré ou absorbé par une règle identifiée.
+
+### Étape 2 — Persister la trace avec les blocs (hors DOM)
+
+**Statut : IMPLÉMENTÉ — COLLECTE VALIDÉE EN MODE ATTACH**
+
+Le mécanisme de collecte des extractions réussies est désormais opérationnel.
+
+Fichiers concernés :
+- `Survey/page_snapshot.py` : déclenchement de la collecte après extraction.
+- `Survey/failure_recorder.py` : persistance des extractions collectées et
+  gestion de l'échantillonnage.- `Survey/extraction_rule_trace.py` : fourniture des événements de règles.
+
+La collecte a été vérifiée lors d'un run en mode attach :
+- Une extraction radio a été collectée.
+- Le fichier de collecte a été créé dans `bdl_collect_extraction`.
+- La collecte contient le bloc extrait et un événement de règle
+  `aux_text_choice_group`, avec l'effet `removed`.
+- La collecte d'action existante a également continué à fonctionner.
+
+Échantillonnage :
+- `SURVEY_BDL_EXTRACT_SAMPLE` contrôle la fréquence de collecte.
+- La valeur `1` force la collecte de chaque page éligible.
+- Lorsqu'une page est écartée par l'échantillonnage, une trace explicite
+  permet désormais d'identifier cette exclusion.
+- Les pages collectées ne génèrent pas de log d'exclusion supplémentaire.
+
+Le plafond de collecte reste fixé à 200 éléments.
+
+**Validation :** collecte effective confirmée en mode attach avec
+`SURVEY_BDL_EXTRACT_SAMPLE=1`.
+
+### Étape 3 — Oracle d'extraction minimal (`Survey/extraction_oracle.py`)
+
+**Statut : À FAIRE**
+
+Fonction pure sur le JSON de l'étape 2, calquée sur `action_oracle.py` :
+`PASS / SUSPECTED / BUG_CONFIRMED / INCONCLUSIVE`, version, un seul signal par famille, abstention par défaut.
+
+Signaux v1 (liste fermée) :
+- options vides (radio/checkbox) ;
+- limites incohérentes ;
+- `max_select>1` sur radio ;
+- options dupliquées ;
+- `options` non vides sur text/textarea/number ;
+- `itype` hors contrat.
+
+**Écriture dans le JSON collecté uniquement** : ne modifie ni le validateur, ni `failure_cases`, ni AutoFix.
+
+**Mesurable :** distribution des verdicts sur le corpus collecté ; revue manuelle de 100 % des `SUSPECTED`.
 
 
 
@@ -1996,3 +2025,16 @@ BDL-2 (corpus)      → BDL-2 (index + mode collecte)
 4.  BDL-4 (oracle d'extraction) est ouvert. Démarrage par un audit en
     lecture seule (cadrage dans la section BDL-4), puis patch minimal avec
     validation explicite.
+
+## 2026-11-15 — Validation de la collecte BDL-4
+
+1. L'étape 1 (trace passive des déclenchements de règles) est implémentée
+   et validée.
+2. L'étape 2 (collecte des extractions réussies) est implémentée.
+3. Un run en mode attach a confirmé la création d'un artefact dans
+   `bdl_collect_extraction`, contenant une extraction radio et un événement
+   de règle `aux_text_choice_group` avec l'effet `removed`.
+4. `SURVEY_BDL_EXTRACT_SAMPLE=1` permet de collecter chaque page éligible.
+5. Une trace explicite a été ajoutée pour les pages écartées par
+   l'échantillonnage, sans log d'exclusion pour les pages collectées.
+6. L'étape 3 (oracle d'extraction minimal) reste à implémenter.

@@ -1,16 +1,16 @@
-# BDL-4 — Audit en lecture seule de l'oracle d'extraction
+# BDL-4 — Audit et implémentation de l'oracle d'extraction
 
-**Branche auditée :** `BDL` (HEAD `6da3bf0`, 2026-11-05), clone en lecture seule.
-**Nature du livrable :** audit + plan de patch. **Aucun fichier du dépôt n'a été modifié ni patché** ; aucun navigateur ni bot exécuté.
-**Convention :** `[V]` = vérifié dans le code (fichier + fonction) ; `[NV]` = non vérifié. Les citations de ligne datent de cette lecture ; en cas d'écart, le code prime.
-
+**Branche de référence :** `BDL`.
+**État :** audit initial terminé ; étapes 1 et 2 implémentées ; étape 3 à réaliser.
+**Validation de collecte :** run en mode attach du 2026-11-15.
+**Convention :** `[V]` = vérifié ; `[NV]` = non vérifié. Les constats de l'audit initial restent historiques et doivent être réévalués si le code évolue.
 ---
 
 ## 0. Résumé exécutif
 
 1. **Correction importante du cadrage.** Le suivi BDL (§20 quinquies, point 4) affirme que les artefacts sont « conditionnés à l'échec du validateur ». C'est vrai pour l'**action** et pour l'observateur d'extraction, mais **pas pour l'extraction dans son ensemble** : `survey_executor.py` appelle `page_snapshot.snapshot_if_enabled(reason="after_dom_analyze", question_blocks=extracted_question_blocks)` après chaque `analyze_dom`, et `SURVEY_SNAPSHOT` vaut `"1"` par défaut `[V]`. Un snapshot inconditionnel (DOM + `question_blocks.json`) existe donc **dans le code**. Sa valeur effective sur le parc et en local est `[NV]` (aucun script du dépôt ne positionne cette variable ; le corpus de 38 cas ne contient que des dossiers `*_validation_failure`, ce qui suggère qu'elle est neutralisée ou que les dossiers sont purgés).
 2. **Le vrai trou n'est pas la capture, c'est la traçabilité des règles.** Sur 16 règles d'extraction inventoriées, **seules 4 laissent une trace exploitable** dans `question_blocks.json`. Les autres absorbent sans trace persistée → l'oracle ne peut pas distinguer « absent » de « absorbé » aujourd'hui.
-3. **Recommandation :** ne pas construire d'oracle complet maintenant. Étape 1 = trace passive des déclenchements de règles (additive, hors extracteurs). Étape 2 = oracle minimal à 3 signaux structurels indépendants, en abstention par défaut. Tout le reste attend des données.
+3. **Décision et avancement :** la trace passive des règles (étape 1) et la collecte des extractions réussies (étape 2) sont implémentées. La collecte a été validée en mode attach. L'étape restante est l'oracle minimal d'extraction, à construire sur les artefacts collectés, avec abstention par défaut.
 
 ---
 
@@ -164,33 +164,89 @@ Le mode collecte BDL-2b couvre **l'action seulement** (`record_collected_action`
 
 ---
 
-## Plan de patch minimal (non implémenté)
+## État d'implémentation du plan BDL-4
 
-Toutes les étapes sont **additives**. Aucune ne modifie le corps d'un extracteur existant.
+Les étapes 1 et 2 sont implémentées. L'étape 2 a été validée par une
+collecte réelle en mode attach.
 
 ### Étape 1 — Trace passive des déclenchements de règles
-- **But :** distinguer « absent » de « absorbé ».
-- **Fichiers :** nouveau `Survey/extraction_rule_trace.py` (module pur, quelques fonctions `note_rule(rule_id, effect, ref)` + `drain()`), et **appels d'une ligne** aux sites déjà existants des règles listées en Q2 comme sans trace.
-- **VALIDATION EXPLICITE REQUISE :** les appels s'insèrent **dans les corps** de fonctions d'extraction/élagage existantes de `dom_analyzer.py` (ex. `_prune_trailing_open_inline_singles`, `_is_auxiliary_text_for_choice_group`). Même additif, c'est une modification de corps → diff minimal à valider, règle par règle.
-- **Variante sans validation :** n'enrober que `analyze_dom` depuis `page_snapshot.py` (pattern déjà utilisé par `_install_extraction_observer`) et comparer **les compteurs de blocs avant/après chaque étape** n'est **pas** possible sans toucher les fonctions → je recommande la validation explicite plutôt qu'une astuce.
-- **Risque :** faible (try/except, jamais d'exception vers l'appelant).
-- **Mesurable :** % des règles avec `rule_id` tracé ; part de pages où ≥1 règle s'est déclenchée.
+
+**Statut : IMPLÉMENTÉE ET VALIDÉE**
+
+Module : `Survey/extraction_rule_trace.py`.
+
+API :
+- `note_rule(rule_id, effect, ref, count)` : enregistre un événement.
+- `drain()` : récupère et vide les événements accumulés.
+- `count_events()` : expose le nombre d'événements enregistrés.
+
+La trace permet de conserver les informations relatives aux règles
+d'extraction qui retirent ou absorbent des éléments, sans modifier le
+résultat fonctionnel de l'extraction.
 
 ### Étape 2 — Persister la trace avec les blocs (hors DOM)
-- **Fichiers :** `page_snapshot.py` (hook d'extraction) + `failure_recorder.py` (nouvelle fonction jumelle de `record_collected_action`).
-- **Flag distinct** de `SURVEY_OBSERVABILITY` ; plafond 200 ; échantillonnage 1/N ; budget de taille par fichier.
-- **Risque :** faible ; aucune modification du chemin d'échec.
-- **Mesurable :** nombre de pages collectées, taille moyenne du JSON, surcoût mesuré sur un run local.
+
+**Statut : IMPLÉMENTÉE — COLLECTE VALIDÉE EN MODE ATTACH**
+
+Fichiers concernés :
+- `Survey/page_snapshot.py` : hook de collecte après extraction.
+- `Survey/failure_recorder.py` : persistance des extractions collectées,
+  échantillonnage et traçabilité des exclusions.
+- `Survey/extraction_rule_trace.py` : événements de règles associés
+  à l'extraction.
+
+Validation observée le 2026-11-15 :
+
+- Le run en mode attach a produit une collecte dans
+  `bdl_collect_extraction`.
+- Une extraction radio a été enregistrée avec un bloc.
+- Un événement de règle `aux_text_choice_group`, effet `removed`,
+  a été persisté.
+- La collecte d'action existante a continué à fonctionner.
+
+Échantillonnage :
+
+- `SURVEY_BDL_EXTRACT_SAMPLE=1` force la collecte de chaque page éligible.
+- Une trace explicite est désormais produite lorsqu'une page éligible
+  est ignorée par l'échantillonnage.
+- Aucune trace d'exclusion supplémentaire n'est produite pour une page
+  effectivement collectée.
+
+Le plafond de collecte reste fixé à 200 éléments.
 
 ### Étape 3 — Oracle d'extraction minimal (`Survey/extraction_oracle.py`)
-- Fonction pure sur le JSON de l'étape 2, calquée sur `action_oracle.py` : `PASS / SUSPECTED / BUG_CONFIRMED / INCONCLUSIVE`, version, un seul signal par famille, abstention par défaut.
-- Signaux v1 (liste fermée) : options vides (radio/checkbox), limites incohérentes, `max_select>1` sur radio, options dupliquées, `options` non vides sur text/textarea/number, `itype` hors contrat.
-- **Écrit dans le JSON collecté uniquement** ; ne modifie ni le validateur, ni `failure_cases`, ni AutoFix (même décision qu'en BDL-3).
-- **Mesurable :** distribution des verdicts sur le corpus collecté ; revue manuelle de 100 % des `SUSPECTED`.
+
+**Statut : À FAIRE**
+
+Fonction pure sur les artefacts de l'étape 2, calquée sur
+`action_oracle.py`.
+
+Verdicts :
+`PASS / SUSPECTED / BUG_CONFIRMED / INCONCLUSIVE`.
+
+Signaux v1 envisagés :
+
+- options vides (radio/checkbox) ;
+- limites incohérentes ;
+- `max_select>1` sur radio ;
+- options dupliquées ;
+- `options` non vides sur text/textarea/number ;
+- `itype` hors contrat.
+
+L'oracle doit écrire son résultat dans le JSON collecté uniquement.
+Il ne doit pas modifier le validateur, `failure_cases` ou AutoFix.
+
+**Mesure attendue :** distribution des verdicts sur le corpus collecté,
+avec revue manuelle de 100 % des `SUSPECTED`.
 
 ### Étape 4 — Annotation et mesure
-- Annoter ~20 pages (vérité terrain à la main), trier les 4 signalements BDL-1, ajouter 1 test par `itype` observé.
-- **Critère de clôture à fixer avant de coder :** nombre de pages, nombre de familles d'`itype`, seuil de `SUSPECTED` acceptable (non fixé aujourd'hui).
+
+**Statut : À FAIRE**
+
+- Annoter environ 20 pages avec une vérité terrain manuelle.
+- Trier les 4 signalements BDL-1.
+- Ajouter un test par `itype` observé.
+- Fixer les critères de clôture avant l'implémentation de cette étape.
 
 ### Hors BDL-4, à ne pas mélanger
 - Décider du sort de `question_block_analyzer.py` (non intégré).
@@ -208,3 +264,27 @@ Toutes les étapes sont **additives**. Aucune ne modifie le corps d'un extracteu
 5. Comparaison DOM des cas Qualtrics/SurveySip entre eux (même page ou occurrences indépendantes).
 6. Le contenu détaillé des 4 signalements de l'inventaire BDL-1 historique.
 7. Le corps de `_is_auxiliary_text_for_choice_group` n'a été relu qu'à travers `BUG_DETECTION_LAYER_VERIFICATIONS.md`, pas ligne à ligne dans cette passe.
+
+---
+
+## Journal de validation — 2026-11-15
+
+La collecte d'extractions réussies a été testée en mode attach.
+
+Artefact observé :
+
+- Répertoire : `bdl_collect_extraction`
+- Extraction : un bloc radio.
+- Nombre d'événements de règles : 1.
+- Règle : `aux_text_choice_group`.
+- Effet : `removed`.
+
+Le test confirme que le pipeline de collecte reçoit les blocs extraits
+et les événements de règles.
+
+Le réglage `SURVEY_BDL_EXTRACT_SAMPLE=1` a permis de collecter la page
+éligible. La traçabilité des pages ignorées par échantillonnage a également
+été ajoutée dans `failure_recorder.py`.
+
+**Conclusion :** les étapes 1 et 2 sont implémentées. L'oracle d'extraction
+(étape 3) reste le prochain travail.
