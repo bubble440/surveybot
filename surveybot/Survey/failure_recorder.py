@@ -275,12 +275,24 @@ def _bdl_extract_max_bytes() -> int:
 def bdl_extract_sample_tick() -> bool:
     """Compteur global déterministe : True une fois sur N (N = SURVEY_BDL_EXTRACT_SAMPLE).
 
+    Appelée uniquement pour une page éligible : un False retourné ici signifie
+    donc "page éligible écartée par l'échantillonnage". Cette trace debug est
+    le seul moyen de la distinguer d'un hook non appelé ou d'une collecte en
+    erreur. Avec N=1, jamais de False, donc jamais de trace.
+
     Ne lève jamais. Sans effet sur le survey.
     """
     global _extract_sample_counter
     try:
         _extract_sample_counter += 1
-        return (_extract_sample_counter % _bdl_extract_sample_n()) == 0
+        n = _bdl_extract_sample_n()
+        if (_extract_sample_counter % n) == 0:
+            return True
+        log_debug(
+            "[BDL_COLLECT]",
+            f"extraction ignorée (échantillonnage) page={_extract_sample_counter} N={n}",
+        )
+        return False
     except Exception:
         return False
 
