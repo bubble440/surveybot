@@ -1,7 +1,7 @@
 # BDL-4 — Audit et implémentation de l'oracle d'extraction
 
 **Branche de référence :** `BDL`.
-**État :** audit initial terminé ; étapes 1 et 2 implémentées ; étape 3 à réaliser.
+**État :** audit initial terminé ; étapes 1, 2 et 3 implémentées ; étape 4 (annotation et mesure) à réaliser.
 **Validation de collecte :** run en mode attach du 2026-11-15.
 **Convention :** `[V]` = vérifié ; `[NV]` = non vérifié. Les constats de l'audit initial restent historiques et doivent être réévalués si le code évolue.
 ---
@@ -10,7 +10,7 @@
 
 1. **Correction importante du cadrage.** Le suivi BDL (§20 quinquies, point 4) affirme que les artefacts sont « conditionnés à l'échec du validateur ». C'est vrai pour l'**action** et pour l'observateur d'extraction, mais **pas pour l'extraction dans son ensemble** : `survey_executor.py` appelle `page_snapshot.snapshot_if_enabled(reason="after_dom_analyze", question_blocks=extracted_question_blocks)` après chaque `analyze_dom`, et `SURVEY_SNAPSHOT` vaut `"1"` par défaut `[V]`. Un snapshot inconditionnel (DOM + `question_blocks.json`) existe donc **dans le code**. Sa valeur effective sur le parc et en local est `[NV]` (aucun script du dépôt ne positionne cette variable ; le corpus de 38 cas ne contient que des dossiers `*_validation_failure`, ce qui suggère qu'elle est neutralisée ou que les dossiers sont purgés).
 2. **Le vrai trou n'est pas la capture, c'est la traçabilité des règles.** Sur 16 règles d'extraction inventoriées, **seules 4 laissent une trace exploitable** dans `question_blocks.json`. Les autres absorbent sans trace persistée → l'oracle ne peut pas distinguer « absent » de « absorbé » aujourd'hui.
-3. **Décision et avancement :** la trace passive des règles (étape 1) et la collecte des extractions réussies (étape 2) sont implémentées. La collecte a été validée en mode attach. L'étape restante est l'oracle minimal d'extraction, à construire sur les artefacts collectés, avec abstention par défaut.
+3. **Décision et avancement :** la trace passive des règles (étape 1) et la collecte des extractions réussies (étape 2) sont implémentées. La collecte a été validée en mode attach. L'oracle minimal d'extraction (étape 3) est implémenté sur les artefacts collectés, avec abstention par défaut. L'étape restante est l'annotation et la mesure (étape 4).
 
 ---
 
@@ -166,8 +166,7 @@ Le mode collecte BDL-2b couvre **l'action seulement** (`record_collected_action`
 
 ## État d'implémentation du plan BDL-4
 
-Les étapes 1 et 2 sont implémentées. L'étape 2 a été validée par une
-collecte réelle en mode attach.
+Les étapes 1, 2 et 3 sont implémentées. L'étape 2 a été validée en collecte réelle. L'étape 3 est validée par tests synthétiques.
 
 ### Étape 1 — Trace passive des déclenchements de règles
 
@@ -216,28 +215,29 @@ Le plafond de collecte reste fixé à 200 éléments.
 
 ### Étape 3 — Oracle d'extraction minimal (`Survey/extraction_oracle.py`)
 
-**Statut : À FAIRE**
+**Statut : IMPLÉMENTÉE — VALIDÉE PAR TESTS SYNTHÉTIQUES**
 
-Fonction pure sur les artefacts de l'étape 2, calquée sur
-`action_oracle.py`.
+Fonction pure `evaluate_extraction_pass(payload)` sur les artefacts de l'étape 2, calquée sur `action_oracle.py`. Branchée dans `failure_recorder.record_collected_extraction` : le verdict est écrit dans la clé `oracle` de `extraction_pass.json`, calculé sur tous les blocs allégés avant la troncature par budget. Tests : `tests/test_extraction_oracle.py`.
 
 Verdicts :
 `PASS / SUSPECTED / BUG_CONFIRMED / INCONCLUSIVE`.
 
-Signaux v1 envisagés :
+Signaux v1 implémentés :
 
 - options vides (radio/checkbox) ;
 - limites incohérentes ;
 - `max_select>1` sur radio ;
 - options dupliquées ;
 - `options` non vides sur text/textarea/number ;
-- `itype` hors contrat.
+- `itype` hors contrat (`INCONCLUSIVE`, motif `undocumented_itype`).
+
+Abstentions (`INCONCLUSIVE`, avec motif) : `itype` absent, `dropdown` / `select` / `select_rps` / `matrix` / `button` (`unsupported_itype`), blocs
+partageant un même `group_key` (`shared_group_key`). Le test « max_select > nb d'options » (checkbox) est ignoré si la collecte a tronqué les options. `failure_recorder._lighten_block` écrit désormais `options_count` (total réel avant allègement) pour ne pas confondre « options non sérialisables » et « vide ».
 
 L'oracle doit écrire son résultat dans le JSON collecté uniquement.
 Il ne doit pas modifier le validateur, `failure_cases` ou AutoFix.
 
-**Mesure attendue :** distribution des verdicts sur le corpus collecté,
-avec revue manuelle de 100 % des `SUSPECTED`.
+**Mesure attendue (à faire en étape 4) :** distribution des verdicts sur le corpus collecté (`summary` de chaque `oracle`), avec revue manuelle de 100 % des `SUSPECTED` et des motifs d'abstention.
 
 ### Étape 4 — Annotation et mesure
 
@@ -286,5 +286,5 @@ Le réglage `SURVEY_BDL_EXTRACT_SAMPLE=1` a permis de collecter la page
 éligible. La traçabilité des pages ignorées par échantillonnage a également
 été ajoutée dans `failure_recorder.py`.
 
-**Conclusion :** les étapes 1 et 2 sont implémentées. L'oracle d'extraction
-(étape 3) reste le prochain travail.
+**Conclusion :** les étapes 1, 2 et 3 sont implémentées. L'annotation et la
+mesure (étape 4) restent le prochain travail.
