@@ -1050,7 +1050,7 @@ enchaîne sur l'extraction, et termine par le CTA, qui n'a aujourd'hui
 aucun chemin de capture (voir §20 quinquies).
 
 ``` text
-BDL-0 (FAIT) → BDL-1 (CLÔTURÉ) → BDL-2 → BDL-3 (ACTION, CLOS) → BDL-4 (EXTRACTION)
+BDL-0 (FAIT) → BDL-1 (CLÔTURÉ) → BDL-2 → BDL-3 (ACTION, CLOS) → BDL-4 (EXTRACTION, CLOS)
                          → BDL-5 (CTA : observabilité v1) → BDL-6 → BDL-7
                          → BDL-8 (optionnel) → BDL-9 (retrait des règles)
 ```
@@ -1319,8 +1319,11 @@ décision prise) :
 
 ## BDL-4 --- Oracle d'extraction
 
-**Statut : PROCHAINE ÉTAPE (2026-11-05) — audit en lecture seule d'abord ;
-patch minimal ensuite, après validation explicite**
+**Statut : CLOS (2026-11-16) — trace des règles, collecte des extractions et
+oracle d'observation livrés ; annotation et mesure faites sur 26 pages
+(critères C1 à C6, voir étape 4) ; clôture prononcée par l'utilisateur sans
+seuil de précision ni de rappel (voir §25, entrée du 2026-11-16). Les points
+ouverts sont listés dans « Reste ouvert après la clôture de BDL-4 ».**
 
 Deuxième famille. Plus exposée aux faux positifs que l'action (règles
 historiques de représentation), donc jugée par rapport au contrat de
@@ -1332,8 +1335,8 @@ Prérequis désormais implémentés :
 - Trace passive des déclenchements de règles.
 - Collecte des extractions réussies, avec leur trace de règles.
 
-L'audit initial est terminé. Le mode collecte permet désormais de constituer un corpus d'extractions `PASS`, indépendamment d'un échec du validateur.
-La prochaine étape est l'implémentation de l'oracle minimal sur les artefacts collectés.
+L'audit initial est terminé. Le mode collecte permet de constituer un corpus d'extractions `PASS`, indépendamment d'un échec du validateur.
+L'oracle minimal (étape 3) et la mesure (étape 4) sont livrés ; résultat : l'oracle structurel v1 ne déclenche aucun signal sur le corpus collecté.
 
 ### Étape 1 — Trace passive des déclenchements de règles
 
@@ -1381,22 +1384,58 @@ Le plafond de collecte reste fixé à 200 éléments.
 
 ### Étape 3 — Oracle d'extraction minimal (`Survey/extraction_oracle.py`)
 
-**Statut : À FAIRE**
+**Statut : IMPLÉMENTÉE — VALIDÉE EN CONDITION RÉELLE (collecte de 26 pages)**
 
 Fonction pure sur le JSON de l'étape 2, calquée sur `action_oracle.py` :
 `PASS / SUSPECTED / BUG_CONFIRMED / INCONCLUSIVE`, version, un seul signal par famille, abstention par défaut.
+Branchée dans `failure_recorder.record_collected_extraction` (clé `oracle`, calculée avant la troncature par budget). La collecte écrit désormais `options_count` (total réel d'options).
 
 Signaux v1 (liste fermée) :
-- options vides (radio/checkbox) ;
-- limites incohérentes ;
-- `max_select>1` sur radio ;
-- options dupliquées ;
-- `options` non vides sur text/textarea/number ;
-- `itype` hors contrat.
+- options vides (radio/checkbox) : `BUG_CONFIRMED` ;
+- limites incohérentes (`min_select > max_select`, checkbox `max_select` > nombre d'options) : `BUG_CONFIRMED` ;
+- `max_select>1` sur radio : `SUSPECTED` ;
+- options dupliquées : `SUSPECTED` ;
+- `options` non vides sur text/textarea/number : `SUSPECTED` ;
+- `itype` hors contrat : `INCONCLUSIVE` (`undocumented_itype`).
+
+Abstentions (`INCONCLUSIVE`) : `itype` absent, dropdown / select / select_rps / matrix / button, blocs partageant un même `group_key`.
 
 **Écriture dans le JSON collecté uniquement** : ne modifie ni le validateur, ni `failure_cases`, ni AutoFix.
 
 **Mesurable :** distribution des verdicts sur le corpus collecté ; revue manuelle de 100 % des `SUSPECTED`.
+
+### Étape 4 — Annotation et mesure
+
+**Statut : RÉALISÉE (avec réserves)**
+
+Outil : `tools/bdl4_measure.py` (`template` et `report`). Critères de clôture figés avant l'implémentation.
+
+| Critère | Résultat |
+|---|---|
+| C1 couverture | OK : 26 pages annotées, 23 effectives (max 3 par hôte), 9 hôtes, 4 itypes requis |
+| C2 `BUG_CONFIRMED` : 0 faux positif | OK **à vide** (0 déclenchement sur 47 blocs) |
+| C3 `SUSPECTED` revus à 100 % | OK **à vide** (0 déclenchement) |
+| C4 angle mort (informatif) | 1 cas : radio dont la question extraite est l'identifiant interne `qHab` (`online.ssisurveys.com`, Confirmit/Wix), verdict `PASS`, vérité `BAD` |
+| C5 tri des signalements BDL-1 (11 au 2026-11-16) | 2 vrais bugs probables (`choice_without_options`, Qualtrics, même page) ; 2 vrais bugs d'extraction non visibles par l'oracle (`missing_block`, Focaldata et Panelia) ; 7 sans objet (`no_blocks_found`, dont 2 confirmés par annotation, 5 non vérifiés) |
+| C6 fixtures réelles | `tests/test_extraction_oracle_real_fixtures.py` |
+
+Distribution sur le corpus collecté : 43 `PASS`, 4 `INCONCLUSIVE` (matrix, `unsupported_itype`), 0 `SUSPECTED`, 0 `BUG_CONFIRMED`.
+
+*Reste ouvert après la clôture de BDL-4* (hors périmètre BDL-4, aucune décision prise) :
+
+-   précision des règles non démontrée : aucun déclenchement sur le corpus
+    collecté ; seul élément réel, `choice_without_options` se déclencherait
+    sur les 2 snapshots Qualtrics historiques ;
+-   rappel de l'oracle sur les erreurs réelles : 0/1 sur la collecte ; il ne
+    voit ni les erreurs de texte de question ni les blocs manquants ;
+-   comparaison au DOM (oracle de contenu) ou règle ciblée « texte de
+    question = identifiant interne » : non décidée, un seul cas observé ;
+-   extracteur Confirmit/Wix : prend `div.title` (identifiant `qHab`) au lieu
+    de `h1.qtext` ; correction à traiter par le flux normal de correction de
+    bug, hors BDL ;
+-   5 signalements `no_blocks_found` non vérifiés sur DOM ;
+-   couverture dropdown, matrix, button : abstention ;
+-   échantillon de 26 pages : aucune mesure de rappel possible.
 
 
 
@@ -1404,7 +1443,7 @@ Signaux v1 (liste fermée) :
 
 ## BDL-5 --- CTA : observabilité v1
 
-**Statut : À FAIRE (périmètre v1 réduit, décision 2 du 2026-10-11)**
+**Statut : PROCHAINE ÉTAPE (2026-11-16) — périmètre v1 réduit (décision 2 du 2026-10-11) ; audit en lecture seule d'abord**
 
 Il n'existe aujourd'hui aucun chemin de capture pour un échec CTA : ni
 stage dédié, ni hook d'observation (voir §20 quinquies, point 3). Un oracle
@@ -1785,9 +1824,9 @@ ajoutée.
 
 ``` text
 Bug Detection Layer       CONCEPTION (BDL-0 terminée)
-Extraction oracle         PROCHAINE ÉTAPE (BDL-4 : audit en lecture seule)
+Extraction oracle         TERMINÉ (BDL-4 clos le 2026-11-16 : oracle d'observation livré, mesuré sur 26 pages ; 0 déclenchement, angle mort documenté)
 Action oracle             TERMINÉ (BDL-3 clos le 2026-11-05 : oracle d'observation livré, 1re collecte faite)
-CTA oracle                APRÈS OBSERVABILITÉ v1 (BDL-5), aucun chemin de capture
+CTA oracle                APRÈS OBSERVABILITÉ v1 (BDL-5, prochaine étape), aucun chemin de capture
 CTA slider handling       À intégrer explicitement
 Corpus de référence       14 cas indexables, suite de non-régression (BDL-2)
 Mesure FN/FP              À mettre en place (1re collecte BDL-3 : 0 FALSE_POSITIVE / FALSE_NEGATIVE sur 137 actions)
@@ -2038,3 +2077,22 @@ BDL-2 (corpus)      → BDL-2 (index + mode collecte)
 5. Une trace explicite a été ajoutée pour les pages écartées par
    l'échantillonnage, sans log d'exclusion pour les pages collectées.
 6. L'étape 3 (oracle d'extraction minimal) reste à implémenter.
+
+## 2026-11-16 — Clôture de BDL-4 et ouverture de BDL-5
+
+1. BDL-4 est déclaré terminé par l'utilisateur. Base : critères de clôture
+   C1 à C6 de l'étape 4 remplis (26 pages annotées, 47 blocs, 43 `PASS`,
+   4 `INCONCLUSIVE`, aucun `SUSPECTED` ni `BUG_CONFIRMED` ; 1 bloc faux annoté
+   non détecté). Clôture sans seuil de précision ni de rappel.
+2. Livrés : trace passive des règles, collecte des extractions réussies
+   (avec `options_count`), oracle d'observation
+   (`Survey/extraction_oracle.py`), outil de mesure `tools/bdl4_measure.py`,
+   fixtures réelles `tests/test_extraction_oracle_real_fixtures.py`.
+3. Constat : un oracle structurel seul ne détecte pas les erreurs de contenu
+   observées (texte de question erroné, blocs manquants).
+4. Les points ouverts hors BDL-4 sont listés dans la section BDL-4
+   (« Reste ouvert après la clôture de BDL-4 ») ; aucun n'est tranché.
+5. BDL-5 (CTA : observabilité v1) est ouvert. Démarrage par un audit en
+   lecture seule, puis patch minimal avec validation explicite. Point à
+   neutraliser en premier : `_did_progress` (faux positif construit quand les
+   marqueurs avant et après sont vides).
