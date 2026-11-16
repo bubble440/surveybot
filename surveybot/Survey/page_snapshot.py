@@ -589,6 +589,7 @@ def snapshot_if_enabled(driver, *, reason: str, question_blocks: Any = None) -> 
         _install_action_observer()
         if _bdl_cta_trace_enabled():
             _install_cta_observer()
+            _install_cta_coverage_observer()
 
     # BDL-4 étape 2 : collecte extraction indépendante du snapshot (JSON léger,
     # pas de DOM). Drain la trace des règles une fois par page analysée.
@@ -926,6 +927,36 @@ def _install_cta_observer() -> None:
         pass
 
 
+def _install_cta_coverage_observer() -> None:
+    """BDL-5 étape 2 : couverture déclarée des appels CTA de haut niveau.
+
+    Enveloppe passive des fonctions publiques de cta_handler (cta_trace.ENTRY_FUNCTIONS)
+    pour classer chaque appel observed / unobserved_path / no_click / raised : l'oracle
+    pourra s'abstenir quand un clic est passé hors de _click_with_intercept.
+    Les modules qui ont importé ces fonctions PAR VALEUR avant l'installation sont
+    rebindés (cta_trace.rebind_aliases), donc le résultat ne dépend pas de l'ordre
+    d'import. Idempotent (marque _phase1a_observer) ; une erreur sur une fonction
+    n'empêche pas les autres ; toute erreur est absorbée.
+    """
+    try:
+        import Survey.cta_handler as cta_handler
+        from Survey.cta_trace import ENTRY_FUNCTIONS, build_observed_entry, rebind_aliases
+    except Exception:
+        return
+    for name in ENTRY_FUNCTIONS:
+        try:
+            original = getattr(cta_handler, name, None)
+            if original is None or getattr(original, "_phase1a_observer", False):
+                continue
+            wrapped = build_observed_entry(original, name, cta_handler)
+            wrapped._phase1a_observer = True
+            wrapped._phase1a_original = original
+            setattr(cta_handler, name, wrapped)
+            rebind_aliases(cta_handler, original, wrapped)
+        except Exception:
+            continue
+
+
 # survey_executor importe page_snapshot avant son appel à analyze_dom(). Le hook
 # extraction est donc installé immédiatement et reste transparent pour tout appelant.
 if _phase1a_enabled():
@@ -934,3 +965,4 @@ if _phase1a_enabled():
     # clics d'un parcours (consentement, accueil), avant le premier snapshot.
     if _bdl_cta_trace_enabled():
         _install_cta_observer()
+        _install_cta_coverage_observer()

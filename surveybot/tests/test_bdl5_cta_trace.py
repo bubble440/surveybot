@@ -205,6 +205,7 @@ class WrapperTests(unittest.TestCase):
         self.assertIs(out, True)
         self.assertEqual(calls, [(drv, el)])  # exactement un appel, mêmes arguments
         (ev,) = drain()
+        self.assertEqual(ev["kind"], "click")
         self.assertEqual(ev["fn"], "_click_with_intercept")
         self.assertEqual(ev["mode"], "normal")
         self.assertTrue(ev["returned"])

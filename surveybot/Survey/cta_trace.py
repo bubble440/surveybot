@@ -19,8 +19,24 @@ Principes :
   marqueur avant/après) ; en mode CTA_INTERCEPT_ONLY aucun marqueur n'est pris,
   seul le rapport d'interception (déjà présent dans la page) est lu.
 
-Convention d'événement (version 1) :
+Étape 2 — couverture déclarée :
+Les clics natifs qui contournent ``_click_with_intercept`` (et les chemins
+simulés sous CTA_INTERCEPT_ONLY) ne produisent aucun événement de clic. Pour que
+l'oracle puisse S'ABSTENIR au lieu de conclure sur du vide, chaque appel de
+plus haut niveau d'une fonction publique de cta_handler est classé :
+    observed        : au moins un clic tracé pendant l'appel
+    unobserved_path : l'appel a retourné une valeur vraie sans aucun clic tracé
+                      (clic natif, repli JS, QPS skip, interception simulée)
+    no_click        : retour faux sans clic tracé (rien trouvé / rien tenté)
+    raised          : la fonction a levé
+Ce sont des COMPTEURS (pas un événement par appel : les boucles d'attente
+appellent ces fonctions souvent), plus un petit anneau de détails pour les
+seuls ``unobserved_path``. Limite connue : un appel qui mélange clic tracé et
+clic natif est classé ``observed``.
+
+Convention d'événement de clic (version 1) :
     v               : version du format
+    kind            : "click"
     fn              : fonction observée ("_click_with_intercept")
     caller          : fonction appelante dans cta_handler (None si inconnue)
     mode            : "normal" | "intercept"
@@ -59,6 +75,24 @@ MAX_EVENTS = 200
 #   progGridSig: sous-catégorie GridProgressive (gabarit Ipsos/mrIWeb)
 SIGNALS = ("url", "doc", "txt", "qNodes", "notifSig", "progGridSig")
 
+# Fonctions publiques de cta_handler classées par la couverture déclarée.
+# Exclu volontairement : _dismiss_blocking_overlays (fermeture d'overlays, pas un
+# CTA de navigation).
+ENTRY_FUNCTIONS = (
+    "click_button_by_text",
+    "click_icon_like_button",
+    "click_primary_cta",
+    "try_click_navigation_cta",
+    "click_button_by_text_any_context",
+    "click_icon_like_button_any_context",
+    "click_primary_cta_any_context",
+    "try_click_navigation_cta_any_context",
+    "click_cta_strong_any_context",
+    "try_click_qps_skip_to_survey",
+)
+OUTCOMES = ("observed", "unobserved_path", "no_click", "raised")
+MAX_UNOBSERVED_DETAILS = 50
+
 _MARKER_STR_CAP = 120   # bornage mémoire des chaînes de marqueur conservées
 _TARGET_TEXT_CAP = 80
 
@@ -72,7 +106,13 @@ _local = threading.local()
 def _state():
     st = getattr(_local, "state", None)
     if st is None:
-        st = _local.state = {"events": deque(maxlen=MAX_EVENTS), "total": 0, "dropped": 0}
+        st = _local.state = {
+            "events": deque(maxlen=MAX_EVENTS), "total": 0, "dropped": 0,
+            # Couverture déclarée (étape 2)
+            "depth": 0,
+            "coverage": {},
+            "unobserved": deque(maxlen=MAX_UNOBSERVED_DETAILS),
+        }
     return st
 
 
@@ -314,6 +354,7 @@ def build_observed_click(original, handler):
                     changed = []
                 event = {
                     "v": EVENT_VERSION,
+                    "kind": "click",
                     "fn": "_click_with_intercept",
                     "caller": caller,
                     "mode": "intercept" if intercept else "normal",
@@ -350,5 +391,150 @@ def _log_event(event):
             f"changed={','.join(event.get('signals_changed') or []) or '-'} "
             f"target={tgt.get('tag', '')}#{tgt.get('id', '')}",
         )
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Étape 2 : couverture déclarée (appels de haut niveau classés)
+# ---------------------------------------------------------------------------
+
+def classify_entry(raised, returned, clicks_observed):
+    """Classe un appel de haut niveau (fonction pure, testable hors navigateur)."""
+    if raised:
+        return "raised"
+    if clicks_observed > 0:
+        return "observed"
+    return "unobserved_path" if returned else "no_click"
+
+
+def _record_entry(name, outcome, returned, clicks_observed, mode, t_start):
+    """Incrémente le compteur (fn, outcome) ; détaille les seuls unobserved_path."""
+    st = _state()
+    per_fn = st["coverage"].setdefault(name, {})
+    per_fn[outcome] = per_fn.get(outcome, 0) + 1
+    if outcome == "unobserved_path":
+        st["unobserved"].append({
+            "v": EVENT_VERSION,
+            "kind": "entry",
+            "fn": name,
+            "outcome": outcome,
+            "mode": mode,
+            "clicks_observed": clicks_observed,
+            "t_start": t_start,
+            "duration_ms": int((time.time() - t_start) * 1000),
+        })
+
+
+def coverage():
+    """Instantané de la couverture : {counts, totals, unobserved}. Sans remise à zéro."""
+    try:
+        st = _state()
+        counts = {fn: dict(c) for fn, c in st["coverage"].items()}
+        totals = {o: 0 for o in OUTCOMES}
+        for c in counts.values():
+            for outcome, n in c.items():
+                totals[outcome] = totals.get(outcome, 0) + n
+        totals["total"] = sum(totals[o] for o in OUTCOMES)
+        return {"counts": counts, "totals": totals, "unobserved": list(st["unobserved"])}
+    except Exception:
+        return {"counts": {}, "totals": {o: 0 for o in OUTCOMES}, "unobserved": []}
+
+
+def drain_coverage():
+    """Retourne l'instantané de couverture puis remet les compteurs à zéro."""
+    snap = coverage()
+    try:
+        st = _state()
+        st["coverage"].clear()
+        st["unobserved"].clear()
+    except Exception:
+        pass
+    return snap
+
+
+def build_observed_entry(original, name, handler):
+    """Enveloppe passive d'une fonction publique de cta_handler.
+
+    Seul l'appel de plus haut niveau est classé (profondeur thread-local) : les
+    fonctions publiques s'appellent entre elles (ex. *_any_context -> version
+    simple) et un appel imbriqué ne doit pas être compté deux fois. Retour et
+    exceptions de ``original`` sont transmis à l'identique.
+    """
+    import functools
+
+    @functools.wraps(original)
+    def observed_entry(*args, **kwargs):
+        try:
+            st = _state()
+            outer = st["depth"] == 0
+            st["depth"] += 1
+            clicks_before = st["total"]
+            t_start = time.time()
+        except Exception:
+            return original(*args, **kwargs)
+
+        returned = None
+        raised = False
+        try:
+            returned = original(*args, **kwargs)
+            return returned
+        except BaseException:
+            raised = True
+            raise
+        finally:
+            try:
+                st["depth"] = max(0, st["depth"] - 1)
+                if outer:
+                    clicks = st["total"] - clicks_before
+                    outcome = classify_entry(raised, bool(returned), clicks)
+                    try:
+                        mode = "intercept" if handler._cta_intercept_enabled() else "normal"
+                    except Exception:
+                        mode = None
+                    _record_entry(name, outcome, bool(returned), clicks, mode, t_start)
+                    if outcome == "unobserved_path":
+                        _log_unobserved(name, mode)
+            except Exception:
+                pass
+
+    return observed_entry
+
+
+def rebind_aliases(handler, original, wrapped, modules=None):
+    """Remplace ``original`` par ``wrapped`` dans les modules qui l'ont importé PAR VALEUR.
+
+    ``from Survey.cta_handler import click_primary_cta`` copie la référence au
+    moment de l'import : remplacer l'attribut de cta_handler ne les atteint pas
+    s'ils ont été importés avant l'installation. Cette passe rend la couverture
+    indépendante de l'ordre d'import. Retourne le nombre de modules rebindés.
+    Jamais d'exception.
+    """
+    count = 0
+    try:
+        mods = list(sys.modules.values()) if modules is None else list(modules)
+        for mod in mods:
+            try:
+                if mod is None or mod is handler:
+                    continue
+                d = getattr(mod, "__dict__", None)
+                if not isinstance(d, dict):
+                    continue
+                for key, value in list(d.items()):
+                    if value is original:
+                        d[key] = wrapped
+                        count += 1
+            except Exception:
+                continue
+    except Exception:
+        return count
+    return count
+
+
+def _log_unobserved(name, mode):
+    """Une ligne de debug par appel unobserved_path (rare)."""
+    try:
+        from Survey.log_utils import log_debug
+        log_debug("[CTA_TRACE]", f"entry fn={name} outcome=unobserved_path mode={mode}")
     except Exception:
         pass

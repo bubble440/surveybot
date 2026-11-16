@@ -47,13 +47,13 @@ git branch -d <branch-name>
 
 # Merge a branch
 git checkout BDL # Merge with
-git merge fix/bdl3-tracking-criterion # To merge
-git branch -d fix/bdl3-tracking-criterion # Delete after merged
+git merge fix/bdl3 # To merge
+git branch -d fix/bdl3 # Delete after merged
 
 # Apply a patch files
 cd C:\projects\Surveys
 git checkout BDL
 git checkout -b fix/bdl5
-git am "C:\projects\Surveys\bdl3-tracking-criterion.patch"
+git am "C:\projects\Surveys\bdl3.patch"
 # ou
 git apply "C:\projects\Surveys\BDL5_etape1_cta_trace.patch"
