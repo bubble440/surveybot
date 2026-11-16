@@ -1,0 +1,773 @@
+diff --git a/surveybot/Survey/cta_trace.py b/surveybot/Survey/cta_trace.py
+new file mode 100644
+index 0000000..f3e8159
+--- /dev/null
++++ b/surveybot/Survey/cta_trace.py
+@@ -0,0 +1,354 @@
++# -*- coding: utf-8 -*-
++"""Trace CTA passive, en mémoire (BDL-5, étape 1).
++
++Objectif : produire un résultat CTA structuré pour chaque clic passant par
++``cta_handler._click_with_intercept`` (point de passage commun des clics CTA),
++sans oracle, sans failure case et sans persistance.
++
++Principes :
++- Additif : ``cta_handler.py`` n'est PAS modifié. L'enveloppe est posée par
++  ``page_snapshot._install_cta_observer`` (même mécanisme que les observateurs
++  d'extraction et d'action), le module n'est jamais importé par ``cta_handler``.
++- Passif : l'enveloppe ne change ni le retour, ni l'ordre des appels, ni les
++  exceptions de la fonction observée. Toute erreur d'observation est absorbée.
++- Mémoire uniquement : buffer thread-local borné (anneau), drainé plus tard
++  par un consommateur (oracle CTA, hors périmètre BDL-5 v1).
++- Le booléen ``_did_progress`` n'est JAMAIS utilisé comme preuve : la trace
++  expose ``marker_status`` et ``signals_changed`` calculés ici, indépendamment.
++- Coût : en mode normal quelques ``evaluate`` légers par clic (cible, page,
++  marqueur avant/après) ; en mode CTA_INTERCEPT_ONLY aucun marqueur n'est pris,
++  seul le rapport d'interception (déjà présent dans la page) est lu.
++
++Convention d'événement (version 1) :
++    v               : version du format
++    fn              : fonction observée ("_click_with_intercept")
++    caller          : fonction appelante dans cta_handler (None si inconnue)
++    mode            : "normal" | "intercept"
++    target          : {tag, id, name, className, text} de la cible, None si illisible
++    returned        : booléen retourné par la fonction observée (None si exception)
++    raised          : nom de l'exception si la fonction observée a levé, sinon None
++    marker_status   : ok | empty_before | empty_after | both_empty | not_collected
++    signals_changed : signaux qui diffèrent entre avant et après (liste fermée,
++                      voir SIGNALS), vide si un marqueur est inexploitable
++    marker_before / marker_after : marqueurs compacts (None en mode intercept)
++    page_before / page_after     : {url, doc} (url, identité du document)
++    intercept       : sous-ensemble du rapport d'interception (mode intercept)
++    t_start / duration_ms        : horodatage (epoch s) et durée de l'appel
++"""
++
++from __future__ import annotations
++
++import sys
++import threading
++import time
++from collections import deque
++
++EVENT_VERSION = "1"
++
++# Taille max du buffer (anneau) : au-delà, les plus anciens sont écartés et
++# comptés dans stats()["dropped"]. Évite toute croissance mémoire sans consommateur.
++MAX_EVENTS = 200
++
++# Liste fermée des signaux de changement exposés par la trace (v1).
++#   url        : URL du contexte
++#   doc        : identité du document (performance.timeOrigin), change à chaque
++#                nouveau document, pas sur une SPA
++#   txt        : empreinte du conteneur principal (220 premiers caractères)
++#   qNodes     : indicateur de page (nombre de nœuds de question)
++#   notifSig   : notification d'erreur/succès/warning
++#   progGridSig: sous-catégorie GridProgressive (gabarit Ipsos/mrIWeb)
++SIGNALS = ("url", "doc", "txt", "qNodes", "notifSig", "progGridSig")
++
++_MARKER_STR_CAP = 120   # bornage mémoire des chaînes de marqueur conservées
++_TARGET_TEXT_CAP = 80
++
++_local = threading.local()
++
++
++# ---------------------------------------------------------------------------
++# Buffer thread-local borné
++# ---------------------------------------------------------------------------
++
++def _state():
++    st = getattr(_local, "state", None)
++    if st is None:
++        st = _local.state = {"events": deque(maxlen=MAX_EVENTS), "total": 0, "dropped": 0}
++    return st
++
++
++def note_cta_event(event):
++    """Enregistre un événement CTA. Jamais d'exception vers l'appelant."""
++    try:
++        if not isinstance(event, dict):
++            return
++        st = _state()
++        if len(st["events"]) >= MAX_EVENTS:
++            st["dropped"] += 1  # l'anneau écarte le plus ancien
++        st["events"].append(event)
++        st["total"] += 1
++    except Exception:
++        return
++
++
++def drain():
++    """Retourne la liste des événements et vide le buffer. Jamais d'exception."""
++    try:
++        st = _state()
++        out = list(st["events"])
++        st["events"].clear()
++        return out
++    except Exception:
++        return []
++
++
++def stats():
++    """Retourne {total, buffered, dropped} (compteurs thread-local)."""
++    try:
++        st = _state()
++        return {
++            "total": st["total"],
++            "buffered": len(st["events"]),
++            "dropped": st["dropped"],
++        }
++    except Exception:
++        return {"total": 0, "buffered": 0, "dropped": 0}
++
++
++# ---------------------------------------------------------------------------
++# Fonctions pures (testables hors navigateur)
++# ---------------------------------------------------------------------------
++
++def _is_empty_marker(marker):
++    """Marqueur inexploitable : non-dict, ou celui que _dom_progress_marker
++    retourne sur exception (URL vide ET qNodes à -1). Une vraie page a toujours
++    une URL ; qNodes == 0 est une valeur légitime et n'est PAS un marqueur vide."""
++    if not isinstance(marker, dict):
++        return True
++    return (not (marker.get("url") or "")) and marker.get("qNodes", -1) == -1
++
++
++def marker_status(before, after):
++    """Qualifie la fiabilité d'une paire de marqueurs.
++
++    Remplace la lecture du booléen ``_did_progress`` : ce dernier retourne True
++    sans preuve quand un marqueur est vide (voir audit BDL-5, Q2).
++    """
++    be, ae = _is_empty_marker(before), _is_empty_marker(after)
++    if be and ae:
++        return "both_empty"
++    if be:
++        return "empty_before"
++    if ae:
++        return "empty_after"
++    return "ok"
++
++
++def signals_changed(before, after, page_before=None, page_after=None):
++    """Liste (ordre de SIGNALS) des signaux qui diffèrent entre avant et après.
++
++    Les signaux du marqueur ne sont comparés que si les DEUX marqueurs sont
++    exploitables. Le signal ``doc`` vient de la lecture indépendante de page
++    et n'est comparé que si les deux identités sont non vides.
++    Les valeurs sont comparées telles quelles (pas de conversion ``or -1``).
++    """
++    changed = []
++    try:
++        if marker_status(before, after) == "ok":
++            for key in ("url", "txt", "qNodes", "notifSig", "progGridSig"):
++                if before.get(key) != after.get(key):
++                    changed.append(key)
++        pb = page_before if isinstance(page_before, dict) else {}
++        pa = page_after if isinstance(page_after, dict) else {}
++        if pb.get("doc") and pa.get("doc") and pb.get("doc") != pa.get("doc"):
++            changed.append("doc")
++        # URL de la lecture indépendante, si le marqueur ne l'a pas déjà signalée.
++        if (
++            "url" not in changed
++            and pb.get("url") and pa.get("url") and pb.get("url") != pa.get("url")
++        ):
++            changed.append("url")
++    except Exception:
++        return []
++    return [s for s in SIGNALS if s in changed]
++
++
++def compact_marker(marker):
++    """Copie bornée d'un marqueur (chaînes tronquées) ; None si non-dict."""
++    if not isinstance(marker, dict):
++        return None
++    out = {}
++    for key in ("url", "txt", "qNodes", "notifSig", "progGridSig"):
++        value = marker.get(key)
++        if isinstance(value, str) and len(value) > _MARKER_STR_CAP:
++            value = value[:_MARKER_STR_CAP]
++        out[key] = value
++    return out
++
++
++def compact_intercept_report(report):
++    """Sous-ensemble du rapport d'interception (mode CTA_INTERCEPT_ONLY)."""
++    if not isinstance(report, dict):
++        return None
++    return {
++        "clickCaptured": bool(report.get("clickCaptured")),
++        "submitCaptured": bool(report.get("submitCaptured")),
++        "prevented": bool(report.get("prevented")),
++        "navigationBlocked": bool(report.get("navigationBlocked")),
++    }
++
++
++# ---------------------------------------------------------------------------
++# Lectures navigateur (passives, best-effort)
++# ---------------------------------------------------------------------------
++
++_TARGET_JS = r"""(el) => {
++  try {
++    const cn = (el.className && el.className.baseVal !== undefined) ? el.className.baseVal : (el.className || '');
++    return {
++      tag: (el.tagName || '').toLowerCase(),
++      id: el.id || '',
++      name: (el.getAttribute && el.getAttribute('name')) || '',
++      className: String(cn).slice(0, 80),
++      text: ((el.innerText || el.textContent || el.value || '').replace(/\s+/g, ' ').trim()).slice(0, %d),
++    };
++  } catch (e) { return null; }
++}""" % _TARGET_TEXT_CAP
++
++# performance.timeOrigin identifie la vie du document : il change à chaque
++# nouveau document (navigation classique) et reste stable sur une SPA.
++# Lecture seule, aucune écriture dans la page.
++_PAGE_JS = (
++    "() => ({ url: String(location.href || ''), "
++    "doc: (typeof performance !== 'undefined' && performance.timeOrigin) "
++    "? String(performance.timeOrigin) : '' })"
++)
++
++
++def _read_target(el):
++    try:
++        value = el.evaluate(_TARGET_JS)
++        return value if isinstance(value, dict) else None
++    except Exception:
++        return None
++
++
++def _read_page(handler, driver):
++    try:
++        value = handler._resolve_ctx(driver).evaluate(_PAGE_JS)
++        return value if isinstance(value, dict) else None
++    except Exception:
++        return None
++
++
++def _read_marker(handler, driver):
++    try:
++        return handler._dom_progress_marker(driver)
++    except Exception:
++        return None
++
++
++def _caller_name():
++    """Nom de la fonction de cta_handler qui a appelé la fonction observée.
++
++    Frame 0 = cette fonction, 1 = l'enveloppe, 2 = l'appelant réel.
++    """
++    try:
++        return sys._getframe(2).f_code.co_name
++    except Exception:
++        return None
++
++
++# ---------------------------------------------------------------------------
++# Enveloppe passive de _click_with_intercept
++# ---------------------------------------------------------------------------
++
++def build_observed_click(original, handler):
++    """Construit l'enveloppe passive de ``handler._click_with_intercept``.
++
++    ``handler`` est le module cta_handler (injecté : testable sans navigateur).
++    L'enveloppe appelle ``original`` exactement une fois, avec les mêmes
++    arguments, et retourne son résultat ou relève son exception à l'identique.
++    """
++
++    def observed_click_with_intercept(driver, el, *args, **kwargs):
++        caller = _caller_name()
++        intercept = False
++        target = marker_before = page_before = None
++        t_start = time.time()
++        try:
++            intercept = bool(handler._cta_intercept_enabled())
++            target = _read_target(el)
++            page_before = _read_page(handler, driver)
++            if not intercept:
++                # En mode intercept aucun marqueur n'est pris : l'absence de
++                # navigation y est le comportement attendu.
++                marker_before = _read_marker(handler, driver)
++        except Exception:
++            pass
++
++        returned = None
++        raised = None
++        try:
++            returned = original(driver, el, *args, **kwargs)
++            return returned
++        except BaseException as exc:
++            raised = type(exc).__name__
++            raise
++        finally:
++            # finally : la trace est posée même si la fonction observée lève ;
++            # aucune exception d'observation ne peut remplacer celle d'origine.
++            try:
++                marker_after = page_after = report = None
++                if not intercept:
++                    marker_after = _read_marker(handler, driver)
++                    page_after = _read_page(handler, driver)
++                    status = marker_status(marker_before, marker_after)
++                    changed = signals_changed(marker_before, marker_after, page_before, page_after)
++                else:
++                    # Le rapport persiste dans la page après désarmement.
++                    try:
++                        report = handler.read_intercept_report(driver)
++                    except Exception:
++                        report = None
++                    status = "not_collected"
++                    changed = []
++                event = {
++                    "v": EVENT_VERSION,
++                    "fn": "_click_with_intercept",
++                    "caller": caller,
++                    "mode": "intercept" if intercept else "normal",
++                    "target": target,
++                    "returned": bool(returned) if raised is None else None,
++                    "raised": raised,
++                    "marker_status": status,
++                    "signals_changed": changed,
++                    "marker_before": compact_marker(marker_before),
++                    "marker_after": compact_marker(marker_after),
++                    "page_before": page_before,
++                    "page_after": page_after,
++                    "intercept": compact_intercept_report(report),
++                    "t_start": t_start,
++                    "duration_ms": int((time.time() - t_start) * 1000),
++                }
++                note_cta_event(event)
++                _log_event(event)
++            except Exception:
++                pass
++
++    return observed_click_with_intercept
++
++
++def _log_event(event):
++    """Une ligne de debug (LOG_LEVEL=DEBUG uniquement)."""
++    try:
++        from Survey.log_utils import log_debug
++        tgt = event.get("target") or {}
++        log_debug(
++            "[CTA_TRACE]",
++            f"caller={event.get('caller')} mode={event.get('mode')} "
++            f"returned={event.get('returned')} status={event.get('marker_status')} "
++            f"changed={','.join(event.get('signals_changed') or []) or '-'} "
++            f"target={tgt.get('tag', '')}#{tgt.get('id', '')}",
++        )
++    except Exception:
++        pass
+diff --git a/surveybot/Survey/page_snapshot.py b/surveybot/Survey/page_snapshot.py
+index 10119bf..99834c5 100644
+--- a/surveybot/Survey/page_snapshot.py
++++ b/surveybot/Survey/page_snapshot.py
+@@ -587,6 +587,8 @@ def snapshot_if_enabled(driver, *, reason: str, question_blocks: Any = None) ->
+     # avant le futur execute_actions_plan(), sans modifier son comportement.
+     if _phase1a_enabled():
+         _install_action_observer()
++        if _bdl_cta_trace_enabled():
++            _install_cta_observer()
+ 
+     # BDL-4 étape 2 : collecte extraction indépendante du snapshot (JSON léger,
+     # pas de DOM). Drain la trace des règles une fois par page analysée.
+@@ -671,6 +673,17 @@ def _bdl_extract_collect_enabled() -> bool:
+     return value in {"1", "true", "yes", "on"}
+ 
+ 
++def _bdl_cta_trace_enabled() -> bool:
++    """BDL-5 étape 1 : trace CTA passive en mémoire (activée par défaut ; "0" la désactive).
++
++    Flag DISTINCT de SURVEY_OBSERVABILITY, SURVEY_BDL_COLLECT (action) et
++    SURVEY_BDL_EXTRACT_COLLECT (extraction). Comme le hook d'action, l'enveloppe
++    CTA n'est installée que si l'observabilité est active.
++    """
++    value = (os.getenv("SURVEY_BDL_CTA_TRACE", "1") or "").strip().lower()
++    return value in {"1", "true", "yes", "on"}
++
++
+ def _collect_extraction_pass(driver, question_blocks) -> None:
+     """BDL-4 étape 2 : persiste blocs allégés + déclenchements de règles d'une page analysée.
+ 
+@@ -886,7 +899,38 @@ def _install_action_observer() -> None:
+         pass
+ 
+ 
++def _install_cta_observer() -> None:
++    """BDL-5 étape 1 : enveloppe passive de cta_handler._click_with_intercept.
++
++    _click_with_intercept est le point de passage commun des clics CTA : les
++    fonctions publiques de cta_handler le résolvent par lookup global à chaque
++    appel, donc remplacer l'attribut du module suffit, sans modifier cta_handler.py
++    ni dépendre de la façon dont les appelants importent ses fonctions publiques.
++    Ne couvre PAS les clics natifs qui contournent _click_with_intercept ni les
++    chemins CTA propres à survey_executor / action_dispatcher (voir audit BDL-5).
++    Idempotent ; toute erreur est absorbée.
++    """
++    try:
++        import Survey.cta_handler as cta_handler
++        from Survey.cta_trace import build_observed_click
++
++        original = cta_handler._click_with_intercept
++        if getattr(original, "_phase1a_observer", False):
++            return
++
++        observed = build_observed_click(original, cta_handler)
++        observed._phase1a_observer = True
++        observed._phase1a_original = original
++        cta_handler._click_with_intercept = observed
++    except Exception:
++        pass
++
++
+ # survey_executor importe page_snapshot avant son appel à analyze_dom(). Le hook
+ # extraction est donc installé immédiatement et reste transparent pour tout appelant.
+ if _phase1a_enabled():
+-    _install_extraction_observer()
+\ No newline at end of file
++    _install_extraction_observer()
++    # BDL-5 : enveloppe CTA posée dès l'import pour ne pas rater les premiers
++    # clics d'un parcours (consentement, accueil), avant le premier snapshot.
++    if _bdl_cta_trace_enabled():
++        _install_cta_observer()
+diff --git a/surveybot/tests/test_bdl5_cta_trace.py b/surveybot/tests/test_bdl5_cta_trace.py
+new file mode 100644
+index 0000000..e498093
+--- /dev/null
++++ b/surveybot/tests/test_bdl5_cta_trace.py
+@@ -0,0 +1,335 @@
++from __future__ import annotations
++
++"""Tests synthétiques BDL-5 étape 1 : trace CTA passive en mémoire.
++
++Aucun navigateur. Vérifie :
++- les fonctions pures (marker_status, signals_changed) — dont le cas qNodes == 0
++  que le booléen _did_progress confond avec un marqueur vide ;
++- le buffer borné ;
++- l'enveloppe : retour et exceptions inchangés, une seule exécution de la
++  fonction observée, erreurs d'observation absorbées, mode intercept sans marqueur ;
++- l'installation idempotente par page_snapshot, sans modifier cta_handler.
++"""
++
++import unittest
++
++from Survey import cta_trace
++from Survey.cta_trace import (
++    MAX_EVENTS,
++    build_observed_click,
++    compact_marker,
++    drain,
++    marker_status,
++    note_cta_event,
++    signals_changed,
++    stats,
++)
++
++_EMPTY = {"url": "", "txt": "", "qNodes": -1, "notifSig": "", "progGridSig": ""}
++
++
++def _m(url="https://s.example/p1", txt="Question 1", q=3, notif="", grid=""):
++    return {"url": url, "txt": txt, "qNodes": q, "notifSig": notif, "progGridSig": grid}
++
++
++class MarkerStatusTests(unittest.TestCase):
++    def test_ok(self):
++        self.assertEqual(marker_status(_m(), _m(txt="Question 2")), "ok")
++
++    def test_both_empty(self):
++        self.assertEqual(marker_status(dict(_EMPTY), dict(_EMPTY)), "both_empty")
++
++    def test_empty_after_only(self):
++        self.assertEqual(marker_status(_m(), dict(_EMPTY)), "empty_after")
++
++    def test_empty_before_only(self):
++        self.assertEqual(marker_status(dict(_EMPTY), _m()), "empty_before")
++
++    def test_non_dict_is_empty(self):
++        self.assertEqual(marker_status(None, None), "both_empty")
++
++    def test_zero_question_nodes_is_not_empty(self):
++        # qNodes == 0 est légitime (page sans champ) : ce n'est pas un marqueur vide.
++        self.assertEqual(marker_status(_m(q=0), _m(q=0)), "ok")
++
++
++class SignalsChangedTests(unittest.TestCase):
++    def test_no_change(self):
++        self.assertEqual(signals_changed(_m(), _m()), [])
++
++    def test_each_signal(self):
++        self.assertEqual(signals_changed(_m(), _m(url="https://s.example/p2")), ["url"])
++        self.assertEqual(signals_changed(_m(), _m(txt="Autre")), ["txt"])
++        self.assertEqual(signals_changed(_m(), _m(q=4)), ["qNodes"])
++        self.assertEqual(signals_changed(_m(), _m(notif="error::x")), ["notifSig"])
++        self.assertEqual(signals_changed(_m(), _m(grid="1::a::b")), ["progGridSig"])
++
++    def test_zero_to_positive_question_nodes_detected(self):
++        # Comparaison brute : 0 -> 2 est un changement (pas de conversion `or -1`).
++        self.assertEqual(signals_changed(_m(q=0), _m(q=2)), ["qNodes"])
++
++    def test_empty_marker_yields_no_marker_signal(self):
++        # Marqueur après vide : aucune preuve de progression n'est inventée.
++        self.assertEqual(signals_changed(_m(), dict(_EMPTY)), [])
++        self.assertEqual(signals_changed(dict(_EMPTY), dict(_EMPTY)), [])
++
++    def test_document_signal_independent_of_marker(self):
++        pb = {"url": "u", "doc": "100.5"}
++        pa = {"url": "u", "doc": "200.5"}
++        self.assertEqual(signals_changed(dict(_EMPTY), dict(_EMPTY), pb, pa), ["doc"])
++        # SPA : même document, pas de signal doc.
++        self.assertEqual(signals_changed(_m(), _m(), pb, {"url": "u", "doc": "100.5"}), [])
++
++    def test_document_signal_needs_both_identities(self):
++        self.assertEqual(signals_changed(_m(), _m(), {"url": "u", "doc": ""}, {"url": "u", "doc": "9"}), [])
++
++    def test_order_follows_closed_list(self):
++        out = signals_changed(_m(), _m(url="https://s.example/p2", txt="B", q=9),
++                              {"doc": "1"}, {"doc": "2"})
++        self.assertEqual(out, ["url", "doc", "txt", "qNodes"])
++
++
++class CompactTests(unittest.TestCase):
++    def test_compact_marker_truncates(self):
++        out = compact_marker(_m(txt="x" * 500))
++        self.assertEqual(len(out["txt"]), 120)
++        self.assertIsNone(compact_marker(None))
++
++    def test_compact_report(self):
++        out = cta_trace.compact_intercept_report({"clickCaptured": 1, "prevented": True, "target": {"a": 1}})
++        self.assertEqual(out, {
++            "clickCaptured": True, "submitCaptured": False,
++            "prevented": True, "navigationBlocked": False,
++        })
++        self.assertIsNone(cta_trace.compact_intercept_report(None))
++
++
++class BufferTests(unittest.TestCase):
++    def setUp(self):
++        drain()
++        cta_trace._local.state = None
++
++    def test_ring_buffer_bounded_and_counts_drops(self):
++        for i in range(MAX_EVENTS + 5):
++            note_cta_event({"i": i})
++        st = stats()
++        self.assertEqual(st["total"], MAX_EVENTS + 5)
++        self.assertEqual(st["buffered"], MAX_EVENTS)
++        self.assertEqual(st["dropped"], 5)
++        events = drain()
++        self.assertEqual(events[0]["i"], 5)  # les plus anciens sont écartés
++        self.assertEqual(stats()["buffered"], 0)
++
++    def test_non_dict_ignored(self):
++        note_cta_event("x")
++        note_cta_event(None)
++        self.assertEqual(stats()["total"], 0)
++
++
++class _Ctx:
++    def __init__(self, pages):
++        self._pages = list(pages)
++
++    def evaluate(self, js):
++        if not self._pages:
++            raise RuntimeError("no more pages")
++        value = self._pages.pop(0)
++        if isinstance(value, Exception):
++            raise value
++        return value
++
++
++class _Handler:
++    """Faux module cta_handler."""
++
++    def __init__(self, *, intercept=False, markers=(), pages=(), report=None, intercept_raises=False):
++        self._intercept = intercept
++        self._markers = list(markers)
++        self._ctx = _Ctx(pages)
++        self._report = report
++        self._intercept_raises = intercept_raises
++        self.marker_calls = 0
++
++    def _cta_intercept_enabled(self):
++        if self._intercept_raises:
++            raise RuntimeError("boom")
++        return self._intercept
++
++    def _resolve_ctx(self, driver):
++        return self._ctx
++
++    def _dom_progress_marker(self, driver):
++        self.marker_calls += 1
++        return self._markers.pop(0) if self._markers else dict(_EMPTY)
++
++    def read_intercept_report(self, driver):
++        return self._report
++
++
++class _El:
++    def __init__(self, target=None, raises=False):
++        self._target = target
++        self._raises = raises
++
++    def evaluate(self, js):
++        if self._raises:
++            raise RuntimeError("stale")
++        return self._target
++
++
++_TARGET = {"tag": "button", "id": "next", "name": "", "className": "btn", "text": "Suivant"}
++
++
++class WrapperTests(unittest.TestCase):
++    def setUp(self):
++        drain()
++        cta_trace._local.state = None
++
++    def _wrap(self, handler, fn):
++        return build_observed_click(fn, handler)
++
++    def test_normal_mode_event_and_unchanged_return(self):
++        calls = []
++
++        def original(driver, el):
++            calls.append((driver, el))
++            return True
++
++        handler = _Handler(
++            markers=[_m(), _m(url="https://s.example/p2", txt="Q2")],
++            pages=[{"url": "https://s.example/p1", "doc": "1"},
++                   {"url": "https://s.example/p2", "doc": "1"}],
++        )
++        drv, el = object(), _El(_TARGET)
++        out = self._wrap(handler, original)(drv, el)
++        self.assertIs(out, True)
++        self.assertEqual(calls, [(drv, el)])  # exactement un appel, mêmes arguments
++        (ev,) = drain()
++        self.assertEqual(ev["fn"], "_click_with_intercept")
++        self.assertEqual(ev["mode"], "normal")
++        self.assertTrue(ev["returned"])
++        self.assertIsNone(ev["raised"])
++        self.assertEqual(ev["target"], _TARGET)
++        self.assertEqual(ev["marker_status"], "ok")
++        self.assertEqual(ev["signals_changed"], ["url", "txt"])
++        self.assertIsNone(ev["intercept"])
++
++    def test_false_return_preserved(self):
++        handler = _Handler(markers=[_m(), _m()], pages=[{"url": "u", "doc": "1"}, {"url": "u", "doc": "1"}])
++        out = self._wrap(handler, lambda d, e: False)(object(), _El(_TARGET))
++        self.assertIs(out, False)
++        (ev,) = drain()
++        self.assertIs(ev["returned"], False)
++        self.assertEqual(ev["signals_changed"], [])
++
++    def test_empty_markers_are_not_presented_as_progress(self):
++        handler = _Handler(markers=[dict(_EMPTY), dict(_EMPTY)], pages=[])
++        # Le booléen runtime de la fonction observée reste True (anti-double-clic) :
++        # la trace, elle, expose l'absence de preuve.
++        out = self._wrap(handler, lambda d, e: True)(object(), _El(_TARGET))
++        self.assertIs(out, True)
++        (ev,) = drain()
++        self.assertEqual(ev["marker_status"], "both_empty")
++        self.assertEqual(ev["signals_changed"], [])
++
++    def test_exception_reraised_identically_and_traced(self):
++        err = ValueError("clic impossible")
++
++        def original(driver, el):
++            raise err
++
++        handler = _Handler(markers=[_m(), _m()], pages=[{"url": "u", "doc": "1"}, {"url": "u", "doc": "1"}])
++        with self.assertRaises(ValueError) as ctx:
++            self._wrap(handler, original)(object(), _El(_TARGET))
++        self.assertIs(ctx.exception, err)
++        (ev,) = drain()
++        self.assertEqual(ev["raised"], "ValueError")
++        self.assertIsNone(ev["returned"])
++
++    def test_observation_errors_never_change_behavior(self):
++        # Cible illisible, pages illisibles, marqueurs illisibles, intercept qui lève.
++        handler = _Handler(intercept_raises=True, pages=[RuntimeError("x"), RuntimeError("y")])
++        out = self._wrap(handler, lambda d, e: True)(object(), _El(raises=True))
++        self.assertIs(out, True)
++
++    def test_intercept_mode_takes_no_marker(self):
++        handler = _Handler(
++            intercept=True,
++            pages=[{"url": "u", "doc": "1"}],
++            report={"clickCaptured": True, "prevented": True, "navigationBlocked": False,
++                    "submitCaptured": False, "target": {"tag": "button"}},
++        )
++        out = self._wrap(handler, lambda d, e: True)(object(), _El(_TARGET))
++        self.assertIs(out, True)
++        self.assertEqual(handler.marker_calls, 0)  # aucun marqueur en mode intercept
++        (ev,) = drain()
++        self.assertEqual(ev["mode"], "intercept")
++        self.assertEqual(ev["marker_status"], "not_collected")
++        self.assertEqual(ev["signals_changed"], [])
++        self.assertEqual(ev["intercept"]["clickCaptured"], True)
++        self.assertEqual(ev["intercept"]["prevented"], True)
++
++    def test_intercept_impossible_recorded_as_not_captured(self):
++        handler = _Handler(intercept=True, pages=[{"url": "u", "doc": "1"}],
++                           report={"clickCaptured": False, "prevented": False})
++        out = self._wrap(handler, lambda d, e: False)(object(), _El(_TARGET))
++        self.assertIs(out, False)
++        (ev,) = drain()
++        self.assertFalse(ev["intercept"]["clickCaptured"])
++        self.assertIs(ev["returned"], False)
++
++    def test_caller_name_is_recorded(self):
++        handler = _Handler(markers=[_m(), _m()], pages=[{"url": "u", "doc": "1"}, {"url": "u", "doc": "1"}])
++        wrapped = self._wrap(handler, lambda d, e: True)
++
++        def click_primary_cta(driver, el):  # simule une fonction publique de cta_handler
++            return wrapped(driver, el)
++
++        click_primary_cta(object(), _El(_TARGET))
++        (ev,) = drain()
++        self.assertEqual(ev["caller"], "click_primary_cta")
++
++
++class InstallTests(unittest.TestCase):
++    def test_install_is_idempotent_and_does_not_edit_cta_handler(self):
++        import Survey.cta_handler as cta_handler
++        import Survey.page_snapshot as page_snapshot
++
++        saved = cta_handler._click_with_intercept
++        try:
++            # Repart de la fonction d'origine, quel que soit l'état d'import.
++            cta_handler._click_with_intercept = getattr(saved, "_phase1a_original", saved)
++            origin = cta_handler._click_with_intercept
++            self.assertFalse(getattr(origin, "_phase1a_observer", False))
++
++            page_snapshot._install_cta_observer()
++            first = cta_handler._click_with_intercept
++            self.assertTrue(getattr(first, "_phase1a_observer", False))
++            self.assertIs(first._phase1a_original, origin)
++
++            page_snapshot._install_cta_observer()  # 2e installation : sans effet
++            self.assertIs(cta_handler._click_with_intercept, first)
++
++            # Les fonctions publiques résolvent _click_with_intercept par lookup
++            # global du module : remplacer l'attribut suffit à toutes les couvrir.
++            self.assertIs(cta_handler.click_primary_cta.__globals__, vars(cta_handler))
++        finally:
++            cta_handler._click_with_intercept = saved
++
++    def test_flag_default_and_off(self):
++        import os
++        import Survey.page_snapshot as page_snapshot
++
++        old = os.environ.pop("SURVEY_BDL_CTA_TRACE", None)
++        try:
++            self.assertTrue(page_snapshot._bdl_cta_trace_enabled())
++            os.environ["SURVEY_BDL_CTA_TRACE"] = "0"
++            self.assertFalse(page_snapshot._bdl_cta_trace_enabled())
++        finally:
++            os.environ.pop("SURVEY_BDL_CTA_TRACE", None)
++            if old is not None:
++                os.environ["SURVEY_BDL_CTA_TRACE"] = old
++
++
++if __name__ == "__main__":
++    unittest.main()

@@ -587,6 +587,8 @@ def snapshot_if_enabled(driver, *, reason: str, question_blocks: Any = None) -> 
     # avant le futur execute_actions_plan(), sans modifier son comportement.
     if _phase1a_enabled():
         _install_action_observer()
+        if _bdl_cta_trace_enabled():
+            _install_cta_observer()
 
     # BDL-4 étape 2 : collecte extraction indépendante du snapshot (JSON léger,
     # pas de DOM). Drain la trace des règles une fois par page analysée.
@@ -668,6 +670,17 @@ def _bdl_extract_collect_enabled() -> bool:
     sans DOM ni screenshot, donc ne dépend pas de la capture lourde.
     """
     value = (os.getenv("SURVEY_BDL_EXTRACT_COLLECT", "1") or "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _bdl_cta_trace_enabled() -> bool:
+    """BDL-5 étape 1 : trace CTA passive en mémoire (activée par défaut ; "0" la désactive).
+
+    Flag DISTINCT de SURVEY_OBSERVABILITY, SURVEY_BDL_COLLECT (action) et
+    SURVEY_BDL_EXTRACT_COLLECT (extraction). Comme le hook d'action, l'enveloppe
+    CTA n'est installée que si l'observabilité est active.
+    """
+    value = (os.getenv("SURVEY_BDL_CTA_TRACE", "1") or "").strip().lower()
     return value in {"1", "true", "yes", "on"}
 
 
@@ -886,7 +899,38 @@ def _install_action_observer() -> None:
         pass
 
 
+def _install_cta_observer() -> None:
+    """BDL-5 étape 1 : enveloppe passive de cta_handler._click_with_intercept.
+
+    _click_with_intercept est le point de passage commun des clics CTA : les
+    fonctions publiques de cta_handler le résolvent par lookup global à chaque
+    appel, donc remplacer l'attribut du module suffit, sans modifier cta_handler.py
+    ni dépendre de la façon dont les appelants importent ses fonctions publiques.
+    Ne couvre PAS les clics natifs qui contournent _click_with_intercept ni les
+    chemins CTA propres à survey_executor / action_dispatcher (voir audit BDL-5).
+    Idempotent ; toute erreur est absorbée.
+    """
+    try:
+        import Survey.cta_handler as cta_handler
+        from Survey.cta_trace import build_observed_click
+
+        original = cta_handler._click_with_intercept
+        if getattr(original, "_phase1a_observer", False):
+            return
+
+        observed = build_observed_click(original, cta_handler)
+        observed._phase1a_observer = True
+        observed._phase1a_original = original
+        cta_handler._click_with_intercept = observed
+    except Exception:
+        pass
+
+
 # survey_executor importe page_snapshot avant son appel à analyze_dom(). Le hook
 # extraction est donc installé immédiatement et reste transparent pour tout appelant.
 if _phase1a_enabled():
     _install_extraction_observer()
+    # BDL-5 : enveloppe CTA posée dès l'import pour ne pas rater les premiers
+    # clics d'un parcours (consentement, accueil), avant le premier snapshot.
+    if _bdl_cta_trace_enabled():
+        _install_cta_observer()
