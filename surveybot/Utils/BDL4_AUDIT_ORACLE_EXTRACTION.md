@@ -1,7 +1,7 @@
 # BDL-4 — Audit et implémentation de l'oracle d'extraction
 
 **Branche de référence :** `BDL`.
-**État :** audit initial terminé ; étapes 1, 2 et 3 implémentées ; étape 4 (annotation et mesure) à réaliser.
+**État :** audit initial terminé ; étapes 1 à 4 réalisées (étape 4 : voir réserves) ; suite : décision sur un oracle de contenu (comparaison au DOM).
 **Validation de collecte :** run en mode attach du 2026-11-15.
 **Convention :** `[V]` = vérifié ; `[NV]` = non vérifié. Les constats de l'audit initial restent historiques et doivent être réévalués si le code évolue.
 ---
@@ -10,7 +10,7 @@
 
 1. **Correction importante du cadrage.** Le suivi BDL (§20 quinquies, point 4) affirme que les artefacts sont « conditionnés à l'échec du validateur ». C'est vrai pour l'**action** et pour l'observateur d'extraction, mais **pas pour l'extraction dans son ensemble** : `survey_executor.py` appelle `page_snapshot.snapshot_if_enabled(reason="after_dom_analyze", question_blocks=extracted_question_blocks)` après chaque `analyze_dom`, et `SURVEY_SNAPSHOT` vaut `"1"` par défaut `[V]`. Un snapshot inconditionnel (DOM + `question_blocks.json`) existe donc **dans le code**. Sa valeur effective sur le parc et en local est `[NV]` (aucun script du dépôt ne positionne cette variable ; le corpus de 38 cas ne contient que des dossiers `*_validation_failure`, ce qui suggère qu'elle est neutralisée ou que les dossiers sont purgés).
 2. **Le vrai trou n'est pas la capture, c'est la traçabilité des règles.** Sur 16 règles d'extraction inventoriées, **seules 4 laissent une trace exploitable** dans `question_blocks.json`. Les autres absorbent sans trace persistée → l'oracle ne peut pas distinguer « absent » de « absorbé » aujourd'hui.
-3. **Décision et avancement :** la trace passive des règles (étape 1) et la collecte des extractions réussies (étape 2) sont implémentées. La collecte a été validée en mode attach. L'oracle minimal d'extraction (étape 3) est implémenté sur les artefacts collectés, avec abstention par défaut. L'étape restante est l'annotation et la mesure (étape 4).
+3. **Décision et avancement :** la trace passive des règles (étape 1) et la collecte des extractions réussies (étape 2) sont implémentées. La collecte a été validée en mode attach. L'oracle minimal d'extraction (étape 3) est implémenté sur les artefacts collectés, avec abstention par défaut. L'annotation et la mesure (étape 4) sont réalisées : l'oracle v1 ne déclenche aucun signal sur le corpus collecté (0/47 blocs) et laisse passer l'unique bloc faux annoté (angle mort).
 
 ---
 
@@ -166,7 +166,7 @@ Le mode collecte BDL-2b couvre **l'action seulement** (`record_collected_action`
 
 ## État d'implémentation du plan BDL-4
 
-Les étapes 1, 2 et 3 sont implémentées. L'étape 2 a été validée en collecte réelle. L'étape 3 est validée par tests synthétiques.
+Les étapes 1 à 4 sont réalisées. Les étapes 2 et 3 ont été validées en condition réelle ; l'étape 4 l'est avec des réserves (voir ci-dessous).
 
 ### Étape 1 — Trace passive des déclenchements de règles
 
@@ -241,12 +241,28 @@ Il ne doit pas modifier le validateur, `failure_cases` ou AutoFix.
 
 ### Étape 4 — Annotation et mesure
 
-**Statut : À FAIRE**
+**Statut : RÉALISÉE (avec réserves, voir ci-dessous)**
 
-- Annoter environ 20 pages avec une vérité terrain manuelle.
-- Trier les 4 signalements BDL-1.
-- Ajouter un test par `itype` observé.
-- Fixer les critères de clôture avant l'implémentation de cette étape.
+Outil : `tools/bdl4_measure.py` (commandes `template` et `report`, tests dans
+`tests/test_bdl4_measure.py`). Critères de clôture figés avant l'implémentation :
+
+| Critère | Résultat |
+|---|---|
+| C1 couverture (>= 20 pages effectives, >= 3 hôtes, 4 itypes, max 3 pages/hôte) | OK : 26 pages annotées, 23 effectives, 9 hôtes |
+| C2 `BUG_CONFIRMED` : 0 faux positif | OK **à vide** : 0 déclenchement sur 47 blocs |
+| C3 `SUSPECTED` revus à 100 % | OK **à vide** : 0 déclenchement |
+| C4 angle mort (informatif) | 1 cas : bloc radio dont la question extraite est l'identifiant interne `qHab` (verdict `PASS`, vérité `BAD`) |
+| C5 tri des signalements BDL-1 (11 au 2026-11-16, corpus agrandi) | Classés : 2 vrais bugs probables (`choice_without_options`, Qualtrics, même page), 2 vrais bugs d'extraction non détectables par l'oracle (`missing_block`, Focaldata et Panelia), 7 sans objet dont 2 confirmés par annotation et 5 non vérifiés faute de DOM |
+| C6 fixtures réelles | `tests/test_extraction_oracle_real_fixtures.py` : text, checkbox, page multi-blocs (radio, dropdown, text), cas `qHab` |
+
+Réserves :
+- C2 et C3 passent faute de déclenchement : la précision des règles n'est pas
+  démontrée sur le corpus collecté. Seul élément réel : `choice_without_options`
+  se déclencherait sur les 2 snapshots Qualtrics historiques.
+- Un seul bloc faux sur 47 : le rappel de l'oracle sur les erreurs réelles est
+  0/1 (collecte) ; il ne voit pas non plus les 2 `missing_block` historiques.
+- 5 des 7 signalements « sans objet » ne sont pas vérifiés sur DOM.
+- Aucune mesure de rappel n'est possible avec ce corpus (échantillon de 26 pages).
 
 ### Hors BDL-4, à ne pas mélanger
 - Décider du sort de `question_block_analyzer.py` (non intégré).
@@ -286,5 +302,7 @@ Le réglage `SURVEY_BDL_EXTRACT_SAMPLE=1` a permis de collecter la page
 éligible. La traçabilité des pages ignorées par échantillonnage a également
 été ajoutée dans `failure_recorder.py`.
 
-**Conclusion :** les étapes 1, 2 et 3 sont implémentées. L'annotation et la
-mesure (étape 4) restent le prochain travail.
+**Conclusion :** les étapes 1 à 4 sont réalisées. Prochaine décision : un oracle
+structurel seul ne détecte pas les erreurs de contenu observées (texte de
+question faux, bloc manquant) ; évaluer une comparaison au DOM, ou une règle
+ciblée « texte de question = identifiant interne » seulement après un 2e cas.

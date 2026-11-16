@@ -14,11 +14,6 @@ python surveybot/main.py
 
 Get-ChildItem -Recurse -Exclude ".venv" -Include *.py | Where-Object { $_.FullName -notmatch '\\.venv\\' } | Select-String "set_sliderpoints"
 
- -----------------------------------------------------------------------------------------------------------------------------------------
-
-# Nettoyer un port: supprime le dossier entier et tout son contenu — cookies, cache, historique, tout.
-Remove-Item -Recurse -Force "$env:TEMP\sb_chrome_profiles\chrome_9009"
-# ------------------------------------------------------------------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------------------------------------------------------------------
 # Pour activer l'environnement virtuel
 & C:/projects/Surveys/.venv/Scripts/Activate.ps1
@@ -38,32 +33,6 @@ Champ         |     Valeur
 Système       |     PostgreSQL
 Serveur       |     host.docker.internal:5432
 Base          |     postgres
-
-
-
-# Supprimer un port/profil
-
-$Port = 9009   # <-- remplace par ton port
-
-# 1. Trouver et tuer le process Chrome qui écoute sur ce port
-$listen = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue
-if ($listen) {
-    $ownerPid = ($listen | Select-Object -First 1 -ExpandProperty OwningProcess)
-    Write-Host "[PORT $Port] Kill du process PID=$ownerPid"
-    Stop-Process -Id $ownerPid -Force
-    Start-Sleep -Seconds 1
-} else {
-    Write-Host "[PORT $Port] Aucun process en ecoute sur ce port."
-}
-
-# 2. Supprimer le profil Chrome associe (cookies, localStorage, historique, cache)
-$profileDir = Join-Path $env:TEMP "sb_chrome_profiles\chrome_$Port"
-if (Test-Path $profileDir) {
-    Remove-Item -Path $profileDir -Recurse -Force
-    Write-Host "[PORT $Port] Profil supprime : $profileDir"
-} else {
-    Write-Host "[PORT $Port] Aucun profil trouve a cet emplacement."
-}
 
 
 
