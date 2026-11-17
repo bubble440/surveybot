@@ -1051,7 +1051,7 @@ aucun chemin de capture (voir §20 quinquies).
 
 ``` text
 BDL-0 (FAIT) → BDL-1 (CLÔTURÉ) → BDL-2 → BDL-3 (ACTION, CLOS) → BDL-4 (EXTRACTION, CLOS)
-                         → BDL-5 (CTA : observabilité v1, CLOS) → BDL-6 → BDL-7
+                         → BDL-5 (CTA : observabilité v1, CLOS) → BDL-5 v2 (oracle CTA) → BDL-6 → BDL-7
                          → BDL-8 (optionnel) → BDL-9 (retrait des règles)
 ```
 
@@ -1551,13 +1551,82 @@ détectées par les tests de l'étape 3.
     non décidés ;
 -   oracle CTA et failure case : non commencés ; l'absence de verdict CTA
     interdit pour l'instant toute mesure de précision ou de rappel sur cette
-    famille (voir BDL-6).
+    famille (voir BDL-5 v2, puis BDL-6).
+
+------------------------------------------------------------------------
+
+## BDL-5 v2 --- Oracle CTA
+
+**Statut : PROCHAINE ÉTAPE (2026-11-17) — décision de l'utilisateur : l'oracle CTA précède BDL-6 (voir §25, entrée du 2026-11-17) ; audit en lecture seule d'abord**
+
+BDL-5 v1 a livré l'observabilité (trace passive et couverture déclarée) ; le
+périmètre v1 excluait explicitement l'oracle. La v2 construit cet oracle pour
+que BDL-6 puisse mesurer les trois familles (ACTION, EXTRACTION, CTA).
+
+Premier cas réel de la trace (2026-11-17, `eu.surveyme.online`) : CTA
+`div#next_button` via `try_click_navigation_cta`, mode normal, `marker_status=ok`,
+signaux changés `url`, `doc`, `txt`, `qNodes`. C'est un cas de la branche
+`PASS` ; aucun cas `both_empty`, `empty_after`, `unobserved_path`, `no_click`,
+`CTA_INTERCEPT_ONLY` ni sans signal n'est encore observé : ce sont eux qui
+valideront ou non les règles ci-dessous.
+
+Découpage retenu, sur le modèle de BDL-4 (collecte, oracle, mesure) :
+
+1.  **Collecte.** Persistance flaggée de la trace CTA (aujourd'hui
+    `drain()` / `drain_coverage()` ne sont consommés par rien et tout reste en
+    mémoire), sur le modèle de BDL-2b et de BDL-4 étape 2 : flag distinct,
+    hors du flux normal, volume borné. Corpus mutualisé avec BDL-6.
+2.  **Oracle d'observation minimal.** Fonction pure sur artefacts capturés
+    (§20 quater), module dédié sur le modèle de `action_oracle` et
+    `extraction_oracle`. Il n'appelle jamais le navigateur et ne lit jamais
+    le booléen `_did_progress` ni le seul retour de la fonction de clic comme
+    preuve de progression : il lit `marker_status`, `signals_changed`, le
+    mode, le rapport d'interception et la couverture déclarée.
+3.  **Annotation et mesure.** Corpus réel annoté, outil de mesure sous
+    `tools/` sur le modèle de `tools/bdl4_measure.py`, mutualisable avec
+    BDL-6. Couverture visée : CTA texte, icône, structurels, iframes,
+    navigation classique, transitions internes, sliders, `CTA_INTERCEPT_ONLY`.
+
+Règles de départ — **proposition à valider lors de l'audit de la v2, non
+décidée** (elles prolongent la règle cible de §20 quater) :
+
+| Situation capturée | Verdict proposé |
+|---|---|
+| mode normal, au moins un signal de `signals_changed` | `PASS` |
+| `CTA_INTERCEPT_ONLY`, clic capturé et empêché | `PASS` |
+| mode normal, `marker_status=ok`, aucun signal | `SUSPECTED` |
+| `marker_status` différent de `ok`, aucun signal | `INCONCLUSIVE` |
+| `unobserved_path` sur la page (clic hors observation) | `INCONCLUSIVE` (abstention déclarée) |
+| `no_click` seul (rien trouvé ou rien tenté) | `INCONCLUSIVE` : ni preuve de bug ni preuve de succès |
+| aucune trace CTA sur la page | aucun verdict (jamais `PASS`) |
+| `CTA_INTERCEPT_ONLY`, clic non capturé ou non empêché | à trancher à l'audit |
+| CTA introuvable alors qu'un bouton CTA est visible | `BUG_CONFIRMED`, hors première version (exige une sonde de visibilité absente de la v1) |
+
+Principes qui s'appliquent : l'absence de navigation n'est pas un échec CTA
+(§16) ; un `SUSPECTED` n'est jamais promu automatiquement, ne déclenche jamais
+d'AutoFix et est relu (§20 quater, BDL-7). Les sliders et transitions
+internes hors GridProgressive peuvent produire des `SUSPECTED` sans bug : la
+relecture humaine est donc la seule validation de ces cas.
+
+À trancher à l'audit : unité et schéma de collecte (page ou parcours) ;
+emplacement du point qui vide les buffers ; sort du cas d'interception non
+capturée (le booléen retourné ne distingue pas « impossible » d'une erreur de
+dispatch) ; volume de collecte ; angle mort des chemins CTA propres à
+`survey_executor.py` et `action_dispatcher.py`, qui n'apparaissent même pas
+dans les compteurs de couverture (une page sans trace CTA ne prouve pas
+l'absence de CTA).
+
+Hors périmètre de la v2 : correction du booléen de `_did_progress` (décision
+séparée, tests « PIN » à modifier dans le même patch), failure case et
+AutoFix, `BUG_CONFIRMED` de la première version. Pas de seuil de précision ni
+de rappel fixé a priori ; une clôture sans seuil reste possible si elle est
+décidée explicitement (comme pour BDL-3 et BDL-4).
 
 ------------------------------------------------------------------------
 
 ## BDL-6 --- Mesure de qualité
 
-**Statut : PROCHAINE ÉTAPE (2026-11-17) — cadrage en lecture seule d'abord (décisions à prendre avant tout code : vérité de référence, seuils, familles couvertes)**
+**Statut : APRÈS BDL-5 v2 (décision du 2026-11-17) — mesure sur les trois familles (ACTION, EXTRACTION, CTA) ; le cadrage en lecture seule démarre une fois la collecte CTA disponible (décisions à prendre avant tout code : vérité de référence, seuils, taille d'échantillon)**
 
 Mesurer progressivement :
 
@@ -1914,7 +1983,7 @@ ajoutée.
 Bug Detection Layer       CONCEPTION (BDL-0 terminée)
 Extraction oracle         TERMINÉ (BDL-4 clos le 2026-11-16 : oracle d'observation livré, mesuré sur 26 pages ; 0 déclenchement, angle mort documenté)
 Action oracle             TERMINÉ (BDL-3 clos le 2026-11-05 : oracle d'observation livré, 1re collecte faite)
-CTA oracle                NON COMMENCÉ (observabilité v1 livrée par BDL-5 le 2026-11-17 : trace passive en mémoire + couverture déclarée ; aucun oracle ni failure case)
+CTA oracle                NON COMMENCÉ (BDL-5 v2, prochaine étape ; observabilité v1 livrée le 2026-11-17 : trace passive en mémoire + couverture déclarée ; aucun oracle ni failure case)
 CTA slider handling       À intégrer explicitement
 Corpus de référence       14 cas indexables, suite de non-régression (BDL-2)
 Mesure FN/FP              À mettre en place (1re collecte BDL-3 : 0 FALSE_POSITIVE / FALSE_NEGATIVE sur 137 actions)
@@ -2207,3 +2276,20 @@ BDL-2 (corpus)      → BDL-2 (index + mode collecte)
 6. BDL-6 (mesure de qualité) est ouvert. Démarrage par un cadrage en lecture
    seule : l'oracle CTA n'existant pas, la mesure ne peut porter que sur les
    familles ACTION et EXTRACTION tant qu'aucun verdict CTA n'est produit.
+
+## 2026-11-17 — Ordonnancement : oracle CTA avant BDL-6
+
+1. Décision de l'utilisateur : l'oracle CTA (BDL-5 v2) précède BDL-6, qui
+   mesurera ensuite les trois familles (ACTION, EXTRACTION, CTA). Cette
+   décision remplace le point 6 de l'entrée précédente : BDL-6 n'est pas
+   ouvert, il attend la collecte CTA.
+2. BDL-5 v1 reste clos (observabilité) ; l'oracle est inscrit comme suite
+   explicite (section BDL-5 v2), avec son propre découpage : collecte, oracle
+   d'observation minimal, annotation et mesure.
+3. Les règles de départ de l'oracle sont une proposition, pas une décision :
+   elles sont à valider lors de l'audit en lecture seule de la v2.
+4. Premier cas réel de la trace observé : `PASS` en mode normal, quatre
+   signaux changés. Aucun cas d'abstention ou de `SUSPECTED` encore observé.
+5. Prochaine étape : audit en lecture seule de la v2 (unité de collecte,
+   point de vidage des buffers, cas d'interception non capturée), puis patch
+   minimal avec validation explicite.
