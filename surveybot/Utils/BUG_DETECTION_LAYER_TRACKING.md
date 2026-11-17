@@ -1051,7 +1051,7 @@ aucun chemin de capture (voir §20 quinquies).
 
 ``` text
 BDL-0 (FAIT) → BDL-1 (CLÔTURÉ) → BDL-2 → BDL-3 (ACTION, CLOS) → BDL-4 (EXTRACTION, CLOS)
-                         → BDL-5 (CTA : observabilité v1) → BDL-6 → BDL-7
+                         → BDL-5 (CTA : observabilité v1, CLOS) → BDL-6 → BDL-7
                          → BDL-8 (optionnel) → BDL-9 (retrait des règles)
 ```
 
@@ -1443,7 +1443,7 @@ Distribution sur le corpus collecté : 43 `PASS`, 4 `INCONCLUSIVE` (matrix, `uns
 
 ## BDL-5 --- CTA : observabilité v1
 
-**Statut : PROCHAINE ÉTAPE (2026-11-16) — périmètre v1 réduit (décision 2 du 2026-10-11) ; audit en lecture seule d'abord**
+**Statut : CLOS (2026-11-17) — périmètre v1 réduit (décision 2 du 2026-10-11) livré : trace CTA passive en mémoire, couverture déclarée, tests de non-régression ; aucun oracle ni failure case (hors périmètre v1). Clôture prononcée par l'utilisateur sans mesure en run réel (voir §25, entrée du 2026-11-17). Les points ouverts sont listés dans « Reste ouvert après la clôture de BDL-5 ».**
 
 Il n'existe aujourd'hui aucun chemin de capture pour un échec CTA : ni
 stage dédié, ni hook d'observation (voir §20 quinquies, point 3). Un oracle
@@ -1465,11 +1465,99 @@ Point à neutraliser avant de bâtir dessus : `_did_progress` retourne
 `True` sans aucun signal réel quand les marqueurs avant et après sont
 tous deux vides (faux positif construit par conception).
 
+**Audit en lecture seule (2026-11-17)** — constats (`[V]` = vérifié dans le code) :
+
+-   `_click_with_intercept` est le point de passage commun des clics CTA de
+    `cta_handler.py` (une trentaine de sites d'appel internes) ; les
+    fonctions publiques le résolvent par lookup global du module `[V]`.
+-   Cinq clics contournent ce point de passage `[V]` : repli JS de
+    `click_button_by_text`, `_dismiss_blocking_overlays`, clic natif du
+    motif Askia, clic JS du motif cardsort, `try_click_qps_skip_to_survey`
+    (simulé sous `CTA_INTERCEPT_ONLY`). Les chemins CTA propres à
+    `survey_executor.py` et `action_dispatcher.py` gèrent leur propre
+    `CTA_INTERCEPT_ONLY` et n'appellent pas `cta_handler`.
+-   `_did_progress` a trois voies vers `True` sans preuve de progression :
+    (a) marqueurs vides des deux côtés (frein anti-double-clic) ;
+    (b) marqueur « après » vide alors que « avant » est exploitable ;
+    (c) `qNodes` valant 0 confondu avec -1 (`int(x or -1)`).
+    Neutraliser le booléen runtime ajouterait des re-clics réels (budget
+    actuel : 1 clic + 1 re-clic) ; il est donc resté inchangé en v1.
+-   `arm_interceptor` retourne `True` même quand le JS d'armement a échoué ;
+    seul `_probe_interceptor_state` donne l'état réel `[V]`.
+-   Le marqueur de progression (`_dom_progress_marker`) ne porte pas de signal
+    « document » : le signal de la liste fermée v1 est lu séparément.
+-   Aucun test n'existait sur `cta_handler.py`, `_did_progress` ni
+    `_click_with_intercept`.
+
+**Décisions validées par l'utilisateur (2026-11-17)** :
+
+1.  Point d'insertion : enveloppe de `_click_with_intercept` posée depuis
+    `page_snapshot.py` (zéro diff dans `cta_handler.py`), pas d'appels
+    insérés dans les corps de `cta_handler.py`.
+2.  Booléen runtime de `_did_progress` inchangé en v1 ; la trace expose
+    `marker_status` et `signals_changed`, jamais le booléen comme preuve.
+3.  Signal « document » : lecture indépendante dans l'enveloppe
+    (`performance.timeOrigin`, sans écriture dans la page), sans modifier
+    `_dom_progress_marker`.
+4.  Couverture : v1 sur le chemin commun avec compteur `unobserved_path`
+    (pas d'extension aux contournements internes).
+5.  Flag distinct `SURVEY_BDL_CTA_TRACE` (défaut `1`, subordonné à
+    l'observabilité), séparé des flags de collecte action et extraction.
+
+**Livré** (`cta_handler.py` n'est pas modifié) :
+
+| Étape | Contenu | Fichiers |
+|---|---|---|
+| 1 — trace CTA passive | un événement par clic passant par `_click_with_intercept` : cible, mode, appelant, retour, `marker_status` (`ok`, `empty_before`, `empty_after`, `both_empty`, `not_collected`), `signals_changed` (liste fermée : `url`, `doc`, `txt`, `qNodes`, `notifSig`, `progGridSig`), rapport d'interception en mode `CTA_INTERCEPT_ONLY` ; buffer thread-local borné (200), en mémoire seule, sans I/O | `Survey/cta_trace.py`, `Survey/page_snapshot.py` (`_install_cta_observer`) |
+| 2 — couverture déclarée | classement de chaque appel de plus haut niveau des 10 fonctions publiques en `observed` / `unobserved_path` / `no_click` / `raised` ; compteurs par fonction, détails des seuls `unobserved_path` (anneau de 50) ; rebind des modules ayant importé ces fonctions par valeur (indépendant de l'ordre d'import) ; API `coverage()` / `drain_coverage()` | `Survey/cta_trace.py`, `Survey/page_snapshot.py` (`_install_cta_coverage_observer`) |
+| 3 — non-régression | comportement actuel de `cta_handler.py` figé : tableau de vérité de `_did_progress` (trois comportements discutables marqués « PIN »), marqueur, budget de re-clic, mode `CTA_INTERCEPT_ONLY`, transparence de l'enveloppe sur la vraie fonction, absence de dépendance de `cta_handler.py` vers la couche BDL | `tests/test_bdl5_cta_handler_nonregression.py` (35 tests) |
+
+Tests ajoutés : `tests/test_bdl5_cta_trace.py` (27), `tests/test_bdl5_cta_coverage.py`
+(16) et `tests/test_bdl5_cta_handler_nonregression.py` (35). Suite complète :
+358 réussites, 12 échecs préexistants inchangés. Contrôle de mutation sur
+`cta_handler.py` (quatre modifications volontaires, restaurées) : toutes
+détectées par les tests de l'étape 3.
+
+**Limites connues de la v1** :
+
+-   un appel qui mélange un clic tracé et un clic natif est classé
+    `observed` ; les compteurs `unobserved_path` sont une borne basse ;
+-   un clic natif suivi d'un retour faux est classé `no_click` ;
+-   les chemins CTA propres à `survey_executor.py` et `action_dispatcher.py`
+    restent invisibles, y compris pour les compteurs ;
+-   rien ne consomme encore le buffer ni les compteurs (pas de persistance) ;
+-   aucun oracle CTA : la règle cible du début de cette section n'est pas
+    implémentée.
+
+*Reste ouvert après la clôture de BDL-5* (hors périmètre BDL-5, aucune décision prise) :
+
+-   aucune mesure en run réel : fréquence des marqueurs `both_empty` /
+    `empty_after`, proportion d'appels `unobserved_path`, comportement sous
+    `CTA_INTERCEPT_ONLY` et en mode normal avec `LOG_LEVEL=DEBUG` ;
+-   comportement identique avec et sans `SURVEY_BDL_CTA_TRACE=0` : vérifié
+    par tests synthétiques seulement ;
+-   coût de l'`evaluate` d'après-clic lorsque le clic déclenche une vraie
+    navigation : non mesuré ;
+-   ordre d'installation de l'enveloppe par rapport au premier CTA d'un
+    parcours : couvert par l'installation à l'import et par le rebind, non
+    validé en run réel ;
+-   `_did_progress` : les trois voies sans preuve restent actives ; toute
+    correction est une décision séparée avec validation explicite et
+    modification des tests « PIN » dans le même patch ;
+-   signal « document » absent du marqueur de progression du runtime ;
+-   chemins CTA de `survey_executor.py` et `action_dispatcher.py` : non
+    couverts ;
+-   consommateur de `drain()` / `drain_coverage()` et persistance éventuelle :
+    non décidés ;
+-   oracle CTA et failure case : non commencés ; l'absence de verdict CTA
+    interdit pour l'instant toute mesure de précision ou de rappel sur cette
+    famille (voir BDL-6).
+
 ------------------------------------------------------------------------
 
 ## BDL-6 --- Mesure de qualité
 
-**Statut : À FAIRE**
+**Statut : PROCHAINE ÉTAPE (2026-11-17) — cadrage en lecture seule d'abord (décisions à prendre avant tout code : vérité de référence, seuils, familles couvertes)**
 
 Mesurer progressivement :
 
@@ -1826,7 +1914,7 @@ ajoutée.
 Bug Detection Layer       CONCEPTION (BDL-0 terminée)
 Extraction oracle         TERMINÉ (BDL-4 clos le 2026-11-16 : oracle d'observation livré, mesuré sur 26 pages ; 0 déclenchement, angle mort documenté)
 Action oracle             TERMINÉ (BDL-3 clos le 2026-11-05 : oracle d'observation livré, 1re collecte faite)
-CTA oracle                APRÈS OBSERVABILITÉ v1 (BDL-5, prochaine étape), aucun chemin de capture
+CTA oracle                NON COMMENCÉ (observabilité v1 livrée par BDL-5 le 2026-11-17 : trace passive en mémoire + couverture déclarée ; aucun oracle ni failure case)
 CTA slider handling       À intégrer explicitement
 Corpus de référence       14 cas indexables, suite de non-régression (BDL-2)
 Mesure FN/FP              À mettre en place (1re collecte BDL-3 : 0 FALSE_POSITIVE / FALSE_NEGATIVE sur 137 actions)
@@ -2096,3 +2184,26 @@ BDL-2 (corpus)      → BDL-2 (index + mode collecte)
    lecture seule, puis patch minimal avec validation explicite. Point à
    neutraliser en premier : `_did_progress` (faux positif construit quand les
    marqueurs avant et après sont vides).
+
+## 2026-11-17 — Clôture de BDL-5 et ouverture de BDL-6
+
+1. BDL-5 (CTA : observabilité v1) est déclaré terminé par l'utilisateur.
+   Base : périmètre v1 réduit livré (trace passive, couverture déclarée,
+   tests de non-régression), cinq décisions d'architecture validées
+   (section BDL-5). Clôture sans mesure en run réel et sans seuil : elle est
+   listée dans « Reste ouvert après la clôture de BDL-5 ».
+2. Livrés : `Survey/cta_trace.py`, deux installateurs dans
+   `Survey/page_snapshot.py`, flag `SURVEY_BDL_CTA_TRACE`, trois fichiers de
+   tests. `cta_handler.py` n'est pas modifié.
+3. Constat : l'enveloppe d'un point de passage unique (`_click_with_intercept`)
+   permet d'observer les CTA sans toucher au cœur protégé, mais elle ne voit
+   ni les cinq clics qui le contournent ni les chemins CTA propres à
+   `survey_executor.py` et `action_dispatcher.py` ; la couverture est donc
+   déclarée (compteurs) et non supposée.
+4. Constat : `_did_progress` conserve trois voies vers `True` sans preuve ;
+   leur comportement est désormais figé par des tests « PIN », pas corrigé.
+5. Les points ouverts hors BDL-5 sont listés dans la section BDL-5
+   (« Reste ouvert après la clôture de BDL-5 ») ; aucun n'est tranché.
+6. BDL-6 (mesure de qualité) est ouvert. Démarrage par un cadrage en lecture
+   seule : l'oracle CTA n'existant pas, la mesure ne peut porter que sur les
+   familles ACTION et EXTRACTION tant qu'aucun verdict CTA n'est produit.
