@@ -11,8 +11,10 @@ Principes :
   d'extraction et d'action), le module n'est jamais importé par ``cta_handler``.
 - Passif : l'enveloppe ne change ni le retour, ni l'ordre des appels, ni les
   exceptions de la fonction observée. Toute erreur d'observation est absorbée.
-- Mémoire uniquement : buffer thread-local borné (anneau), drainé plus tard
-  par un consommateur (oracle CTA, hors périmètre BDL-5 v1).
+- Mémoire d'abord : buffer thread-local borné (anneau). BDL-5 v2 étape 1 ajoute
+  une collecte passive sur disque (une ligne JSON par événement, voir
+  ``failure_recorder.record_collected_cta``), flaggée et bornée, appelée à la
+  création de l'événement avec toute erreur absorbée.
 - Le booléen ``_did_progress`` n'est JAMAIS utilisé comme preuve : la trace
   expose ``marker_status`` et ``signals_changed`` calculés ici, indépendamment.
 - Coût : en mode normal quelques ``evaluate`` légers par clic (cible, page,
@@ -373,10 +375,27 @@ def build_observed_click(original, handler):
                 }
                 note_cta_event(event)
                 _log_event(event)
+                _collect(event)
             except Exception:
                 pass
 
     return observed_click_with_intercept
+
+
+def _collect(event):
+    """Persistance passive d'un événement (BDL-5 v2 étape 1). Jamais d'exception.
+
+    Import paresseux : la couche d'observation ne dépend de failure_recorder
+    qu'à l'exécution. Flag, liste blanche de champs, assainissement des URLs,
+    exclusion du mode intercept et plafond en octets sont gérés par
+    record_collected_cta.
+    """
+    try:
+        from Survey.failure_recorder import record_collected_cta
+
+        record_collected_cta(event)
+    except Exception:
+        pass
 
 
 def _log_event(event):
@@ -414,7 +433,7 @@ def _record_entry(name, outcome, returned, clicks_observed, mode, t_start):
     per_fn = st["coverage"].setdefault(name, {})
     per_fn[outcome] = per_fn.get(outcome, 0) + 1
     if outcome == "unobserved_path":
-        st["unobserved"].append({
+        detail = {
             "v": EVENT_VERSION,
             "kind": "entry",
             "fn": name,
@@ -423,7 +442,10 @@ def _record_entry(name, outcome, returned, clicks_observed, mode, t_start):
             "clicks_observed": clicks_observed,
             "t_start": t_start,
             "duration_ms": int((time.time() - t_start) * 1000),
-        })
+        }
+        st["unobserved"].append(detail)
+        # Persisté pour le calcul de couverture (BDL-6) ; l'oracle ne le juge pas.
+        _collect(detail)
 
 
 def coverage():

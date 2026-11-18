@@ -450,3 +450,185 @@ def record_collected_extraction(
     except Exception as exc:
         log_debug("[BDL_COLLECT]", f"collecte extraction erreur: {type(exc).__name__}: {exc}")
         return None
+
+
+# ---------------------------------------------------------------------------
+# BDL-5 v2 étape 1 : collecte des événements CTA (corpus de l'oracle CTA)
+# ---------------------------------------------------------------------------
+#
+# Unité de collecte : l'ÉVÉNEMENT (un clic), persisté à sa création par
+# l'enveloppe de cta_trace (pas de vidage au snapshot). Une ligne JSON par
+# événement, un fichier .jsonl par processus, dans une racine distincte de
+# snapshots/, bdl_collect_action/ et bdl_collect_extraction/.
+#
+# Persistés : les événements de clic (kind="click") et les appels de haut niveau
+# classés unobserved_path (kind="entry", sans URL ni appel navigateur : ils ne
+# servent qu'au calcul de couverture, l'oracle ne les juge pas).
+# Jamais persistés : les événements mode="intercept" (CTA_INTERCEPT_ONLY est
+# obsolète dans le projet, décision du 2026-11-18) ni les autres champs de
+# l'événement : liste blanche de champs, URLs assainies (query et fragment
+# jetés), chaînes tronquées.
+#
+# Garanties : jamais d'exception vers l'appelant (le survey n'est jamais
+# impacté) ; volume borné par un plafond en OCTETS sur la racine (somme des
+# fichiers .jsonl, initialisée une fois par processus), sans échantillonnage ;
+# abandon contrôlé avec une seule ligne info par racine.
+
+BDL_CTA_COLLECT_KIND = "bdl_collect_cta"
+_BDL_CTA_DEFAULT_MAX_BYTES = 5 * 1024 * 1024
+_BDL_CTA_STR_LIMIT = 120
+
+_CTA_CLICK_KEYS = (
+    "v", "kind", "fn", "caller", "mode", "returned", "raised",
+    "marker_status", "t_start", "duration_ms",
+)
+_CTA_ENTRY_KEYS = (
+    "v", "kind", "fn", "outcome", "mode", "clicks_observed", "t_start", "duration_ms",
+)
+
+_cta_bytes_by_root: dict = {}
+_cta_file_by_root: dict = {}
+_cta_cap_logged: set = set()
+
+
+def _bdl_cta_collect_enabled() -> bool:
+    """Collecte CTA (activée par défaut ; "0" la désactive).
+
+    Flag DISTINCT de SURVEY_OBSERVABILITY, SURVEY_BDL_COLLECT (action),
+    SURVEY_BDL_EXTRACT_COLLECT (extraction) et SURVEY_BDL_CTA_TRACE. L'enveloppe
+    CTA n'étant installée que si l'observabilité est active, la collecte la
+    suppose active : sans elle, ce flag n'a aucun effet.
+    """
+    value = (os.getenv("SURVEY_BDL_CTA_COLLECT", "1") or "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _bdl_cta_collect_root() -> Path:
+    """Racine de collecte CTA, distincte des autres racines de collecte."""
+    from config import RUN_ENV
+
+    default_root = "./bdl_collect_cta" if RUN_ENV != "prod" else "/tmp/bdl_collect_cta"
+    return Path(os.getenv("SURVEY_BDL_CTA_COLLECT_DIR", default_root))
+
+
+def _bdl_cta_collect_max_bytes() -> int:
+    """Plafond d'octets de la racine (entier > 0, sinon valeur par défaut)."""
+    raw = (os.getenv("SURVEY_BDL_CTA_COLLECT_MAX_BYTES", "") or "").strip()
+    try:
+        value = int(raw)
+        return value if value > 0 else _BDL_CTA_DEFAULT_MAX_BYTES
+    except ValueError:
+        return _BDL_CTA_DEFAULT_MAX_BYTES
+
+
+def _light_cta_marker(marker: Any) -> Optional[dict]:
+    """Marqueur de progression allégé : URL assainie, chaînes tronquées."""
+    if not isinstance(marker, dict):
+        return None
+    return {
+        "url": _sanitize_url(marker.get("url")),
+        "txt": _light_scalar(marker.get("txt"), _BDL_CTA_STR_LIMIT),
+        "qNodes": _light_scalar(marker.get("qNodes")),
+        "notifSig": _light_scalar(marker.get("notifSig"), _BDL_CTA_STR_LIMIT),
+        "progGridSig": _light_scalar(marker.get("progGridSig"), _BDL_CTA_STR_LIMIT),
+    }
+
+
+def _light_cta_event(event: Any) -> Optional[dict]:
+    """Version persistable d'un événement CTA, ou None s'il ne doit pas l'être.
+
+    Liste blanche de champs (tout champ inconnu est ignoré). None pour : non-dict,
+    mode "intercept", kind inconnu.
+    """
+    if not isinstance(event, dict):
+        return None
+    if event.get("mode") == "intercept":
+        return None
+    kind = event.get("kind")
+    if kind == "click":
+        keys = _CTA_CLICK_KEYS
+    elif kind == "entry":
+        keys = _CTA_ENTRY_KEYS
+    else:
+        return None
+
+    out: dict = {key: _light_scalar(event.get(key)) for key in keys}
+    if kind == "click":
+        changed = event.get("signals_changed")
+        out["signals_changed"] = (
+            [str(x)[:30] for x in changed[:10]] if isinstance(changed, (list, tuple)) else []
+        )
+        target = event.get("target")
+        out["target"] = (
+            {
+                key: _light_scalar(target.get(key), 80)
+                for key in ("tag", "id", "name", "className", "text")
+            }
+            if isinstance(target, dict)
+            else None
+        )
+        out["marker_before"] = _light_cta_marker(event.get("marker_before"))
+        out["marker_after"] = _light_cta_marker(event.get("marker_after"))
+        for key in ("page_before", "page_after"):
+            page = event.get(key)
+            out[key] = (
+                {"url": _sanitize_url(page.get("url")), "doc": _light_scalar(page.get("doc"), 40)}
+                if isinstance(page, dict)
+                else None
+            )
+    out["ts"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    out["pid"] = os.getpid()
+    return out
+
+
+def record_collected_cta(event: Any) -> bool:
+    """Persiste un événement CTA (une ligne JSON) dans le fichier du processus.
+
+    Contrat : retourne True si la ligne a été écrite, False sinon (désactivé,
+    événement non persistable, plafond atteint, erreur). Ne lève JAMAIS : un
+    échec de collecte ne doit ni casser le survey ni modifier le clic.
+    """
+    try:
+        if not _bdl_cta_collect_enabled():
+            return False
+        light = _light_cta_event(event)
+        if light is None:
+            return False
+        data = (json.dumps(light, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+
+        root = _bdl_cta_collect_root()
+        key = str(root)
+        if key not in _cta_bytes_by_root:
+            # Initialisé une seule fois par processus : octets déjà présents.
+            total = 0
+            if root.is_dir():
+                for f in root.glob("*.jsonl"):
+                    try:
+                        total += f.stat().st_size
+                    except OSError:
+                        continue
+            _cta_bytes_by_root[key] = total
+
+        cap = _bdl_cta_collect_max_bytes()
+        used = _cta_bytes_by_root[key]
+        if used + len(data) > cap:
+            if key not in _cta_cap_logged:
+                _cta_cap_logged.add(key)
+                log_info("[BDL_COLLECT]", f"plafond CTA atteint ({cap} octets) — collecte suspendue dans {root}")
+            return False
+
+        if key not in _cta_file_by_root:
+            _cta_file_by_root[key] = f"cta_events_{time.strftime('%Y%m%d_%H%M%S')}_{os.getpid()}.jsonl"
+        root.mkdir(parents=True, exist_ok=True)
+        with open(root / _cta_file_by_root[key], "ab") as fh:
+            fh.write(data)
+
+        _cta_bytes_by_root[key] = used + len(data)
+        log_debug(
+            "[BDL_COLLECT]",
+            f"cta collecté kind={light.get('kind')} fn={light.get('fn')} ({used + len(data)}/{cap} octets)",
+        )
+        return True
+    except Exception as exc:
+        log_debug("[BDL_COLLECT]", f"collecte cta erreur: {type(exc).__name__}: {exc}")
+        return False

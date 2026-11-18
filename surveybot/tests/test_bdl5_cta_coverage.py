@@ -23,6 +23,25 @@ from Survey.cta_trace import (
     rebind_aliases,
 )
 
+_ENV_PATCH = None
+
+
+def setUpModule():
+    # La collecte disque (BDL-5 v2 étape 1) est activée par défaut : on la coupe
+    # ici pour que ces tests n'écrivent aucun fichier dans le dépôt.
+    global _ENV_PATCH
+    import os
+    from unittest import mock as _mock
+
+    _ENV_PATCH = _mock.patch.dict(os.environ, {"SURVEY_BDL_CTA_COLLECT": "0"})
+    _ENV_PATCH.start()
+
+
+def tearDownModule():
+    if _ENV_PATCH is not None:
+        _ENV_PATCH.stop()
+
+
 
 def _reset():
     drain()
