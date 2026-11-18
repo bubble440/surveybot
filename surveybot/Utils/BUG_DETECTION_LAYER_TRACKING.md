@@ -1459,7 +1459,7 @@ Règle cible de l'oracle (liste fermée de signaux, voir §20 quater) :
 l'absence de tous les signaux produit `SUSPECTED`, jamais
 `BUG_CONFIRMED`, sauf CTA introuvable alors qu'un bouton de type CTA est
 visible. En mode `CTA_INTERCEPT_ONLY`, l'absence de navigation donne
-`PASS`.
+`PASS` *(obsolète : voir BDL-5 v2, décision du 2026-11-18)*.
 
 Point à neutraliser avant de bâtir dessus : `_did_progress` retourne
 `True` sans aucun signal réel quand les marqueurs avant et après sont
@@ -1557,7 +1557,7 @@ détectées par les tests de l'étape 3.
 
 ## BDL-5 v2 --- Oracle CTA
 
-**Statut : PROCHAINE ÉTAPE (2026-11-17) — décision de l'utilisateur : l'oracle CTA précède BDL-6 (voir §25, entrée du 2026-11-17) ; audit en lecture seule d'abord**
+**Statut : EN COURS (2026-11-18) — audit en lecture seule fait, six décisions validées par l'utilisateur ; prochain patch : étape 1 (collecte)**
 
 BDL-5 v1 a livré l'observabilité (trace passive et couverture déclarée) ; le
 périmètre v1 excluait explicitement l'oracle. La v2 construit cet oracle pour
@@ -1566,61 +1566,126 @@ que BDL-6 puisse mesurer les trois familles (ACTION, EXTRACTION, CTA).
 Premier cas réel de la trace (2026-11-17, `eu.surveyme.online`) : CTA
 `div#next_button` via `try_click_navigation_cta`, mode normal, `marker_status=ok`,
 signaux changés `url`, `doc`, `txt`, `qNodes`. C'est un cas de la branche
-`PASS` ; aucun cas `both_empty`, `empty_after`, `unobserved_path`, `no_click`,
-`CTA_INTERCEPT_ONLY` ni sans signal n'est encore observé : ce sont eux qui
-valideront ou non les règles ci-dessous.
+`PASS` ; aucun cas `both_empty`, `empty_after`, `unobserved_path`, `no_click`
+ni sans signal n'est encore observé : ce sont eux qui valideront ou non les
+règles ci-dessous.
+
+**Audit en lecture seule (2026-11-18)** — constats (`[V]` = vérifié dans le code) :
+
+-   En prod, `SURVEY_OBSERVABILITY` vaut `0` et `RUN_ENV` vaut `prod` par
+    défaut : la trace CTA n'est pas installée en prod sans activation
+    explicite. Le défaut `1` de `SURVEY_BDL_CTA_TRACE` n'est effectif qu'en
+    local ou en attach ; la flotte ne produira rien tant que la collecte
+    n'est pas activée machine par machine `[V]`.
+-   Le hook `after_dom_analyze` (point de vidage de l'extraction) est appelé
+    depuis 4 sites de `survey_executor.py` ; le clic CTA de fin de page a lieu
+    après le dernier vidage du tour `[V]`. Une unité « page » vidée au snapshot
+    serait décalée d'un cran et ne viderait jamais le dernier clic d'un survey.
+-   Les URLs de l'événement (`page_before`, `page_after`, marqueurs) ne sont
+    pas assainies, alors que la collecte d'extraction retire query et
+    fragment `[V]`.
+-   Flux mono-thread côté survey : le buffer thread-local est sûr `[V]`.
+-   Les collectes existantes écrivent un dossier par cas, plafonné à 200 par
+    racine, puis suspendent définitivement la collecte : biais vers les
+    premiers surveys d'une machine `[V]`.
+-   `notifSig` ne cible que le sélecteur `.siteNotification.error|success|warning`
+    (un seul gabarit de plateforme) et concatène classe et message sans
+    indiquer si le clic a réussi : signal faible `[V]`.
+-   Le signal `url` est `location.href` complet (query et fragment inclus) : sa
+    fiabilité comme signal fort ne se vérifie pas sans corpus `[NV]`.
+-   `CTA_INTERCEPT_ONLY` est « confirmé = 0 en prod » (décisions de déploiement
+    bare-metal) `[V]` ; les constats sur le rapport d'interception et le retour
+    de fonction sous ce mode sont sans objet pour l'oracle.
+
+**Décisions validées par l'utilisateur (2026-11-18)** :
+
+1.  Le mode `CTA_INTERCEPT_ONLY` est jugé obsolète dans le projet : l'oracle
+    l'ignore et la collecte ne persiste pas les événements `mode=intercept`.
+    Le support intercept déjà livré dans la trace (v1) est conservé tel quel,
+    sans coût, et sera retiré quand le mode sera supprimé du projet.
+2.  Unité de collecte : l'événement (un clic), persisté à sa création par
+    l'enveloppe de `cta_trace.py` (import paresseux, erreurs absorbées), une
+    ligne JSON par événement, un fichier par processus. `cta_handler.py` reste
+    à zéro diff. Pas de vidage au snapshot ni de consommation de `drain()`.
+3.  Couverture : les enregistrements `unobserved_path` sont persistés tels
+    quels, sans URL ni `evaluate` supplémentaire, uniquement pour le calcul de
+    couverture de BDL-6 ; l'oracle ne les juge pas. Les compteurs `no_click`
+    restent en mémoire.
+4.  Règles de départ de l'oracle (tableau ci-dessous), **hypothèse à geler
+    après quelques jours de corpus réel**, pas une décision définitive.
+5.  Assainissement des URLs avant écriture (query et fragment retirés ; les
+    signaux sont calculés avant), plafond en octets du fichier sans
+    échantillonnage, flag distinct `SURVEY_BDL_CTA_COLLECT` (racine
+    `bdl_collect_cta`, subordonné à l'observabilité).
+6.  La règle du template des prompts Claude Code qui conditionnait les patchs
+    CTA à `CTA_INTERCEPT_ONLY` est retirée.
 
 Découpage retenu, sur le modèle de BDL-4 (collecte, oracle, mesure) :
 
-1.  **Collecte.** Persistance flaggée de la trace CTA (aujourd'hui
-    `drain()` / `drain_coverage()` ne sont consommés par rien et tout reste en
-    mémoire), sur le modèle de BDL-2b et de BDL-4 étape 2 : flag distinct,
-    hors du flux normal, volume borné. Corpus mutualisé avec BDL-6.
-2.  **Oracle d'observation minimal.** Fonction pure sur artefacts capturés
-    (§20 quater), module dédié sur le modèle de `action_oracle` et
-    `extraction_oracle`. Il n'appelle jamais le navigateur et ne lit jamais
-    le booléen `_did_progress` ni le seul retour de la fonction de clic comme
-    preuve de progression : il lit `marker_status`, `signals_changed`, le
-    mode, le rapport d'interception et la couverture déclarée.
-3.  **Annotation et mesure.** Corpus réel annoté, outil de mesure sous
-    `tools/` sur le modèle de `tools/bdl4_measure.py`, mutualisable avec
-    BDL-6. Couverture visée : CTA texte, icône, structurels, iframes,
-    navigation classique, transitions internes, sliders, `CTA_INTERCEPT_ONLY`.
+1.  **Collecte.** `record_collected_cta(event)` dans `failure_recorder.py`,
+    appelé depuis l'enveloppe de `cta_trace.py` ; persiste aussi les
+    `unobserved_path` ; flag, assainissement et plafond ci-dessus ; tests
+    dédiés. Corpus mutualisé avec BDL-6.
+2.  **Oracle d'observation minimal** (après collecte réelle). Fonction pure sur
+    un enregistrement (§20 quater), module `Survey/cta_oracle.py`, même forme
+    de verdict que `extraction_oracle` (`PASS`, `SUSPECTED`, `INCONCLUSIVE`,
+    `reason`). Il n'appelle jamais le navigateur et ne lit jamais le booléen
+    `_did_progress` ni le seul retour de la fonction de clic comme preuve de
+    progression : il lit `marker_status` et `signals_changed`. Tests sur de
+    vrais enregistrements collectés.
+3.  **Annotation et mesure.** Corpus réel annoté, `tools/bdl5_measure.py` sur le
+    modèle de `tools/bdl4_measure.py`, mutualisable avec BDL-6. Couverture
+    visée : CTA texte, icône, structurels, iframes, navigation classique,
+    transitions internes, sliders.
 
-Règles de départ — **proposition à valider lors de l'audit de la v2, non
-décidée** (elles prolongent la règle cible de §20 quater) :
+Règles de départ — **hypothèse à valider sur corpus** (elles remplacent la
+proposition du 2026-11-17 et prolongent la règle cible de §20 quater) :
 
-| Situation capturée | Verdict proposé |
+| Événement de clic (mode normal) | Verdict proposé |
 |---|---|
-| mode normal, au moins un signal de `signals_changed` | `PASS` |
-| `CTA_INTERCEPT_ONLY`, clic capturé et empêché | `PASS` |
-| mode normal, `marker_status=ok`, aucun signal | `SUSPECTED` |
+| au moins un signal fort (`url`, `doc`, `qNodes`) | `PASS` |
+| signaux faibles seuls (`txt`, `notifSig`, `progGridSig`) | `INCONCLUSIVE` |
+| `marker_status=ok`, aucun signal | `SUSPECTED` |
 | `marker_status` différent de `ok`, aucun signal | `INCONCLUSIVE` |
-| `unobserved_path` sur la page (clic hors observation) | `INCONCLUSIVE` (abstention déclarée) |
-| `no_click` seul (rien trouvé ou rien tenté) | `INCONCLUSIVE` : ni preuve de bug ni preuve de succès |
-| aucune trace CTA sur la page | aucun verdict (jamais `PASS`) |
-| `CTA_INTERCEPT_ONLY`, clic non capturé ou non empêché | à trancher à l'audit |
+| exception levée par la fonction de clic | `INCONCLUSIVE` |
 | CTA introuvable alors qu'un bouton CTA est visible | `BUG_CONFIRMED`, hors première version (exige une sonde de visibilité absente de la v1) |
+
+Justification du durcissement : un clic raté qui affiche une erreur change
+`txt` et/ou `notifSig` comme un clic réussi ; compter ces signaux comme `PASS`
+produirait des faux négatifs par construction. `qNodes` est gardé « fort » pour
+rester dans la liste fermée de §20 quater, mais il varie aussi sur les sliders
+et les questions révélées dynamiquement : hypothèse à tester sur corpus. Les
+cas à signaux faibles seuls restent `INCONCLUSIVE` tant que le corpus ne dit
+pas lesquels sont fiables.
 
 Principes qui s'appliquent : l'absence de navigation n'est pas un échec CTA
 (§16) ; un `SUSPECTED` n'est jamais promu automatiquement, ne déclenche jamais
 d'AutoFix et est relu (§20 quater, BDL-7). Les sliders et transitions
 internes hors GridProgressive peuvent produire des `SUSPECTED` sans bug : la
-relecture humaine est donc la seule validation de ces cas.
+relecture humaine est donc la seule validation de ces cas. L'oracle ne juge que
+des événements de clic : sans événement, il n'y a pas de verdict (jamais
+`PASS`).
 
-À trancher à l'audit : unité et schéma de collecte (page ou parcours) ;
-emplacement du point qui vide les buffers ; sort du cas d'interception non
-capturée (le booléen retourné ne distingue pas « impossible » d'une erreur de
-dispatch) ; volume de collecte ; angle mort des chemins CTA propres à
-`survey_executor.py` et `action_dispatcher.py`, qui n'apparaissent même pas
-dans les compteurs de couverture (une page sans trace CTA ne prouve pas
-l'absence de CTA).
+Angle mort conservé et déclaré, non étendu en v2 : les chemins CTA propres à
+`survey_executor.py` et `action_dispatcher.py` restent invisibles et
+n'apparaissent pas dans les compteurs de couverture. Le signal indépendant
+`redirect_watcher.wait_for_navigation_or_dom_change` existe dans l'executor
+mais hors trace ; le récupérer demanderait de toucher le flux de l'executor,
+ce qui augmenterait la complexité sans gain de prévisibilité.
+
+Reste ouvert (non vérifié) : chemin de remontée du corpus de la flotte vers la
+machine de développement (seul `bdl4_measure` lit un dossier local ;
+`upload_fleet_cases` concerne les failure cases) ; sensibilité du signal `url`
+aux paramètres de query qui changent sans navigation ; le corpus sera
+presque entièrement `PASS` : les faux négatifs ne se verront que par
+l'échantillonnage de BDL-7.
 
 Hors périmètre de la v2 : correction du booléen de `_did_progress` (décision
 séparée, tests « PIN » à modifier dans le même patch), failure case et
-AutoFix, `BUG_CONFIRMED` de la première version. Pas de seuil de précision ni
-de rappel fixé a priori ; une clôture sans seuil reste possible si elle est
-décidée explicitement (comme pour BDL-3 et BDL-4).
+AutoFix, `BUG_CONFIRMED` de la première version, suppression du mode
+`CTA_INTERCEPT_ONLY` du code. Pas de seuil de précision ni de rappel fixé a
+priori ; une clôture sans seuil reste possible si elle est décidée
+explicitement (comme pour BDL-3 et BDL-4).
 
 ------------------------------------------------------------------------
 
@@ -1778,8 +1843,10 @@ récurrence ajouterait des branches avant d'avoir des données. Un
 Signaux : URL, document, empreinte du conteneur principal, indicateur de
 page. Absence de tous les signaux → `SUSPECTED`. `BUG_CONFIRMED`
 uniquement si le CTA est introuvable alors qu'un bouton de type CTA est
-visible. `CTA_INTERCEPT_ONLY` actif → l'absence de navigation donne
-`PASS`.
+visible. *(Obsolète depuis le 2026-11-18 : le mode `CTA_INTERCEPT_ONLY`
+est jugé obsolète dans le projet et ignoré par l'oracle CTA ; voir
+BDL-5 v2. La règle « absence de navigation = `PASS` » sous ce mode n'est
+plus applicable.)*
 
 ------------------------------------------------------------------------
 
@@ -2293,3 +2360,23 @@ BDL-2 (corpus)      → BDL-2 (index + mode collecte)
 5. Prochaine étape : audit en lecture seule de la v2 (unité de collecte,
    point de vidage des buffers, cas d'interception non capturée), puis patch
    minimal avec validation explicite.
+
+## 2026-11-18 — Audit BDL-5 v2 et décisions
+
+1. Audit en lecture seule de la v2 réalisé (constats dans la section
+   BDL-5 v2). Constat principal : l'unité « page » vidée au snapshot est
+   décalée d'un cran par rapport au clic CTA de fin de page et ne vide jamais
+   le dernier clic ; l'unité retenue est l'événement.
+2. Décisions validées par l'utilisateur (six, listées dans la section
+   BDL-5 v2) : mode `CTA_INTERCEPT_ONLY` ignoré par l'oracle et non persisté ;
+   persistance à la création de l'événement ; `unobserved_path` persistés pour
+   la couverture seulement ; règles de départ comme hypothèse à geler sur
+   corpus ; URLs assainies, plafond en octets, flag `SURVEY_BDL_CTA_COLLECT` ;
+   règle `CTA_INTERCEPT_ONLY` retirée du template des prompts Claude Code.
+3. La règle de §20 quater « `CTA_INTERCEPT_ONLY` actif → absence de navigation
+   = `PASS` » est annotée obsolète (mode « confirmé = 0 en prod »).
+4. Le durcissement du `PASS` (signaux forts seulement) évite un faux négatif
+   construit par conception : `txt` et `notifSig` changent aussi après un
+   clic raté qui affiche une erreur.
+5. Prochaine étape : patch de collecte (étape 1 de la v2), puis quelques
+   jours de collecte réelle avant d'écrire l'oracle.
