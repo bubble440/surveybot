@@ -185,30 +185,52 @@ def marker_status(before, after):
     return "ok"
 
 
+def _sanitize_url_for_signal(url):
+    """scheme://host/path uniquement (query/fragment jetés), comme la version
+    persistée (voir ``failure_recorder._sanitize_url``). Le signal ``url`` doit
+    rester cohérent avec les URL effectivement enregistrées dans l'événement :
+    un changement de fragment/query pur (SPA) ne doit pas déclencher le signal."""
+    if not isinstance(url, str) or not url:
+        return None
+    try:
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(url)
+        if not parts.scheme or not parts.netloc:
+            return None
+        return f"{parts.scheme}://{parts.netloc}{parts.path or ''}"
+    except Exception:
+        return None
+
+
 def signals_changed(before, after, page_before=None, page_after=None):
     """Liste (ordre de SIGNALS) des signaux qui diffèrent entre avant et après.
 
     Les signaux du marqueur ne sont comparés que si les DEUX marqueurs sont
     exploitables. Le signal ``doc`` vient de la lecture indépendante de page
     et n'est comparé que si les deux identités sont non vides.
-    Les valeurs sont comparées telles quelles (pas de conversion ``or -1``).
+    Les valeurs sont comparées telles quelles (pas de conversion ``or -1``),
+    sauf ``url`` : comparée assainie (scheme://host/path), pour rester
+    cohérente avec l'URL persistée dans l'événement.
     """
     changed = []
     try:
         if marker_status(before, after) == "ok":
             for key in ("url", "txt", "qNodes", "notifSig", "progGridSig"):
-                if before.get(key) != after.get(key):
+                if key == "url":
+                    if _sanitize_url_for_signal(before.get(key)) != _sanitize_url_for_signal(after.get(key)):
+                        changed.append(key)
+                elif before.get(key) != after.get(key):
                     changed.append(key)
         pb = page_before if isinstance(page_before, dict) else {}
         pa = page_after if isinstance(page_after, dict) else {}
         if pb.get("doc") and pa.get("doc") and pb.get("doc") != pa.get("doc"):
             changed.append("doc")
         # URL de la lecture indépendante, si le marqueur ne l'a pas déjà signalée.
-        if (
-            "url" not in changed
-            and pb.get("url") and pa.get("url") and pb.get("url") != pa.get("url")
-        ):
-            changed.append("url")
+        if "url" not in changed:
+            spb, spa = _sanitize_url_for_signal(pb.get("url")), _sanitize_url_for_signal(pa.get("url"))
+            if spb and spa and spb != spa:
+                changed.append("url")
     except Exception:
         return []
     return [s for s in SIGNALS if s in changed]

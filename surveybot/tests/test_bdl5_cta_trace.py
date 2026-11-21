@@ -107,6 +107,30 @@ class SignalsChangedTests(unittest.TestCase):
                               {"doc": "1"}, {"doc": "2"})
         self.assertEqual(out, ["url", "doc", "txt", "qNodes"])
 
+    def test_fragment_only_change_is_not_a_url_signal(self):
+        # SPA : le fragment change (nouvelle question) mais pas scheme://host/path.
+        self.assertEqual(
+            signals_changed(_m(url="https://s.example/p1#q1"), _m(url="https://s.example/p1#q2")),
+            [],
+        )
+
+    def test_query_only_change_is_not_a_url_signal(self):
+        self.assertEqual(
+            signals_changed(_m(url="https://s.example/p1?x=1"), _m(url="https://s.example/p1?x=2")),
+            [],
+        )
+
+    def test_real_path_change_is_still_a_url_signal(self):
+        self.assertEqual(
+            signals_changed(_m(url="https://s.example/p1#q1"), _m(url="https://s.example/p2#q1")),
+            ["url"],
+        )
+
+    def test_page_url_fragment_only_change_is_not_a_url_signal(self):
+        pb = {"url": "https://s.example/p1#q1", "doc": "1"}
+        pa = {"url": "https://s.example/p1#q2", "doc": "1"}
+        self.assertEqual(signals_changed(dict(_EMPTY), dict(_EMPTY), pb, pa), [])
+
 
 class CompactTests(unittest.TestCase):
     def test_compact_marker_truncates(self):
