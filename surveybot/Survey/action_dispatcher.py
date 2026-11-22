@@ -4504,6 +4504,18 @@ def _apply_by_target_id(
                                 (next_btn.get_attribute("aria-disabled") or "").strip().lower() != "true"
                                 and next_btn.get_attribute("disabled") is None
                             )
+                            # Qualtrics ne pose ni disabled ni aria-disabled sur ce widget :
+                            # la dernière carte est signalée uniquement par la classe "Disabled"
+                            # posée sur le svg.CarouselChevron interne au bouton (confirmé sur
+                            # DOM de référence, cf. BOT_EVOLUTION_MEMORY.md). Sans ce test, le
+                            # chevron reste considéré cliquable indéfiniment sur la dernière carte.
+                            if clickable:
+                                _qcr_svg_disabled = next_btn.evaluate(
+                                    "(b) => { const s = b.querySelector('svg.CarouselChevron'); "
+                                    "return !!(s && s.classList.contains('Disabled')); }"
+                                )
+                                if _qcr_svg_disabled:
+                                    clickable = False
                         except Exception:
                             clickable = False
 
@@ -4513,7 +4525,37 @@ def _apply_by_target_id(
                     if intercept_only:
                         log_info("[CTA_INTERCEPT]", "qualtrics_carousel_radio cta_found intercept_ok")
                         return False
-                    moved = bool(_click_candidate(next_btn, "qualtrics_carousel_radio_next"))
+
+                    def _qcr_card_text():
+                        try:
+                            return driver.evaluate(
+                                "() => { const c = document.querySelector("
+                                "'div.CarouselCard:not(.NoDisplay) .CarouselCardText'); "
+                                "return c ? c.textContent.replace(/\\s+/g,' ').trim() : null; }"
+                            )
+                        except Exception:
+                            return None
+
+                    _qcr_card_before = _qcr_card_text()
+                    clicked = bool(_click_candidate(next_btn, "qualtrics_carousel_radio_next"))
+                    moved = False
+                    if clicked:
+                        # Un clic "réussi" sur le chevron ne garantit pas que le carrousel a
+                        # réellement avancé (ex: clic no-op quand Qualtrics ignore l'event sur
+                        # un chevron visuellement désactivé). On ne considère l'avance acquise
+                        # que si la carte visible a effectivement changé.
+                        _qcr_deadline2 = time.time() + 0.6
+                        while time.time() < _qcr_deadline2:
+                            _qcr_card_after = _qcr_card_text()
+                            if _qcr_card_after is not None and _qcr_card_after != _qcr_card_before:
+                                moved = True
+                                break
+                            time.sleep(0.05)
+                        if not moved:
+                            log_debug(
+                                "[QUALTRICS_CAROUSEL_RADIO_NEXT]",
+                                "chevron clicked but card unchanged -> no advance",
+                            )
                     if moved:
                         counts[group_key] = counts.get(group_key, 0) + 1
                     log_info("[QUALTRICS_CAROUSEL_RADIO_NEXT]", f"chevron clicked={moved} count={counts.get(group_key, 0)}")

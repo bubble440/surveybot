@@ -295,6 +295,7 @@
 | RHS-273 | COLLECTE | Une fois le plafond de dossiers atteint pour une racine, la collecte est suspendue définitivement, biaisant le corpus vers les premières exécutions d'une machine | CONFIRMÉ DANS LE CODE (2026-11-21) : `Utils/BUG_DETECTION_LAYER_CORPUS_INDEX.md` documente le mécanisme (« volume borné par un plafond de dossiers avec abandon contrôlé ») ; confirmé aussi dans le code applicatif de collecte (grep `plafond atteint ... collecte suspendue dans`, mécanisme répété pour cas, extraction et CTA) — le plafond, une fois atteint, n'est pas rouvert dynamiquement (pas de purge/rotation identifiée) | — |
 | RHS-274 | CTA | `CTA_INTERCEPT_ONLY` déclaré obsolète par l'utilisateur mais son code reste présent dans le cœur protégé | CONFIRMÉ DANS LE CODE (2026-11-21) : `Survey/cta_handler.py` (lignes 41, 946, 1655, 2563, 2585, 2815, 2839) et `Survey/survey_executor.py` (lignes 2735-2786, via `is_cta_intercept_only()`) utilisent encore activement la variable — code non retiré. Le caractère « obsolète » relève d'une déclaration de l'utilisateur, non d'un constat du code lui-même | retrait éventuel = chantier séparé |
 | RHS-275 | CTA | Les chemins CTA propres à l'exécuteur de survey et au dispatcher d'actions ne sont pas couverts par la trace CTA | CONFIRMÉ DANS LE CODE (recoupe RHS-134) : `Utils/BUG_DETECTION_LAYER_TRACKING.md` section BDL-5 v2 « Angle mort conservé et déclaré » — chemins `survey_executor.py`/`action_dispatcher.py` hors trace, décision explicite de ne pas étendre (complexité jugée trop coûteuse) | — |
+| RHS-276 | CTA | Deux comportements « slider » distincts du point de vue du clic CTA : défilement automatique (normal) vs navigation interne par flèche (risque de faux SUSPECTED/INCONCLUSIVE) | NON VÉRIFIÉ (mode 2 non observé sur corpus réel ; absence de chemin de code dédié confirmée pour le point de passage CTA) | BDL-5 v2 (oracle CTA) |
 
 ---
 
@@ -342,7 +343,20 @@ Suivi lié : retrait éventuel = chantier séparé (explicitement hors périmèt
 **RHS-275 — Chemins CTA de l'exécuteur et du dispatcher hors trace BDL-5**
 Voir RHS-134 (même constat, même origine BDL-5 v2 « Angle mort conservé et déclaré »).
 
-**Autres entrées CTA** : voir RHS-009, 020, 087-100 (BDL inventaire/vérifications), 109, 121, 125-134 (BDL-5/BDL-5 v2), 155, 266-275 — toutes listées avec leur citation dans le tableau d'index (section 2).
+**RHS-276 — Deux comportements « slider » distincts vus du clic CTA**
+Symptôme : deux mécanismes sont décrits côté slider.
+(1) Slider à défilement automatique : la sélection d'une option fait défiler la question dans la page, les options restent les mêmes, et le clic CTA de changement de page n'intervient qu'une seule fois, après la réponse à la dernière question — du point de vue de l'oracle CTA, c'est un clic de changement de page ordinaire, à ne pas traiter comme un cas particulier.
+(2) Slider à navigation interne (cas rare) : les options restent fixes, la question défile après un clic sur un bouton de navigation interne (généralement une flèche proche de la question), et un CTA de changement de page est présent en permanence en bas de page. Un clic sur la flèche interne ne change ni le document, ni l'URL, ni le nombre de nœuds de question.
+Impact : pour le mode 1, aucun risque identifié (comportement déjà couvert par la règle générale « absence de navigation ≠ échec CTA », cf. `Utils/BUG_DETECTION_LAYER_TRACKING.md` §16/§23 et lignes 923-927). Pour le mode 2, si le clic sur la flèche interne passait par le chemin de clic CTA observé par la trace, il ressemblerait à un clic sans progression (`qNodes`, `txt`, `notifSig` inchangés) alors qu'il s'agit d'une transition interne normale — risque de faux `SUSPECTED` ou `INCONCLUSIVE` une fois l'oracle CTA (BDL-5 v2) en service.
+Origine : constat formulé par l'utilisateur (2026-11-22), à rapprocher des mentions génériques « sliders et transitions internes » dans `Utils/BUG_DETECTION_LAYER_TRACKING.md` (lignes 230-234, 671-676, 923-927, 1454-1464, 1637-1665) et du détecteur de transition interne existant, scopé à un unique gabarit (RHS-096, Ipsos GridProgressive — `Survey/cta_handler.py` lignes 642-707, signal `progGridSig`) ; aucun mécanisme « flèche de navigation interne » distinct de GridProgressive n'a été localisé dans le code lors de cette vérification.
+Vérifications effectuées (2026-11-22, lecture seule) :
+- Point de passage commun des clics CTA observés par la trace = `_click_with_intercept` (`Survey/cta_handler.py`), utilisé uniquement dans ce fichier et dans `Survey/cta_trace.py`/`Survey/page_snapshot.py`. `Survey/action_dispatcher.py` ne l'appelle jamais ; il appelle `click_cta_strong_any_context` (`Survey/input_handler.py`) à plusieurs endroits (ex. lignes 6234, 6690, 6946, 6990, 7047, 7121-7147, 7507-7508, 8472) pour des libellés CTA connus explicitement. Aucun appel à l'un ou l'autre de ces points de passage n'a été trouvé qui corresponde à un clic sur une « flèche » de navigation interne — un tel clic, s'il existe sur une plateforme donnée, serait vraisemblablement traité comme une action de réponse ordinaire via `action_dispatcher.py` plutôt que via le chemin CTA. **NON VÉRIFIÉ** : quelle fonction appellerait effectivement ce clic sur une plateforme réelle présentant ce gabarit — aucun cas de ce type n'a été rencontré dans le corpus à ce jour.
+- **NON VÉRIFIÉ** : si un CTA constant en bas de page (mode 2) est bien cliqué une seule fois par page après la dernière question, comme pour le mode 1 — comportement dépendant d'une plateforme réelle non observée dans le corpus actuel.
+Statut : NON VÉRIFIÉ.
+Suivi lié : BDL-5 v2 (oracle CTA).
+Décision actée : le mode 2 n'est pas recherché ni traité pour l'instant ; aucune règle d'oracle ni collecte spécifique n'est décidée. Un événement collecté du type 2, s'il apparaît, devra être annoté à part.
+
+**Autres entrées CTA** : voir RHS-009, 020, 087-100 (BDL inventaire/vérifications), 109, 121, 125-134 (BDL-5/BDL-5 v2), 155, 266-276 — toutes listées avec leur citation dans le tableau d'index (section 2).
 
 ### EXTRACTION
 
@@ -396,4 +410,4 @@ Seules les clôtures explicitement actées dans les fichiers sources sont repris
 
 ---
 
-*Dernière mise à jour : 2026-11-21. Entrées RHS-001 à RHS-265 extraites par lecture intégrale des 16 fichiers de `Utils/` (hors ce registre lui-même). Entrées RHS-266 à RHS-275 vérifiées en lecture seule dans le code source le même jour, statut précisé individuellement.*
+*Dernière mise à jour : 2026-11-22. Entrées RHS-001 à RHS-265 extraites par lecture intégrale des 16 fichiers de `Utils/` (hors ce registre lui-même). Entrées RHS-266 à RHS-275 vérifiées en lecture seule dans le code source le 2026-11-21, statut précisé individuellement. Entrée RHS-276 ajoutée le 2026-11-22 (constat utilisateur sur la distinction slider défilement-automatique / navigation-interne), vérifications de code ciblées effectuées le même jour.*
