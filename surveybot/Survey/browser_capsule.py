@@ -678,4 +678,15 @@ def collect_xhr_fetch_resources(ctx) -> "Optional[list]":
             continue
         entry["content"] = content
         total_chars += len(content)
+
+    # Purge le buffer Performance une fois `entries` construit (n'affecte pas le
+    # contenu déjà collecté ci-dessus) : sans ce nettoyage, chaque appel suivant
+    # (extraction/prompt/action/validation) relit tout l'historique cumulé depuis
+    # le chargement de page ET ré-capture les entrées `fetch` générées par les
+    # sondes `_CACHED_RESPONSE_JS` ci-dessus, doublant les URL déjà loguées en xhr.
+    try:
+        ctx.evaluate("() => { try { performance.clearResourceTimings(); } catch (e) {} }")
+    except Exception:
+        pass
+
     return entries

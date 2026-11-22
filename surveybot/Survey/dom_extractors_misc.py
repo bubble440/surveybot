@@ -13000,6 +13000,132 @@ def _extract_qualtrics_carousel_checkbox_blocks(driver, frame_chain: list[int] |
     return blocks
 
 
+def _extract_qualtrics_carousel_radio_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    Qualtrics "carousel" Matrix/Likert à choix unique : une déclaration
+    (`div.CarouselCard` sans `NoDisplay`) visible à la fois + `ul.CarouselAnswerButtonList`
+    de radios (échelle d'accord) partageant le même `name`.
+
+    Problème résolu : même cause que `_extract_qualtrics_carousel_checkbox_blocks`
+    (libellé imbriqué dans `label.CarouselAnswerButton` + `label.q-radio` décoratif
+    vide) → `_find_associated_label()` ne résout rien → `options=[]`, `question` =
+    texte agrégé des 5 libellés de réponse → `choice_without_options`.
+
+    Guard DOM strict (tous requis) :
+    1. ≥2 `ul.CarouselAnswerButtonList input[type='radio'][name]` de même `name`
+    2. Ancêtre `div.QuestionOuter.Matrix div.Inner.Likert` (scope strict : ne capte
+       aucun autre radio-carousel/layout, uniquement le Likert "carousel" Qualtrics natif)
+    3. Chaque input : `id` + libellé non vide et unique via `label.CarouselAnswerButton`
+    4. Un `.QuestionText` (intitulé) dans le conteneur de la question
+
+    Question = intitulé + texte de la carte (déclaration) visible, comme le
+    `aria-labelledby` de la légende cachée de Qualtrics. Options = libellés de
+    l'échelle, dans l'ordre DOM.
+
+    Patterns exclus :
+    - Radios hors `div.QuestionOuter.Matrix div.Inner.Likert` → pipeline existant
+    - Checkbox carousel → `_extract_qualtrics_carousel_checkbox_blocks` (inchangé)
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        radios = driver.query_selector_all(
+            "div.QuestionOuter.Matrix div.Inner.Likert "
+            "ul.CarouselAnswerButtonList input[type='radio'][name]"
+        )
+    except Exception:
+        return []
+    if len(radios) < 2:
+        return []
+
+    grouped: dict[str, list] = {}
+    for rb in radios:
+        try:
+            name = (rb.get_attribute("name") or "").strip()
+            if name:
+                grouped.setdefault(name, []).append(rb)
+        except Exception:
+            continue
+
+    blocks: list[dict] = []
+    for name, els in grouped.items():
+        if len(els) < 2:
+            continue
+
+        options: list[str] = []
+        option_xpath_map: dict[str, str] = {}
+        ok = True
+        for el in els:
+            lbl = _qualtrics_carousel_option_label(driver, el)
+            el_id = (el.get_attribute("id") or "").strip()
+            nk = _norm_key(lbl) if lbl else ""
+            if not lbl or not nk or not el_id or nk in option_xpath_map:
+                ok = False
+                break
+            id_lit = _xpath_literal(el_id)
+            option_xpath_map[nk] = (
+                f"(//label[@for={id_lit} and contains(@class,'CarouselAnswerButton')])[1]"
+            )
+            options.append(lbl)
+        if not ok:
+            continue
+
+        try:
+            info = driver.evaluate(
+                """(input) => {
+                const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim();
+                const root = input.closest('.QuestionOuter') || document;
+                const q = root.querySelector('.QuestionText');
+                const card = root.querySelector('div.CarouselCard:not(.NoDisplay) .CarouselCardText');
+                return {q: q ? norm(q.textContent) : '', card: card ? norm(card.textContent) : ''};
+                }""",
+                els[0],
+            ) or {}
+        except Exception:
+            info = {}
+        stem = _norm(info.get("q") or "")
+        card = _norm(info.get("card") or "")
+        if not stem:
+            continue
+        question = f"{stem} {card}".strip() if card else stem
+
+        group_key = f"radio:qualtrics_carousel_matrix:{_norm_lc(name)}"
+        target_id = make_target_id("group", group_key, question)
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "radio",
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "qualtrics_carousel_radio_matrix": True,
+            },
+        )
+        blocks.append(
+            {
+                "question": question,
+                "itype": "radio",
+                "options": options,
+                "max_select": 1,
+                "min_select": 1,
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "qualtrics_carousel_radio_matrix": True,
+                },
+            }
+        )
+        log_debug(
+            "[QUALTRICS_CAROUSEL_RADIO]",
+            f"name={name!r} card={card!r} options={options}",
+        )
+
+    return blocks
+
+
 def _image_labelledby_option_alt(driver, el) -> str:
     """
     Comme `_image_only_option_alt` ci-dessus, mais résout le libellé de

@@ -1871,6 +1871,9 @@ def _should_skip_post_actions_navigation(
                 if isinstance(ctx, dict) and ctx.get("qualtrics_carousel_checkbox") is True:
                     log_info("[QUALTRICS_CAROUSEL_NEXT]", "carte suivante affichée → skip CTA, ré-extraction du DOM")
                     return True
+                if isinstance(ctx, dict) and ctx.get("qualtrics_carousel_radio_matrix") is True:
+                    log_info("[QUALTRICS_CAROUSEL_RADIO_NEXT]", "carte suivante affichée → skip CTA, ré-extraction du DOM")
+                    return True
             except Exception:
                 continue
 

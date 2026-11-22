@@ -4436,6 +4436,89 @@ def _apply_by_target_id(
                     log_info("[QUALTRICS_CAROUSEL_NEXT]", f"chevron clicked={moved}")
                     return moved
 
+                _QC_RADIO_MAX_ADVANCE = 60  # budget max de cartes/déclarations par groupe
+
+                def _maybe_advance_qualtrics_carousel_radio_after_answer() -> bool:
+                    """Qualtrics CarouselQuestionBody Matrix/Likert (radio, choix unique) :
+                    clic ciblé sur le chevron « Next option » après la réponse à la carte
+                    (déclaration) courante.
+
+                    Fonction distincte de `_maybe_advance_qualtrics_carousel_after_answer`
+                    (checkbox) : aucune des deux n'est modifiée par l'autre. Guard : payload
+                    de l'extracteur dédié (`qualtrics_carousel_radio_matrix`). Même ordre
+                    impératif que le variant checkbox : sélection vérifiée AVANT le clic du
+                    chevron (inputs partagés entre cartes). Budget max `_QC_RADIO_MAX_ADVANCE`
+                    avances par groupe (`group_key`) : abandon contrôlé + log au-delà (évite
+                    une boucle infinie si le chevron ne désactive jamais / carrousel cyclique).
+                    Retourne True uniquement si le chevron a été réellement cliqué.
+                    """
+                    if not allow_mx_vertical_carousel_advance:
+                        return False
+                    if not (payload.get("qualtrics_carousel_radio_matrix") and resolved_itype == "radio"):
+                        return False
+                    opt_map = payload.get("option_xpath_map") or {}
+                    first_opt_xpath = next((v for v in opt_map.values() if isinstance(v, str) and v.strip()), "")
+                    if not first_opt_xpath:
+                        return False
+
+                    group_key = str(payload.get("group_key") or target_id or "")
+                    counts = getattr(driver, "_qc_radio_advance_counts", None)
+                    if not isinstance(counts, dict):
+                        counts = {}
+                        driver._qc_radio_advance_counts = counts
+                    if counts.get(group_key, 0) >= _QC_RADIO_MAX_ADVANCE:
+                        log_info(
+                            "[QUALTRICS_CAROUSEL_RADIO_NEXT]",
+                            f"budget_exceeded group={group_key!r} max={_QC_RADIO_MAX_ADVANCE} -> abandon avance, CTA de page normal",
+                        )
+                        return False
+
+                    try:
+                        _qcr_fid = (el.get_attribute("for") or "").strip()
+                        _qcr_ctx = getattr(driver, "_current_frame", driver)
+                        _qcr_deadline = time.time() + 0.6
+                        _qcr_selected = False
+                        while _qcr_fid and time.time() < _qcr_deadline:
+                            if _is_selected(_qcr_ctx.query_selector(f"[id='{_qcr_fid}']")):
+                                _qcr_selected = True
+                                break
+                            time.sleep(0.05)
+                    except Exception:
+                        _qcr_selected = False
+                    if not _qcr_selected:
+                        log_debug("[QUALTRICS_CAROUSEL_RADIO_NEXT]", "option not selected after click → no advance")
+                        return False
+
+                    next_xpath = (
+                        f"{first_opt_xpath}/ancestor::*[contains(concat(' ',normalize-space(@class),' '),' QuestionOuter ')][1]"
+                        "//button[contains(concat(' ',normalize-space(@class),' '),' CarouselChevronContainer ')"
+                        " and @aria-label='Next option']"
+                    )
+
+                    intercept_only = is_cta_intercept_only()
+                    next_btn = _find_best_visible(next_xpath)
+                    clickable = False
+                    if next_btn:
+                        try:
+                            clickable = (
+                                (next_btn.get_attribute("aria-disabled") or "").strip().lower() != "true"
+                                and next_btn.get_attribute("disabled") is None
+                            )
+                        except Exception:
+                            clickable = False
+
+                    if not clickable:
+                        log_debug("[QUALTRICS_CAROUSEL_RADIO_NEXT]", "next chevron not found/disabled (last card?)")
+                        return False
+                    if intercept_only:
+                        log_info("[CTA_INTERCEPT]", "qualtrics_carousel_radio cta_found intercept_ok")
+                        return False
+                    moved = bool(_click_candidate(next_btn, "qualtrics_carousel_radio_next"))
+                    if moved:
+                        counts[group_key] = counts.get(group_key, 0) + 1
+                    log_info("[QUALTRICS_CAROUSEL_RADIO_NEXT]", f"chevron clicked={moved} count={counts.get(group_key, 0)}")
+                    return moved
+
                 # Idempotence checkbox: si la cible est déjà dans l'état voulu,
                 # ne pas cliquer (évite les dérives sur widgets FocusVision/Decipher).
                 if resolved_itype == "checkbox":
@@ -4933,6 +5016,13 @@ def _apply_by_target_id(
                     # Retour immédiat : la carte suivante est affichée, la vérification
                     # générique plus bas lirait ses inputs (partagés) et forcerait une case.
                     # Signal consommé par _should_skip_post_actions_navigation (survey_executor).
+                    try:
+                        driver._qualtrics_carousel_advanced = True
+                    except Exception:
+                        pass
+                    return True
+                if _maybe_advance_qualtrics_carousel_radio_after_answer():
+                    # Même raison que ci-dessus, variant radio (fonction distincte).
                     try:
                         driver._qualtrics_carousel_advanced = True
                     except Exception:

@@ -163,6 +163,7 @@ try:
         _extract_image_only_choice_checkbox_blocks,
         _extract_image_labelledby_choice_checkbox_blocks,
         _extract_qualtrics_carousel_checkbox_blocks,
+        _extract_qualtrics_carousel_radio_blocks,
         _extract_studystream_contenteditable_open_text_blocks,
         _extract_mriweb_grid_num_row_blocks,
         _extract_qdtech_qdradio_icon_choice_blocks,
@@ -305,6 +306,7 @@ except ImportError:
         _extract_image_only_choice_checkbox_blocks,
         _extract_image_labelledby_choice_checkbox_blocks,
         _extract_qualtrics_carousel_checkbox_blocks,
+        _extract_qualtrics_carousel_radio_blocks,
         _extract_studystream_contenteditable_open_text_blocks,
         _extract_mriweb_grid_num_row_blocks,
         _extract_qdtech_qdradio_icon_choice_blocks,
@@ -1218,6 +1220,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     table_matrix_sge_prefixes: Set[str] = set()
     table_matrix_sge_exact_names: Set[str] = set()
     image_only_choice_names: Set[str] = set()
+    qualtrics_carousel_radio_names: Set[str] = set()
     clear_registry()
 
     # --- 0-pre) Nfield dragndrop (metaType=dragndrop, div._dragndrop + hidden mrQuestionTable) ---
@@ -2166,6 +2169,25 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         pass
 
+    # --- 0i-undecies-ter) Qualtrics carousel radio (Matrix/Likert, ul.CarouselAnswerButtonList) ---
+    # Guard DOM strict : ≥2 radio[name] partagés dans ul.CarouselAnswerButtonList, sous
+    # div.QuestionOuter.Matrix div.Inner.Likert ; libellé résolu via label.CarouselAnswerButton.
+    # qualtrics_carousel_radio_names exclut le groupe du pipeline générique (doublon options=[]).
+    try:
+        for _blk in _extract_qualtrics_carousel_radio_blocks(driver, frame_chain):
+            if not isinstance(_blk, dict):
+                continue
+            question_blocks.append(_blk)
+            _ctx = (_blk.get("context") or {}) if isinstance(_blk.get("context"), dict) else {}
+            _group_key = _norm_lc(_ctx.get("group_key") or "")
+            if _group_key.startswith("radio:qualtrics_carousel_matrix:"):
+                _nm = _group_key.split("radio:qualtrics_carousel_matrix:", 1)[1].strip()
+                if _nm:
+                    qualtrics_carousel_radio_names.add(_nm)
+                    qualtrics_carousel_radio_names.add(f"radio:name:{_nm}")
+    except Exception:
+        pass
+
     # --- 0i-duodecies) Studystream : question ouverte, champ de saisie div contenteditable ---
     # Guard DOM strict : div.question-body-open-text > [data-cx="text-input"]
     # div.input-voice__contenteditable[contenteditable="true"] — aucun input/textarea natif.
@@ -2424,6 +2446,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if raw_name_key_lc in table_matrix_sge_exact_names:
                 continue
             if itype == "checkbox" and raw_name_key_lc in image_only_choice_names:
+                continue
+            if itype == "radio" and raw_name_key_lc in qualtrics_carousel_radio_names:
                 continue
             # Savanta JQM fieldset pattern: forcer itype="checkbox" pour que
             # les radio noneof soient fusionnés avec les checkboxes du même fieldset.
