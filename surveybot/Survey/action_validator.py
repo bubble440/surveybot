@@ -29,6 +29,20 @@ def _norm_lc(value: Any) -> str:
     return _norm(value).lower()
 
 
+def _fold_apostrophe_lc(value: Any) -> str:
+    """Comme `_norm_lc`, en repliant en plus les variantes typographiques
+    d'apostrophe (’/`/´/ʼ -> ') sur la forme ASCII. Utilisé uniquement par la
+    vérification `action_value_not_in_registry_options` ci-dessous : le
+    dispatcher (action_dispatcher._fold_norm_lc) résout déjà les options avec
+    ce même repli, donc une valeur appliquée avec succès ne doit pas être
+    signalée comme absente du registre pour une simple variante d'apostrophe.
+    """
+    s = _norm_lc(value)
+    for ch in ("’", "‘", "ʼ", "`", "´"):
+        s = s.replace(ch, "'")
+    return s
+
+
 def _ifop_zip2city_block_matches(question_blocks: Any, target_id: str) -> bool:
     if not isinstance(question_blocks, list):
         return False
@@ -553,7 +567,12 @@ def validate_actions(
         if itype in {"radio", "checkbox"} and value and isinstance(option_map, dict) and option_map:
             if all(not isinstance(v, dict) for v in option_map.values()):
                 known = {_norm_lc(k) for k in option_map.keys() if _norm(k)}
-                if known and _norm_lc(value) not in known:
+                known_folded = {_fold_apostrophe_lc(k) for k in option_map.keys() if _norm(k)}
+                if (
+                    known
+                    and _norm_lc(value) not in known
+                    and _fold_apostrophe_lc(value) not in known_folded
+                ):
                     issues.append({
                         "failure_type": "action_value_not_in_registry_options",
                         "action_index": idx,

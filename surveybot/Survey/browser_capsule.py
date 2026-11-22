@@ -622,6 +622,21 @@ def collect_xhr_fetch_resources(ctx) -> "Optional[list]":
         log_debug(_TAG, f"xhr_fetch: lecture des entrées Performance impossible ({exc!r})")
         return None
 
+    # Dédup persistante des logs debug par URL, à travers les appels successifs
+    # (extraction/prompt/action/validation) pour la durée de vie de `ctx` : sans
+    # elle, une URL déjà journalisée en échec (ex. absent_du_cache_http) peut se
+    # représenter (xhr ET fetch pour la même requête, ou relecture avant qu'une
+    # nouvelle entrée réseau n'arrive) et serait reloguée. N'affecte que le log ;
+    # `entries`/le contenu capturé pour les snapshots restent calculés pour
+    # chaque URL en attente, à chaque appel.
+    try:
+        logged_urls = getattr(ctx, "_sb_capsule_logged_urls", None)
+        if not isinstance(logged_urls, set):
+            logged_urls = set()
+            setattr(ctx, "_sb_capsule_logged_urls", logged_urls)
+    except Exception:
+        logged_urls = set()
+
     seen: "set[tuple[str, str]]" = set()
     pending: "list[tuple[str, str]]" = []
     for item in items:
@@ -665,7 +680,9 @@ def collect_xhr_fetch_resources(ctx) -> "Optional[list]":
             entry["error"] = (
                 "absent_du_cache_http" if "Failed to fetch" in str(exc) else f"erreur: {type(exc).__name__}"
             )
-            log_debug(_TAG, f"xhr_fetch: {url[:120]} -> {entry['error']}")
+            if url not in logged_urls:
+                logged_urls.add(url)
+                log_debug(_TAG, f"xhr_fetch: {url[:120]} -> {entry['error']}")
             continue
         if "text" not in res:
             entry["error"] = f"statut_http_{res.get('status')}"
