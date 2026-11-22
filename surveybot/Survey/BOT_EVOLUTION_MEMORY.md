@@ -5815,6 +5815,51 @@ Logs : `[QUALTRICS_CAROUSEL_NEXT] chevron clicked=True` (info), `option not sele
 Statut : confirmé en run réel (chevron cliqué une fois, skip CTA, ré-extraction de la carte suivante, plus de clics CTA parasites ni de case forcée).
 Non confirmé : comportement sur la toute dernière carte (chevron supposé absent/désactivé → CTA de page « Suivant »).
 
+### Qualtrics carousel RADIO (Matrix/Likert, ul.CarouselAnswerButtonList radios) — extracteur + avance de carte
+
+Même widget que le carousel checkbox ci-dessus mais pour un Likert/Matrix à choix unique (`div.QuestionOuter.Matrix div.Inner.Likert`,
+radios partageant un même `name`). Non documenté jusqu'ici bien que présent dans le code depuis un moment (entrée créée a posteriori,
+voir diagnostic BUG ci-dessous).
+
+### _extract_qualtrics_carousel_radio_blocks
+Fichier : Survey/dom_extractors_misc.py. Même cause d'origine que le variant checkbox (`_find_associated_label()` ne résout rien sur
+`label.CarouselAnswerButton` + `label.q-radio` décoratif vide → `options=[]`, `choice_without_options`).
+Guard DOM strict (tous requis) : ≥2 `ul.CarouselAnswerButtonList input[type='radio'][name]` de même `name` ; ancêtre
+`div.QuestionOuter.Matrix div.Inner.Likert` (scope strict, ne capte aucun autre radio-carousel/layout) ; chaque input avec `id` + libellé
+non vide et unique via `label.CarouselAnswerButton` ; un `.QuestionText` dans le conteneur.
+Patterns couverts : 1 bloc `itype=radio`, `max_select=1`/`min_select=1`, `group_key=radio:qualtrics_carousel_matrix:<name lc>`,
+flag `qualtrics_carousel_radio_matrix=True` ; `question` = intitulé + texte de la carte visible (`div.CarouselCard:not(.NoDisplay) .CarouselCardText`).
+Patterns exclus : radios hors `div.QuestionOuter.Matrix div.Inner.Likert` → pipeline existant ; checkbox carousel → extracteur dédié ci-dessus (inchangé).
+Log discriminant : `[QUALTRICS_CAROUSEL_RADIO] name=… card=… options=[…]` (debug).
+
+### Avance de carte (chevron « Next option ») — `_maybe_advance_qualtrics_carousel_radio_after_answer`
+Fonction distincte de la variante checkbox (Survey/action_dispatcher.py, closure dans `execute_action`), aucune des deux modifiée
+par l'autre. Guard : payload `qualtrics_carousel_radio_matrix` + itype radio + `allow_mx_vertical_carousel_advance`. Même ordre
+impératif que le variant checkbox : sélection vérifiée (`_is_selected`, attente ≤0,6 s) AVANT le clic du chevron. Budget max
+`_QC_RADIO_MAX_ADVANCE=60` avances par groupe (`group_key`) : abandon contrôlé + log si dépassé.
+`_should_skip_post_actions_navigation` (Survey/survey_executor.py) : même mécanisme que le variant checkbox — si
+`driver._qualtrics_carousel_advanced` (signal à usage unique) ET bloc `context.qualtrics_carousel_radio_matrix` → skip CTA,
+`[QUALTRICS_CAROUSEL_RADIO_NEXT] carte suivante affichée → skip CTA`.
+
+**BUG (2026-11-22) — boucle infinie sur la dernière carte, CTA jamais déclenché** :
+- Cause 1 : `clickable` (détection chevron désactivé) ne testait que `aria-disabled`/`disabled` sur le `<button>`. Sur ce DOM, Qualtrics
+  ne pose ni l'un ni l'autre sur la dernière carte — seule la classe `Disabled` posée sur le `svg.CarouselChevron` interne au bouton
+  reflète l'état désactivé. `clickable` restait donc `True` indéfiniment ; le chevron était re-cliqué en boucle (clic no-op côté app).
+- Cause 2 : `_should_skip_post_actions_navigation` posait le skip CTA sur la seule foi d'un clic chevron "réussi" (`moved=True` de
+  `_click_candidate`), sans jamais vérifier que la carte visible avait réellement changé.
+- Combinaison : sur la dernière carte, re-clic chevron (no-op) → CTA skippé à tort → ré-extraction de la même carte → même réponse
+  LLM → boucle jusqu'au budget `_QC_RADIO_MAX_ADVANCE`.
+- **Patch (additif, scope strict `qualtrics_carousel_radio_matrix`, variant checkbox/autres carousels non touchés)** :
+  1. `clickable` teste en plus `svg.CarouselChevron.Disabled` à l'intérieur de `next_btn` (en complément des attributs existants).
+  2. Snapshot du texte de `div.CarouselCard:not(.NoDisplay) .CarouselCardText` avant le clic chevron, re-poll (≤0,6 s) après ; `moved`
+     (et donc le flag `_qualtrics_carousel_advanced` + l'incrément du budget) n'est acquis que si le texte a réellement changé. Sinon
+     log debug `"chevron clicked but card unchanged -> no advance"` et retour `False` → le flux CTA normal reprend la main sur la
+     dernière carte.
+Logs : `[QUALTRICS_CAROUSEL_RADIO_NEXT] chevron clicked=True/False count=…` (info), `option not selected after click → no advance` /
+`next chevron not found/disabled (last card?)` / `chevron clicked but card unchanged -> no advance` (debug).
+Statut : patch appliqué, syntaxe validée ; non encore re-testé en run réel sur le DOM de référence (snapshot
+`20261122_152247_after_dom_analyze`, question « Exploite l'IA de manière éthique », Qualtrics `research.insights-today.com`).
+
 ---
 ## PLATEFORME : LIMESURVEY — SÉLECTEUR DE LANGUE DE PAGE (form-change-lang)
 

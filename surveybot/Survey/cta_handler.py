@@ -666,17 +666,42 @@ def _dom_progress_marker(driver):
           }
         } catch (e) {}
 
-        return { url, txt, qNodes, notifSig, progGridSig };
+        // Qualtrics natif, carousel RADIO Matrix/Likert (ul.CarouselAnswerButtonList radios,
+        // cf. _extract_qualtrics_carousel_radio_blocks) : sur ce gabarit SPA, la navigation
+        // entre pages ne change ni l'URL ni le document, et des pages successives ont une
+        // structure quasi identique (même carousel, même qNodes, texte générique de
+        // #root/body inchangé dans les 220 premiers caractères). Signal dédié, scopé
+        // strictement à ce gabarit (même guard DOM que l'extracteur), portant sur le `name`
+        // du groupe radio (encode le QID de la question) et le texte de la carte visible.
+        let qcRadioSig = '';
+        try {
+          const likertRoot = document.querySelector('div.QuestionOuter.Matrix div.Inner.Likert');
+          if (likertRoot) {
+            const radioInput = likertRoot.querySelector('ul.CarouselAnswerButtonList input[type="radio"][name]');
+            if (radioInput) {
+              const name = String(radioInput.getAttribute('name') || '');
+              const cardEl = likertRoot.querySelector('div.CarouselCard:not(.NoDisplay) .CarouselCardText');
+              const cardTxt = ((cardEl && (cardEl.innerText || cardEl.textContent)) || '')
+                .replace(/\s+/g, ' ')
+                .trim();
+              if (name && cardTxt) {
+                qcRadioSig = `${name}::${cardTxt}`.slice(0, 300);
+              }
+            }
+          }
+        } catch (e) {}
+
+        return { url, txt, qNodes, notifSig, progGridSig, qcRadioSig };
       } catch (e) {
-        return { url: '', txt: '', qNodes: -1, notifSig: '', progGridSig: '' };
+        return { url: '', txt: '', qNodes: -1, notifSig: '', progGridSig: '', qcRadioSig: '' };
       }
     })();
     """
     try:
         marker = _resolve_ctx(driver).evaluate("() => { " + js + " }")
-        return marker if isinstance(marker, dict) else {"url": "", "txt": "", "qNodes": -1, "notifSig": "", "progGridSig": ""}
+        return marker if isinstance(marker, dict) else {"url": "", "txt": "", "qNodes": -1, "notifSig": "", "progGridSig": "", "qcRadioSig": ""}
     except Exception:
-        return {"url": "", "txt": "", "qNodes": -1, "notifSig": "", "progGridSig": ""}
+        return {"url": "", "txt": "", "qNodes": -1, "notifSig": "", "progGridSig": "", "qcRadioSig": ""}
 
 
 def _did_progress(before_marker, after_marker) -> bool:
@@ -705,6 +730,14 @@ def _did_progress(before_marker, after_marker) -> bool:
     before_grid_sig = before_marker.get("progGridSig") or ""
     after_grid_sig = after_marker.get("progGridSig") or ""
     if before_grid_sig and after_grid_sig and before_grid_sig != after_grid_sig:
+        return True
+
+    # Signal dédié Qualtrics carousel RADIO Matrix/Likert (cf. _dom_progress_marker) : ne
+    # s'applique que lorsque les deux marqueurs portent une signature non vide (DOM guard
+    # matché avant ET après clic) — n'affecte aucune autre plateforme ni aucun autre CTA.
+    before_qc_radio_sig = before_marker.get("qcRadioSig") or ""
+    after_qc_radio_sig = after_marker.get("qcRadioSig") or ""
+    if before_qc_radio_sig and after_qc_radio_sig and before_qc_radio_sig != after_qc_radio_sig:
         return True
 
     return (

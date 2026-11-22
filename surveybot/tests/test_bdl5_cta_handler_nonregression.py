@@ -49,11 +49,11 @@ def _orig(name):
     return getattr(fn, "_phase1a_original", fn)
 
 
-def _m(url="https://s.example/p1", txt="Q1", q=3, notif="", grid=""):
-    return {"url": url, "txt": txt, "qNodes": q, "notifSig": notif, "progGridSig": grid}
+def _m(url="https://s.example/p1", txt="Q1", q=3, notif="", grid="", qc_radio=""):
+    return {"url": url, "txt": txt, "qNodes": q, "notifSig": notif, "progGridSig": grid, "qcRadioSig": qc_radio}
 
 
-_EMPTY = {"url": "", "txt": "", "qNodes": -1, "notifSig": "", "progGridSig": ""}
+_EMPTY = {"url": "", "txt": "", "qNodes": -1, "notifSig": "", "progGridSig": "", "qcRadioSig": ""}
 
 
 class _EnvMixin:
