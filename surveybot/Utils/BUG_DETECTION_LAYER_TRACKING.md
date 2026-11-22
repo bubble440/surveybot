@@ -1557,7 +1557,7 @@ détectées par les tests de l'étape 3.
 
 ## BDL-5 v2 --- Oracle CTA
 
-**Statut : EN COURS (2026-11-18) — audit en lecture seule fait, six décisions validées par l'utilisateur ; prochain patch : étape 1 (collecte)**
+**Statut : EN COURS (2026-11-22) — étape 1 (collecte, livrée le 2026-11-18) et étape 2 (oracle minimal, `Survey/cta_oracle.py`, livrée le 2026-11-22) faites ; prochaine étape inchangée : quelques jours de collecte réelle avant le cadrage de l'étape 3 (annotation et mesure, BDL-6) — voir journal du 2026-11-22.**
 
 BDL-5 v1 a livré l'observabilité (trace passive et couverture déclarée) ; le
 périmètre v1 excluait explicitement l'oracle. La v2 construit cet oracle pour
@@ -1626,13 +1626,16 @@ Découpage retenu, sur le modèle de BDL-4 (collecte, oracle, mesure) :
     appelé depuis l'enveloppe de `cta_trace.py` ; persiste aussi les
     `unobserved_path` ; flag, assainissement et plafond ci-dessus ; tests
     dédiés. Corpus mutualisé avec BDL-6.
-2.  **Oracle d'observation minimal** (après collecte réelle). Fonction pure sur
-    un enregistrement (§20 quater), module `Survey/cta_oracle.py`, même forme
-    de verdict que `extraction_oracle` (`PASS`, `SUSPECTED`, `INCONCLUSIVE`,
-    `reason`). Il n'appelle jamais le navigateur et ne lit jamais le booléen
-    `_did_progress` ni le seul retour de la fonction de clic comme preuve de
-    progression : il lit `marker_status` et `signals_changed`. Tests sur de
-    vrais enregistrements collectés.
+2.  **Oracle d'observation minimal.** LIVRÉ (2026-11-22), par anticipation sur
+    le plan initial (« après collecte réelle ») — voir journal du 2026-11-22.
+    Fonction pure `evaluate_cta_click` sur un enregistrement (§20 quater),
+    module `Survey/cta_oracle.py`, même forme de verdict que
+    `extraction_oracle` (`PASS`, `SUSPECTED`, `INCONCLUSIVE`, `reason`). Il
+    n'appelle jamais le navigateur et ne lit jamais le booléen `_did_progress`
+    ni le seul retour de la fonction de clic comme preuve de progression : il
+    lit `marker_status` et `signals_changed`. Tests (`tests/test_bdl5_cta_oracle.py`)
+    sur des fixtures synthétiques au format exact persisté, aucun corpus réel
+    n'étant encore disponible.
 3.  **Annotation et mesure.** Corpus réel annoté, `tools/bdl5_measure.py` sur le
     modèle de `tools/bdl4_measure.py`, mutualisable avec BDL-6. Couverture
     visée : CTA texte, icône, structurels, iframes, navigation classique,
@@ -2380,3 +2383,34 @@ BDL-2 (corpus)      → BDL-2 (index + mode collecte)
    clic raté qui affiche une erreur.
 5. Prochaine étape : patch de collecte (étape 1 de la v2), puis quelques
    jours de collecte réelle avant d'écrire l'oracle.
+
+## 2026-11-22 — Oracle CTA minimal livré (étape 2 de BDL-5 v2)
+
+1. Oracle écrit avant la collecte réelle de plusieurs jours que prévoyait le
+   plan du 2026-11-18 (point 5 ci-dessus) : décision prise dans cette session,
+   pas une révision du découpage. Module `Survey/cta_oracle.py` (fonction pure
+   `evaluate_cta_click`), tests synthétiques `tests/test_bdl5_cta_oracle.py`
+   (24 tests), sur des fixtures au format exact persisté par
+   `record_collected_cta` — aucun corpus réel disponible à ce jour. Zéro diff
+   sur le cœur protégé et sur la collecte existante (deux fichiers nouveaux
+   seulement).
+2. Les sept règles de départ (tableau de la section BDL-5 v2) sont
+   implémentées telles quelles, dans cet ordre ; `BUG_CONFIRMED` n'est jamais
+   produit. Une raison dédiée ferme la liste (`malformed_record`) pour un
+   enregistrement `kind="click"` dont `signals_changed` est absent ou mal
+   typé ; une entrée qui n'est pas un dict donne `None`.
+3. Écart d'interprétation non tranché par la section BDL-5 v2, à confirmer :
+   le signal `url` (règle 4) est vérifié sur `page_before.url`/`page_after.url`
+   (lecture indépendante du marqueur, toujours tentée par la collecte) plutôt
+   que sur les URL de marqueur ; un `url` listé mais identique retombe dans
+   les règles 6/7 (`SUSPECTED`/`INCONCLUSIVE` selon le marqueur) plutôt qu'une
+   raison dédiée « url ignoré ».
+4. Suite complète (417 tests) verte, aucune régression, aucun échec
+   préexistant. Contrôle de mutation manuel (quatre mutations ciblées :
+   inversion de la règle 2, inversion des règles 6/7, contournement de la
+   vérification `url` de la règle 4, ajout de `txt` aux signaux forts) :
+   les quatre détectées par la suite, module restauré à l'identique.
+5. Conséquence : les règles restent une hypothèse à geler sur corpus réel,
+   non modifiée par ce patch. Prochaine étape inchangée : quelques jours de
+   collecte réelle, puis cadrage et outillage de l'étape 3 (annotation et
+   mesure, partagé avec BDL-6).
